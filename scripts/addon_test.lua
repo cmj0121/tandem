@@ -361,7 +361,10 @@ do
     check("usage lists scan", help[3], "  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)")
     check("help prints usage", run(addon, printed, "help")[1], "Tandem commands:")
     check("unknown subcommand prints usage", run(addon, printed, "dance")[1], "Tandem commands:")
-    check("usage line count", #help, 5)
+    check("usage lists gear", help[6], "  /tandem gear [<slot>] [all] - best known gear you can use")
+    check("usage lists rank", help[7], "  /tandem rank <item link|id> - rank an item in its slot")
+    check("usage lists export", help[8], "  /tandem export - show what make import would collect")
+    check("usage line count", #help, 8)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -403,9 +406,11 @@ do
     check("count empty: items", out[1], "Tandem: 0 known items, 0 non-equippable")
     check("count empty: scan", out[2], "Scan cursor: 1, found IDs: none")
     check("count empty: loot", out[3], "Loot entries: 0, npc names: 0")
-    check("count empty: unsaved", out[4], "Unsaved records: 0 (saved on /reload or logout)")
-    check("count empty: last run", out[5], "Last run: never")
-    check("count empty line count", #out, 5)
+    check("count empty: kills", out[4], "Kills: 0, looted corpses: 0")
+    check("count empty: rate basis", out[5], "Drop rates use looted corpses: kill counting is unavailable")
+    check("count empty: unsaved", out[6], "Unsaved records: 0 (saved on /reload or logout)")
+    check("count empty: last run", out[7], "Last run: never")
+    check("count empty line count", #out, 7)
 end
 
 do
@@ -423,16 +428,16 @@ do
     check("count: items", out[1], "Tandem: 2 known items, 40 non-equippable")
     check("count: scan", out[2], "Scan cursor: 1201, found IDs: 25-1180")
     check("count: loot", out[3], "Loot entries: 1, npc names: 2")
-    check("count: unsaved", out[4], "Unsaved records: 1 (saved on /reload or logout)")
-    check("count: last run", out[5], "Last run: IDs 1-1200 at 10/s in 125.3s, 1200 processed, 3 skipped")
+    check("count: unsaved", out[6], "Unsaved records: 1 (saved on /reload or logout)")
+    check("count: last run", out[7], "Last run: IDs 1-1200 at 10/s in 125.3s, 1200 processed, 3 skipped")
     check("count: last run results",
-        out[6], "  42 hits (2 equippable), 1158 misses, 5 deferred, 1 timeouts")
+        out[8], "  42 hits (2 equippable), 1158 misses, 5 deferred, 1 timeouts")
 end
 
 do
     local addon, printed = loadWithDB({ schemaVersion = 1, scan = { lastRun = { rate = 0.25, hits = 3 } } })
     local out = run(addon, printed, "count")
-    check("count: partial last run", out[5], "Last run: IDs ?-? at 15/m in ?s, ? processed, ? skipped")
+    check("count: partial last run", out[7], "Last run: IDs ?-? at 15/m in ?s, ? processed, ? skipped")
 end
 
 do
@@ -446,7 +451,7 @@ end
 do
     local addon, printed = loadWithDB(nil, "zhTW")
     addon.Scanner = nil
-    check("zhTW count line", run(addon, printed, "count")[5], "上次掃描：從未執行")
+    check("zhTW count line", run(addon, printed, "count")[7], "上次掃描：從未執行")
     check("zhTW scanner missing line", run(addon, printed, "scan")[1], "Tandem：掃描器無法使用")
 end
 
@@ -779,7 +784,7 @@ do
     check("/tandem scan 15/m 3 stops at cap", ctx.Scanner.IsRunning(), false)
     check("/tandem scan 15/m 3 rate saved", ctx.run().rate, 0.25)
     local out = run(ctx.addon, ctx.printed, "count")
-    check("count after scan", out[5], "Last run: IDs 1-3 at 15/m in 12.0s, 3 processed, 0 skipped")
+    check("count after scan", out[7], "Last run: IDs 1-3 at 15/m in 12.0s, 3 processed, 0 skipped")
     run(ctx.addon, ctx.printed, "scan from 40")
     check("/tandem scan from moves the cursor", ctx.scan().cursor, 40)
     run(ctx.addon, ctx.printed, "scan 1/s")
@@ -1004,7 +1009,8 @@ do
     local out = run(ctx.addon, ctx.printed, "count")
     check("count reflects loot entries", out[3], "Loot entries: 2, npc names: 0")
     -- two loot drops and two corpses, one loot drop from the chest
-    check("count reflects unsaved loot", out[4], "Unsaved records: 5 (saved on /reload or logout)")
+    check("count reflects looted corpses", out[4], "Kills: 0, looted corpses: 2")
+    check("count reflects unsaved loot", out[6], "Unsaved records: 5 (saved on /reload or logout)")
 end
 
 -- Loot: looted corpses and session dedupe of loot sources (decision 10).
@@ -1538,6 +1544,398 @@ do
         "451 kill 0.2")
     check("sources: own kills without own drops are ignored",
         rows[5].id .. " " .. rows[5].rateBasis .. " " .. rows[5].rate, "452 corpse 0.5")
+end
+
+-- Commands: gear, rank, export (units 5 and 6).
+
+-- A secret value as the client hands it out: comparing, concatenating or indexing it raises. Lua never calls __eq
+-- against nil, so `secret == nil` cannot be trapped here; code must ask issecretvalue first.
+local SECRET_MT = {}
+for _, event in ipairs({ "__eq", "__lt", "__le", "__concat", "__index", "__len", "__call" }) do
+    SECRET_MT[event] = function()
+        error("secret value used")
+    end
+end
+local function secret()
+    return setmetatable({}, SECRET_MT)
+end
+
+-- Builds the link Commands makes for an uncached item.
+local function built(id, hex, name)
+    return ("|cff%s|Hitem:%d::::::::::::::|h[%s]|h|r"):format(hex, id, name or ("item #" .. id))
+end
+
+-- Loads gearData() (or db, shipped) with a stubbed player: ctx.class/className/level for UnitClass/UnitLevel,
+-- ctx.equipped[invSlot] = link, ctx.cache[id] = { name, link, quality, ilvl } for C_Item.GetItemInfo, ctx.combat,
+-- ctx.secret values hidden by issecretvalue. Returns ctx with addon, printed, env and a run(msg) function.
+local function loadGear(locale, db, shipped, opts)
+    if not db then
+        db, shipped = gearData()
+    end
+    local ctx = { class = "WARRIOR", className = "Warrior", level = 40, equipped = {}, cache = {}, combat = false,
+                  requested = {}, instant = {} }
+    local env = {
+        UnitClass = function(unit)
+            assert(unit == "player")
+            return ctx.className, ctx.class
+        end,
+        UnitLevel = function()
+            return ctx.level
+        end,
+        InCombatLockdown = function()
+            return ctx.combat
+        end,
+        GetInventoryItemLink = function(unit, slot)
+            assert(unit == "player")
+            return ctx.equipped[slot]
+        end,
+        C_Item = {
+            GetItemInfo = function(id)
+                local c = ctx.cache[id]
+                if c then
+                    return c[1], c[2], c[3], c[4]
+                end
+            end,
+            RequestLoadItemDataByID = function(id)
+                ctx.requested[id] = true
+            end,
+            GetItemInfoInstant = function(id)
+                return id, nil, nil, ctx.instant[id]
+            end,
+        },
+        C_Map = { GetMapInfo = function(map)
+            return map == 1429 and { name = "Elwynn Forest" } or nil
+        end },
+        issecretvalue = function(v)
+            return getmetatable(v) == SECRET_MT
+        end,
+        ReloadUI = function()
+            ctx.reloaded = true
+        end,
+    }
+    for k, v in pairs(opts and opts.env or {}) do
+        env[k] = v
+    end
+    local loadOpts = { shipped = shipped, env = env, blockCLEU = opts and opts.blockCLEU }
+    ctx.addon, ctx.printed, ctx.env = loadWithDB(db, locale or "enUS", loadOpts)
+    function ctx.run(msg)
+        return run(ctx.addon, ctx.printed, msg)
+    end
+    return ctx
+end
+
+local BLUE, GREEN = "0070dd", "1eff00"
+
+do
+    local ctx = loadGear()
+    for _, msg in ipairs({ "gear head foo", "gear head all extra", "gear all all all", "export now" }) do
+        check(("%q prints usage"):format(msg), ctx.run(msg)[1], "Tandem commands:")
+    end
+    for _, msg in ipairs({ "gear shirt", "gear foo all", "gear all all" }) do
+        check(("%q names an unknown slot"):format(msg), ctx.run(msg)[1]:match("^Tandem: unknown slot (%S+);"),
+            (msg:match("^gear (%S+)")))
+    end
+    check("unknown slot lists the slots", ctx.run("gear shirt")[1], "Tandem: unknown slot shirt; use one of: "
+        .. "head neck shoulder back chest wrist hands waist legs feet finger trinket mainhand offhand twohand ranged")
+    for _, msg in ipairs({ "rank", "rank abc", "rank 1 2", "rank 0x10" }) do
+        check(("%q prints rank usage"):format(msg), ctx.run(msg)[1], "Tandem: usage /tandem rank <item link|id>")
+    end
+
+    local out = ctx.run("gear")
+    check("gear overview header", out[1], "Best known gear for level 40 Warrior:")
+    check("gear overview empty slot", out[2], "Head: none known")
+    check("gear overview chest is a link and an upgrade over nothing", out[6],
+        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (upgrade)")
+    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (upgrade)")
+    check("gear overview skips a sourceless two-hander", out[16], "Two-hand: none known")
+    check("gear overview footer", out[18], "Ranked by item level, then quality; stats are not considered")
+    check("gear overview line count", #out, 18)
+    check("gear asks the client for uncached items", ctx.requested[1], true)
+    check("gear overview all shows sourceless items, marked", ctx.run("gear all")[16],
+        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (upgrade) (no known source)")
+    check("GEAR overview is case-insensitive", ctx.run("GEAR")[1], "Best known gear for level 40 Warrior:")
+end
+
+do
+    local ctx = loadGear()
+    ctx.equipped[5] = "|cff0070dd|Hitem:3::::::::::::::|h[Leather Vest]|h|r"
+    ctx.cache[1] = { "Plate Chest", "|cffa335ee|Hitem:1::::|h[Plate Chest]|h|r", 4, 45 }
+    local plate = "|cffa335ee|Hitem:1::::|h[Plate Chest]|h|r"
+    local out = ctx.run("gear chest")
+    check("gear chest header", out[1], "Best Chest for level 40 Warrior:")
+    check("gear chest equipped line", out[2], "Equipped: " .. built(3, BLUE) .. ", ilvl 30")
+    check("gear chest uses the cached client link", out[3], "1. " .. plate .. ", ilvl 45, level 40 (upgrade)")
+    check("gear chest does not request a cached item", ctx.requested[1], nil)
+    check("gear chest marks the equipped item", out[4], "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (equipped)")
+    check("gear chest same ilvl is no upgrade", out[5], "3. " .. built(4, BLUE) .. ", ilvl 30, level 25")
+    check("gear chest lower ilvl is no upgrade", out[7], "5. " .. built(12, GREEN) .. ", ilvl 20, level 10")
+    check("gear chest footer", out[8], "Ranked by item level, then quality; stats are not considered")
+    check("gear chest line count", #out, 8)
+
+    ctx.equipped[5] = "|cff0070dd|Hitem:777::::|h[Unknown]|h|r"
+    ctx.cache[777] = { "Unknown", ctx.equipped[5], 2, 40 }
+    out = ctx.run("gear chest")
+    check("gear chest ilvl of an uncached equipped item from the client", out[2],
+        "Equipped: " .. ctx.equipped[5] .. ", ilvl 40")
+    check("gear chest upgrade over the client ilvl", out[3], "1. " .. plate .. ", ilvl 45, level 40 (upgrade)")
+    check("gear chest no upgrade below the client ilvl", out[4], "2. " .. built(3, BLUE) .. ", ilvl 30, level 25")
+
+    ctx.cache[777] = nil
+    out = ctx.run("gear chest")
+    check("gear chest unknown equipped ilvl", out[2], "Equipped: " .. built(777, "ffffff") .. ", ilvl ?")
+    check("gear chest unknown equipped ilvl gives no marks", out[3], "1. " .. plate .. ", ilvl 45, level 40")
+
+    ctx.equipped[5] = secret()
+    out = ctx.run("gear chest")
+    check("gear chest secret equipped link gives no equipped line and no marks", out[2],
+        "1. " .. plate .. ", ilvl 45, level 40")
+
+    ctx.level, ctx.class, ctx.className = 60, "MAGE", "Mage"
+    ctx.equipped[5] = nil
+    out = ctx.run("gear chest")
+    check("gear chest hides sourceless items", out[3], "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade)")
+    check("gear chest hides sourceless items count", #out, 4)
+    out = ctx.run("gear chest all")
+    check("gear chest all shows sourceless items, marked", out[3],
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source)")
+    check("gear chest all keeps sourced items", out[4], "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade)")
+    out = ctx.run("gear twohand")
+    check("gear with nothing usable", out[3], "No known Two-hand you can use")
+end
+
+do
+    local db, shipped = gearData()
+    db.items[21] = { 15, 10, 2, "INVTYPE_FINGER", 4, 0 }
+    db.loot["21:c:448:1429"] = { item = 21, kind = "c", id = 448, map = 1429, count = 1 }
+    local ctx = loadGear("enUS", db, shipped)
+    ctx.equipped[11] = "|Hitem:778:|h"
+    ctx.cache[778] = { "Ring", "|Hitem:778:|h", 2, 20 }
+    local out = ctx.run("gear finger")
+    check("gear finger lists both rings", out[2] .. " / " .. out[3],
+        "Equipped: |Hitem:778:|h, ilvl 20 / Equipped: nothing")
+    check("gear finger compares with the empty ring slot", out[4],
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (upgrade)")
+    ctx.equipped[12] = "|Hitem:778:|h"
+    check("gear finger compares with the lower ring", ctx.run("gear finger")[4],
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10")
+end
+
+do
+    local db, shipped = gearData()
+    db.npcs = { [448] = "Hogger" }
+    db.kills = { [448] = 4 }
+    db.corpses = { [449] = 2 }
+    db.loot["1:c:449:0"] = { item = 1, kind = "c", id = 449, map = 0, count = 1 }
+    db.loot["1:?:0:0"] = { item = 1, kind = "?", id = 0, map = 0, count = 1 }
+    for npc = 600, 606 do
+        shipped.loot[#shipped.loot + 1] = { 4, "c", npc, 1429, 1 }
+    end
+    local ctx = loadGear("enUS", db, shipped)
+    local out = ctx.run("rank 1")
+    check("rank by id", out[1], built(1, BLUE) .. " (upgrade): rank 1 of 5 for Chest")
+    check("rank unknown source", out[2], "  unknown source, unknown map - drops: 1")
+    check("rank source per kill", out[3], "  Hogger, Elwynn Forest - drops: 1, 25.0% per kill")
+    check("rank source per looted corpse", out[4],
+        "  npc #449, unknown map - drops: 1, 50.0% per looted corpse (upper bound)")
+    check("rank footer", out[5], "Ranked by item level, then quality; stats are not considered")
+    check("rank line count", #out, 5)
+
+    out = ctx.run("rank |cff0070dd|Hitem:2::::::::::::::|h[Mail Robe]|h|r")
+    check("rank by link", out[1], built(2, GREEN) .. " (upgrade): rank 4 of 5 for Chest")
+    check("rank shipped source without a name", out[2], "  npc #500, Elwynn Forest - drops: 1")
+    check("rank by a link inside text", ctx.run("rank this |Hitem:2:0|h one")[1], out[1])
+
+    out = ctx.run("rank 3")
+    check("rank object source", out[2], "  object #77, Elwynn Forest - drops: 1")
+    out = ctx.run("rank 4")
+    check("rank lists a few sources", out[7], "  and 3 more sources")
+    check("rank source rows", #out, 8)
+
+    ctx.equipped[5] = "|Hitem:1:|h"
+    check("rank marks the equipped item", ctx.run("rank 1")[1],
+        built(1, BLUE) .. " (equipped): rank 1 of 5 for Chest")
+
+    out = ctx.run("rank 11")
+    check("rank sourceless item", out[1], built(11, "ff8000") .. " (upgrade): rank 1 of 6 for Chest")
+    check("rank sourceless item says so", out[2], "  no known source")
+    out = ctx.run("rank 9")
+    check("rank unranked slot", out[1], built(9, "ffffff") .. " does not go in a ranked slot")
+    check("rank unranked slot has no footer", #out, 2)
+    check("rank unknown item", ctx.run("rank 999")[1], "Tandem: item 999 is not known; scan or loot it first")
+
+    ctx.equipped[5] = nil
+    ctx.level = 30
+    out = ctx.run("rank 1")
+    check("rank too low gives no upgrade mark", out[1], built(1, BLUE) .. ": rank 1 of 5 for Chest")
+    check("rank too low", out[2], "  you cannot use it: level 40 required")
+    ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
+    check("rank wrong class", ctx.run("rank 1")[2], "  your class cannot use it")
+end
+
+do
+    local ctx = loadGear()
+    ctx.combat = true
+    for _, msg in ipairs({ "gear", "gear chest", "gear shirt", "rank 1", "rank", "export" }) do
+        local out = ctx.run(msg)
+        check(("%q refuses in combat"):format(msg), out[1], "Tandem: not available in combat")
+        check(("%q prints only the refusal"):format(msg), #out, 1)
+    end
+    check("count still works in combat", ctx.run("count")[1], "Tandem: 8 known items, 0 non-equippable")
+end
+
+for name, setup in pairs({
+    ["missing UnitClass"] = function(ctx)
+        ctx.env.UnitClass = nil
+    end,
+    ["missing UnitLevel"] = function(ctx)
+        ctx.env.UnitLevel = nil
+    end,
+    ["nil class"] = function(ctx)
+        ctx.class = nil
+    end,
+    ["nil level"] = function(ctx)
+        ctx.level = nil
+    end,
+    ["secret class"] = function(ctx)
+        ctx.class = secret()
+    end,
+    ["secret level"] = function(ctx)
+        ctx.level = secret()
+    end,
+}) do
+    local ctx = loadGear()
+    setup(ctx)
+    for _, msg in ipairs({ "gear", "gear chest", "rank 1" }) do
+        local out = ctx.run(msg)
+        check(("%s: %q explains"):format(name, msg), out[1],
+            "Tandem: your class or level is not known yet; try again in a moment")
+        check(("%s: %q prints one line"):format(name, msg), #out, 1)
+    end
+end
+
+do
+    local ctx = loadGear()
+    ctx.className = secret()
+    check("secret class name falls back to the class file", ctx.run("gear")[1],
+        "Best known gear for level 40 WARRIOR:")
+end
+
+do
+    local db, shipped = gearData()
+    db.npcs = { [448] = "Hogger", [449] = "Wolf" }
+    db.kills = { [448] = 3, [450] = 1 }
+    db.corpses = { [448] = 2 }
+    local ctx = loadGear("enUS", db, shipped)
+    ctx.addon.Store.AddLoot(5, "c", 448, 1429)
+    local out = ctx.run("export")
+    check("export counts", out[1], "Tandem export: 3 loot entries, 2 npc names, 8 items, 4 kills, 2 looted corpses")
+    check("export unsaved", out[2], "Unsaved records: 1 (saved on /reload or logout)")
+    check("export next steps", out[3], "To contribute: type /reload, then run make import")
+    check("export line count", #out, 3)
+    check("export never reloads", ctx.reloaded, nil)
+
+    out = ctx.run("count")
+    check("count kills and corpses", out[4], "Kills: 4, looted corpses: 2")
+    check("count rate basis without the combat log", out[5],
+        "Drop rates use looted corpses: kill counting is unavailable")
+end
+
+do
+    local ctx = loadGear("enUS", { schemaVersion = 3, items = "new format" }, nil)
+    local out = ctx.run("export")
+    check("export on a newer db", out[1],
+        "Tandem export: 0 loot entries, 0 npc names, 0 items, 0 kills, 0 looted corpses")
+    check("export on a newer db says read-only", out[3], "Recording is off: saved data uses a newer schema")
+    check("export on a newer db next steps", out[4], "To contribute: type /reload, then run make import")
+end
+
+do
+    local cleu = function() end
+    local on = loadGear("enUS", nil, nil, { env = { CombatLogGetCurrentEventInfo = cleu } })
+    check("count rate basis with the combat log", on.run("count")[5],
+        "Drop rates use kills where counted, else looted corpses")
+    local blocked = loadGear("enUS", nil, nil, { env = { CombatLogGetCurrentEventInfo = cleu }, blockCLEU = true })
+    check("count rate basis with a blocked combat log", blocked.run("count")[5],
+        "Drop rates use looted corpses: kill counting is blocked")
+end
+
+do
+    local db, shipped = gearData()
+    db.npcs = { [448] = "霍格" }
+    db.kills = { [448] = 4 }
+    db.corpses = { [449] = 2 }
+    db.loot["1:c:449:0"] = { item = 1, kind = "c", id = 449, map = 0, count = 1 }
+    local ctx = loadGear("zhTW", db, shipped)
+    ctx.className = "戰士"
+    local out = ctx.run("gear chest")
+    check("zhTW gear chest header", out[1], "最佳胸部（40 級戰士）：")
+    check("zhTW gear chest equipped", out[2], "已裝備：無")
+    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（升級）")
+    check("zhTW gear footer", out[#out], "依物品等級、再依品質排名；未考慮屬性")
+    out = ctx.run("gear")
+    check("zhTW gear overview header", out[1], "40 級戰士的最佳已知裝備：")
+    check("zhTW gear overview none", out[2], "頭部：無已知物品")
+    check("zhTW gear overview all", ctx.run("gear all")[16],
+        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（升級）（來源未知）")
+    out = ctx.run("rank 1")
+    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（升級）：排名第 1／5（胸部）")
+    check("zhTW rank per kill", out[2], "  霍格，Elwynn Forest：掉落 1 次，每次擊殺 25.0%")
+    check("zhTW rank per corpse", out[3], "  NPC #449，未知地圖：掉落 1 次，每具拾取屍體 50.0%（上限）")
+    check("zhTW rank sourceless", ctx.run("rank 11")[2], "  來源未知")
+    check("zhTW rank unranked slot", ctx.run("rank 9")[1], built(9, "ffffff", "物品 #9") .. " 不屬於可排名的部位")
+    ctx.level = 30
+    check("zhTW rank too low", ctx.run("rank 1")[2], "  你無法使用：需要等級 40")
+    check("zhTW unknown item", ctx.run("rank 999")[1], "Tandem：未知的物品 999；請先掃描或拾取")
+    check("zhTW rank usage", ctx.run("rank")[1], "Tandem：用法 /tandem rank <物品連結|id>")
+    check("zhTW unknown slot", ctx.run("gear shirt")[1]:find("Tandem：未知的部位 shirt；", 1, true), 1)
+    out = ctx.run("export")
+    check("zhTW export", out[1], "Tandem 匯出：掉落紀錄 3 筆，NPC 名稱 1 個，物品 8 件，擊殺 4 次，拾取屍體 2 具")
+    check("zhTW export next steps", out[3], "要貢獻資料：輸入 /reload，然後執行 make import")
+    out = ctx.run("count")
+    check("zhTW count kills", out[4], "擊殺：4 次，拾取屍體：2 具")
+    check("zhTW count rate basis", out[5], "掉落率使用拾取屍體數：擊殺計數無法使用")
+    check("zhTW usage lists gear", ctx.run("help")[6], "  /tandem gear [<部位>] [all] - 你能使用的最佳已知裝備")
+    ctx.combat = true
+    check("zhTW combat refusal", ctx.run("export")[1], "Tandem：戰鬥中無法使用")
+    ctx.combat, ctx.level, ctx.class = false, 40, nil
+    check("zhTW unknown class", ctx.run("gear")[1], "Tandem：尚未取得你的職業或等級，請稍後再試")
+end
+
+do
+    local ctx = loadGear()
+    ctx.equipped[16] = "|Hitem:15:|h"
+    local out = ctx.run("gear offhand")
+    check("gear offhand behind a cached two-hander has no upgrade mark", out[3],
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+    ctx.equipped[16] = "|Hitem:780:|h"
+    ctx.instant[780] = "INVTYPE_2HWEAPON"
+    check("gear offhand behind a client two-hander has no upgrade mark", ctx.run("gear offhand")[3],
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+    ctx.equipped[16] = "|Hitem:7:|h"
+    check("gear offhand behind a one-hander is an upgrade over nothing", ctx.run("gear offhand")[3],
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (upgrade)")
+    ctx.equipped[16] = secret()
+    check("gear offhand behind a secret main hand has no upgrade mark", ctx.run("gear offhand")[3],
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+
+    ctx.equipped[16] = "|Hitem:7:|h"
+    ctx.equipped[17] = "|Hitem:779:|h"
+    ctx.cache[779] = { "Big Shield", "|Hitem:779:|h", 4, 60 }
+    out = ctx.run("gear twohand all")
+    check("gear twohand compares with the main hand only", out[3],
+        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (upgrade) (no known source)")
+    check("gear twohand lists only the main hand", out[2], "Equipped: " .. built(7, GREEN) .. ", ilvl 25")
+end
+
+do
+    local db, shipped = gearData()
+    db.npcs = { [448] = "Hog|cffff0000ger|r" }
+    local env = { C_Map = { GetMapInfo = function()
+        return { name = "Elw|Hitem:1|hynn" }
+    end } }
+    local ctx = loadGear("enUS", db, shipped, { env = env })
+    check("rank escapes the npc and map names", ctx.run("rank 1")[2],
+        "  Hog||cffff0000ger||r, Elw||Hitem:1||hynn - drops: 1")
 end
 
 if failures > 0 then

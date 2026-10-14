@@ -18,6 +18,7 @@ read_globals = {
     "C_Timer",
     "CombatLogGetCurrentEventInfo",
     "CreateFrame",
+    "GetInventoryItemLink",
     "GetLocale",
     "GetLootSlotLink",
     "GetLootSourceInfo",
@@ -26,6 +27,8 @@ read_globals = {
     "InCombatLockdown",
     "issecretvalue",
     "time",
+    "UnitClass",
     "UnitGUID",
+    "UnitLevel",
     "UnitName",
 }
