@@ -16,6 +16,7 @@ read_globals = {
     "C_Item",
     "C_Map",
     "C_Timer",
+    "CombatLogGetCurrentEventInfo",
     "CreateFrame",
     "GetLocale",
     "GetLootSlotLink",

@@ -13,17 +13,27 @@ local function tocFiles()
 end
 
 -- Loads the addon as a client with the given locale would; returns its namespace,
--- the printed lines, a function that fires ADDON_LOADED, the global environment and a function that fires any event.
-local function loadAddon(locale)
+-- the printed lines, a function that fires ADDON_LOADED, the global environment, a function that fires any event
+-- and the event frame. opts.env sets globals before any file runs; opts.blockCLEU makes registering the combat log
+-- raise, as a client that forbids it would.
+local function loadAddon(locale, opts)
+    opts = opts or {}
     local printed = {}
     local handler
-    local frame = {
-        RegisterEvent = function() end,
-        UnregisterEvent = function() end,
-        SetScript = function(_, _, fn)
-            handler = fn
-        end,
-    }
+    local frame = { registered = {}, unregistered = {} }
+    function frame.RegisterEvent(self, ev)
+        if opts.blockCLEU and ev == "COMBAT_LOG_EVENT_UNFILTERED" then
+            error("forbidden")
+        end
+        self.registered[ev] = true
+    end
+    function frame.UnregisterEvent(self, ev)
+        self.registered[ev] = nil
+        self.unregistered[ev] = true
+    end
+    function frame.SetScript(_, _, fn)
+        handler = fn
+    end
     local env = setmetatable({
         CreateFrame = function()
             return frame
@@ -36,6 +46,9 @@ local function loadAddon(locale)
         end,
         SlashCmdList = {},
     }, { __index = _G })
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
 
     local ns = {}
     for _, file in ipairs(tocFiles()) do
@@ -52,7 +65,7 @@ local function loadAddon(locale)
     local function fireLoaded()
         fire("ADDON_LOADED", "Tandem")
     end
-    return ns, printed, fireLoaded, env, fire
+    return ns, printed, fireLoaded, env, fire, frame
 end
 
 local failures = 0
@@ -80,30 +93,31 @@ check("zhTW falls back to English for a missing key", ns.L["Not translated yet"]
 
 -- Store: TandemDB validation and migration.
 
--- Loads the addon with TandemDB set to db, fires ADDON_LOADED; returns ns, printed lines, env.
-local function loadWithDB(db, locale)
-    local addon, printed, fireLoaded, env, fire = loadAddon(locale or "enUS")
+-- Loads the addon with TandemDB set to db, fires ADDON_LOADED; returns ns, printed lines, env, fire, frame.
+local function loadWithDB(db, locale, opts)
+    local addon, printed, fireLoaded, env, fire, frame = loadAddon(locale or "enUS", opts)
     env.TandemDB = db
     fireLoaded()
-    return addon, printed, env, fire
+    return addon, printed, env, fire, frame
 end
 
 local function isCurrent(db)
-    return type(db) == "table" and db.schemaVersion == 1 and type(db.items) == "table"
+    return type(db) == "table" and db.schemaVersion == 2 and type(db.items) == "table"
         and type(db.scan) == "table" and db.scan.cursor == 1 and db.scan.nonEquippable == 0
         and type(db.scan.blocks) == "table" and type(db.npcs) == "table" and type(db.loot) == "table"
+        and type(db.kills) == "table" and type(db.corpses) == "table"
 end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v1 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v2 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
 end
 
 do
     local _, printed, env = loadWithDB("garbage")
-    check("garbage db becomes a fresh v1 table", isCurrent(env.TandemDB), true)
+    check("garbage db becomes a fresh v2 table", isCurrent(env.TandemDB), true)
     check("garbage db prints a reset line", printed[2], "Tandem: saved data was unreadable and has been reset")
 end
 
@@ -122,10 +136,12 @@ do
             wrongkey = { item = 25, kind = "c", id = 100, map = 1429, count = 2, coords = { { 1, 2 }, "x" } },
             ["9:c:1:1"] = { item = 9, kind = "z", id = 1, map = 1, count = 1 },
         },
+        kills = { [448] = 3, [0] = 1, [449] = 1.5 },
+        corpses = "bad",
         unknownTop = true,
     })
     local db = env.TandemDB
-    check("old db is migrated to v1", db.schemaVersion, 1)
+    check("old db is migrated to v2", db.schemaVersion, 2)
     check("old db keeps a valid item", db.items[25] and db.items[25][4], "INVTYPE_HEAD")
     check("old db strips extra item fields", db.items[25] and #db.items[25], 6)
     check("old db drops an invalid item", db.items[26], nil)
@@ -143,27 +159,53 @@ do
     check("old db keeps only valid coords", entry and #entry.coords, 1)
     check("old db drops a bad loot entry", db.loot["9:c:1:1"], nil)
     check("old db drops unknown top-level keys", db.unknownTop, nil)
-    -- items 26 and -1, nonEquippable, block 1, npc 101, loot 9:c:1:1
-    check("old db prints the drop count", printed[2], "Tandem: dropped 6 invalid saved entries")
+    check("old db keeps a valid kill count", db.kills[448], 3)
+    check("old db drops a bad kill npc", db.kills[0], nil)
+    check("old db drops a fractional kill count", db.kills[449], nil)
+    check("old db replaces non-table corpses", type(db.corpses) == "table" and next(db.corpses) == nil, true)
+    -- items 26 and -1, nonEquippable, block 1, npc 101, loot 9:c:1:1, kills 0 and 449, corpses
+    check("old db without a version prints no upgrade line", printed[2], "Tandem: dropped 9 invalid saved entries")
 end
 
 do
     local _, printed, env = loadWithDB({ schemaVersion = 1, items = { [7] = { 1, 1, 1, "INVTYPE_FEET", 4, 2 } } })
     check("v1 db keeps its items", env.TandemDB.items[7][4], "INVTYPE_FEET")
     check("v1 db fills missing sections", isCurrent(env.TandemDB), true)
-    check("valid v1 db prints only the load line", #printed, 1)
+    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 2")
+    check("v1 db prints nothing else", #printed, 2)
+end
+
+for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
+    local _, printed, env = loadWithDB({ schemaVersion = bad })
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 2)
+    check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
-    local newer = { schemaVersion = 2, items = "new format" }
+    local _, printed = loadWithDB({ schemaVersion = 1 }, "zhTW")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 2")
+end
+
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 2, kills = { [448] = 2 }, corpses = { [448] = 5 } })
+    check("v2 db keeps kills", env.TandemDB.kills[448], 2)
+    check("v2 db keeps corpses", env.TandemDB.corpses[448], 5)
+    check("valid v2 db prints only the load line", #printed, 1)
+end
+
+do
+    local newer = { schemaVersion = 3, items = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items, "new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 2; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 3; recording is off until the addon is updated")
     check("newer db blocks AddItem", addon.Store.AddItem(1, 1, 1, 1, "INVTYPE_HEAD", 4, 1), false)
     check("newer db blocks AddLoot", addon.Store.AddLoot(1, "c", 1, 1), false)
     check("newer db blocks SetNpcName", addon.Store.SetNpcName(1, "x"), false)
+    check("newer db blocks AddKill", addon.Store.AddKill(1), false)
+    check("newer db blocks AddCorpse", addon.Store.AddCorpse(1), false)
+    check("newer db Counts kills does not fail", addon.Store.Counts().kills, 0)
     check("newer db Counts does not fail", addon.Store.Counts().items, 0)
     check("newer db is read-only", addon.Store.Counts().readOnly, true)
 end
@@ -195,13 +237,27 @@ do
     check("SetNpcName stores a name", Store.SetNpcName(100, "Hogger"), true)
     check("SetNpcName skips an unchanged name", Store.SetNpcName(100, "Hogger"), false)
 
+    check("AddKill counts a kill", Store.AddKill(448), true)
+    Store.AddKill(448)
+    Store.AddKill(299)
+    check("AddKill writes TandemDB", env.TandemDB.kills[448], 2)
+    check("AddCorpse counts a corpse", Store.AddCorpse(448), true)
+    check("AddCorpse writes TandemDB", env.TandemDB.corpses[448], 1)
+    for _, bad in ipairs({ 0, -1, 1.5, "448", 0 / 0, math.huge }) do
+        check("AddKill rejects " .. tostring(bad), Store.AddKill(bad), false)
+        check("AddCorpse rejects " .. tostring(bad), Store.AddCorpse(bad), false)
+    end
+
     local counts = Store.Counts()
     check("Counts items", counts.items, 1)
     check("Counts loot entries", counts.loot, 2)
     check("Counts npcs", counts.npcs, 1)
     check("Counts cursor", counts.cursor, 1)
     check("Counts nonEquippable", counts.nonEquippable, 0)
-    check("Counts unsaved records", counts.unsaved, 1 + 13 + 1 + 1)
+    check("Counts kills", counts.kills, 3)
+    check("Counts corpses", counts.corpses, 1)
+    check("Counts kill npcs", counts.killNpcs, 2)
+    check("Counts unsaved records", counts.unsaved, 1 + 13 + 1 + 1 + 3 + 1)
     check("Counts not read-only", counts.readOnly, false)
 end
 
@@ -344,7 +400,7 @@ do
 end
 
 do
-    local addon, printed = loadWithDB({ schemaVersion = 2, items = "new format" })
+    local addon, printed = loadWithDB({ schemaVersion = 3, items = "new format" })
     local out = run(addon, printed, "count")
     check("count on a newer db does not fail", out[1], "Tandem: 0 known items, ? non-equippable")
     check("count on a newer db says read-only", out[#out],
@@ -621,7 +677,7 @@ do
 end
 
 do
-    local ctx = loadScanner({}, { schemaVersion = 2, scan = { cursor = 9 } })
+    local ctx = loadScanner({}, { schemaVersion = 3, scan = { cursor = 9 } })
     local mark = #ctx.printed
     ctx.Scanner.Start({ rate = 10, cap = 5 })
     check("read-only start is refused", ctx.since(mark)[1], "Recording is off: saved data uses a newer schema")
@@ -721,6 +777,11 @@ end
 local HOGGER = "Creature-0-1-0-12-448-0000ABCD"
 local WOLF = "Creature-0-1-0-12-299-0000BEEF"
 local CHEST = "GameObject-0-1-0-12-2843-00001234"
+
+-- Returns the GUID of another spawn of Hogger.
+local function hogger(spawn)
+    return ("Creature-0-1-0-12-448-%08X"):format(spawn)
+end
 
 -- Returns t[i], t[i + 1], ... (unpack moved between Lua versions).
 local function spread(t, i)
@@ -847,9 +908,11 @@ do
     check("loot: missing C_Map uses map 0", e and e.count, 1)
     check("loot: missing C_Map has no coords", e and #e.coords, 0)
     ctx.env.C_Map = { GetBestMapForUnit = function() return 1429 end }
+    ctx.slots = { { link(25), sources = { hogger(1), 1 } } }
     ctx.loot()
     check("loot: missing GetPlayerMapPosition keeps the map", #ctx.entry("25:c:448:1429").coords, 0)
     ctx.env.C_Map.GetPlayerMapPosition = function() end
+    ctx.slots = { { link(25), sources = { hogger(2), 1 } } }
     ctx.loot()
     check("loot: nil position object keeps the map", ctx.entry("25:c:448:1429").count, 2)
     check("loot: nil position object has no coords", #ctx.entry("25:c:448:1429").coords, 0)
@@ -880,7 +943,7 @@ do
 end
 
 do
-    local ctx = loadLoot({ schemaVersion = 2, loot = {} })
+    local ctx = loadLoot({ schemaVersion = 3, loot = {} })
     ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
     ctx.loot()
     check("loot: read-only db is not written", next(ctx.env.TandemDB.loot), nil)
@@ -894,6 +957,7 @@ do
     ctx.fire("LOOT_READY")
     check("loot: double LOOT_READY records once", ctx.entry("25:c:448:1429").count, 1)
     ctx.fire("LOOT_CLOSED")
+    ctx.slots = { { link(25), sources = { hogger(1), 1 } } }
     ctx.fire("LOOT_READY")
     check("loot: a new window records again", ctx.entry("25:c:448:1429").count, 2)
     ctx.fire("LOOT_CLOSED")
@@ -903,7 +967,255 @@ do
     ctx.loot()
     local out = run(ctx.addon, ctx.printed, "count")
     check("count reflects loot entries", out[3], "Loot entries: 2, npc names: 0")
-    check("count reflects unsaved loot", out[4], "Unsaved records: 3 (saved on /reload or logout)")
+    -- two loot drops and two corpses, one loot drop from the chest
+    check("count reflects unsaved loot", out[4], "Unsaved records: 5 (saved on /reload or logout)")
+end
+
+-- Loot: looted corpses and session dedupe of loot sources (decision 10).
+
+do
+    local ctx = loadLoot()
+    ctx.slots = {
+        { link(25), sources = { HOGGER, 1, WOLF, 1 } },
+        { link(26), sources = { HOGGER, 1 } },
+        { nil, sources = { WOLF, 1 } },
+    }
+    ctx.loot()
+    local corpses = ctx.env.TandemDB.corpses
+    check("corpse: one per distinct creature across slots", corpses[448], 1)
+    check("corpse: a creature on a money slot counts", corpses[299], 1)
+
+    ctx.loot()
+    check("dedupe: a re-opened corpse adds no corpse", corpses[448], 1)
+    check("dedupe: a re-opened corpse adds no loot", ctx.entry("25:c:448:1429").count, 1)
+    check("dedupe: a re-opened corpse adds no loot (second slot)", ctx.entry("26:c:448:1429").count, 1)
+
+    ctx.slots = { { link(25), sources = { HOGGER, 1, hogger(9), 1 } } }
+    ctx.loot()
+    check("dedupe: a new creature in a mixed window counts its corpse", corpses[448], 2)
+    check("dedupe: a new creature in a mixed window counts its loot only", ctx.entry("25:c:448:1429").count, 2)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { nil, sources = { WOLF, 1 } } }
+    ctx.loot()
+    check("corpse: a gold-only corpse counts", ctx.env.TandemDB.corpses[299], 1)
+    check("corpse: a gold-only corpse records no loot", ctx.addon.Store.Counts().loot, 0)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(31), sources = { CHEST, 1, "Vehicle-0-1-0-12-500-0000AAAA", 1 } } }
+    ctx.loot()
+    check("corpse: a vehicle is a creature", ctx.env.TandemDB.corpses[500], 1)
+    check("corpse: a game object adds no corpse", ctx.env.TandemDB.corpses[2843], nil)
+    ctx.loot()
+    check("dedupe: a re-opened node adds no loot", ctx.entry("31:o:2843:1429").count, 1)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1, WOLF, 1 } } }
+    ctx.env.issecretvalue = function(v)
+        return v == HOGGER
+    end
+    ctx.loot()
+    check("corpse: a secret GUID adds no corpse", ctx.env.TandemDB.corpses[448], nil)
+    check("corpse: the other source still counts", ctx.env.TandemDB.corpses[299], 1)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25) } }
+    ctx.loot()
+    ctx.loot()
+    check("no GUIDs: loot counted per window", ctx.entry("25:?:0:1429").count, 2)
+    check("no GUIDs: no corpse", next(ctx.env.TandemDB.corpses), nil)
+    ctx.env.GetLootSourceInfo = nil
+    ctx.loot()
+    check("no GetLootSourceInfo: loot counted per window", ctx.entry("25:?:0:1429").count, 3)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.combat = true
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.loot()
+    ctx.combat = false
+    ctx.loot()
+    check("dedupe: a window skipped in combat does not mark its source", ctx.env.TandemDB.corpses[448], 1)
+end
+
+do
+    local ctx = loadLoot()
+    check("SEEN_MAX is 200", ctx.addon.Loot.SEEN_MAX, 200)
+    for spawn = 1, ctx.addon.Loot.SEEN_MAX do
+        ctx.slots = { { nil, sources = { hogger(spawn), 1 } } }
+        ctx.loot()
+    end
+    ctx.slots = { { nil, sources = { hogger(1), 1 } } }
+    ctx.loot()
+    check("dedupe: the last 200 sources are remembered", ctx.env.TandemDB.corpses[448], 200)
+    ctx.slots = { { nil, sources = { hogger(201), 1 } } }
+    ctx.loot()
+    ctx.slots = { { nil, sources = { hogger(1), 1 } } }
+    ctx.loot()
+    check("dedupe: the 201st source evicts the oldest", ctx.env.TandemDB.corpses[448], 202)
+    ctx.slots = { { nil, sources = { hogger(3), 1 } } }
+    ctx.loot()
+    check("dedupe: newer sources stay remembered", ctx.env.TandemDB.corpses[448], 202)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.loot()
+    local again = loadLoot(ctx.env.TandemDB)
+    again.slots = { { link(25), sources = { HOGGER, 1 } } }
+    again.loot()
+    check("dedupe: a reload forgets seen sources", again.env.TandemDB.corpses[448], 2)
+end
+
+-- Kills: player's PARTY_KILLs from the combat log.
+
+local PLAYER = "Player-1-00000001"
+
+-- Loads the addon with a combat log that returns ctx.cleu; opts.noCLEU removes the API, opts.blockCLEU forbids
+-- registering it, opts.player = false hides the player GUID until ctx.playerKnown is set.
+local function loadKills(opts)
+    opts = opts or {}
+    local ctx = { combat = false, cleu = {} }
+    local env = {
+        InCombatLockdown = function()
+            return ctx.combat
+        end,
+        UnitGUID = function(unit)
+            if unit == "player" and (opts.player ~= false or ctx.playerKnown) then
+                return PLAYER
+            end
+        end,
+    }
+    if not opts.noCLEU then
+        env.CombatLogGetCurrentEventInfo = function()
+            return spread(ctx.cleu)
+        end
+    end
+    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 2 }, "enUS",
+        { env = env, blockCLEU = opts.blockCLEU })
+    ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = addon, printed, e, fire, frame
+    -- Fires one combat log event: timestamp, sub, hideCaster, src, srcName, srcFlags, srcRaidFlags, dst.
+    function ctx.log(sub, src, dst)
+        ctx.cleu = { 1, sub, false, src, "Me", 0, 0, dst }
+        fire("COMBAT_LOG_EVENT_UNFILTERED")
+    end
+    function ctx.kills()
+        return e.TandemDB.kills
+    end
+    return ctx
+end
+
+do
+    local ctx = loadKills()
+    check("kills: status on", ctx.addon.Kills.Status(), "on")
+    check("kills: CLEU registered", ctx.frame.registered.COMBAT_LOG_EVENT_UNFILTERED, true)
+    check("kills: PLAYER_REGEN_ENABLED registered", ctx.frame.registered.PLAYER_REGEN_ENABLED, true)
+    check("kills: PLAYER_LOGOUT registered", ctx.frame.registered.PLAYER_LOGOUT, true)
+
+    ctx.combat = true
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.log("PARTY_KILL", PLAYER, "Vehicle-0-1-0-12-500-0000AAAA")
+    ctx.log("PARTY_KILL", "Player-1-00000002", WOLF)
+    ctx.log("PARTY_KILL", "Pet-0-1-0-12-1-00000001", WOLF)
+    ctx.log("SWING_DAMAGE", PLAYER, WOLF)
+    ctx.log("PARTY_KILL", PLAYER, "Player-1-00000003")
+    ctx.log("PARTY_KILL", PLAYER, CHEST)
+    check("kills: nothing stored in combat", next(ctx.kills()), nil)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: a combat-time Flush stores nothing", next(ctx.kills()), nil)
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: player's creature kill stored after combat", ctx.kills()[448], 1)
+    check("kills: player's vehicle kill stored", ctx.kills()[500], 1)
+    check("kills: other players', pets' kills and other events skipped", ctx.kills()[299], nil)
+    check("kills: only creature kills", ctx.addon.Store.Counts().kills, 2)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: flush empties the buffer", ctx.addon.Store.Counts().kills, 2)
+
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.fire("PLAYER_LOGOUT")
+    check("kills: logout flushes", ctx.kills()[448], 2)
+end
+
+do
+    local ctx = loadKills()
+    ctx.combat = true
+    for _ = 1, 501 do
+        ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    end
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: buffer caps at 500", ctx.kills()[448], 500)
+end
+
+do
+    local ctx = loadKills({ noCLEU = true })
+    check("kills: no combat log API is unavailable", ctx.addon.Kills.Status(), "unavailable")
+    check("kills: no combat log API registers no CLEU", ctx.frame.registered.COMBAT_LOG_EVENT_UNFILTERED, nil)
+end
+
+do
+    local ctx = loadKills({ player = false })
+    check("kills: a missing player GUID still registers", ctx.addon.Kills.Status(), "on")
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: nothing counted while the player GUID is unknown", next(ctx.kills()), nil)
+    ctx.playerKnown = true
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: the player GUID is read lazily once known", ctx.kills()[448], 1)
+end
+
+do
+    local ctx = loadKills()
+    ctx.combat = true
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.fire("PLAYER_LOGOUT")
+    check("kills: logout in combat still stores the buffer", ctx.kills()[448], 1)
+end
+
+do
+    local ctx = loadKills({ blockCLEU = true })
+    check("kills: a forbidden registration is blocked", ctx.addon.Kills.Status(), "blocked")
+    check("kills: blocked still loads the addon", ctx.printed[1], "Tandem loaded")
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: blocked counts nothing", next(ctx.kills()), nil)
+end
+
+do
+    local ctx = loadKills()
+    ctx.combat = true
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.env.issecretvalue = function(v)
+        return v == WOLF
+    end
+    ctx.log("PARTY_KILL", PLAYER, WOLF)
+    check("kills: a secret payload turns kills off", ctx.addon.Kills.Status(), "secret")
+    check("kills: a secret payload unregisters CLEU", ctx.frame.unregistered.COMBAT_LOG_EVENT_UNFILTERED, true)
+    ctx.env.issecretvalue = nil
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: a secret payload clears the buffer", next(ctx.kills()), nil)
+end
+
+do
+    local ctx = loadKills({ db = { schemaVersion = 3 } })
+    ctx.log("PARTY_KILL", PLAYER, HOGGER)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("kills: read-only db is not written", ctx.env.TandemDB.kills, nil)
+    check("kills: read-only keeps unsaved at 0", ctx.addon.Store.unsaved, 0)
 end
 
 if failures > 0 then

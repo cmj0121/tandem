@@ -13,5 +13,6 @@ Locales\zhTW.lua
 Store.lua
 Scanner.lua
 Loot.lua
+Kills.lua
 Commands.lua
 Tandem.lua

@@ -17,11 +17,15 @@ local function onLoaded(self, event, loadedName)
     local L = ns.L
     local db, report = ns.Store.Load(TandemDB)
     TandemDB = db
+    ns.Kills.Register(self)
     print(L["%s loaded"]:format(addonName))
 
     if report.status == "newer" then
         print(L["%s: saved data uses newer schema %d; recording is off until the addon is updated"]:format(
             addonName, report.version))
+    elseif report.status == "migrated" and type(report.version) == "number" and report.version >= 0
+        and report.version < math.huge and report.version == math.floor(report.version) then
+        print(L["%s: saved data upgraded from schema %d to %d"]:format(addonName, report.version, ns.Store.SCHEMA))
     elseif report.status == "reset" then
         print(L["%s: saved data was unreadable and has been reset"]:format(addonName))
     end
@@ -39,5 +43,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Loot.OnLootReady()
     elseif event == "LOOT_CLOSED" then
         ns.Loot.OnLootClosed()
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        ns.Kills.OnCombatLog()
+    elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_LOGOUT" then
+        ns.Kills.Flush(event == "PLAYER_LOGOUT")
     end
 end)
