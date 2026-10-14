@@ -28,8 +28,8 @@ make uninstall
 
 ### Finding the client
 
-`make install` locates the `World of Warcraft` folder with `scripts/wow-dir.sh`. A folder qualifies only if it
-contains `<FLAVOR>/Interface/AddOns`. The search order is:
+`make install`, `make uninstall` and `make import` locate the `World of Warcraft` folder with `scripts/wow-dir.sh`. A
+folder qualifies only if it contains `<FLAVOR>/Interface/AddOns`. The search order is:
 
 1. `WOW_DIR`, if set. If it does not qualify, the install fails rather than searching further.
 2. `/Applications/World of Warcraft`, `~/Applications/World of Warcraft` and `/Users/Shared/World of Warcraft`.
@@ -44,6 +44,9 @@ If nothing qualifies, the script exits with an error that lists every place it s
 | `WOW_DIR` | auto-detected    | The `World of Warcraft` folder, the one that contains `_classic_beta_`, not the flavor dir |
 | `FLAVOR`  | `_classic_beta_` | The client flavor folder inside `WOW_DIR`                                                  |
 | `MODE`    | `link`           | `copy` copies the addon instead of linking it                                              |
+| `DATA`    | `data`           | The folder `make import` writes to                                                         |
+
+`WOW_DIR` and `FLAVOR` apply to `make install`, `make uninstall` and `make import`; `MODE` only to the first two.
 
 Quote `WOW_DIR`, because the folder name contains spaces:
 
@@ -205,12 +208,57 @@ The AddOns list shows `Tandem/Media/icon.tga` (64×64, 32-bit with alpha), set b
 make test
 ```
 
-This syntax-checks every Lua file under `Tandem/` with `luac -p`, runs `scripts/addon_test.lua` and runs the tests for
-`scripts/wow-dir.sh`. The local `luac` is a newer Lua than the game's Lua 5.1, so it catches syntax errors only.
+This syntax-checks every Lua file under `Tandem/` and `scripts/` with `luac -p`, runs `scripts/addon_test.lua`, and
+runs `scripts/wow-dir_test.sh` and `scripts/import_test.sh`. The local `luac` is a newer Lua than the game's Lua 5.1, so
+it catches syntax errors only.
 `scripts/addon_test.lua` loads the files listed in `Tandem/Tandem.toc`, in order, with stubbed WoW API functions, and
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
 migration, `/tandem` parsing and output, the scan with a manual timer and stubbed item API, and loot recording with
 stubbed loot, map and unit API. These tests prove the logic only; the client's real API is checked in game.
+`scripts/import_test.sh` runs `make import` and `scripts/import.lua` against throwaway saved-variables files and data
+folders: two contributors, re-imports, rejected files and the sandbox.
+
+### Importing loot logs
+
+The loot log is crowdsourced: each player's `Tandem.lua` is imported into the repository's `data/` folder and committed.
+Log out or `/reload` in game first, because the client writes the file only then. Then, from the repository root:
+
+```sh
+make import
+```
+
+```text
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names)
+wrote data/loot.lua (1 contributors)
+```
+
+The ID and the numbers are an example. `make import` reads every
+`<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua` of the detected client and writes:
+
+| File                          | Content                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `data/contributions/<id>.lua` | One account's `loot` and `npcs` with its locale, overwritten on each import        |
+| `data/loot.lua`               | Merged from every contribution: summed counts, up to 5 positions, names per locale |
+
+`data/loot.lua` also records how many contributions it merged, as `contributors`.
+
+- `<id>` is the first 12 hex digits of the SHA-256 of the account folder name. The folder name, the account number, is
+  never written or printed, and the same account always gets the same ID.
+- The locale is the `SET textLocale` line of `WTF/Config.wtf`, `enUS` when missing. Npc names are stored in the client
+  language, so `data/loot.lua` keeps them under `names[<locale>]`.
+- Only `loot` and `npcs` are imported. `items` and `scan` stay local, since anyone can scan items again.
+- Running it again is safe: each account's contribution is a full snapshot that replaces the last one, so counts are
+  never added twice, and the same input gives byte-identical files.
+- Each saved-variables file runs in an empty environment, with no functions to call and a limit on how long it may run,
+  and its `TandemDB` is checked as the addon checks it on load. A file that fails to parse, raises an error, runs too
+  long, is precompiled, has no `TandemDB` or comes from a newer addon version is skipped with a message such as
+  `import: <file>: no TandemDB table, skipped`. Invalid entries are dropped with
+  `import: <file>: <n> invalid entries ignored`.
+- A skipped file does not stop the others. `scripts/import.lua` exits with status 1, and `make import` fails, only when
+  no file was imported, including when no `Tandem.lua` exists.
+
+Set `WOW_DIR`, `FLAVOR` or `DATA` as for `make install`, for example `make import DATA=/tmp/tandem-data`. Then review
+the changes under `data/` with `git diff` and commit them as usual.
 
 ### Translations
 

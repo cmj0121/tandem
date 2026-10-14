@@ -27,8 +27,8 @@ make uninstall
 
 ### 尋找用戶端
 
-`make install` 會透過 `scripts/wow-dir.sh` 找出 `World of Warcraft` 資料夾。只有包含
-`<FLAVOR>/Interface/AddOns` 的資料夾才符合條件。搜尋順序如下：
+`make install`、`make uninstall` 與 `make import` 會透過 `scripts/wow-dir.sh` 找出 `World of Warcraft` 資料夾。只有
+包含 `<FLAVOR>/Interface/AddOns` 的資料夾才符合條件。搜尋順序如下：
 
 1. `WOW_DIR`（若有設定）。若它不符合條件，安裝會直接失敗，不會繼續搜尋。
 2. `/Applications/World of Warcraft`、`~/Applications/World of Warcraft` 和 `/Users/Shared/World of Warcraft`。
@@ -43,6 +43,9 @@ make uninstall
 | `WOW_DIR` | 自動偵測         | `World of Warcraft` 資料夾，也就是包含 `_classic_beta_` 的那層，而非 flavor 資料夾 |
 | `FLAVOR`  | `_classic_beta_` | `WOW_DIR` 內的用戶端 flavor 資料夾                                                 |
 | `MODE`    | `link`           | 設為 `copy` 時改為複製 addon，而非建立連結                                         |
+| `DATA`    | `data`           | `make import` 寫入的資料夾                                                         |
+
+`WOW_DIR` 與 `FLAVOR` 適用於 `make install`、`make uninstall` 與 `make import`；`MODE` 只適用於前兩者。
 
 由於資料夾名稱含有空格，`WOW_DIR` 須加上引號：
 
@@ -197,12 +200,54 @@ AddOns 清單顯示的是 `Tandem/Media/icon.tga`（64×64、32-bit 含 alpha）
 make test
 ```
 
-這會以 `luac -p` 檢查 `Tandem/` 底下所有 Lua 檔案的語法，執行 `scripts/addon_test.lua`，並執行
-`scripts/wow-dir.sh` 的測試。本機的 `luac` 版本比遊戲使用的 Lua 5.1 新，因此只能抓出語法錯誤。
+這會以 `luac -p` 檢查 `Tandem/` 與 `scripts/` 底下所有 Lua 檔案的語法，執行 `scripts/addon_test.lua`，並執行
+`scripts/wow-dir_test.sh` 與 `scripts/import_test.sh`。本機的 `luac` 版本比遊戲使用的 Lua 5.1 新，因此只能抓出語法錯誤。
 `scripts/addon_test.lua` 會模擬 WoW API 函式，依 `Tandem/Tandem.toc` 列出的順序載入檔案，並檢查 `enUS`、`zhTW`
 與一個不支援的語系下的載入訊息。它也測試 `TandemDB` 的驗證與遷移、`/tandem` 的解析與輸出、以手動計時器與模擬的物品
 API 進行的掃描，以及以模擬的拾取、地圖與單位 API 進行的掉落紀錄。這些測試只能證明邏輯正確；用戶端實際的 API 要在
-遊戲中檢查。
+遊戲中檢查。`scripts/import_test.sh` 以拋棄式的 SavedVariables 檔案與資料夾執行 `make import` 和
+`scripts/import.lua`，涵蓋兩位貢獻者、重複匯入、被拒絕的檔案與沙箱。
+
+### 匯入掉落紀錄
+
+掉落紀錄採群眾收集：每位玩家的 `Tandem.lua` 匯入儲存庫的 `data/` 資料夾後再 commit。用戶端只在登出或 `/reload` 時
+寫入這個檔案，所以請先在遊戲中登出或執行 `/reload`。接著在儲存庫根目錄執行：
+
+```sh
+make import
+```
+
+```text
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names)
+wrote data/loot.lua (1 contributors)
+```
+
+ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一個
+`<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua`，並寫入：
+
+| 檔案                          | 內容                                                          |
+| ----------------------------- | ------------------------------------------------------------- |
+| `data/contributions/<id>.lua` | 單一帳號的 `loot` 與 `npcs` 及其語系，每次匯入都會覆寫        |
+| `data/loot.lua`               | 由所有貢獻合併：掉落次數加總、最多 5 個座標、依語系分組的名稱 |
+
+`data/loot.lua` 也以 `contributors` 記錄合併了多少份貢獻。
+
+- `<id>` 是帳號資料夾名稱 SHA-256 的前 12 個十六進位字元。資料夾名稱，也就是帳號號碼，絕不會被寫入或印出；同一個
+  帳號永遠得到相同的 ID。
+- 語系取自 `WTF/Config.wtf` 的 `SET textLocale` 這一行，沒有時為 `enUS`。NPC 名稱以用戶端語言儲存，因此
+  `data/loot.lua` 把它們放在 `names[<locale>]` 底下。
+- 只匯入 `loot` 與 `npcs`。`items` 與 `scan` 只留在本機，因為任何人都能重新掃描物品。
+- 重複執行是安全的：每個帳號的貢獻都是完整的快照，會取代上一份，因此掉落次數不會重複加總，相同的輸入也會產生逐位元組
+  相同的檔案。
+- 每個 SavedVariables 檔案都在空的環境中執行，沒有任何函式可呼叫，執行時間也有上限；它的 `TandemDB` 會以 addon
+  載入時相同的方式檢查。無法解析、發生錯誤、執行過久、為預先編譯的檔案、沒有 `TandemDB`，或由較新版本 addon 寫入的
+  檔案會被略過，並印出 `import: <file>: no TandemDB table, skipped` 之類的訊息。無效的項目會被捨棄，並印出
+  `import: <file>: <n> invalid entries ignored`。
+- 略過一個檔案不會影響其他檔案。只有在沒有匯入任何檔案時（包括找不到任何 `Tandem.lua`），`scripts/import.lua` 才會
+  以狀態碼 1 結束，`make import` 也才會失敗。
+
+`WOW_DIR`、`FLAVOR` 與 `DATA` 的設定方式與 `make install` 相同，例如 `make import DATA=/tmp/tandem-data`。之後以
+`git diff` 檢查 `data/` 底下的變更，再照常 commit。
 
 ### 翻譯
 
