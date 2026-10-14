@@ -1254,6 +1254,292 @@ do
     check("kills: read-only keeps unsaved at 0", ctx.addon.Store.unsaved, 0)
 end
 
+-- Advisor: usability, ranking and sources over own + shipped data.
+
+-- { ilvl, reqLevel, quality, equipLoc, classID, subclassID }
+local GEAR = {
+    [1] = { 45, 40, 3, "INVTYPE_CHEST", 4, 4 },        -- plate chest
+    [2] = { 30, 25, 2, "INVTYPE_ROBE", 4, 3 },         -- mail robe
+    [3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2 },        -- leather chest
+    [4] = { 30, 25, 3, "INVTYPE_ROBE", 4, 1 },         -- cloth robe
+    [5] = { 20, 15, 2, "INVTYPE_SHIELD", 4, 6 },
+    [6] = { 20, 15, 2, "INVTYPE_RELIC", 4, 7 },        -- libram
+    [7] = { 25, 20, 2, "INVTYPE_WEAPON", 2, 7 },       -- one-hand sword
+    [8] = { 22, 18, 2, "INVTYPE_RANGEDRIGHT", 2, 19 }, -- wand
+    [9] = { 1, 1, 1, "INVTYPE_BODY", 4, 0 },           -- shirt
+    [10] = { 5, 1, 1, "INVTYPE_2HWEAPON", 2, 20 },     -- fishing pole
+    [11] = { 99, 1, 5, "INVTYPE_CHEST", 4, 1 },        -- GM robe, no source
+    [12] = { 20, 10, 2, "INVTYPE_CHEST", 4, 3 },       -- mail chest
+    [13] = { 50, 38, 3, "INVTYPE_LEGS", 4, 4 },        -- plate legs, low reqLevel
+    [14] = { 24, 15, 2, "INVTYPE_WEAPONOFFHAND", 2, 7 }, -- off-hand sword
+    [15] = { 30, 20, 2, "INVTYPE_2HWEAPON", 2, 1 },    -- two-hand axe, no source
+}
+
+-- Splits GEAR between own and shipped data; own loot sources items 1 and 3, shipped loot the rest but 9-11.
+local function gearData()
+    local ownItems, shippedItems = {}, {}
+    for id, r in pairs(GEAR) do
+        if id % 2 == 1 then
+            ownItems[id] = r
+        else
+            shippedItems[id] = r
+        end
+    end
+    local db = { schemaVersion = 2, items = ownItems, loot = {
+        ["1:c:448:1429"] = { item = 1, kind = "c", id = 448, map = 1429, count = 1 },
+        ["3:o:77:1429"] = { item = 3, kind = "o", id = 77, map = 1429, count = 1 },
+    } }
+    local shipped = { items = shippedItems, loot = {} }
+    for _, id in ipairs({ 2, 4, 5, 6, 7, 8, 12, 13, 14 }) do
+        shipped.loot[#shipped.loot + 1] = { id, "c", 500, 1429, 1 }
+    end
+    return db, shipped
+end
+
+local function loadAdvisor(db, shipped, env)
+    return loadWithDB(db, "enUS", { shipped = shipped, env = env }).Advisor
+end
+
+local function ids(list)
+    if not list then
+        return "nil"
+    end
+    local out = {}
+    for _, e in ipairs(list) do
+        out[#out + 1] = tostring(e.id)
+    end
+    return table.concat(out, ",")
+end
+
+do
+    local A = loadAdvisor(gearData())
+    local function slots(equipLoc, class, level)
+        return table.concat(A.SlotsOf(equipLoc, class, level), ",")
+    end
+    check("advisor: SLOTS order", table.concat(A.SLOTS, " "),
+        "head neck shoulder back chest wrist hands waist legs feet finger trinket mainhand offhand twohand ranged")
+    check("advisor: ROBE goes in chest", slots("INVTYPE_ROBE", "MAGE", 1), "chest")
+    check("advisor: CLOAK goes in back", slots("INVTYPE_CLOAK", "MAGE", 1), "back")
+    check("advisor: rogue dual-wields one-hand weapons at 10", slots("INVTYPE_WEAPON", "ROGUE", 10), "mainhand,offhand")
+    check("advisor: rogue below 10 does not dual-wield", slots("INVTYPE_WEAPON", "ROGUE", 9), "mainhand")
+    check("advisor: warrior dual-wields at 20", slots("INVTYPE_WEAPON", "WARRIOR", 20), "mainhand,offhand")
+    check("advisor: warrior below 20 does not dual-wield", slots("INVTYPE_WEAPON", "WARRIOR", 19), "mainhand")
+    check("advisor: mage never dual-wields", slots("INVTYPE_WEAPON", "MAGE", 60), "mainhand")
+    check("advisor: main-hand weapon", slots("INVTYPE_WEAPONMAINHAND", "ROGUE", 60), "mainhand")
+    check("advisor: shield is off hand", slots("INVTYPE_SHIELD", "WARRIOR", 60), "offhand")
+    check("advisor: holdable is off hand", slots("INVTYPE_HOLDABLE", "MAGE", 60), "offhand")
+    check("advisor: two-hander", slots("INVTYPE_2HWEAPON", "WARRIOR", 60), "twohand")
+    check("advisor: relic is ranged", slots("INVTYPE_RELIC", "PALADIN", 60), "ranged")
+    check("advisor: thrown is ranged", slots("INVTYPE_THROWN", "ROGUE", 60), "ranged")
+    check("advisor: shirt is not advised", slots("INVTYPE_BODY", "MAGE", 60), "")
+    check("advisor: tabard is not advised", slots("INVTYPE_TABARD", "MAGE", 60), "")
+    check("advisor: unknown equipLoc is not advised", slots("INVTYPE_WHATEVER", "MAGE", 60), "")
+
+    local function usable(id, class, level)
+        local ok, reason, need = A.Usable(GEAR[id], class, level)
+        return tostring(ok) .. " " .. tostring(reason) .. " " .. tostring(need)
+    end
+    check("advisor: warrior wears plate at 40", usable(1, "WARRIOR", 40), "true nil nil")
+    check("advisor: warrior needs 40 for plate", usable(1, "WARRIOR", 39), "false level 40")
+    check("advisor: plate needLevel is the proficiency level", usable(13, "WARRIOR", 30), "false level 40")
+    check("advisor: paladin wears plate at 40", usable(1, "PALADIN", 40), "true nil nil")
+    check("advisor: hunter needs 40 for mail", usable(12, "HUNTER", 39), "false level 40")
+    check("advisor: hunter wears mail at 40", usable(12, "HUNTER", 40), "true nil nil")
+    check("advisor: shaman needs 40 for mail", usable(12, "SHAMAN", 39), "false level 40")
+    check("advisor: shaman wears mail at 40", usable(12, "SHAMAN", 40), "true nil nil")
+    check("advisor: warrior wears mail before 40", usable(12, "WARRIOR", 10), "true nil nil")
+    check("advisor: mage cannot wear plate", usable(1, "MAGE", 60), "false proficiency nil")
+    check("advisor: rogue cannot wear mail", usable(12, "ROGUE", 60), "false proficiency nil")
+    check("advisor: reqLevel blocks a usable type", usable(3, "ROGUE", 24), "false level 25")
+    check("advisor: paladin uses a shield", usable(5, "PALADIN", 20), "true nil nil")
+    check("advisor: mage cannot use a shield", usable(5, "MAGE", 60), "false proficiency nil")
+    check("advisor: mage cannot use an off-hand weapon", usable(14, "MAGE", 60), "false proficiency nil")
+    check("advisor: off-hand weapon needs dual wield", usable(14, "WARRIOR", 19), "false level 20")
+    check("advisor: warrior uses an off-hand weapon at 20", usable(14, "WARRIOR", 20), "true nil nil")
+    check("advisor: shaman cannot use a two-hand axe", usable(15, "SHAMAN", 60), "false proficiency nil")
+    check("advisor: shaman cannot use a two-hand mace",
+        select(2, A.Usable({ 30, 20, 2, "INVTYPE_2HWEAPON", 2, 5 }, "SHAMAN", 60)), "proficiency")
+    check("advisor: warrior uses a two-hand axe", usable(15, "WARRIOR", 60), "true nil nil")
+    check("advisor: paladin uses a libram", usable(6, "PALADIN", 20), "true nil nil")
+    check("advisor: druid cannot use a libram", usable(6, "DRUID", 60), "false proficiency nil")
+    check("advisor: priest uses a wand", usable(8, "PRIEST", 20), "true nil nil")
+    check("advisor: warrior cannot use a wand", usable(8, "WARRIOR", 60), "false proficiency nil")
+    check("advisor: fishing pole is never advised", usable(10, "WARRIOR", 60), "false proficiency nil")
+    check("advisor: shirt has no slot", usable(9, "WARRIOR", 60), "false slot nil")
+    check("advisor: unknown class wears cloth", usable(4, "MONK", 60), "true nil nil")
+    check("advisor: unknown class cannot wear leather", usable(3, "MONK", 60), "false proficiency nil")
+
+    check("advisor: Item reads own data", A.Item(1) and A.Item(1)[4], "INVTYPE_CHEST")
+    check("advisor: Item reads shipped data", A.Item(2) and A.Item(2)[4], "INVTYPE_ROBE")
+    check("advisor: Item of an unknown id", A.Item(999), nil)
+    check("advisor: HasSource from own loot", A.HasSource(1), true)
+    check("advisor: HasSource from shipped loot", A.HasSource(2), true)
+    check("advisor: HasSource of a sourceless item", A.HasSource(11), false)
+
+    check("advisor: Best chest sorts ilvl, quality, id", ids(A.Best("chest", "WARRIOR", 40)), "1,3,4,2,12")
+    check("advisor: Best chest below plate level", ids(A.Best("chest", "WARRIOR", 39)), "3,4,2,12")
+    check("advisor: Best chest for a mage", ids(A.Best("chest", "MAGE", 60)), "4")
+    check("advisor: Best chest for a low hunter", ids(A.Best("chest", "HUNTER", 25)), "3,4")
+    check("advisor: Best hides sourceless items", ids(A.Best("chest", "MAGE", 60, {})), "4")
+    local all = A.Best("chest", "MAGE", 60, { all = true })
+    check("advisor: Best with all adds sourceless items", ids(all), "11,4")
+    check("advisor: Best marks sourceless items", all[1].sourced, false)
+    check("advisor: Best marks sourced items", all[2].sourced, true)
+    check("advisor: Best entry fields", all[2].ilvl .. " " .. all[2].quality .. " " .. all[2].reqLevel, "30 3 25")
+    check("advisor: Best offhand for a dual-wielding rogue", ids(A.Best("offhand", "ROGUE", 20)), "7,14")
+    check("advisor: Best offhand for a rogue below 10", ids(A.Best("offhand", "ROGUE", 9)), "")
+    check("advisor: Best offhand for a warrior below 20", ids(A.Best("offhand", "WARRIOR", 19)), "5")
+    check("advisor: Best offhand for a warrior at 20", ids(A.Best("offhand", "WARRIOR", 20)), "7,14,5")
+    check("advisor: Best mainhand for a rogue", ids(A.Best("mainhand", "ROGUE", 20)), "7")
+    check("advisor: Best ranged for a paladin", ids(A.Best("ranged", "PALADIN", 60)), "6")
+    check("advisor: Best ranged for a priest", ids(A.Best("ranged", "PRIEST", 60)), "8")
+    check("advisor: Best twohand skips the fishing pole", ids(A.Best("twohand", "WARRIOR", 60, { all = true })),
+        "15")
+    check("advisor: Best twohand for a shaman", ids(A.Best("twohand", "SHAMAN", 60, { all = true })), "")
+    check("advisor: Best unknown slot", A.Best("shirt", "WARRIOR", 60), nil)
+
+    local r = A.Rank(2, "WARRIOR", 40)
+    check("advisor: Rank of a listed item", r.rank .. "/" .. r.total .. " " .. r.slot, "4/5 chest")
+    check("advisor: Rank of a listed item is usable", r.usable, true)
+    r = A.Rank(11, "WARRIOR", 40)
+    check("advisor: Rank of a sourceless item", r.rank .. "/" .. r.total, "1/6")
+    check("advisor: Rank marks a sourceless item", r.sourced, false)
+    r = A.Rank(1, "MAGE", 60)
+    check("advisor: Rank of an unusable item", r.rank .. "/" .. r.total, "1/2")
+    check("advisor: Rank says why it is unusable", tostring(r.usable) .. " " .. r.reason, "false proficiency")
+    r = A.Rank(1, "WARRIOR", 30)
+    check("advisor: Rank gives the level needed", r.reason .. " " .. r.needLevel, "level 40")
+    r = A.Rank(7, "ROGUE", 20)
+    check("advisor: Rank ignores dual wield", r.slot .. " " .. r.rank .. "/" .. r.total, "mainhand 1/1")
+    r = A.Rank(14, "WARRIOR", 19)
+    check("advisor: Rank of an off-hand weapon before dual wield",
+        r.slot .. " " .. r.reason .. " " .. r.needLevel .. " " .. r.rank .. "/" .. r.total, "offhand level 20 1/2")
+    r = A.Rank(9, "WARRIOR", 60)
+    check("advisor: Rank of an unranked slot", tostring(r.slot) .. " " .. tostring(r.rank), "nil nil")
+    check("advisor: Rank of an unknown item", A.Rank(999, "WARRIOR", 60), nil)
+end
+
+do
+    local db, shipped = gearData()
+    shipped.items[1] = { 10, 1, 1, "INVTYPE_CHEST", 4, 1 }
+    db.items[2] = { 31, 25, 2, "INVTYPE_ROBE", 4, 3 }
+    local A = loadAdvisor(db, shipped)
+    check("advisor: own item wins over shipped", A.Item(1)[1], 45)
+    check("advisor: own item wins even when shipped only", A.Item(2)[1], 31)
+    check("advisor: Best uses the winning record", ids(A.Best("chest", "WARRIOR", 40)), "1,2,3,4,12")
+end
+
+for name, shipped in pairs({
+    missing = false,
+    garbage = "junk",
+    ["garbage fields"] = { items = "x", loot = 5, kills = true, corpses = {}, names = 7 },
+    ["garbage records"] = { items = { [50] = "bad", [51] = { 1 }, x = { 1, 1, 1, "INVTYPE_CHEST", 4, 1 } },
+                            loot = { "bad", { "x" }, { 50 }, { 50, "c" } } },
+}) do
+    local db = gearData()
+    local A = loadAdvisor(db, shipped)
+    check("advisor: " .. name .. " shipped data uses own data", ids(A.Best("chest", "WARRIOR", 40)), "1,3")
+    check("advisor: " .. name .. " shipped item is unknown", A.Item(2), nil)
+    check("advisor: " .. name .. " shipped Sources", #A.Sources(1), 1)
+    check("advisor: " .. name .. " shipped Rank", A.Rank(1, "WARRIOR", 40).rank, 1)
+    check("advisor: " .. name .. " shipped malformed rows are no source", A.HasSource(50), false)
+end
+
+do
+    local A = loadAdvisor({ schemaVersion = 3, items = "new format", loot = 4 }, select(2, gearData()))
+    check("advisor: newer own db is ignored", ids(A.Best("chest", "WARRIOR", 40)), "4,2,12")
+    check("advisor: newer own db Sources", #A.Sources(2), 1)
+end
+
+do
+    local A = loadAdvisor(nil, nil)
+    check("advisor: no data at all", ids(A.Best("chest", "WARRIOR", 40)), "")
+    check("advisor: no data Sources", #A.Sources(1), 0)
+end
+
+-- Sources: own + shipped merged by max (decision 13), rate per npc (decision 16).
+do
+    local db = {
+        schemaVersion = 2,
+        npcs = { [448] = "Hogger" },
+        loot = {
+            ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 3, coords = { { 1, 1 } } },
+            ["4:c:448:12"] = { item = 4, kind = "c", id = 448, map = 12, count = 2 },
+            ["4:c:449:1429"] = { item = 4, kind = "c", id = 449, map = 1429, count = 2, coords = { { 7, 7 } } },
+            ["5:c:448:1429"] = { item = 5, kind = "c", id = 448, map = 1429, count = 3 },
+            ["6:c:448:1429"] = { item = 6, kind = "c", id = 448, map = 1429, count = 9 },
+        },
+        kills = { [448] = 4 },
+        corpses = { [449] = 3 },
+    }
+    local shipped = {
+        loot = {
+            { 4, "c", 448, 1429, 5, 100, 900, 200, 800 },
+            { 4, "c", 449, 1429, 1, 300, 300 },
+            { 4, "o", 77, 0, 4 },
+        },
+        kills = { [448] = 10 },
+        corpses = { [449] = 2 },
+        names = { enUS = { [448] = "Shipped Hogger", [449] = "Wolf", [77] = "Chest" }, zhTW = { [449] = "狼" } },
+    }
+    local env = { C_Map = { GetMapInfo = function(map)
+        return map == 1429 and { name = "Elwynn Forest" } or nil
+    end } }
+    local A = loadAdvisor(db, shipped, env)
+    local rows = A.Sources(4)
+    local function row(i)
+        local s = rows[i]
+        return ("%s %d %d %d %s %s %s %s"):format(s.kind, s.id, s.map, s.count, tostring(s.name), tostring(s.mapName),
+            tostring(s.rate), tostring(s.rateBasis))
+    end
+    check("sources: four merged rows", #rows, 4)
+    check("sources: max count, shipped kills basis", row(1), "c 448 1429 5 Hogger Elwynn Forest 0.5 kill")
+    check("sources: object row has no rate or name", row(2), "o 77 0 4 nil nil nil nil")
+    check("sources: own-only map shares the npc rate", row(3), "c 448 12 2 Hogger nil 0.5 kill")
+    check("sources: own corpse basis wins with the larger count", row(4),
+        "c 449 1429 2 Wolf Elwynn Forest " .. tostring(2 / 3) .. " corpse")
+    check("sources: coords from the larger count", rows[1].coords[2][1], 200)
+    check("sources: own coords when own count is larger", rows[4].coords[1][1], 7)
+    check("sources: no coords is an empty list", #rows[3].coords, 0)
+    check("sources: unknown item", #A.Sources(999), 0)
+    check("sources: a dataset without drops gives no rate", A.Sources(5)[1].rate, 0.75)
+    check("sources: a rate over 100% is no rate", tostring(A.Sources(6)[1].rate), "nil")
+    check("advisor: MapName of map 0", A.MapName(0), nil)
+    check("advisor: MapName of an unknown map", A.MapName(5), nil)
+end
+
+do
+    local db = {
+        schemaVersion = 2,
+        loot = {
+            ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 1 },
+            ["4:c:449:1429"] = { item = 4, kind = "c", id = 449, map = 1429, count = 1 },
+            ["4:c:451:1429"] = { item = 4, kind = "c", id = 451, map = 1429, count = 1 },
+        },
+        kills = { [448] = 2, [452] = 7 },
+        corpses = { [449] = 4, [451] = 2 },
+    }
+    local shipped = {
+        loot = { { 4, "c", 448, 1429, 3 }, { 4, "c", 449, 1429, 2 }, { 4, "c", 450, 1429, 1 },
+                 { 4, "c", 451, 1429, 1 }, { 4, "c", 452, 1429, 1 } },
+        kills = { [451] = 5 },
+        corpses = { [448] = 50, [449] = 4, [452] = 2 },
+        names = { zhTW = { [449] = "狼" } },
+    }
+    local A = loadWithDB(db, "zhTW", { shipped = shipped }).Advisor
+    local rows = A.Sources(4)
+    check("sources: own kills beat larger shipped corpses", rows[1].rateBasis .. " " .. rows[1].rate, "kill 0.5")
+    check("sources: corpse tie goes to shipped", rows[2].rateBasis .. " " .. rows[2].rate, "corpse 0.5")
+    check("sources: shipped name in the client locale", rows[2].name, "狼")
+    check("sources: no denominator, no rate", tostring(rows[3].rate) .. " " .. tostring(rows[3].rateBasis),
+        "nil nil")
+    check("sources: unnamed npc", rows[3].name, nil)
+    check("sources: shipped kills beat own corpses", rows[4].id .. " " .. rows[4].rateBasis .. " " .. rows[4].rate,
+        "451 kill 0.2")
+    check("sources: own kills without own drops are ignored",
+        rows[5].id .. " " .. rows[5].rateBasis .. " " .. rows[5].rate, "452 corpse 0.5")
+end
+
 if failures > 0 then
     os.exit(1)
 end
