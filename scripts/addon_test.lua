@@ -12,10 +12,22 @@ local function tocFiles()
     return files
 end
 
+local SHIPPED_FILE = "Data/Loot.lua"
+
+local function exists(path)
+    local f = io.open(path)
+    if f then
+        f:close()
+    end
+    return f ~= nil
+end
+
 -- Loads the addon as a client with the given locale would; returns its namespace,
 -- the printed lines, a function that fires ADDON_LOADED, the global environment, a function that fires any event
 -- and the event frame. opts.env sets globals before any file runs; opts.blockCLEU makes registering the combat log
--- raise, as a client that forbids it would.
+-- raise, as a client that forbids it would. opts.shipped, a table, stands in for the generated Data/Loot.lua;
+-- otherwise that file is skipped so tests never depend on committed data. opts.toc replaces the toc's file list;
+-- its missing files are skipped, as WoW does. A missing file the real toc lists fails the load.
 local function loadAddon(locale, opts)
     opts = opts or {}
     local printed = {}
@@ -51,12 +63,18 @@ local function loadAddon(locale, opts)
     end
 
     local ns = {}
-    for _, file in ipairs(tocFiles()) do
-        local chunk = assert(loadfile(addonDir .. file, "t", env))
-        if setfenv then
-            setfenv(chunk, env)
+    for _, file in ipairs(opts.toc or tocFiles()) do
+        if file == SHIPPED_FILE then
+            if type(opts.shipped) == "table" then
+                ns.Shipped = opts.shipped
+            end
+        elseif not opts.toc or exists(addonDir .. file) then
+            local chunk = assert(loadfile(addonDir .. file, "t", env))
+            if setfenv then
+                setfenv(chunk, env)
+            end
+            chunk("Tandem", ns)
         end
-        chunk("Tandem", ns)
     end
 
     local function fire(event, ...)
@@ -90,6 +108,24 @@ end
 
 local ns = loadAddon("zhTW")
 check("zhTW falls back to English for a missing key", ns.L["Not translated yet"], "Not translated yet")
+
+-- Shipped data: the toc lists the generated file, tests never read it.
+do
+    local listed = false
+    for _, file in ipairs(tocFiles()) do
+        listed = listed or file == SHIPPED_FILE
+    end
+    check("toc lists the shipped data", listed, true)
+    check("shipped data is skipped by default", loadAddon("enUS").Shipped, nil)
+    local shipped = { contributors = 1 }
+    check("opts.shipped stands in for the shipped data", loadAddon("enUS", { shipped = shipped }).Shipped, shipped)
+    check("opts.shipped = false skips the shipped data", loadAddon("enUS", { shipped = false }).Shipped, nil)
+    local toc = tocFiles()
+    table.insert(toc, 1, "Data/Missing.lua")
+    local _, printed, fireLoaded = loadAddon("enUS", { toc = toc })
+    fireLoaded()
+    check("a missing toc file does not break the load", printed[1], "Tandem loaded")
+end
 
 -- Store: TandemDB validation and migration.
 
