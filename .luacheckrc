@@ -1,8 +1,10 @@
 std = "lua51"
 max_line_length = 120
 
--- Saved variables the addon writes.
+-- Globals the addon writes: saved variables and slash command registration.
 globals = {
+    "SLASH_TANDEM1",
+    "SlashCmdList",
     "TandemDB",
 }
 

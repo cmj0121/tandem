@@ -34,6 +34,7 @@ local function loadAddon(locale)
         print = function(msg)
             printed[#printed + 1] = msg
         end,
+        SlashCmdList = {},
     }, { __index = _G })
 
     local ns = {}
@@ -209,6 +210,147 @@ do
     end
     check("Safe hides a secret value", addon.Store.Safe("secret"), nil)
     check("Safe passes a plain value", addon.Store.Safe("plain"), "plain")
+end
+
+-- Commands: /tandem parsing and output.
+
+-- Runs msg through /tandem; returns the lines it printed.
+local function run(addon, printed, msg)
+    local from = #printed
+    addon.Commands.Run(msg)
+    local out = {}
+    for i = from + 1, #printed do
+        out[#out + 1] = printed[i]
+    end
+    return out
+end
+
+-- Replaces ns.Scanner with a stub that records its calls.
+local function stubScanner(addon)
+    local calls = {}
+    addon.Scanner = {
+        Start = function(opts)
+            calls[#calls + 1] = ("start %g %d"):format(opts.rate, opts.cap)
+        end,
+        SetCursor = function(id)
+            calls[#calls + 1] = "cursor " .. id
+        end,
+        Stop = function()
+            calls[#calls + 1] = "stop"
+        end,
+    }
+    return calls
+end
+
+do
+    local addon, printed, env = loadWithDB(nil)
+    local ParseRate = addon.Commands.ParseRate
+    check("ParseRate 10/s", ParseRate("10/s"), 10)
+    check("ParseRate 15/m", ParseRate("15/m"), 0.25)
+    check("ParseRate 1/m lower bound", ParseRate("1/m"), 1 / 60)
+    check("ParseRate 50/s upper bound", ParseRate("50/s"), 50)
+    check("ParseRate 3000/m upper bound", ParseRate("3000/m"), 50)
+    check("ParseRate 0/s", ParseRate("0/s"), nil)
+    check("ParseRate 51/s", ParseRate("51/s"), nil)
+    check("ParseRate 3001/m", ParseRate("3001/m"), nil)
+    check("ParseRate garbage", ParseRate("fast"), nil)
+    check("ParseRate no unit", ParseRate("10"), nil)
+    check("ParseRate fraction", ParseRate("1.5/s"), nil)
+    check("ParseRate nil", ParseRate(nil), nil)
+
+    check("SLASH_TANDEM1 is /tandem", env.SLASH_TANDEM1, "/tandem")
+    check("SlashCmdList.TANDEM is Run", env.SlashCmdList.TANDEM, addon.Commands.Run)
+
+    local help = run(addon, printed, "")
+    check("empty input prints usage", help[1], "Tandem commands:")
+    check("usage lists scan", help[3], "  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)")
+    check("help prints usage", run(addon, printed, "help")[1], "Tandem commands:")
+    check("unknown subcommand prints usage", run(addon, printed, "dance")[1], "Tandem commands:")
+    check("usage line count", #help, 5)
+
+    check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
+    check("scan from without a scanner", run(addon, printed, "scan from 5")[1], "Tandem: scanner not available")
+    check("bad scan without a scanner prints usage", run(addon, printed, "scan 0/s")[1], "Tandem commands:")
+
+    local calls = stubScanner(addon)
+    for _, case in ipairs({
+        { "scan", "start 10 100" },
+        { "SCAN", "start 10 100" },
+        { "scan 5/s", "start 5 100" },
+        { "scan 500", "start 10 500" },
+        { "scan 60/m 20", "start 1 20" },
+        { "scan 20 60/m", "start 1 20" },
+        { "  scan   2/s   7  ", "start 2 7" },
+        { "scan 100000", "start 10 100000" },
+        { "scan from 2500", "cursor 2500" },
+        { "scan stop", "stop" },
+    }) do
+        local from = #calls
+        local out = run(addon, printed, case[1])
+        check(("%q dispatches %s"):format(case[1], case[2]), calls[from + 1], case[2])
+        check(("%q prints nothing itself"):format(case[1]), #out, 0)
+    end
+    for _, msg in ipairs({
+        "scan 0/s", "scan 51/s", "scan fast", "scan 0", "scan 100001", "scan 1.5", "scan 5/s 6/s", "scan 10 20",
+        "scan from", "scan from x", "scan from 0", "scan from 5 6", "scan stop now",
+    }) do
+        local from = #calls
+        local out = run(addon, printed, msg)
+        check(("%q prints usage"):format(msg), out[1], "Tandem commands:")
+        check(("%q does not dispatch"):format(msg), #calls, from)
+    end
+end
+
+do
+    local addon, printed = loadWithDB(nil)
+    local out = run(addon, printed, "count")
+    check("count empty: items", out[1], "Tandem: 0 known items, 0 non-equippable")
+    check("count empty: scan", out[2], "Scan cursor: 1, found IDs: none")
+    check("count empty: loot", out[3], "Loot entries: 0, npc names: 0")
+    check("count empty: unsaved", out[4], "Unsaved records: 0 (saved on /reload or logout)")
+    check("count empty: last run", out[5], "Last run: never")
+    check("count empty line count", #out, 5)
+end
+
+do
+    local addon, printed = loadWithDB({
+        schemaVersion = 1,
+        items = { [25] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 }, [30] = { 12, 6, 2, "INVTYPE_FEET", 4, 1 } },
+        scan = { cursor = 1201, nonEquippable = 40, minFound = 25, maxFound = 1180, blocks = {},
+                 lastRun = { from = 1, to = 1200, rate = 10, processed = 1200, skipped = 3, hits = 42, misses = 1158,
+                             equippable = 2, deferred = 5, timeouts = 1, elapsed = 125.27 } },
+        npcs = { [100] = "Hogger" },
+        loot = { ["25:c:100:1429"] = { item = 25, kind = "c", id = 100, map = 1429, count = 2, coords = {} } },
+    })
+    addon.Store.SetNpcName(101, "Defias")
+    local out = run(addon, printed, "count")
+    check("count: items", out[1], "Tandem: 2 known items, 40 non-equippable")
+    check("count: scan", out[2], "Scan cursor: 1201, found IDs: 25-1180")
+    check("count: loot", out[3], "Loot entries: 1, npc names: 2")
+    check("count: unsaved", out[4], "Unsaved records: 1 (saved on /reload or logout)")
+    check("count: last run", out[5], "Last run: IDs 1-1200 at 10/s in 125.3s, 1200 processed, 3 skipped")
+    check("count: last run results",
+        out[6], "  42 hits (2 equippable), 1158 misses, 5 deferred, 1 timeouts")
+end
+
+do
+    local addon, printed = loadWithDB({ schemaVersion = 1, scan = { lastRun = { rate = 0.25, hits = 3 } } })
+    local out = run(addon, printed, "count")
+    check("count: partial last run", out[5], "Last run: IDs ?-? at 15/m in ?s, ? processed, ? skipped")
+end
+
+do
+    local addon, printed = loadWithDB({ schemaVersion = 2, items = "new format" })
+    local out = run(addon, printed, "count")
+    check("count on a newer db does not fail", out[1], "Tandem: 0 known items, ? non-equippable")
+    check("count on a newer db says read-only", out[#out],
+        "Recording is off: saved data uses a newer schema")
+end
+
+do
+    local addon, printed = loadWithDB(nil, "zhTW")
+    check("zhTW count line", run(addon, printed, "count")[5], "上次掃描：從未執行")
+    check("zhTW scanner missing line", run(addon, printed, "scan")[1], "Tandem：掃描器無法使用")
 end
 
 if failures > 0 then
