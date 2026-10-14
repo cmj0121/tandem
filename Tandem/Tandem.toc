@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: Tandem
+## Notes: Cowork with your WoW player
+## Author: cmj
+## Version: 0.1.0
+
+Tandem.lua
