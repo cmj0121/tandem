@@ -236,6 +236,9 @@ A rate is printed only for creatures, from one of two counts per npc:
 
 - Kills: your character's killing blows, read from the combat log when the client allows it (`/tandem count` says
   whether it does). Kills by pets or party members are not counted. Kills in combat are stored when combat ends.
+  WoW Forever 1.60.1 does not allow it: `CombatLogGetCurrentEventInfo` and `C_CombatLog.GetCurrentEventInfo` are
+  absent and registering for the combat log is blocked, so `count` reports `unavailable` and every rate there is per
+  looted corpse.
 - Looted corpses: each distinct corpse you open a loot window on, gold-only corpses included. Corpses with nothing to
   loot cannot be opened, so a rate per looted corpse is an upper bound.
 

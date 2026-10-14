@@ -226,7 +226,9 @@ To contribute: type /reload, then run make import
 只有生物會印出掉落率，依每個 NPC 的下列兩種計數之一計算：
 
 - 擊殺：你角色的最後一擊，在用戶端允許時從戰鬥紀錄讀取（`/tandem count` 會顯示是否允許）。寵物或隊友的擊殺不計入。
-  戰鬥中的擊殺會在戰鬥結束後才儲存。
+  戰鬥中的擊殺會在戰鬥結束後才儲存。WoW Forever 1.60.1 不允許：`CombatLogGetCurrentEventInfo` 與
+  `C_CombatLog.GetCurrentEventInfo` 都不存在，註冊戰鬥紀錄事件也會被擋下，因此 `count` 顯示 `unavailable`，
+  所有掉落率都以拾取屍體計算。
 - 拾取屍體：你開啟過拾取視窗的每一具不同的屍體，只有金錢的屍體也算。沒有東西可拾取的屍體無法開啟，因此以拾取屍體
   計算的掉落率是上限。
 
