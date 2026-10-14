@@ -6,7 +6,12 @@
 ## Author: cmj
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\Tandem\Media\icon
+## SavedVariables: TandemDB
 
 Locales\enUS.lua
 Locales\zhTW.lua
+Store.lua
+Scanner.lua
+Loot.lua
+Commands.lua
 Tandem.lua
