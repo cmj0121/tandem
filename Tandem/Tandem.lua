@@ -10,5 +10,18 @@ frame:SetScript("OnEvent", function(self, event, loadedName)
     end
 
     self:UnregisterEvent(event)
-    print(ns.L["%s loaded"]:format(addonName))
+    local L = ns.L
+    local db, report = ns.Store.Load(TandemDB)
+    TandemDB = db
+    print(L["%s loaded"]:format(addonName))
+
+    if report.status == "newer" then
+        print(L["%s: saved data uses newer schema %d; recording is off until the addon is updated"]:format(
+            addonName, report.version))
+    elseif report.status == "reset" then
+        print(L["%s: saved data was unreadable and has been reset"]:format(addonName))
+    end
+    if report.dropped > 0 then
+        print(L["%s: dropped %d invalid saved entries"]:format(addonName, report.dropped))
+    end
 end)
