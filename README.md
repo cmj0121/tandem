@@ -2,6 +2,8 @@
 
 > Cowork with your WoW player
 
+English | [繁體中文](README.zh-TW.md)
+
 Tandem is a World of Warcraft addon. It is an empty shell for now: it prints one line in chat when it loads.
 
 ## Install
