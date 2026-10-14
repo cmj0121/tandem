@@ -72,11 +72,11 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 
 ## Interface number
 
-`Tandem/Tandem.toc` declares `## Interface: 16001`. This number was derived from the client version `1.60.1` and has
-not been confirmed in game. If it is wrong, the AddOns list marks Tandem as out of date and does not load it unless
-**Load out of date AddOns** is ticked.
+`Tandem/Tandem.toc` declares `## Interface: 16001`, confirmed in game on client `1.60.1`. When a client update changes
+the number, the AddOns list marks Tandem as out of date and does not load it unless **Load out of date AddOns** is
+ticked.
 
-To read the client's real number, type in chat:
+To read the client's current number, type in chat:
 
 ```text
 /dump (select(4, GetBuildInfo()))
@@ -84,6 +84,11 @@ To read the client's real number, type in chat:
 
 Put the printed number in the `## Interface:` line of `Tandem/Tandem.toc`. With a copy, run `make install MODE=copy`
 again. Then restart the client: changes to a `.toc` file may not be picked up by `/reload`.
+
+## Icon
+
+The AddOns list shows `Tandem/Media/icon.tga` (64×64, 32-bit with alpha), set by `## IconTexture:` in
+`Tandem/Tandem.toc`. Its source image and design history are in `assets/`. Restart the client after changing it.
 
 ## Development
 

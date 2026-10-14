@@ -3,5 +3,6 @@
 ## Notes: Cowork with your WoW player
 ## Author: cmj
 ## Version: 0.1.0
+## IconTexture: Interface\AddOns\Tandem\Media\icon
 
 Tandem.lua

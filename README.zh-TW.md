@@ -72,10 +72,10 @@ make install MODE=copy
 
 ## Interface number
 
-`Tandem/Tandem.toc` 宣告了 `## Interface: 16001`。這個數字是由用戶端版本 `1.60.1` 推算而來，尚未在遊戲中確認。
-若數字錯誤，AddOns 清單會將 Tandem 標示為過期，除非勾選 **Load out of date AddOns**，否則不會載入它。
+`Tandem/Tandem.toc` 宣告了 `## Interface: 16001`，已在用戶端 `1.60.1` 的遊戲中確認。用戶端更新後若這個數字改變，
+AddOns 清單會將 Tandem 標示為過期，除非勾選 **Load out of date AddOns**，否則不會載入它。
 
-要查詢用戶端實際的數字，請在聊天視窗輸入：
+要查詢用戶端目前的數字，請在聊天視窗輸入：
 
 ```text
 /dump (select(4, GetBuildInfo()))
@@ -83,6 +83,11 @@ make install MODE=copy
 
 把印出的數字填入 `Tandem/Tandem.toc` 的 `## Interface:` 這一行。若使用的是複本，請再執行一次
 `make install MODE=copy`。接著重新啟動用戶端：`.toc` 檔案的變更不一定會被 `/reload` 讀取。
+
+## 圖示
+
+AddOns 清單顯示的是 `Tandem/Media/icon.tga`（64×64、32-bit 含 alpha），由 `Tandem/Tandem.toc` 的 `## IconTexture:`
+指定。原始圖檔與設計紀錄放在 `assets/`。修改圖示後要重新啟動用戶端。
 
 ## 開發
 

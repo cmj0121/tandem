@@ -1,0 +1,13 @@
+candidates: 3
+assets:
+  icon:
+    current: candidates/icon-r1-1.png
+    frozen: []
+    local:
+      motif: two equal gold chevrons side by side, pointing right (moving forward together)
+      output: 64x64, exported as Tandem/Media/icon.tga (32-bit, alpha)
+    history:
+      - base: null
+        change: design the Tandem addon icon - dark rounded-square base, gold border, two same-direction gold chevrons
+        scope: whole image, 64x64, readable at ~20px in the AddOn list
+        picked: candidates/icon-r1-1.png
