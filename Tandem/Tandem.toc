@@ -10,8 +10,11 @@
 
 Locales\enUS.lua
 Locales\zhTW.lua
+Data\Loot.lua
 Store.lua
 Scanner.lua
 Loot.lua
+Kills.lua
+Advisor.lua
 Commands.lua
 Tandem.lua

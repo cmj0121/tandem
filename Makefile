@@ -3,6 +3,7 @@ ADDON  := Tandem
 FLAVOR ?= _classic_beta_
 MODE   ?= link
 DATA   ?= data
+OUT    ?= $(ADDON)/Data/Loot.lua
 
 export FLAVOR
 
@@ -55,7 +56,7 @@ uninstall:			# remove the installed addon (only a symlink, unless MODE=copy)
 		echo "not installed: $$dest"; \
 	fi
 
-import:				# import every account's loot log into data/ (WOW_DIR=..., DATA=... to override)
+import:				# import every account's data into data/contributions and Tandem/Data/Loot.lua (WOW_DIR=, DATA=, OUT= to override)
 	@wow=$$(scripts/wow-dir.sh) && \
 	wtf="$$wow/$(FLAVOR)/WTF" && \
 	locale=$$(sed -n 's/^SET textLocale "\([A-Za-z]*\)".*/\1/p' "$$wtf/Config.wtf" 2>/dev/null | head -n 1) && \
@@ -70,7 +71,7 @@ import:				# import every account's loot log into data/ (WOW_DIR=..., DATA=... t
 	if [ $$# -eq 0 ]; then \
 		echo "error: no $$wtf/Account/*/SavedVariables/Tandem.lua; log out or /reload in game first" >&2; exit 1; \
 	fi && \
-	lua scripts/import.lua "$(DATA)" "$$@"
+	lua scripts/import.lua "$(DATA)" "$(OUT)" "$$@"
 
 upgrade:			# upgrade all the necessary packages
 	pre-commit autoupdate

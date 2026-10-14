@@ -4,7 +4,8 @@ local _, ns = ...
 local Store = { unsaved = 0, readOnly = false }
 ns.Store = Store
 
-local SCHEMA = 1
+local SCHEMA = 2
+Store.SCHEMA = SCHEMA
 local MAX_COORDS = 5
 local KINDS = { c = true, o = true, ["?"] = true }
 local RUN_FIELDS = {
@@ -43,6 +44,8 @@ local function newDB()
         scan = { cursor = 1, nonEquippable = 0, blocks = {} },
         npcs = {},
         loot = {},
+        kills = {},
+        corpses = {},
     }
 end
 
@@ -149,6 +152,16 @@ local function migrate(raw, report)
             drop()
         end
     end
+
+    for _, field in ipairs({ "kills", "corpses" }) do
+        for npc, n in pairs(entries(raw[field])) do
+            if isInt(npc, 1) and isInt(n, 1) then
+                db[field][npc] = n
+            else
+                drop()
+            end
+        end
+    end
     return db
 end
 
@@ -236,6 +249,38 @@ function Store.SetNpcName(npcID, name)
     return true
 end
 
+local function addCount(field, npcID)
+    if Store.readOnly or not isInt(npcID, 1) then
+        return false
+    end
+    local t = Store.db[field]
+    t[npcID] = (t[npcID] or 0) + 1
+    Store.unsaved = Store.unsaved + 1
+    return true
+end
+
+-- Counts one kill of an npc by the player; false when invalid or read-only.
+function Store.AddKill(npcID)
+    return addCount("kills", npcID)
+end
+
+-- Counts one looted corpse of an npc; false when invalid or read-only.
+function Store.AddCorpse(npcID)
+    return addCount("corpses", npcID)
+end
+
+local function sum(t)
+    local n = 0
+    if type(t) == "table" then
+        for _, v in pairs(t) do
+            if isNum(v) then
+                n = n + v
+            end
+        end
+    end
+    return n
+end
+
 function Store.Counts()
     local db = Store.db
     local scan = type(db.scan) == "table" and db.scan or {}
@@ -247,9 +292,30 @@ function Store.Counts()
         maxFound = scan.maxFound,
         loot = count(db.loot),
         npcs = count(db.npcs),
+        kills = sum(db.kills),
+        corpses = sum(db.corpses),
+        killNpcs = count(db.kills),
         unsaved = Store.unsaved,
         readOnly = Store.readOnly,
     }
+end
+
+local GUID_KINDS = { Creature = "c", Vehicle = "c", GameObject = "o" }
+
+-- Returns kind ("c" creature/vehicle, "o" game object), id for a GUID ("Type-0-server-instance-zone-id-spawn"),
+-- or nil for any other GUID.
+function Store.ParseGUID(guid)
+    if type(guid) ~= "string" then
+        return nil
+    end
+    local fields = {}
+    for field in guid:gmatch("[^-]+") do
+        fields[#fields + 1] = field
+    end
+    local kind, id = GUID_KINDS[fields[1]], tonumber(fields[6])
+    if kind and id then
+        return kind, id
+    end
 end
 
 -- Returns v, or nil when the client marks it secret.
