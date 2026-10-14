@@ -716,6 +716,196 @@ do
     check("zhTW paused line", ctx.printed[#ctx.printed], "Tandem：戰鬥中，掃描暫停")
 end
 
+-- Loot: loot-source recording with a stubbed loot, map and unit API.
+
+local HOGGER = "Creature-0-1-0-12-448-0000ABCD"
+local WOLF = "Creature-0-1-0-12-299-0000BEEF"
+local CHEST = "GameObject-0-1-0-12-2843-00001234"
+
+-- Returns t[i], t[i + 1], ... (unpack moved between Lua versions).
+local function spread(t, i)
+    i = i or 1
+    if i <= #t then
+        return t[i], spread(t, i + 1)
+    end
+end
+
+-- Loads the addon with a loot window of slots ({link, sources = {guid, qty, ...}}); the player stands at
+-- map 1429, 0.4123/0.6789, targeting nobody unless ctx.units is set.
+local function loadLoot(db)
+    local addon, printed, env, fire = loadWithDB(db or { schemaVersion = 1 })
+    local ctx = { addon = addon, printed = printed, env = env, fire = fire, slots = {}, combat = false, units = {} }
+    env.InCombatLockdown = function()
+        return ctx.combat
+    end
+    env.GetNumLootItems = function()
+        return #ctx.slots
+    end
+    env.GetLootSlotLink = function(slot)
+        return ctx.slots[slot][1]
+    end
+    env.GetLootSourceInfo = function(slot)
+        return spread(ctx.slots[slot].sources or {})
+    end
+    env.C_Map = {
+        GetBestMapForUnit = function(unit)
+            return unit == "player" and 1429 or nil
+        end,
+        GetPlayerMapPosition = function(map, unit)
+            if map == 1429 and unit == "player" then
+                return {
+                    GetXY = function()
+                        return 0.4123, 0.6789
+                    end,
+                }
+            end
+        end,
+    }
+    env.UnitGUID = function(unit)
+        return ctx.units[unit] and ctx.units[unit][1]
+    end
+    env.UnitName = function(unit)
+        return ctx.units[unit] and ctx.units[unit][2]
+    end
+    function ctx.loot()
+        fire("LOOT_READY")
+        fire("LOOT_CLOSED")
+    end
+    function ctx.entry(key)
+        return env.TandemDB.loot[key]
+    end
+    return ctx
+end
+
+local function link(id)
+    return "|cffffffff|Hitem:" .. id .. "::::::::60:::::|h[Item " .. id .. "]|h|r"
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.units.target = { HOGGER, "Hogger" }
+    ctx.loot()
+    local e = ctx.entry("25:c:448:1429")
+    check("loot: creature source recorded", e and e.count, 1)
+    check("loot: npc id from GUID", e and e.id, 448)
+    check("loot: coords rounded", e and e.coords[1][1] .. "," .. e.coords[1][2], "412,678")
+    check("loot: name via target", ctx.env.TandemDB.npcs[448], "Hogger")
+    check("loot: one entry", ctx.addon.Store.Counts().loot, 1)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { WOLF, 1 } } }
+    ctx.units.target = { HOGGER, "Hogger" }
+    ctx.units.mouseover = { WOLF, "Wolf" }
+    ctx.loot()
+    check("loot: name via mouseover", ctx.env.TandemDB.npcs[299], "Wolf")
+    check("loot: non-matching target name not stored", ctx.env.TandemDB.npcs[448], nil)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { WOLF, 1 } } }
+    ctx.loot()
+    check("loot: no name without a GUID match", ctx.addon.Store.Counts().npcs, 0)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = {
+        { link(30), sources = { HOGGER, 2, WOLF, 1, "Player-1-00000001", 1 } },
+        { link(31), sources = { CHEST, 1, "Vehicle-0-1-0-12-500-0000AAAA", 1 } },
+        { nil },
+        { "|cff9d9d9d|Hcurrency:1220|h[Resources]|h|r", sources = { HOGGER, 1 } },
+    }
+    ctx.loot()
+    check("loot: multi-source slot gives one entry per source (hogger)", ctx.entry("30:c:448:1429").count, 1)
+    check("loot: multi-source slot gives one entry per source (wolf)", ctx.entry("30:c:299:1429").count, 1)
+    check("loot: gameobject source", ctx.entry("31:o:2843:1429").count, 1)
+    check("loot: vehicle source is a creature", ctx.entry("31:c:500:1429").count, 1)
+    check("loot: player source and money/currency slots skipped", ctx.addon.Store.Counts().loot, 4)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } }, { link(26) } }
+    ctx.env.GetLootSourceInfo = nil
+    ctx.loot()
+    check("loot: missing GetLootSourceInfo records ?", ctx.entry("25:?:0:1429").count, 1)
+    ctx.env.GetLootSourceInfo = function() end
+    ctx.loot()
+    check("loot: empty GetLootSourceInfo records ?", ctx.entry("26:?:0:1429").count, 2)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.env.C_Map = nil
+    ctx.loot()
+    local e = ctx.entry("25:c:448:0")
+    check("loot: missing C_Map uses map 0", e and e.count, 1)
+    check("loot: missing C_Map has no coords", e and #e.coords, 0)
+    ctx.env.C_Map = { GetBestMapForUnit = function() return 1429 end }
+    ctx.loot()
+    check("loot: missing GetPlayerMapPosition keeps the map", #ctx.entry("25:c:448:1429").coords, 0)
+    ctx.env.C_Map.GetPlayerMapPosition = function() end
+    ctx.loot()
+    check("loot: nil position object keeps the map", ctx.entry("25:c:448:1429").count, 2)
+    check("loot: nil position object has no coords", #ctx.entry("25:c:448:1429").coords, 0)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1, WOLF, 1 } } }
+    ctx.units.target = { HOGGER, "Hogger" }
+    ctx.env.issecretvalue = function(v)
+        return v == HOGGER
+    end
+    ctx.loot()
+    check("loot: secret GUID skipped", ctx.entry("25:c:448:1429"), nil)
+    check("loot: other source of the slot kept", ctx.entry("25:c:299:1429").count, 1)
+    check("loot: secret GUID records no name", ctx.env.TandemDB.npcs[448], nil)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.combat = true
+    ctx.loot()
+    check("loot: skipped in combat", ctx.addon.Store.Counts().loot, 0)
+    ctx.combat = false
+    ctx.fire("LOOT_READY")
+    check("loot: a later LOOT_READY in the same window records after combat", ctx.addon.Store.Counts().loot, 1)
+end
+
+do
+    local ctx = loadLoot({ schemaVersion = 2, loot = {} })
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.loot()
+    check("loot: read-only db is not written", next(ctx.env.TandemDB.loot), nil)
+    check("loot: read-only keeps unsaved at 0", ctx.addon.Store.unsaved, 0)
+end
+
+do
+    local ctx = loadLoot()
+    ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
+    ctx.fire("LOOT_READY")
+    ctx.fire("LOOT_READY")
+    check("loot: double LOOT_READY records once", ctx.entry("25:c:448:1429").count, 1)
+    ctx.fire("LOOT_CLOSED")
+    ctx.fire("LOOT_READY")
+    check("loot: a new window records again", ctx.entry("25:c:448:1429").count, 2)
+    ctx.fire("LOOT_CLOSED")
+
+    ctx.slots = { { link(40), sources = { CHEST, 1 } } }
+    ctx.units.target = { HOGGER, "Hogger" }
+    ctx.loot()
+    local out = run(ctx.addon, ctx.printed, "count")
+    check("count reflects loot entries", out[3], "Loot entries: 2, npc names: 0")
+    check("count reflects unsaved loot", out[4], "Unsaved records: 3 (saved on /reload or logout)")
+end
+
 if failures > 0 then
     os.exit(1)
 end

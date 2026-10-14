@@ -5,6 +5,8 @@ ns.name = addonName
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+frame:RegisterEvent("LOOT_READY")
+frame:RegisterEvent("LOOT_CLOSED")
 
 local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
@@ -33,5 +35,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         onLoaded(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         ns.Scanner.OnItemInfo(...)
+    elseif event == "LOOT_READY" then
+        ns.Loot.OnLootReady()
+    elseif event == "LOOT_CLOSED" then
+        ns.Loot.OnLootClosed()
     end
 end)
