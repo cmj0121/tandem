@@ -10,7 +10,12 @@ globals = {
 
 -- WoW API used by the addon; add new ones here as the addon grows.
 read_globals = {
+    "C_Item",
+    "C_Timer",
     "CreateFrame",
     "GetLocale",
+    "GetTime",
+    "InCombatLockdown",
     "issecretvalue",
+    "time",
 }

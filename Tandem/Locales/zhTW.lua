@@ -30,3 +30,14 @@ L["  %s hits (%s equippable), %s misses, %s deferred, %s timeouts"] =
     "  命中 %s 個（可裝備 %s 個），未命中 %s 個，延後 %s 個，逾時 %s 個"
 L["Last run: never"] = "上次掃描：從未執行"
 L["Recording is off: saved data uses a newer schema"] = "記錄已停用：存檔資料使用較新的結構版本"
+
+L["Tandem: scan already running"] = "Tandem：掃描已在執行中"
+L["Tandem: item API not available"] = "Tandem：物品 API 無法使用"
+L["Tandem: timer API not available"] = "Tandem：計時器 API 無法使用"
+L["Tandem: scanning %d IDs from ID %d"] = "Tandem：掃描 %d 個 ID，從 ID %d 開始"
+L["Tandem: no scan running"] = "Tandem：目前沒有進行中的掃描"
+L["Tandem: scan stopped, IDs %s-%s in %ss, %s processed, %s skipped"] =
+    "Tandem：掃描已停止，ID %s-%s，耗時 %s 秒，處理 %s 個，略過 %s 個"
+L["Tandem: stop the scan before moving the cursor"] = "Tandem：請先停止掃描再移動掃描位置"
+L["Tandem: next scan starts at ID %d"] = "Tandem：下次掃描從 ID %d 開始"
+L["Tandem: scan paused in combat"] = "Tandem：戰鬥中，掃描暫停"

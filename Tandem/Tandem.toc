@@ -11,5 +11,6 @@
 Locales\enUS.lua
 Locales\zhTW.lua
 Store.lua
+Scanner.lua
 Commands.lua
 Tandem.lua

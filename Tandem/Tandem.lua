@@ -4,7 +4,9 @@ ns.name = addonName
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, loadedName)
+frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+
+local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
         return
     end
@@ -23,5 +25,13 @@ frame:SetScript("OnEvent", function(self, event, loadedName)
     end
     if report.dropped > 0 then
         print(L["%s: dropped %d invalid saved entries"]:format(addonName, report.dropped))
+    end
+end
+
+frame:SetScript("OnEvent", function(self, event, ...)
+    if event == "ADDON_LOADED" then
+        onLoaded(self, event, ...)
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        ns.Scanner.OnItemInfo(...)
     end
 end)

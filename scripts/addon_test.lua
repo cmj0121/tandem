@@ -13,7 +13,7 @@ local function tocFiles()
 end
 
 -- Loads the addon as a client with the given locale would; returns its namespace,
--- the printed lines, a function that fires ADDON_LOADED, and the global environment.
+-- the printed lines, a function that fires ADDON_LOADED, the global environment and a function that fires any event.
 local function loadAddon(locale)
     local printed = {}
     local handler
@@ -46,10 +46,13 @@ local function loadAddon(locale)
         chunk("Tandem", ns)
     end
 
-    local function fireLoaded()
-        handler(frame, "ADDON_LOADED", "Tandem")
+    local function fire(event, ...)
+        handler(frame, event, ...)
     end
-    return ns, printed, fireLoaded, env
+    local function fireLoaded()
+        fire("ADDON_LOADED", "Tandem")
+    end
+    return ns, printed, fireLoaded, env, fire
 end
 
 local failures = 0
@@ -79,10 +82,10 @@ check("zhTW falls back to English for a missing key", ns.L["Not translated yet"]
 
 -- Loads the addon with TandemDB set to db, fires ADDON_LOADED; returns ns, printed lines, env.
 local function loadWithDB(db, locale)
-    local addon, printed, fireLoaded, env = loadAddon(locale or "enUS")
+    local addon, printed, fireLoaded, env, fire = loadAddon(locale or "enUS")
     env.TandemDB = db
     fireLoaded()
-    return addon, printed, env
+    return addon, printed, env, fire
 end
 
 local function isCurrent(db)
@@ -268,6 +271,7 @@ do
     check("unknown subcommand prints usage", run(addon, printed, "dance")[1], "Tandem commands:")
     check("usage line count", #help, 5)
 
+    addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
     check("scan from without a scanner", run(addon, printed, "scan from 5")[1], "Tandem: scanner not available")
     check("bad scan without a scanner prints usage", run(addon, printed, "scan 0/s")[1], "Tandem commands:")
@@ -349,8 +353,367 @@ end
 
 do
     local addon, printed = loadWithDB(nil, "zhTW")
+    addon.Scanner = nil
     check("zhTW count line", run(addon, printed, "count")[5], "上次掃描：從未執行")
     check("zhTW scanner missing line", run(addon, printed, "scan")[1], "Tandem：掃描器無法使用")
+end
+
+-- Scanner: throttled item scan with stubbed timers and item API.
+
+-- Loads the addon with a stubbed C_Item over items ({[id] = {equipLoc, loaded = bool}}) and a manual ticker.
+local function loadScanner(items, db, locale)
+    local addon, printed, env, fire = loadWithDB(db or { schemaVersion = 1, scan = { cursor = 1 } }, locale)
+    local ctx = { addon = addon, printed = printed, env = env, fire = fire, Scanner = addon.Scanner, clock = 100,
+                  combat = false, tickers = {}, requested = {} }
+    env.GetTime = function()
+        return ctx.clock
+    end
+    env.time = function()
+        return 1700000000
+    end
+    env.InCombatLockdown = function()
+        return ctx.combat
+    end
+    env.C_Timer = {
+        NewTicker = function(interval, fn)
+            local t = { interval = interval, fn = fn }
+            function t.Cancel(self)
+                self.cancelled = true
+            end
+            ctx.tickers[#ctx.tickers + 1] = t
+            return t
+        end,
+    }
+    env.C_Item = {
+        DoesItemExistByID = function(id)
+            return items[id] ~= nil
+        end,
+        GetItemInfoInstant = function(id)
+            local it = items[id]
+            if it then
+                return id, "Armor", "Cloth", it[1], 134400, 4, 1
+            end
+        end,
+        GetItemInfo = function(id)
+            local it = items[id]
+            if it and it.loaded ~= false then
+                return "Item " .. id, "link", 2, 20, 15, "Armor", "Cloth", 1, it[1], 134400, 5, 4, 1
+            end
+        end,
+        RequestLoadItemDataByID = function(id)
+            ctx.requested[#ctx.requested + 1] = id
+        end,
+    }
+    -- Fires the live ticker n times, advancing the clock by its interval each time.
+    function ctx.tick(n)
+        for _ = 1, n or 1 do
+            local t = ctx.tickers[#ctx.tickers]
+            if not t or t.cancelled then
+                return
+            end
+            ctx.clock = ctx.clock + t.interval
+            t.fn(t)
+        end
+    end
+    function ctx.scan()
+        return env.TandemDB.scan
+    end
+    function ctx.run()
+        return env.TandemDB.scan.lastRun
+    end
+    function ctx.since(from)
+        local out = {}
+        for i = from + 1, #printed do
+            out[#out + 1] = printed[i]
+        end
+        return out
+    end
+    return ctx
+end
+
+local equip = { "INVTYPE_HEAD" }
+
+do
+    -- 1: equippable, 2: missing, 3: non-equippable, 4: cached already, 1001: equippable in block 1
+    local ctx = loadScanner({ [1] = equip, [3] = { "" }, [4] = equip, [5] = { "INVTYPE_NON_EQUIP_IGNORE" } },
+        { schemaVersion = 1, items = { [4] = { 1, 1, 1, "INVTYPE_FEET", 4, 1 } }, scan = { cursor = 1 } })
+    local S = ctx.Scanner
+    local mark = #ctx.printed
+    S.Start({ rate = 10, cap = 5 })
+    check("scan start line", ctx.since(mark)[1], "Tandem: scanning 5 IDs from ID 1")
+    check("scan is running", S.IsRunning(), true)
+    check("ticker interval is 1/rate", ctx.tickers[1].interval, 0.1)
+    check("lastRun.started uses time()", ctx.run().started, 1700000000)
+    check("lastRun.from is the cursor", ctx.run().from, 1)
+    check("lastRun.rate", ctx.run().rate, 10)
+
+    mark = #ctx.printed
+    S.Start({ rate = 10, cap = 5 })
+    check("second start says already running", ctx.since(mark)[1], "Tandem: scan already running")
+    check("second start makes no new ticker", #ctx.tickers, 1)
+
+    ctx.tick(1)
+    check("equippable item is stored", ctx.env.TandemDB.items[1] and ctx.env.TandemDB.items[1][4], "INVTYPE_HEAD")
+    check("stored item fields", ctx.env.TandemDB.items[1][1], 20)
+    check("cursor persists as it advances", ctx.scan().cursor, 2)
+    ctx.tick(1)
+    check("missing item is a miss", ctx.run().misses, 1)
+    ctx.tick(1)
+    check("empty equipLoc counts non-equippable", ctx.scan().nonEquippable, 1)
+    check("non-equippable is not stored", ctx.env.TandemDB.items[3], nil)
+    ctx.tick(1)
+    check("cached item is skipped", ctx.run().skipped, 1)
+    mark = #ctx.printed
+    ctx.tick(1)
+    check("NON_EQUIP_IGNORE counts non-equippable", ctx.scan().nonEquippable, 2)
+    check("scan stops at cap", S.IsRunning(), false)
+    check("ticker is cancelled at cap", ctx.tickers[1].cancelled, true)
+    local out = ctx.since(mark)
+    check("cap stop summary", out[1], "Tandem: scan stopped, IDs 1-5 in 0.5s, 5 processed, 1 skipped")
+    check("cap stop results", out[2], "  3 hits (1 equippable), 1 misses, 0 deferred, 0 timeouts")
+    local last = ctx.run()
+    check("lastRun.to", last.to, 5)
+    check("lastRun.processed", last.processed, 5)
+    check("lastRun.equippable", last.equippable, 1)
+    check("lastRun.elapsed via GetTime", math.abs(last.elapsed - 0.5) < 1e-9, true)
+    check("minFound", ctx.scan().minFound, 1)
+    check("maxFound", ctx.scan().maxFound, 5)
+    check("hits per block", ctx.scan().blocks[0], 3)
+    check("Store.unsaved counts stored items", ctx.addon.Store.unsaved, 1)
+
+    mark = #ctx.printed
+    S.Stop()
+    check("stop when idle", ctx.since(mark)[1], "Tandem: no scan running")
+end
+
+do
+    local ctx = loadScanner({ [1000] = equip, [2500] = { "" } },
+        { schemaVersion = 1, scan = { cursor = 1000, minFound = 1500, maxFound = 1600, blocks = { [1] = 4 } } })
+    ctx.Scanner.Start({ rate = 50, cap = 1 })
+    ctx.tick(1)
+    check("minFound lowers", ctx.scan().minFound, 1000)
+    check("maxFound kept", ctx.scan().maxFound, 1600)
+    check("block hit adds to saved count", ctx.scan().blocks[1], 5)
+    ctx.Scanner.SetCursor(2500)
+    ctx.Scanner.Start({ rate = 50, cap = 1 })
+    ctx.tick(1)
+    check("maxFound raises", ctx.scan().maxFound, 2500)
+    check("new block", ctx.scan().blocks[2], 1)
+end
+
+do
+    -- rate below 1/s, combat pause and resume
+    local ctx = loadScanner({})
+    local S = ctx.Scanner
+    S.Start({ rate = 0.25, cap = 3 })
+    check("15/m ticks every 4 s", ctx.tickers[1].interval, 4)
+    ctx.combat = true
+    local mark = #ctx.printed
+    ctx.tick(3)
+    local out = ctx.since(mark)
+    check("combat prints paused once", #out, 1)
+    check("combat paused line", out[1], "Tandem: scan paused in combat")
+    check("combat processes nothing", ctx.run().processed, 0)
+    check("combat keeps running", S.IsRunning(), true)
+    ctx.combat = false
+    ctx.tick(1)
+    check("scan resumes after combat", ctx.run().processed, 1)
+    ctx.combat = true
+    mark = #ctx.printed
+    ctx.tick(1)
+    check("a new combat prints paused again", ctx.since(mark)[1], "Tandem: scan paused in combat")
+    ctx.combat = false
+    ctx.tick(2)
+    check("misses after combat", ctx.run().misses, 3)
+    check("stops at cap after combat", S.IsRunning(), false)
+end
+
+do
+    -- deferred: backlog limit, timeout, resolution by success and failure
+    local items = {}
+    for id = 1, 12 do
+        items[id] = { "INVTYPE_CHEST", loaded = false }
+    end
+    local ctx = loadScanner(items)
+    local S = ctx.Scanner
+    S.Start({ rate = 10, cap = 12 })
+    ctx.tick(10)
+    check("ten items deferred", ctx.run().deferred, 10)
+    check("deferred items are requested", #ctx.requested, 10)
+    check("deferred item requested by id", ctx.requested[1], 1)
+    ctx.tick(3)
+    check("backlog of 10 skips the tick", ctx.run().processed, 10)
+    check("backlog does not move the cursor", ctx.scan().cursor, 11)
+
+    items[1].loaded = true
+    S.OnItemInfo(1, true)
+    check("resolved item is stored", ctx.env.TandemDB.items[1] and ctx.env.TandemDB.items[1][4], "INVTYPE_CHEST")
+    check("resolved item is a hit", ctx.run().hits, 1)
+    check("resolved item is equippable", ctx.run().equippable, 1)
+    S.OnItemInfo(2, false)
+    check("failed item is a miss", ctx.run().misses, 1)
+    check("failed item is not stored", ctx.env.TandemDB.items[2], nil)
+    S.OnItemInfo(2, true)
+    check("a resolved id is not counted twice", ctx.run().misses, 1)
+    S.OnItemInfo(999, true)
+    check("unknown ids are ignored", ctx.run().hits + ctx.run().misses, 2)
+
+    ctx.tick(1)
+    check("freed slots let the scan go on", ctx.run().processed, 11)
+    -- ids 3-10 were deferred over 5 s ago, id 11 4.9 s ago
+    ctx.clock = ctx.clock + 4.8
+    ctx.tick(1)
+    check("pending older than 5 s times out", ctx.run().timeouts, 8)
+    check("timeouts free the backlog", ctx.run().processed, 12)
+    check("waits for the last pending", S.IsRunning(), true)
+    ctx.clock = ctx.clock + 6
+    ctx.tick(1)
+    check("all deferred time out", ctx.run().timeouts, 10)
+    check("stops at cap once nothing is pending", S.IsRunning(), false)
+end
+
+do
+    -- the last deferred reply stops the scan without waiting for a tick
+    local items = { [1] = { "INVTYPE_HEAD", loaded = false } }
+    local ctx = loadScanner(items)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("cap reached with pending keeps running", ctx.Scanner.IsRunning(), true)
+    items[1].loaded = true
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 1, true)
+    check("GET_ITEM_INFO_RECEIVED reaches the scanner", ctx.run().hits, 1)
+    check("last reply stops the scan", ctx.Scanner.IsRunning(), false)
+    check("last reply is stored", ctx.env.TandemDB.items[1] ~= nil, true)
+end
+
+do
+    -- resume: a reload keeps the cursor
+    local ctx = loadScanner({})
+    ctx.Scanner.Start({ rate = 10, cap = 4 })
+    ctx.tick(2)
+    local saved = ctx.env.TandemDB
+    local again = loadScanner({}, saved)
+    check("reload keeps the cursor", again.scan().cursor, 3)
+    again.Scanner.Start({ rate = 10, cap = 1 })
+    check("resumed run starts at the cursor", again.run().from, 3)
+    again.tick(1)
+    check("resumed run scans the next id", again.run().to, 3)
+end
+
+do
+    local ctx = loadScanner({})
+    local mark = #ctx.printed
+    ctx.Scanner.SetCursor(5000)
+    check("SetCursor line", ctx.since(mark)[1], "Tandem: next scan starts at ID 5000")
+    check("SetCursor writes the cursor", ctx.scan().cursor, 5000)
+    check("SetCursor does not start", ctx.Scanner.IsRunning(), false)
+    ctx.Scanner.Start({ rate = 1, cap = 5 })
+    mark = #ctx.printed
+    ctx.Scanner.SetCursor(7)
+    check("SetCursor while running is refused", ctx.since(mark)[1], "Tandem: stop the scan before moving the cursor")
+    check("SetCursor while running keeps the cursor", ctx.scan().cursor, 5000)
+    mark = #ctx.printed
+    ctx.Scanner.Stop()
+    check("manual stop summary", ctx.since(mark)[1], "Tandem: scan stopped, IDs 5000-? in 0.0s, 0 processed, 0 skipped")
+    check("manual stop cancels the ticker", ctx.tickers[1].cancelled, true)
+    ctx.tick(1)
+    check("no tick after stop", ctx.run().processed, 0)
+end
+
+do
+    local ctx = loadScanner({}, { schemaVersion = 2, scan = { cursor = 9 } })
+    local mark = #ctx.printed
+    ctx.Scanner.Start({ rate = 10, cap = 5 })
+    check("read-only start is refused", ctx.since(mark)[1], "Recording is off: saved data uses a newer schema")
+    check("read-only start makes no ticker", #ctx.tickers, 0)
+    check("read-only start writes nothing", ctx.env.TandemDB.scan.lastRun, nil)
+    ctx.Scanner.SetCursor(50)
+    check("read-only SetCursor writes nothing", ctx.env.TandemDB.scan.cursor, 9)
+end
+
+for _, missing in ipairs({ "GetItemInfo", "GetItemInfoInstant", "C_Item" }) do
+    local ctx = loadScanner({})
+    if missing == "C_Item" then
+        ctx.env.C_Item = nil
+    else
+        ctx.env.C_Item[missing] = nil
+    end
+    local mark = #ctx.printed
+    ctx.Scanner.Start({ rate = 10, cap = 5 })
+    check("missing " .. missing .. " refuses to start", ctx.since(mark)[1], "Tandem: item API not available")
+    check("missing " .. missing .. " is not running", ctx.Scanner.IsRunning(), false)
+end
+
+do
+    local ctx = loadScanner({})
+    ctx.env.C_Timer = nil
+    local mark = #ctx.printed
+    ctx.Scanner.Start({ rate = 10, cap = 5 })
+    check("missing C_Timer refuses to start", ctx.since(mark)[1], "Tandem: timer API not available")
+end
+
+do
+    -- optional functions may be missing: no existence check, no load request, no combat check
+    local items = { [1] = { "" }, [2] = { "INVTYPE_HEAD", loaded = false } }
+    local ctx = loadScanner(items)
+    ctx.env.C_Item.DoesItemExistByID = nil
+    ctx.env.C_Item.RequestLoadItemDataByID = nil
+    ctx.env.InCombatLockdown = nil
+    ctx.Scanner.Start({ rate = 10, cap = 3 })
+    ctx.tick(3)
+    check("without DoesItemExistByID a hit still counts", ctx.run().hits, 1)
+    check("without DoesItemExistByID an unknown id is a miss", ctx.run().misses, 1)
+    check("without RequestLoadItemDataByID the item is deferred", ctx.run().deferred, 1)
+end
+
+do
+    local ctx = loadScanner({ [1] = equip })
+    ctx.env.issecretvalue = function(v)
+        return v == 20
+    end
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("a secret field is not stored", ctx.env.TandemDB.items[1], nil)
+    check("a secret field still counts the hit", ctx.run().hits, 1)
+end
+
+do
+    -- /tandem scan reaches the real scanner
+    local ctx = loadScanner({ [2] = { "" } })
+    run(ctx.addon, ctx.printed, "scan 15/m 3")
+    check("/tandem scan 15/m 3 starts", ctx.Scanner.IsRunning(), true)
+    check("/tandem scan 15/m 3 interval", ctx.tickers[1].interval, 4)
+    ctx.tick(3)
+    check("/tandem scan 15/m 3 stops at cap", ctx.Scanner.IsRunning(), false)
+    check("/tandem scan 15/m 3 rate saved", ctx.run().rate, 0.25)
+    local out = run(ctx.addon, ctx.printed, "count")
+    check("count after scan", out[5], "Last run: IDs 1-3 at 15/m in 12.0s, 3 processed, 0 skipped")
+    run(ctx.addon, ctx.printed, "scan from 40")
+    check("/tandem scan from moves the cursor", ctx.scan().cursor, 40)
+    run(ctx.addon, ctx.printed, "scan 1/s")
+    check("/tandem scan stop prints the summary", run(ctx.addon, ctx.printed, "scan stop")[1],
+        "Tandem: scan stopped, IDs 40-? in 0.0s, 0 processed, 0 skipped")
+end
+
+do
+    local ctx = loadScanner({})
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("GET_ITEM_INFO_RECEIVED while idle is ignored", ctx.Scanner.IsRunning(), false)
+    ctx.fire("ADDON_LOADED", "OtherAddon")
+    check("another addon's ADDON_LOADED is ignored", ctx.env.TandemDB.scan.cursor, 1)
+end
+
+do
+    local ctx = loadScanner({}, nil, "zhTW")
+    local mark = #ctx.printed
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    local out = ctx.since(mark)
+    check("zhTW start line", out[1], "Tandem：掃描 1 個 ID，從 ID 1 開始")
+    check("zhTW already running", out[2], "Tandem：掃描已在執行中")
+    ctx.combat = true
+    ctx.tick(1)
+    check("zhTW paused line", ctx.printed[#ctx.printed], "Tandem：戰鬥中，掃描暫停")
 end
 
 if failures > 0 then
