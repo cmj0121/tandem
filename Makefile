@@ -2,10 +2,11 @@ SUBDIR :=
 ADDON  := Tandem
 FLAVOR ?= _classic_beta_
 MODE   ?= link
+DATA   ?= data
 
 export FLAVOR
 
-.PHONY: all clean test run build install uninstall upgrade help $(SUBDIR)
+.PHONY: all clean test run build install uninstall import upgrade help $(SUBDIR)
 
 all: $(SUBDIR) 		# default action
 	@[ -f .git/hooks/pre-commit ] || pre-commit install --install-hooks
@@ -14,10 +15,11 @@ all: $(SUBDIR) 		# default action
 clean: $(SUBDIR)	# clean-up environment
 	@find . -name '*.sw[po]' -delete
 
-test:				# syntax-check the Lua files, test the addon's locales and wow-dir.sh
-	luac -p $$(find $(ADDON) -name '*.lua')
+test:				# syntax-check the Lua files, test the addon, wow-dir.sh and the importer
+	luac -p $$(find $(ADDON) scripts -name '*.lua')
 	lua scripts/addon_test.lua
 	scripts/wow-dir_test.sh
+	scripts/import_test.sh
 
 run:				# run in the local environment
 
@@ -52,6 +54,23 @@ uninstall:			# remove the installed addon (only a symlink, unless MODE=copy)
 	else \
 		echo "not installed: $$dest"; \
 	fi
+
+import:				# import every account's loot log into data/ (WOW_DIR=..., DATA=... to override)
+	@wow=$$(scripts/wow-dir.sh) && \
+	wtf="$$wow/$(FLAVOR)/WTF" && \
+	locale=$$(sed -n 's/^SET textLocale "\([A-Za-z]*\)".*/\1/p' "$$wtf/Config.wtf" 2>/dev/null | head -n 1) && \
+	locale=$${locale:-enUS} && \
+	set -- && \
+	for sv in "$$wtf"/Account/*/SavedVariables/Tandem.lua; do \
+		[ -f "$$sv" ] || continue; \
+		account=$$(basename "$$(dirname "$$(dirname "$$sv")")"); \
+		id=$$(printf %s "$$account" | shasum -a 256 | cut -c1-12); \
+		set -- "$$@" "$$locale" "$$id" "$$sv"; \
+	done && \
+	if [ $$# -eq 0 ]; then \
+		echo "error: no $$wtf/Account/*/SavedVariables/Tandem.lua; log out or /reload in game first" >&2; exit 1; \
+	fi && \
+	lua scripts/import.lua "$(DATA)" "$$@"
 
 upgrade:			# upgrade all the necessary packages
 	pre-commit autoupdate
