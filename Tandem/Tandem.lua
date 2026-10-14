@@ -10,5 +10,5 @@ frame:SetScript("OnEvent", function(self, event, loadedName)
     end
 
     self:UnregisterEvent(event)
-    print(addonName .. " loaded")
+    print(ns.L["%s loaded"]:format(addonName))
 end)

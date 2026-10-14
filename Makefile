@@ -14,8 +14,9 @@ all: $(SUBDIR) 		# default action
 clean: $(SUBDIR)	# clean-up environment
 	@find . -name '*.sw[po]' -delete
 
-test:				# syntax-check the Lua files and test wow-dir.sh
-	luac -p $(ADDON)/*.lua
+test:				# syntax-check the Lua files, test the addon's locales and wow-dir.sh
+	luac -p $$(find $(ADDON) -name '*.lua')
+	lua scripts/addon_test.lua
 	scripts/wow-dir_test.sh
 
 run:				# run in the local environment

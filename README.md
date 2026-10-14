@@ -68,6 +68,9 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
    Tandem loaded
    ```
 
+   On a Traditional Chinese (`zhTW`) client the line reads `Tandem 已載入`, and the AddOns list shows the notes in
+   Chinese too. Every other client language gets English.
+
 If the line is missing, check that the addon is enabled and that no Lua error was reported.
 
 ## Interface number
@@ -96,8 +99,17 @@ The AddOns list shows `Tandem/Media/icon.tga` (64×64, 32-bit with alpha), set b
 make test
 ```
 
-This syntax-checks the Lua files with `luac -p` and runs the tests for `scripts/wow-dir.sh`. The local `luac` is a
-newer Lua than the game's Lua 5.1, so it catches syntax errors only.
+This syntax-checks every Lua file under `Tandem/` with `luac -p`, runs `scripts/addon_test.lua` and runs the tests for
+`scripts/wow-dir.sh`. The local `luac` is a newer Lua than the game's Lua 5.1, so it catches syntax errors only.
+`scripts/addon_test.lua` loads the files listed in `Tandem/Tandem.toc`, in order, with stubbed WoW API functions, and
+checks the load line for the `enUS`, `zhTW` and an unsupported locale.
+
+### Translations
+
+Strings go through `ns.L`, keyed by their English text. `Tandem/Locales/enUS.lua` creates the table: a key without a
+translation returns itself, so a missing translation shows English. Each other locale file returns early unless
+`GetLocale()` matches it, then sets its translations, as `Tandem/Locales/zhTW.lua` does. List a new locale file in
+`Tandem/Tandem.toc` after `enUS.lua` and before `Tandem.lua`.
 
 Each commit also runs `luacheck` through pre-commit, configured in `.luacheckrc` for Lua 5.1. It needs `luarocks`
 installed (`brew install luarocks`); pre-commit installs `luacheck` itself. Run it on demand with:

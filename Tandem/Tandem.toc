@@ -1,8 +1,12 @@
 ## Interface: 16001
 ## Title: Tandem
+## Title-zhTW: Tandem
 ## Notes: Cowork with your WoW player
+## Notes-zhTW: 與你的 WoW 玩家協作
 ## Author: cmj
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\Tandem\Media\icon
 
+Locales\enUS.lua
+Locales\zhTW.lua
 Tandem.lua

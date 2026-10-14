@@ -68,6 +68,9 @@ make install MODE=copy
    Tandem loaded
    ```
 
+   在繁體中文（`zhTW`）用戶端上，這行會顯示為 `Tandem 已載入`，AddOns 清單中的說明也會是中文。其他語言的用戶端則一律
+   顯示英文。
+
 若沒有出現這行訊息，請確認 addon 已啟用，且沒有回報任何 Lua 錯誤。
 
 ## Interface number
@@ -95,8 +98,16 @@ AddOns 清單顯示的是 `Tandem/Media/icon.tga`（64×64、32-bit 含 alpha）
 make test
 ```
 
-這會以 `luac -p` 檢查 Lua 檔案的語法，並執行 `scripts/wow-dir.sh` 的測試。本機的 `luac` 版本比遊戲使用的 Lua 5.1
-新，因此只能抓出語法錯誤。
+這會以 `luac -p` 檢查 `Tandem/` 底下所有 Lua 檔案的語法，執行 `scripts/addon_test.lua`，並執行
+`scripts/wow-dir.sh` 的測試。本機的 `luac` 版本比遊戲使用的 Lua 5.1 新，因此只能抓出語法錯誤。
+`scripts/addon_test.lua` 會模擬 WoW API 函式，依 `Tandem/Tandem.toc` 列出的順序載入檔案，並檢查 `enUS`、`zhTW`
+與一個不支援的語系下的載入訊息。
+
+### 翻譯
+
+字串都透過 `ns.L` 取得，以英文原文作為 key。`Tandem/Locales/enUS.lua` 建立這個表：沒有翻譯的 key 會直接傳回自己，
+因此缺少的翻譯會顯示英文。其他語系檔在 `GetLocale()` 不符時會直接返回，符合時才填入翻譯，例如
+`Tandem/Locales/zhTW.lua`。新增語系檔時，要在 `Tandem/Tandem.toc` 中把它列在 `enUS.lua` 之後、`Tandem.lua` 之前。
 
 每次 commit 時，pre-commit 也會執行 `luacheck`，設定在 `.luacheckrc`，以 Lua 5.1 為準。它需要先安裝 `luarocks`
 （`brew install luarocks`），`luacheck` 本身則由 pre-commit 自動安裝。也可以手動執行：
