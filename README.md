@@ -4,7 +4,9 @@
 
 English | [繁體中文](README.zh-TW.md)
 
-Tandem is a World of Warcraft addon. It is an empty shell for now: it prints one line in chat when it loads.
+Tandem is a World of Warcraft addon. For now it collects data for a later stage: a cache of equippable items, built by
+scanning item IDs, and a log of where each looted item came from. It never acts for the player, and it records nothing
+while you are in combat.
 
 ## Install
 
@@ -59,6 +61,90 @@ make install MODE=copy
 A copy does not follow your edits; run `make install MODE=copy` again after each change. To remove a copy, run
 `make uninstall MODE=copy`. `make install` refuses to replace an existing copy with a link until that copy is removed.
 
+## Commands
+
+Scan the next 100 item IDs at 10 per second, then look at what was collected:
+
+```text
+/tandem scan 10/s
+/tandem count
+```
+
+| Command                               | What it does                                                     |
+| ------------------------------------- | ---------------------------------------------------------------- |
+| `/tandem`                             | Prints the commands, as does any unknown subcommand              |
+| `/tandem count`                       | Prints what has been collected so far                            |
+| `/tandem scan [<n>/s\|<n>/m] [<cap>]` | Scans `<cap>` IDs up from the cursor, `<n>` per second or minute |
+| `/tandem scan from <id>`              | Sets the scan cursor to `<id>`; does not start a scan            |
+| `/tandem scan stop`                   | Stops the running scan and prints its summary                    |
+
+### `/tandem scan`
+
+The rate defaults to `10/s` and must lie between `1/m` and `50/s`. The cap defaults to `100` IDs, at most `100000`.
+The two tokens may come in either order, so `/tandem scan 500 5/s` and `/tandem scan 5/s 500` are the same. An invalid
+or repeated token prints the command list and starts nothing.
+
+The scan resumes where the last one stopped: each ID it queries moves the cursor up by one, with no upper limit. IDs
+already in the cache are skipped. The rate is a ceiling: the scan waits while 10 queries are still waiting for a server
+reply, and a query unanswered after 5 seconds counts as a timeout. In combat the scan pauses and resumes by itself.
+
+```text
+Tandem: scanning 100 IDs from ID 1
+Tandem: scan stopped, IDs 1-100 in 10.6s, 100 processed, 0 skipped
+  41 hits (12 equippable), 59 misses, 12 deferred, 0 timeouts
+```
+
+The numbers are an example. The summary prints when the cap is reached and every reply is in, or on
+`/tandem scan stop`. Other messages:
+
+- `Tandem: scan paused in combat`, once per combat.
+- `Tandem: scan already running` for a second `scan` while one runs.
+- `Tandem: no scan running` for `scan stop` with nothing to stop.
+- `Tandem: next scan starts at ID <id>` after `scan from <id>`, or `Tandem: stop the scan before moving the cursor`
+  while a scan runs.
+
+### `/tandem count`
+
+```text
+Tandem: 12 known items, 29 non-equippable
+Scan cursor: 101, found IDs: 25-98
+Loot entries: 3, npc names: 1
+Unsaved records: 16 (saved on /reload or logout)
+Last run: IDs 1-100 at 10/s in 10.6s, 100 processed, 0 skipped
+  41 hits (12 equippable), 59 misses, 12 deferred, 0 timeouts
+```
+
+Before the first scan, `found IDs` reads `none` and the last line reads `Last run: never`. `Unsaved records` counts
+items, loot drops and npc names added since the addon loaded; they are lost if the client exits without saving.
+
+## What is collected
+
+Everything goes into one account-wide table, `TandemDB`, saved as
+`<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`.
+
+| Key     | Content                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------- |
+| `items` | Per equippable item ID: item level, required level, quality, equip slot, class and subclass |
+| `scan`  | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run            |
+| `loot`  | Per item, source and map: npc or object ID, map ID, drops, up to 5 positions                |
+| `npcs`  | Npc names by npc ID                                                                         |
+
+- Items that exist but cannot be equipped are counted in `scan.nonEquippable`, not stored.
+- `scan.lastRun` holds the last run's start time, ID range, rate, elapsed seconds and the counts the summary prints.
+- A loot entry is recorded once per source each time a loot window opens outside combat. Its source is a creature
+  (`kind = "c"`, npc ID) or a game object (`kind = "o"`, object ID); `kind = "?"` means the client did not say. Map
+  and positions are left out when the client does not report them.
+- An npc's name is recorded only when the looted corpse is your target or under the mouse.
+
+The client writes `Tandem.lua` only on logout or `/reload`. A crash or a forced quit loses everything collected since
+the last save; `/tandem count` shows how many records are waiting. `/reload` after a long scan.
+
+Known metric caveats:
+
+- `nonEquippable` is cumulative across runs and counts the same ID again when a range is rescanned, because
+  non-equippable items are not cached.
+- `elapsed` includes time the scan spent paused in combat.
+
 ## Verify in game
 
 1. Start the client. On the character select screen, open **AddOns** and check that **Tandem** is listed and enabled.
@@ -72,6 +158,26 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
    Chinese too. Every other client language gets English.
 
 If the line is missing, check that the addon is enabled and that no Lua error was reported.
+
+### Check data collection
+
+The WoW Forever API is not verified yet, so check each step in game:
+
+1. Log in. Chat shows `Tandem loaded` and no Lua error.
+2. With no saved data yet, run `/tandem count`. It shows `0 known items`, `Scan cursor: 1`, `found IDs: none`, `0`
+   loot entries and `Last run: never`.
+3. Run `/tandem scan 10/s` and wait about 10 to 20 seconds, out of combat, for the two summary lines.
+4. Run `/tandem count` again. The cursor is `101` and the last run matches the summary.
+5. Type `/reload`, then open `WTF/Account/<account>/SavedVariables/Tandem.lua` and check that `TandemDB` holds `items`
+   and `scan.lastRun`.
+6. Target a mob, kill it and loot it while it is still targeted. If you were still in combat, close the loot window and
+   loot it again once combat ends. `/tandem count` shows more loot entries and, for a mob not seen before, one more
+   npc name. Then `/reload` and check `loot` and `npcs` in the file.
+7. Run `/tandem scan from 200000`, then a small scan such as `/tandem scan 20`, to see whether IDs that high exist on
+   Forever.
+
+Report back the summary lines from steps 3 and 7, the `/tandem count` output, any Lua error, and the
+`SavedVariables/Tandem.lua` file.
 
 ## Interface number
 
@@ -102,7 +208,9 @@ make test
 This syntax-checks every Lua file under `Tandem/` with `luac -p`, runs `scripts/addon_test.lua` and runs the tests for
 `scripts/wow-dir.sh`. The local `luac` is a newer Lua than the game's Lua 5.1, so it catches syntax errors only.
 `scripts/addon_test.lua` loads the files listed in `Tandem/Tandem.toc`, in order, with stubbed WoW API functions, and
-checks the load line for the `enUS`, `zhTW` and an unsupported locale.
+checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
+migration, `/tandem` parsing and output, the scan with a manual timer and stubbed item API, and loot recording with
+stubbed loot, map and unit API. These tests prove the logic only; the client's real API is checked in game.
 
 ### Translations
 
