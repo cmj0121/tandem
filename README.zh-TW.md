@@ -92,3 +92,12 @@ make test
 
 這會以 `luac -p` 檢查 Lua 檔案的語法，並執行 `scripts/wow-dir.sh` 的測試。本機的 `luac` 版本比遊戲使用的 Lua 5.1
 新，因此只能抓出語法錯誤。
+
+每次 commit 時，pre-commit 也會執行 `luacheck`，設定在 `.luacheckrc`，以 Lua 5.1 為準。它需要先安裝 `luarocks`
+（`brew install luarocks`），`luacheck` 本身則由 pre-commit 自動安裝。也可以手動執行：
+
+```sh
+pre-commit run luacheck --all-files
+```
+
+addon 開始呼叫新的 WoW API 函式時，要把函式名稱加進 `.luacheckrc` 的 `read_globals`。

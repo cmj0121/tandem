@@ -93,3 +93,12 @@ make test
 
 This syntax-checks the Lua files with `luac -p` and runs the tests for `scripts/wow-dir.sh`. The local `luac` is a
 newer Lua than the game's Lua 5.1, so it catches syntax errors only.
+
+Each commit also runs `luacheck` through pre-commit, configured in `.luacheckrc` for Lua 5.1. It needs `luarocks`
+installed (`brew install luarocks`); pre-commit installs `luacheck` itself. Run it on demand with:
+
+```sh
+pre-commit run luacheck --all-files
+```
+
+When the addon starts calling another WoW API function, add its name to `read_globals` in `.luacheckrc`.

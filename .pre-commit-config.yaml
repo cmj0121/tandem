@@ -17,3 +17,7 @@ repos:
     rev: v3.9.6
     hooks:
       - id: prettier
+  - repo: https://github.com/lunarmodules/luacheck
+    rev: 2f764bdcabe8b7c19deadf0e9bb2adc19df1a4c5 # master: Lua 5.5 fix not yet released (lunarmodules/luacheck#140)
+    hooks:
+      - id: luacheck
