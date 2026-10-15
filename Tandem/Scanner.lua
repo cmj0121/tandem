@@ -45,16 +45,48 @@ local function found(id)
     scan.blocks[block] = (scan.blocks[block] or 0) + 1
 end
 
--- Stores the item's core fields when the client has them; returns false when it does not yet.
-local function cache(id, equipLoc, classID, subclassID)
+local function isEquipLoc(equipLoc)
+    return equipLoc ~= nil and equipLoc ~= "" and equipLoc ~= NON_EQUIP
+end
+
+-- Scanner.CacheItem(id, equipLoc, classID, subclassID) -> added
+-- Stores an equippable item's core fields when the client has them: nil when it does not yet (or the item API is
+-- missing), else whether the record was added.
+function Scanner.CacheItem(id, equipLoc, classID, subclassID)
+    if not itemAPI() then
+        return nil
+    end
     local name, _, quality, ilvl, reqLevel = C_Item.GetItemInfo(id)
     name = Safe(name)
     if not name then
+        return nil
+    end
+    return ns.Store.AddItem(id, Safe(ilvl), Safe(reqLevel), Safe(quality), equipLoc, classID, subclassID,
+        ns.Store.IsDeprecatedName(name))
+end
+
+-- Scanner.Equippable(id) -> equipLoc, classID, subclassID
+-- Returns the item's slot and class when it is equippable; nil when it is not, unknown or the item API is missing.
+function Scanner.Equippable(id)
+    if not itemAPI() then
+        return nil
+    end
+    local instantID, _, _, equipLoc, _, classID, subclassID = C_Item.GetItemInfoInstant(id)
+    equipLoc = Safe(equipLoc)
+    if not Safe(instantID) or not isEquipLoc(equipLoc) then
+        return nil
+    end
+    return equipLoc, Safe(classID), Safe(subclassID)
+end
+
+-- Caches a scanned item and counts it in the run; returns false when the client does not have it yet.
+local function cache(id, equipLoc, classID, subclassID)
+    local added = Scanner.CacheItem(id, equipLoc, classID, subclassID)
+    if added == nil then
         return false
     end
     found(id)
-    if ns.Store.AddItem(id, Safe(ilvl), Safe(reqLevel), Safe(quality), equipLoc, classID, subclassID,
-        ns.Store.IsDeprecatedName(name)) then
+    if added then
         local run = scanDB().lastRun
         run.equippable = run.equippable + 1
     end
@@ -86,7 +118,7 @@ local function process(id)
         return
     end
     equipLoc = Safe(equipLoc)
-    if equipLoc == nil or equipLoc == "" or equipLoc == NON_EQUIP then
+    if not isEquipLoc(equipLoc) then
         local scan = scanDB()
         scan.nonEquippable = scan.nonEquippable + 1
         found(id)

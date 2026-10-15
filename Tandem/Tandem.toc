@@ -17,6 +17,7 @@ Data\Loot.lua
 Store.lua
 Scanner.lua
 Loot.lua
+Sources.lua
 Kills.lua
 Advisor.lua
 View.lua

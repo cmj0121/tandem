@@ -1272,6 +1272,247 @@ do
     check("dedupe: a reload forgets seen sources", again.env.TandemDB.corpses[448], 2)
 end
 
+-- Sources: quest rewards and merchant items with stubbed quest, merchant and item APIs.
+
+local MERCHANT = "Creature-0-1-0-12-1250-0000CAFE"
+
+-- Loads the addon with a quest frame (ctx.quest = {id, title, choices = {links}, rewards = {links}}), a merchant
+-- (ctx.merchant = {guid, name, items = {links}}) and items ({[id] = {equipLoc, loaded = bool}}); the player is
+-- Alliance at map 1429, 0.4123/0.6789.
+local function loadSources(items)
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 3 })
+    local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
+                  faction = "Alliance", quest = { id = 0, choices = {}, rewards = {} },
+                  merchant = { items = {} }, requested = {} }
+    env.InCombatLockdown = function()
+        return ctx.combat
+    end
+    env.UnitFactionGroup = function(unit)
+        if unit == "player" then
+            return ctx.faction
+        end
+    end
+    env.C_Map = {
+        GetBestMapForUnit = function()
+            return 1429
+        end,
+        GetPlayerMapPosition = function()
+            return {
+                GetXY = function()
+                    return 0.4123, 0.6789
+                end,
+            }
+        end,
+    }
+    env.GetQuestID = function()
+        return ctx.quest.id
+    end
+    env.GetTitleText = function()
+        return ctx.quest.title
+    end
+    env.GetNumQuestChoices = function()
+        return #ctx.quest.choices
+    end
+    env.GetNumQuestRewards = function()
+        return #ctx.quest.rewards
+    end
+    env.GetQuestItemLink = function(list, i)
+        return (list == "choice" and ctx.quest.choices or list == "reward" and ctx.quest.rewards or {})[i]
+    end
+    env.UnitGUID = function(unit)
+        return unit == "npc" and ctx.merchant.guid or nil
+    end
+    env.UnitName = function(unit)
+        return unit == "npc" and ctx.merchant.name or nil
+    end
+    env.GetMerchantNumItems = function()
+        return ctx.merchant.n or #ctx.merchant.items
+    end
+    env.GetMerchantItemLink = function(i)
+        return ctx.merchant.items[i]
+    end
+    env.C_Item = {
+        GetItemInfoInstant = function(id)
+            local it = items[id]
+            if it then
+                return id, "Armor", "Cloth", it[1], 134400, 4, 1
+            end
+        end,
+        GetItemInfo = function(id)
+            local it = items[id]
+            if it and it.loaded ~= false then
+                return "Item " .. id, "link", 2, 20, 15, "Armor", "Cloth", 1, it[1], 134400, 5, 4, 1
+            end
+        end,
+        RequestLoadItemDataByID = function(id)
+            ctx.requested[#ctx.requested + 1] = id
+        end,
+    }
+    function ctx.entry(key)
+        return env.TandemDB.loot[key]
+    end
+    function ctx.loots()
+        return addon.Store.Counts().loot
+    end
+    return ctx
+end
+
+do
+    local ctx = loadSources({})
+    for _, ev in ipairs({ "QUEST_DETAIL", "QUEST_COMPLETE", "MERCHANT_SHOW", "MERCHANT_UPDATE" }) do
+        check("sources: registers " .. ev, ctx.frame.registered[ev], true)
+    end
+end
+
+for _, event in ipairs({ "QUEST_DETAIL", "QUEST_COMPLETE" }) do
+    local ctx = loadSources({ [40] = equip, [41] = { "INVTYPE_CHEST" }, [42] = { "" }, [43] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40), link(41), link(42) },
+                  rewards = { link(43), "|cffffffff|Hcurrency:1220|h[Resources]|h|r" } }
+    ctx.fire(event)
+    local e = ctx.entry("40:q:176:1429")
+    check("sources: " .. event .. " records a choice item", e and e.count, 1)
+    check("sources: " .. event .. " quest entry carries the faction", e and e.factions, 1)
+    check("sources: " .. event .. " quest entry has coords", e and e.coords[1][1] .. "," .. e.coords[1][2],
+        "412,678")
+    check("sources: " .. event .. " records each choice", ctx.entry("41:q:176:1429") ~= nil, true)
+    check("sources: " .. event .. " records a reward item", ctx.entry("43:q:176:1429") ~= nil, true)
+    check("sources: " .. event .. " skips non-equippable and non-item links", ctx.loots(), 3)
+    check("sources: " .. event .. " stores the quest name", ctx.env.TandemDB.quests[176], "Wanted: Hogger")
+    check("sources: " .. event .. " caches the item record",
+        ctx.env.TandemDB.items[40] and ctx.env.TandemDB.items[40][4], "INVTYPE_HEAD")
+    check("sources: " .. event .. " does not cache a non-equippable item", ctx.env.TandemDB.items[42], nil)
+end
+
+do
+    local ctx = loadSources({ [40] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.fire("QUEST_DETAIL")
+    ctx.fire("QUEST_COMPLETE")
+    check("sources: offer and turn-in record the reward once", ctx.entry("40:q:176:1429").count, 1)
+    ctx.faction = "Horde"
+    ctx.fire("QUEST_COMPLETE")
+    check("sources: another faction ORs into the entry", ctx.entry("40:q:176:1429").factions, 3)
+end
+
+do
+    local ctx = loadSources({ [42] = { "" } })
+    ctx.quest = { id = 177, title = "Gold Dust Exchange", choices = {}, rewards = { link(42) } }
+    ctx.fire("QUEST_COMPLETE")
+    check("sources: a quest without gear records nothing", ctx.loots(), 0)
+    check("sources: a quest without gear keeps no name", ctx.env.TandemDB.quests[177], nil)
+end
+
+do
+    local ctx = loadSources({ [50] = equip, [51] = { "INVTYPE_WEAPON" }, [52] = { "INVTYPE_NON_EQUIP_IGNORE" } })
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(50), nil, link(52) }, n = 3 }
+    ctx.fire("MERCHANT_SHOW")
+    local e = ctx.entry("50:v:1250:1429")
+    check("sources: merchant item recorded under the npc", e and e.count, 1)
+    check("sources: merchant entry carries the faction", e and e.factions, 1)
+    check("sources: merchant name stored", ctx.env.TandemDB.npcs[1250], "Andrew Krighton")
+    check("sources: merchant skips missing links and non-equippable items", ctx.loots(), 1)
+    ctx.merchant.items[2] = link(51)
+    ctx.fire("MERCHANT_UPDATE")
+    check("sources: MERCHANT_UPDATE records a late link", ctx.entry("51:v:1250:1429") ~= nil, true)
+    check("sources: MERCHANT_UPDATE does not count again", ctx.entry("50:v:1250:1429").count, 1)
+end
+
+do
+    local ctx = loadSources({ [50] = equip })
+    ctx.merchant = { guid = "Player-1-00000001", name = "Someone", items = { link(50) } }
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: a non-creature merchant records nothing", ctx.loots(), 0)
+    ctx.merchant.guid = nil
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: a merchant without GUID records nothing", ctx.loots(), 0)
+end
+
+do
+    local items = { [60] = { "INVTYPE_HAND", loaded = false }, [61] = { "INVTYPE_FEET", loaded = false } }
+    local ctx = loadSources(items)
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(60), link(61) } }
+    ctx.fire("MERCHANT_SHOW")
+    ctx.fire("MERCHANT_UPDATE")
+    check("sources: an uncached item is still a source", ctx.entry("60:v:1250:1429") ~= nil, true)
+    check("sources: an uncached item has no record yet", ctx.env.TandemDB.items[60], nil)
+    check("sources: an uncached item is requested once", #ctx.requested, 2)
+    check("sources: the request names the item", ctx.requested[1], 60)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 99, true)
+    check("sources: another addon's item info is ignored", ctx.env.TandemDB.items[99], nil)
+    items[60].loaded, items[61].loaded = true, true
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 60, true)
+    local rec = ctx.env.TandemDB.items[60]
+    check("sources: item info arrival stores the record", rec and rec[4], "INVTYPE_HAND")
+    check("sources: stored record keeps its level", rec and rec[1], 20)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 61, false)
+    check("sources: a failed item info stores nothing", ctx.env.TandemDB.items[61], nil)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 61, true)
+    check("sources: a resolved item is no longer pending", ctx.env.TandemDB.items[61], nil)
+end
+
+do
+    local ctx = loadSources({ [40] = equip, [50] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(50) } }
+    ctx.combat = true
+    ctx.fire("QUEST_COMPLETE")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: nothing recorded in combat", ctx.loots(), 0)
+    check("sources: no names recorded in combat", ctx.addon.Store.Counts().npcs, 0)
+    ctx.combat = false
+    ctx.faction = "Neutral"
+    ctx.fire("QUEST_COMPLETE")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: nothing recorded for a neutral player", ctx.loots(), 0)
+    ctx.faction = "Alliance"
+    ctx.addon.Store.readOnly = true
+    ctx.fire("QUEST_COMPLETE")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: nothing recorded while read-only", ctx.loots(), 0)
+end
+
+-- Returns a sources ctx with a quest offering item 40 and a merchant selling item 50.
+local function questAndMerchant()
+    local ctx = loadSources({ [40] = equip, [50] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(50) } }
+    return ctx
+end
+
+for _, case in ipairs({
+    { "GetQuestID", "QUEST_DETAIL" }, { "GetQuestItemLink", "QUEST_DETAIL" },
+    { "UnitGUID", "MERCHANT_SHOW" }, { "GetMerchantNumItems", "MERCHANT_SHOW" },
+    { "GetMerchantItemLink", "MERCHANT_SHOW" },
+    { "UnitFactionGroup", "QUEST_DETAIL", "MERCHANT_SHOW" }, { "C_Item", "QUEST_DETAIL", "MERCHANT_SHOW" },
+}) do
+    local ctx = questAndMerchant()
+    ctx.env[case[1]] = nil
+    for i = 2, #case do
+        ctx.fire(case[i])
+    end
+    check("sources: missing " .. case[1] .. " records nothing", ctx.loots(), 0)
+end
+
+do
+    local ctx = questAndMerchant()
+    ctx.env.GetNumQuestChoices, ctx.env.GetTitleText, ctx.env.UnitName, ctx.env.C_Map = nil, nil, nil, nil
+    ctx.fire("QUEST_DETAIL")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: missing optional APIs still record the merchant", ctx.loots(), 1)
+    check("sources: missing map records map 0", ctx.entry("50:v:1250:0") ~= nil, true)
+    check("sources: missing UnitName keeps no npc name", ctx.env.TandemDB.npcs[1250], nil)
+end
+
+do
+    local ctx = loadSources({ [40] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.env.issecretvalue = function(v)
+        return v == 176
+    end
+    ctx.fire("QUEST_DETAIL")
+    check("sources: a secret quest ID records nothing", ctx.loots(), 0)
+end
+
 -- Kills: player's PARTY_KILLs from the combat log.
 
 local PLAYER = "Player-1-00000001"
