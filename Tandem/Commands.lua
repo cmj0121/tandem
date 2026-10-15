@@ -277,6 +277,9 @@ local function rank(args)
     else
         print(L["%s does not go in a ranked slot"]:format(link))
     end
+    if r.deprecated then
+        print(L["  this item is deprecated"])
+    end
     if r.reason == "level" then
         print(L["  you cannot use it: level %d required"]:format(r.needLevel))
     elseif r.reason == "proficiency" then

@@ -6,7 +6,8 @@ local View = {}
 ns.View = View
 
 local L = ns.L
-local Safe = ns.Store.Safe
+local Store = ns.Store
+local Safe = Store.Safe
 
 View.SLOT_LABELS = {
     head = "Head", neck = "Neck", shoulder = "Shoulder", back = "Back", chest = "Chest", wrist = "Wrist",
@@ -95,15 +96,36 @@ function View.LinkOf(id)
     return View.ItemLink(id, r and r[3])
 end
 
--- Returns the item's name in its quality colour once the client has it; else "item #id" in quality's colour, and
--- asks the client to load it.
+-- Flags a known item as deprecated when its client name says so; true when it was flagged now.
+function View.NoteName(id, name)
+    local Advisor = ns.Advisor
+    if not Store.IsDeprecatedName(name) or Advisor.IsDeprecated(id) then
+        return false
+    end
+    return Store.MarkDeprecated(id, Advisor.Item(id))
+end
+
+-- Returns the item's name when the client has it cached, else nil. GetItemInfo asks the server for an uncached
+-- item, so it is only called once IsItemDataCachedByID says yes; without that API, nil.
+function View.CachedName(id)
+    if C_Item and C_Item.IsItemDataCachedByID and C_Item.GetItemInfo
+        and Safe(C_Item.IsItemDataCachedByID(id)) == true then
+        local name = Safe((C_Item.GetItemInfo(id)))
+        return type(name) == "string" and name or nil
+    end
+end
+
+-- Returns the item's name in its quality colour once the client has it (and notes it, see NoteName); else "item #id"
+-- in quality's colour, and asks the client to load it.
 function View.ItemName(id, quality)
     local name, clientQuality
     if C_Item and C_Item.GetItemInfo then
         local n, _, q = C_Item.GetItemInfo(id)
         name, clientQuality = Safe(n), Safe(q)
     end
-    if type(name) ~= "string" then
+    if type(name) == "string" then
+        View.NoteName(id, name)
+    else
         View.RequestItem(id)
         name, clientQuality = placeholder(id), nil
     end
@@ -187,6 +209,25 @@ function View.Equipped(slot)
         local main = wornID(16)
         if main == nil or (main and equipLocOf(main) == "INVTYPE_2HWEAPON") then
             out.ilvl = nil
+        end
+    end
+    return out
+end
+
+-- Returns what the player wears in both hands, for a one-hander that fills either: ids of both, list of both, and
+-- ilvl the lower of the hands whose item level is known (nil when neither is).
+function View.EquippedHands()
+    local main, off = View.Equipped("mainhand"), View.Equipped("offhand")
+    local out = { ids = {}, list = {} }
+    for _, worn in ipairs({ main, off }) do
+        for id in pairs(worn.ids) do
+            out.ids[id] = true
+        end
+        for _, e in ipairs(worn.list) do
+            out.list[#out.list + 1] = e
+        end
+        if worn.ilvl and (not out.ilvl or worn.ilvl < out.ilvl) then
+            out.ilvl = worn.ilvl
         end
     end
     return out
