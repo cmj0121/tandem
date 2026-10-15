@@ -5,8 +5,9 @@
 English | [繁體中文](README.zh-TW.md)
 
 Tandem is a World of Warcraft addon. It collects a cache of equippable items, built by scanning item IDs, and a log of
-where each looted item came from, with kill and looted-corpse counts for drop rates. From that data, merged with what
-other players contributed, it suggests the best known gear your character can use and where it drops. It never acts for
+where each item came from: the creatures and objects it dropped from, with kill and looted-corpse counts for drop rates,
+the quests that reward it and the vendors that sell it. From that data, merged with what other players contributed, it
+suggests the best known gear your character can use and where to get it. It never acts for
 the player, it records nothing while you are in combat, and neither its advice commands nor its gear window are
 available in combat. Out of combat, it also adds lines to the tooltips of the items it knows.
 
@@ -84,7 +85,7 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 | `/tandem scan from <id>`              | Sets the scan cursor to `<id>`; does not start a scan            |
 | `/tandem scan stop`                   | Stops the running scan and prints its summary                    |
 | `/tandem gear [<slot>] [all]`         | Lists the best known gear you can use, per slot or in one slot   |
-| `/tandem rank <item link\|id>`        | Ranks an item in its slot and lists where it drops               |
+| `/tandem rank <item link\|id>`        | Ranks an item in its slot and lists where to get it              |
 | `/tandem export`                      | Shows what `make import` would collect from this account         |
 | `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
 | `/tandem minimap [on\|off]`           | Shows or hides the minimap button; with no argument, toggles it  |
@@ -130,9 +131,9 @@ Last run: IDs 1-100 at 10/s in 10.6s, 100 processed, 0 skipped
   41 hits (12 equippable), 59 misses, 12 deferred, 0 timeouts
 ```
 
-Before the first scan, `found IDs` reads `none` and the last line reads `Last run: never`. `Unsaved records` counts
-items, loot drops, npc names, kills and looted corpses added since the addon loaded; they are lost if the client exits
-without saving.
+Before the first scan, `found IDs` reads `none` and the last line reads `Last run: never`. `Loot entries` counts drops,
+quest rewards and vendor items together. `Unsaved records` counts items, loot drops, quest rewards, vendor items, npc and
+quest names, kills and looted corpses added since the addon loaded; they are lost if the client exits without saving.
 
 `Kills` and `looted corpses` are this account's own counts (see [Drop rates](#drop-rates)). The line after them says
 whether kills are being counted. When the client does not allow it, it reads
@@ -172,7 +173,8 @@ The slot tokens are `head neck shoulder back chest wrist hands waist legs feet f
 ranged`. They are English on every client; the printed slot names follow the client language. An unknown token prints
 `Tandem: unknown slot <token>; use one of: ...`.
 
-By default `gear` lists only items with a known source: a loot entry in your data or in the shipped data. Add `all`, as
+By default `gear` lists only items with a known source: a drop, quest reward or vendor entry in your data or in the
+shipped data (see [Quest rewards and vendors](#quest-rewards-and-vendors)). Add `all`, as
 in `/tandem gear all` or `/tandem gear chest all`, to include the other cached items, marked `(no known source)`. The
 item cache also holds items that cannot be obtained in game. Items flagged deprecated (see
 [Deprecated items](#deprecated-items)) are never listed, with or without `all`.
@@ -181,14 +183,19 @@ item cache also holds items that cannot be obtained in game. Items flagged depre
 
 `/tandem rank` takes an item link, shift-clicked into chat, or an item ID. It prints the item's rank in its slot among
 the items you can use that have a known source, counting the item itself when it is not one of them, whether you can
-use it yourself, and up to 5 places it drops:
+use it yourself, and up to 5 places to get it:
 
 ```text
 [Tough Leather Armor] (upgrade): rank 2 of 14 for Chest
+  Corina Steele, Elwynn Forest - vendor
   Kobold Miner, Elwynn Forest - drops: 3, 4.2% per looted corpse (upper bound)
   Defias Thug, Elwynn Forest - drops: 1
 Ranked by item level, then quality; stats are not considered
 ```
+
+Quest rewards read `<quest>, <map> - quest reward` and vendor items `<npc>, <map> - vendor`, with no count or
+rate. They come before drops, except those seen only by the other faction, which come last and end with
+`(Horde only)` or `(Alliance only)`; see [Quest rewards and vendors](#quest-rewards-and-vendors).
 
 - An item you cannot use is still ranked, counted in the total, followed by `you cannot use it: level <n> required` or
   `your class cannot use it`, and never marked as an upgrade.
@@ -199,8 +206,8 @@ Ranked by item level, then quality; stats are not considered
 - An item that is not cached prints `Tandem: item <id> is not known; scan or loot it first`. Shirts, tabards, bags and
   ammunition print `<item> does not go in a ranked slot`.
 - Loot from fishing, object 35591 (the Fishing Bobber), prints as `Fishing`. Any other source with no recorded name
-  prints as `npc #<id>` or `object #<id>`; a map the client does not name prints as `unknown map`. More than 5 sources
-  end with `and <n> more sources`.
+  prints as `npc #<id>`, `object #<id>` or `quest #<id>`; a map the client does not name prints as `unknown map`. More
+  than 5 sources end with `and <n> more sources`.
 
 ### `/tandem browse`
 
@@ -291,12 +298,12 @@ shows the grey `(deprecated)` mark and leaves the list the next time the list is
 filter, rather than jumping away under the mouse.
 
 Hover a row to see the game's tooltip for the item. Click a row to select it: the pane at the bottom shows the item's
-link and up to 5 places it drops, in the same lines as `rank`, ending with `and <n> more sources` when there are more.
-With nothing selected, the pane reads `Select an item to see where it drops`.
+link and up to 5 places to get it, in the same lines and order as `rank`, ending with `and <n> more sources` when there
+are more. With nothing selected, the pane reads `Select an item to see where it drops`.
 
 Drop an item on the window to look it up: pick it up from your bags or your character sheet, then drag it onto the list
 or the window's background, or click there with it. The item leaves the cursor and stays where it was. The dropdown
-switches to the item's slot, the item is selected and scrolled to, and the pane shows where it drops. When you cannot
+switches to the item's slot, the item is selected and scrolled to, and the pane shows its sources. When you cannot
 use the item, `Usable only` is unticked so that its row is listed, dimmed; a usable item leaves the box as it is. In
 the same way, a deprecated item unticks `Hide deprecated`, and an item of another quality than the chosen one sets the quality
 dropdown back to `All qualities`. An item with no ranked slot, such as a shirt, switches the list to `All slots`, where
@@ -351,7 +358,7 @@ Marks after an item:
 - `(equipped)`: you wear it.
 - `(upgrade)`: its item level is above what you wear in that slot; an empty slot counts as item level 0. No mark is
   given when the client does not reveal what you wear, and none in `offhand` while you wield a two-hand weapon.
-- `(no known source)`: no loot entry for it (`gear ... all` and the browse window only).
+- `(no known source)`: no drop, quest reward or vendor entry for it (`gear ... all` and the browse window only).
 
 ### Item tooltip
 
@@ -367,20 +374,69 @@ left alone.
   gets no rank line.
 - In red, when you cannot use the item, `Tandem: you cannot use it: level <n> required` or
   `Tandem: your class cannot use it`.
-- In light grey, the source the item dropped from most often: `Tandem: drops from <source>, <map>`, then
-  `(<rate>% per kill)` or `(up to <rate>%)` when a rate is known (see [Drop rates](#drop-rates)), then `(+<n> more)` when
-  other sources are known. Sources are named as in `rank`. An item with no known source has no such line.
+- In light grey, the item's first source, in the order of `rank`:
+  - a quest reward or vendor your faction has seen: `Tandem: reward from <quest>, <map>` or
+    `Tandem: sold by <npc>, <map>`, with no rate;
+  - else the source it dropped from most often: `Tandem: drops from <source>, <map>`, then `(<rate>% per kill)` or
+    `(up to <rate>%)` when a rate is known (see [Drop rates](#drop-rates));
+  - else a quest reward or vendor seen only by the other faction, as above followed by `(Horde only)` or
+    `(Alliance only)`.
+
+  Then `(+<n> more)` when other sources are known. Sources are named as in `rank`. An item with no known source has no
+  such line.
 
 For example:
 
 ```text
 Tandem: rank 2 of 14 for Chest (upgrade)
-Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)
+Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 ```
+
+An item that only drops reads, for example, `Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)`.
 
 An item flagged deprecated gets one grey line, `Tandem: deprecated item`, and nothing else. An item Tandem does not
 know adds nothing, and in combat no line is added and nothing is printed. Nothing is added either while the client has
 not told the addon your class or level. On a `zhTW` client the lines are in Chinese.
+
+### Quest rewards and vendors
+
+Besides drops, Tandem records the quests that reward an item and the vendors that sell it:
+
+- Quest rewards: when a quest window shows its rewards, at the quest giver (`QUEST_DETAIL`) or on turn-in
+  (`QUEST_COMPLETE`), each reward and choice item is recorded under that quest, with the quest's title.
+- Vendor items: when a merchant window opens (`MERCHANT_SHOW`), and again on each `MERCHANT_UPDATE` since item links can
+  arrive late, each item the merchant lists is recorded under that merchant, with its name.
+
+Only equippable items are recorded. One missing from the item cache is cached too, at once or as soon as the client
+sends its details, so it appears in `gear` and the browse window without a scan. Nothing is recorded in combat, while
+recording is off for a newer schema, when the client lacks the quest or merchant API, or when it does not tell your
+faction.
+
+Each quest or vendor is recorded once per item per account: seeing it again adds nothing, so its count stays 1. It keeps
+the map and position where you first saw it, at the quest giver, the turn-in or the merchant, and it is listed once
+whatever map it was seen on. In the shipped data its count is the number of contributors who saw it; that count only
+orders such sources among themselves and is never printed. Quest rewards and vendor items get no rate and no price.
+
+Each entry also records which factions have seen it, Alliance, Horde or both, from the faction of the characters that
+opened the window. Sources are listed in this order, by count within each group:
+
+1. Quest rewards and vendor items your faction has seen.
+2. Drops.
+3. Quest rewards and vendor items seen only by the other faction, marked `(Horde only)` or `(Alliance only)`.
+
+While the client does not tell your faction, no source is marked and all quest rewards and vendor items come first.
+
+| Source       | `rank` and the browse pane      | Item tooltip                         |
+| ------------ | ------------------------------- | ------------------------------------ |
+| Quest reward | `<quest>, <map> - quest reward` | `Tandem: reward from <quest>, <map>` |
+| Vendor item  | `<npc>, <map> - vendor`         | `Tandem: sold by <npc>, <map>`       |
+
+A quest is named from your data, else from the shipped quest names in the client language, else from the client's
+quest log, else `quest #<id>`. A vendor is named like any npc, else `npc #<id>`. On a `zhTW` client the lines and the
+faction mark are in Chinese, such as `（僅限部落）`.
+
+A quest or vendor source means the item is known to come from there, not that you can get it now: a vendor may have
+limited stock or ask for reputation, and a quest may follow a chain, be one-off, or need a class or level.
 
 ### Deprecated items
 
@@ -415,15 +471,17 @@ The rate uses kills when there are any for that npc, else looted corpses, and sa
 data are never added together: the rate takes both its drops and its count from one of them, the one with the larger
 count among those that saw this item drop from that npc. When the drops exceed the count, for example after looting
 kills made by others, no rate is shown rather than one above 100%. Objects such as chests, nodes and fishing get no
-rate.
+rate, nor do quest rewards and vendor items.
 
 ### Shipped data
 
 The addon ships `Tandem/Data/Loot.lua`, merged by `make import` from every contribution under `data/contributions/`:
-loot, npc names per language, kills, looted corpses and the item cache. Commands use it together with your own
+loot (drops, quest rewards and vendor items), npc and quest names per language, the factions that saw each quest reward
+and vendor item, kills, looted corpses and the item cache. Commands use it together with your own
 `TandemDB`. For each loot entry's drop count they take the larger of your value and the shipped one, since your data
 may already be in the shipped file. Kill and corpse counts are never mixed this way: a drop rate takes its drops and its
-count from one dataset, as described under [Drop rates](#drop-rates). For an item record, your own cache wins.
+count from one dataset, as described under [Drop rates](#drop-rates). A quest reward or vendor item seen in both
+becomes one source with the factions of both. For an item record, your own cache wins.
 Without the file, the commands use your own data only.
 
 ## What is collected
@@ -435,8 +493,9 @@ Everything goes into one account-wide table, `TandemDB`, saved as
 | --------- | ----------------------------------------------------------------------------------------------------------------- |
 | `items`   | Per equippable item ID: item level, required level, quality, equip slot, class, subclass; a 7th `1` if deprecated |
 | `scan`    | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run                                  |
-| `loot`    | Per item, source and map: npc or object ID, map ID, drops, up to 5 positions                                      |
-| `npcs`    | Npc names by npc ID                                                                                               |
+| `loot`    | Per item, source and map: npc, object, quest or merchant ID, map ID, drops, up to 5 positions; factions           |
+| `npcs`    | Npc names by npc ID, merchants included                                                                           |
+| `quests`  | Quest titles by quest ID                                                                                          |
 | `kills`   | Per npc ID: your character's killing blows on that npc                                                            |
 | `corpses` | Per npc ID: distinct corpses of that npc you looted                                                               |
 | `ui`      | `window`: anchor, relative point, x, y, width, height; `minimap`: button angle; `minimapHidden`: `true` if hidden |
@@ -446,6 +505,9 @@ Everything goes into one account-wide table, `TandemDB`, saved as
 - A loot entry is recorded once per source each time a loot window opens outside combat. Its source is a creature
   (`kind = "c"`, npc ID) or a game object (`kind = "o"`, object ID); `kind = "?"` means the client did not say. Map
   and positions are left out when the client does not report them.
+- A quest reward (`kind = "q"`, quest ID) or vendor item (`kind = "v"`, the merchant's npc ID) is recorded once, with
+  count `1`, one position and `factions`: `1` Alliance, `2` Horde, `3` both (see
+  [Quest rewards and vendors](#quest-rewards-and-vendors)).
 - A corpse or object opened again in the same session, such as one you left partly looted, adds no loot and no
   corpse. The addon remembers the last 200 sources; a `/reload` forgets them, so opening one again after a reload
   counts it twice.
@@ -454,6 +516,9 @@ Everything goes into one account-wide table, `TandemDB`, saved as
   hidden; the angle is saved once you drag the button, the size whenever you move or resize the window, and `minimapHidden` only
   while the button is hidden. It is not counted in `Unsaved records`, and an invalid position, angle or flag is
   dropped on load. An invalid size is dropped alone, and the position is kept.
+
+`TandemDB.schemaVersion` is `3`. Saved data from schema 2 is migrated on load, gaining an empty `quests`. Saved data
+from a newer schema is kept as it is, and nothing is recorded until the addon is updated.
 
 The client writes `Tandem.lua` only on logout or `/reload`. A crash or a forced quit loses everything collected since
 the last save; `/tandem count` shows how many records are waiting. `/reload` after a long scan.
@@ -494,9 +559,13 @@ The WoW Forever API is not verified yet, so check each step in game:
    npc name. Then `/reload` and check `loot` and `npcs` in the file.
 7. Run `/tandem scan from 200000`, then a small scan such as `/tandem scan 20`, to see whether IDs that high exist on
    Forever.
+8. Out of combat, talk to a quest giver whose quest rewards equippable items, and open a vendor that sells weapons or
+   armor. `/tandem count` shows more loot entries, and `Unsaved records` rises. Close and reopen the vendor: the loot
+   entries stay the same. Then `/reload` and check that `loot` holds entries with `kind = "q"` and `kind = "v"`, and
+   `quests` the quest's title.
 
-Report back the summary lines from steps 3 and 7, the `/tandem count` output, any Lua error, and the
-`SavedVariables/Tandem.lua` file.
+Report back the summary lines from steps 3 and 7, whether step 8 recorded anything, the `/tandem count` output, any
+Lua error, and the `SavedVariables/Tandem.lua` file.
 
 ### Check gear advice
 
@@ -594,16 +663,19 @@ window, at its smallest size too.
    `Tandem: your class cannot use it`.
 3. Hover an item you looted from a mob: a grey line reads `Tandem: drops from <source>, <map>`, with a rate when one is
    known and `(+<n> more)` when it has other sources. It matches the first source `/tandem rank` lists.
-4. Hover the items on your character sheet and the rows of the browse window: they get the same lines. Shift-click an
+4. Hover an item a vendor sells, or a quest reward you have seen: the grey line reads `Tandem: sold by <npc>, <map>` or
+   `Tandem: reward from <quest>, <map>`, with no rate, even when the item also drops. `/tandem rank` lists the same
+   source first, as `- vendor` or `- quest reward`.
+5. Hover the items on your character sheet and the rows of the browse window: they get the same lines. Shift-click an
    item into chat and click the link: the tooltip that opens gets them too. A comparison tooltip shown next to it gets
    none.
-5. Hover a deprecated item, such as one listed after unticking `Hide deprecated`: the only Tandem line is
+6. Hover a deprecated item, such as one listed after unticking `Hide deprecated`: the only Tandem line is
    `Tandem: deprecated item`, in grey.
-6. Hover an item Tandem does not know, such as a quest item: no Tandem line is added.
-7. Start a fight and hover the same items while in combat: no Tandem line is added and nothing is printed in chat.
+7. Hover an item Tandem does not know, such as a quest item: no Tandem line is added.
+8. Start a fight and hover the same items while in combat: no Tandem line is added and nothing is printed in chat.
 
 Report back any item whose tooltip line does not match `/tandem rank`, whether the line showed on the chat link
-tooltip in step 4, and any Lua error.
+tooltip in step 5, and any Lua error.
 
 ## Interface number
 
@@ -637,7 +709,8 @@ it catches syntax errors only.
 `scripts/addon_test.lua` loads the files listed in `Tandem/Tandem.toc`, in order, with stubbed WoW API functions, and
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
 migration, `/tandem` parsing and output, the scan with a manual timer and stubbed item API, loot, kill and corpse
-recording with stubbed loot, combat log, map and unit API, the gear advice with stubbed class, level and equipped
+recording with stubbed loot, combat log, map and unit API, quest reward and vendor recording with stubbed quest and
+merchant API, the gear advice with stubbed class, level and equipped
 items, the browse window with stubbed frames, widgets and tooltip, and the item tooltip line with a stubbed tooltip
 API. These tests prove the logic only; the client's
 real API is checked in game.
@@ -655,28 +728,32 @@ make import
 ```
 
 ```text
-wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 120 items, 15 kills, 12 looted corpses)
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 15 kills, 12 looted corpses)
 wrote Tandem/Data/Loot.lua (1 contributors, 120 items, 42 loot rows)
 ```
 
 The ID and the numbers are an example. `make import` reads every
 `<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua` of the detected client and writes:
 
-| File                          | Content                                                                                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------- |
-| `data/contributions/<id>.lua` | One account's `loot`, `npcs`, `items`, `kills`, `corpses` and locale, replaced on each import |
-| `Tandem/Data/Loot.lua`        | Merged from every contribution and loaded by the addon                                        |
+| File                          | Content                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| `data/contributions/<id>.lua` | One account's `loot`, `npcs`, `quests`, `items`, `kills`, `corpses` and locale |
+| `Tandem/Data/Loot.lua`        | Merged from every contribution and loaded by the addon                         |
 
-The merged file sums loot counts, kills and looted corpses, keeps up to 5 positions per loot entry, keeps npc names per
-locale, and takes the union of the item caches; when two contributions disagree on an item, the one whose file name
-sorts first wins, except that the item is flagged deprecated when any contribution flags it. It also records how many
-contributions it merged, as `contributors`. `data/loot.lua` from earlier versions is no longer written. Contributions
-written before kills, corpses and items were imported are still read.
+The merged file sums loot counts, kills and looted corpses, keeps up to 5 positions per loot entry, keeps npc and quest
+names per locale, and takes the union of the item caches. A quest reward or vendor item becomes one row whatever map
+each contribution saw it on: it keeps the lowest map ID and that map's positions, sums the counts, so the count is the
+number of contributors who saw it, and combines the factions in `S.factions`, keyed `"<item>:<kind>:<id>:<map>"`.
+When two contributions disagree on an item, the one whose file name sorts first wins, except that the item is flagged
+deprecated when any contribution flags it. It also records how many contributions it merged, as `contributors`.
+`data/loot.lua` from earlier versions is no longer written. Contributions written before kills, corpses, items and
+quests were imported are still read.
 
 - `<id>` is the first 12 hex digits of the SHA-256 of the account folder name. The folder name, the account number, is
   never written or printed, and the same account always gets the same ID.
-- The locale is the `SET textLocale` line of `WTF/Config.wtf`, `enUS` when missing. Npc names are stored in the client
-  language, so `Tandem/Data/Loot.lua` keeps them under `names[<locale>]`.
+- The locale is the `SET textLocale` line of `WTF/Config.wtf`, `enUS` when missing. Npc names and quest titles are
+  stored in the client language, so `Tandem/Data/Loot.lua` keeps them under `names[<locale>]` and
+  `questNames[<locale>]`.
 - `scan` and `ui` stay local. `items` is imported, because ranking among a few hundred personally scanned items says little.
 - Running it again is safe: each account's contribution is a full snapshot that replaces the last one, so counts are
   never added twice, and the same input gives byte-identical files.

@@ -4,10 +4,10 @@
 
 [English](README.md) | 繁體中文
 
-Tandem 是一個 World of Warcraft addon。它收集透過掃描物品 ID 建立的可裝備物品快取、每件拾取物品的來源紀錄，以及用來
-計算掉落率的擊殺數與拾取屍體數。它把這些資料與其他玩家貢獻的資料合併，建議你的角色能使用的最佳已知裝備，以及它們從
-哪裡掉落。它絕不會替玩家執行任何動作，戰鬥中不會記錄任何資料，建議類指令與裝備視窗在戰鬥中也都無法使用。在戰鬥外，
-它也會在它認得的物品提示框中加上幾行說明。
+Tandem 是一個 World of Warcraft addon。它收集透過掃描物品 ID 建立的可裝備物品快取，以及每件物品的來源紀錄：掉落它的
+生物與物件（附上用來計算掉落率的擊殺數與拾取屍體數）、以它為獎勵的任務，以及販售它的商人。它把這些資料與其他玩家
+貢獻的資料合併，建議你的角色能使用的最佳已知裝備，以及到哪裡取得。它絕不會替玩家執行任何動作，戰鬥中不會記錄任何
+資料，建議類指令與裝備視窗在戰鬥中也都無法使用。在戰鬥外，它也會在它認得的物品提示框中加上幾行說明。
 
 ## 安裝
 
@@ -83,7 +83,7 @@ make install MODE=copy
 | `/tandem scan from <id>`              | 把掃描位置設為 `<id>`；不會開始掃描                               |
 | `/tandem scan stop`                   | 停止進行中的掃描並印出摘要                                        |
 | `/tandem gear [<slot>] [all]`         | 列出你能使用的最佳已知裝備，可列出所有部位或單一部位              |
-| `/tandem rank <item link\|id>`        | 列出物品在其部位中的排名，以及它從哪裡掉落                        |
+| `/tandem rank <item link\|id>`        | 列出物品在其部位中的排名，以及到哪裡取得                          |
 | `/tandem export`                      | 顯示 `make import` 會從這個帳號收集哪些資料                       |
 | `/tandem browse [<slot>]`             | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
 | `/tandem minimap [on\|off]`           | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
@@ -127,8 +127,9 @@ Last run: IDs 1-100 at 10/s in 10.6s, 100 processed, 0 skipped
   41 hits (12 equippable), 59 misses, 12 deferred, 0 timeouts
 ```
 
-第一次掃描前，`found IDs` 會顯示 `none`，最後一行會顯示 `Last run: never`。`Unsaved records` 計算的是 addon 載入後
-新增的物品、掉落次數、NPC 名稱、擊殺數與拾取屍體數；用戶端未存檔就結束時，這些資料會遺失。
+第一次掃描前，`found IDs` 會顯示 `none`，最後一行會顯示 `Last run: never`。`Loot entries` 把掉落、任務獎勵與商人物品
+一起計算。`Unsaved records` 計算的是 addon 載入後新增的物品、掉落次數、任務獎勵、商人物品、NPC 與任務名稱、擊殺數與
+拾取屍體數；用戶端未存檔就結束時，這些資料會遺失。
 
 `Kills` 與 `looted corpses` 是這個帳號自己的計數（見[掉落率](#掉落率)）。接下來那一行說明擊殺數是否有在計算。用戶端
 不允許時，這行會顯示 `Drop rates use looted corpses: kill counting is <status>`，`<status>` 為下列之一：
@@ -166,21 +167,27 @@ Ranked by item level, then quality; stats are not considered
 ranged`。不論用戶端語言，參數一律使用英文；印出的部位名稱則依用戶端語言顯示。未知的參數會印出
 `Tandem: unknown slot <token>; use one of: ...`。
 
-`gear` 預設只列出有已知來源的物品，也就是在你的資料或隨附資料中有掉落紀錄。加上 `all`，例如 `/tandem gear all` 或
+`gear` 預設只列出有已知來源的物品，也就是在你的資料或隨附資料中有掉落、任務獎勵或商人紀錄（見
+[任務獎勵與商人](#任務獎勵與商人)）。加上 `all`，例如 `/tandem gear all` 或
 `/tandem gear chest all`，就會一併列出其他快取中的物品，並標示 `(no known source)`。物品快取中也有遊戲裡取得不到的
 物品。標記為已棄用的物品（見[已棄用的物品](#已棄用的物品)）不論是否加上 `all` 都不會列出。
 
 ### `/tandem rank`
 
 `/tandem rank` 接受物品連結（在聊天輸入框中 Shift 點擊物品）或物品 ID。它會印出物品在其部位中、於你能使用且有已知來源的
-物品之間的排名（物品本身不在其中時也會計入），你自己能否使用它，以及最多 5 個掉落來源：
+物品之間的排名（物品本身不在其中時也會計入），你自己能否使用它，以及最多 5 個取得來源：
 
 ```text
 [Tough Leather Armor] (upgrade): rank 2 of 14 for Chest
+  Corina Steele, Elwynn Forest - vendor
   Kobold Miner, Elwynn Forest - drops: 3, 4.2% per looted corpse (upper bound)
   Defias Thug, Elwynn Forest - drops: 1
 Ranked by item level, then quality; stats are not considered
 ```
+
+任務獎勵顯示為 `<quest>, <map> - quest reward`，商人物品顯示為 `<npc>, <map> - vendor`，不附掉落次數或掉落率。它們
+排在掉落之前；只有另一陣營看過的則排在最後，並以 `(Horde only)` 或 `(Alliance only)` 結尾；見
+[任務獎勵與商人](#任務獎勵與商人)。
 
 - 你無法使用的物品仍會排名並計入總數，後面接著 `you cannot use it: level <n> required` 或
   `your class cannot use it`，且不會標示為升級。
@@ -191,7 +198,7 @@ Ranked by item level, then quality; stats are not considered
 - 不在快取中的物品會印出 `Tandem: item <id> is not known; scan or loot it first`。襯衣、外袍、背包與彈藥會印出
   `<item> does not go in a ranked slot`。
 - 釣魚的掉落，也就是物件 35591（Fishing Bobber，釣魚浮標），會印成 `Fishing`。其他沒有記錄名稱的來源會印成
-  `npc #<id>` 或 `object #<id>`；用戶端沒有提供名稱的地圖會印成 `unknown map`。超過 5 個來源時，最後會印出
+  `npc #<id>`、`object #<id>` 或 `quest #<id>`；用戶端沒有提供名稱的地圖會印成 `unknown map`。超過 5 個來源時，最後會印出
   `and <n> more sources`。
 
 ### `/tandem browse`
@@ -269,12 +276,12 @@ Ranked by item level, then quality; stats are not considered
 物品由於名稱還不知道，即使勾選了 `Hide deprecated` 仍會列出。若送達的名稱表示它已棄用，該列會顯示
 灰色的 `(deprecated)` 標示，並在下次重新列出清單時（例如你變更篩選條件時）離開清單，而不會在滑鼠底下突然跳走。
 
-滑鼠移到一列上會顯示遊戲的物品提示框。點擊一列即可選取它：底部的窗格會顯示物品連結與最多 5 個掉落來源，格式與
-`rank` 相同；來源更多時，最後會顯示 `and <n> more sources`。沒有選取任何物品時，窗格顯示
+滑鼠移到一列上會顯示遊戲的物品提示框。點擊一列即可選取它：底部的窗格會顯示物品連結與最多 5 個取得來源，格式與
+順序都與 `rank` 相同；來源更多時，最後會顯示 `and <n> more sources`。沒有選取任何物品時，窗格顯示
 `Select an item to see where it drops`。
 
 把物品放到視窗上即可查詢它：從背包或角色資訊視窗拿起物品，拖到清單或視窗背景上，或拿著它在那裡點擊。物品會離開
-游標並留在原處。下拉選單會切換到該物品的部位，選取該物品並捲動到它那一列，窗格顯示它的掉落來源。你無法使用該物品時，
+游標並留在原處。下拉選單會切換到該物品的部位，選取該物品並捲動到它那一列，窗格顯示它的來源。你無法使用該物品時，
 `Usable only` 會取消勾選，讓它那一列以半透明列出；可使用的物品則不會改變這個勾選框。同樣地，已棄用的物品會取消勾選
 `Hide deprecated`，品質與所選品質不同的物品會把品質下拉選單改回 `All qualities`。沒有排名部位的物品（例如襯衣）
 會把清單切換到 `All slots`，它不會列在清單中，但窗格仍會顯示它的來源，篩選條件也維持不變。不在快取中的物品不會選取
@@ -323,7 +330,7 @@ To contribute: type /reload, then run make import
 - `(equipped)`：你正穿戴著它。
 - `(upgrade)`：它的物品等級高於你在該部位穿戴的物品；空部位視為物品等級 0。用戶端不提供你穿戴的物品時不會標示，
   手持雙手武器時 `offhand` 也不會標示。
-- `(no known source)`：沒有它的掉落紀錄（只出現在 `gear ... all` 與瀏覽視窗）。
+- `(no known source)`：沒有它的掉落、任務獎勵或商人紀錄（只出現在 `gear ... all` 與瀏覽視窗）。
 
 ### 物品提示框
 
@@ -337,20 +344,64 @@ To contribute: type /reload, then run make import
   這一行。
 - 你無法使用該物品時，以紅色顯示 `Tandem: you cannot use it: level <n> required` 或
   `Tandem: your class cannot use it`。
-- 以淺灰色顯示該物品掉落次數最多的來源：`Tandem: drops from <source>, <map>`；已知掉落率時接著
-  `(<rate>% per kill)` 或 `(up to <rate>%)`（見[掉落率](#掉落率)），還有其他已知來源時再接著 `(+<n> more)`。來源名稱
-  的顯示方式與 `rank` 相同。沒有已知來源的物品沒有這一行。
+- 以淺灰色顯示該物品的第一個來源，順序與 `rank` 相同：
+  - 你的陣營看過的任務獎勵或商人：`Tandem: reward from <quest>, <map>` 或 `Tandem: sold by <npc>, <map>`，不附掉落率；
+  - 否則是掉落次數最多的來源：`Tandem: drops from <source>, <map>`；已知掉落率時接著 `(<rate>% per kill)` 或
+    `(up to <rate>%)`（見[掉落率](#掉落率)）；
+  - 否則是只有另一陣營看過的任務獎勵或商人，格式同上，後面接著 `(Horde only)` 或 `(Alliance only)`。
+
+  還有其他已知來源時再接著 `(+<n> more)`。來源名稱的顯示方式與 `rank` 相同。沒有已知來源的物品沒有這一行。
 
 例如：
 
 ```text
 Tandem: rank 2 of 14 for Chest (upgrade)
-Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)
+Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 ```
+
+只會掉落的物品則例如顯示 `Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)`。
 
 標記為已棄用的物品只會有一行灰色的 `Tandem: deprecated item`，沒有其他內容。Tandem 不認得的物品不會加上任何內容；
 戰鬥中也不會加上任何一行，聊天視窗也不會印出任何訊息。用戶端尚未提供你的職業或等級時，同樣不會加上任何內容。
 `zhTW` 用戶端會顯示中文。
+
+### 任務獎勵與商人
+
+除了掉落，Tandem 也會記錄以物品為獎勵的任務，以及販售物品的商人：
+
+- 任務獎勵：任務視窗顯示獎勵時，不論是在任務發布者處（`QUEST_DETAIL`）或交回任務時（`QUEST_COMPLETE`），每件獎勵與
+  可選獎勵物品都會記錄在該任務底下，並記下任務名稱。
+- 商人物品：商人視窗開啟時（`MERCHANT_SHOW`），以及之後每次 `MERCHANT_UPDATE`（因為物品連結可能較晚送達），商人列出的
+  每件物品都會記錄在該商人底下，並記下商人名稱。
+
+只記錄可裝備的物品。不在物品快取中的物品也會一併存入快取，立即存入或在用戶端送達物品資料後存入，因此不必掃描就會
+出現在 `gear` 與瀏覽視窗中。戰鬥中、因存檔資料使用較新 schema 而停止記錄時、用戶端缺少任務或商人 API 時，或用戶端
+沒有提供你的陣營時，都不會記錄任何資料。
+
+每個任務或商人在每個帳號中對每件物品只記錄一次：再次看到不會增加任何東西，所以計數維持 1。它保留你第一次看到它時
+的地圖與座標（任務發布者、交回任務處或商人所在處），不論在哪張地圖看到都只列出一次。在隨附資料中，它的計數是看過它
+的貢獻者人數；這個計數只用來排列這類來源之間的順序，絕不會印出。任務獎勵與商人物品沒有掉落率，也不記錄價格。
+
+每筆紀錄也會記下哪些陣營看過它（聯盟、部落或兩者），取自開啟視窗的角色的陣營。來源依下列順序列出，同一組內依計數
+排序：
+
+1. 你的陣營看過的任務獎勵與商人物品。
+2. 掉落。
+3. 只有另一陣營看過的任務獎勵與商人物品，標示 `(Horde only)` 或 `(Alliance only)`。
+
+用戶端沒有提供你的陣營時，不會標示任何來源，所有任務獎勵與商人物品都排在最前面。
+
+| 來源     | `rank` 與瀏覽視窗窗格           | 物品提示框                           |
+| -------- | ------------------------------- | ------------------------------------ |
+| 任務獎勵 | `<quest>, <map> - quest reward` | `Tandem: reward from <quest>, <map>` |
+| 商人物品 | `<npc>, <map> - vendor`         | `Tandem: sold by <npc>, <map>`       |
+
+任務名稱取自你的資料，其次是隨附資料中用戶端語言的任務名稱，再其次是用戶端的任務紀錄，都沒有時顯示 `quest #<id>`。
+商人名稱與其他 NPC 相同，沒有時顯示 `npc #<id>`。`zhTW` 用戶端的這幾行與陣營標示會顯示為中文，例如
+`Tandem：由 <npc> 販售，<map>（僅限部落）`。
+
+任務或商人來源表示已知物品可以從那裡取得，不代表你現在就能取得：商人可能限量販售或需要聲望，任務可能屬於任務鏈、
+只能完成一次，或需要特定職業或等級。
 
 ### 已棄用的物品
 
@@ -379,14 +430,17 @@ Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)
 
 該 NPC 有擊殺數時使用擊殺數，否則使用拾取屍體數，並標明使用哪一種。你自己的資料與隨附資料絕不相加：掉落率的掉落次數
 與分母都取自其中一份，也就是在看過這件物品從該 NPC 掉落的資料中，分母較大的那一份。掉落次數超過分母時（例如拾取了
-別人擊殺的怪物），不顯示掉落率，而不是顯示超過 100% 的數字。寶箱、採集點與釣魚等物件沒有掉落率。
+別人擊殺的怪物），不顯示掉落率，而不是顯示超過 100% 的數字。寶箱、採集點與釣魚等物件沒有掉落率，任務獎勵與商人
+物品也沒有。
 
 ### 隨附資料
 
-addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/` 底下的所有貢獻合併而成：掉落紀錄、依語系
-分組的 NPC 名稱、擊殺數、拾取屍體數與物品快取。指令會把它與你自己的 `TandemDB` 一起使用。每筆掉落紀錄的掉落次數取你的
+addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/` 底下的所有貢獻合併而成：掉落紀錄（掉落、
+任務獎勵與商人物品）、依語系分組的 NPC 與任務名稱、看過每筆任務獎勵與商人物品的陣營、擊殺數、拾取屍體數與物品快取。
+指令會把它與你自己的 `TandemDB` 一起使用。每筆掉落紀錄的掉落次數取你的
 數值與隨附數值中較大者，因為你的資料可能已經包含在隨附檔案中。擊殺數與拾取屍體數不這樣混用：掉落率的掉落次數與分母
-取自同一份資料，詳見[掉落率](#掉落率)。物品紀錄則以你自己的快取為準。沒有這個
+取自同一份資料，詳見[掉落率](#掉落率)。兩邊都有的任務獎勵或商人物品會合併成一個來源，帶有兩邊的陣營。物品紀錄則以
+你自己的快取為準。沒有這個
 檔案時，指令只使用你自己的資料。
 
 ## 收集的資料
@@ -398,8 +452,9 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 | --------- | ----------------------------------------------------------------------------------------------------- |
 | `items`   | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class、subclass；已棄用時第七個欄位為 `1`      |
 | `scan`    | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描                     |
-| `loot`    | 依物品、來源與地圖分組：NPC 或物件 ID、地圖 ID、掉落次數，以及最多 5 個不同的座標                     |
-| `npcs`    | 以 NPC ID 對應的 NPC 名稱                                                                             |
+| `loot`    | 依物品、來源與地圖分組：NPC、物件、任務或商人 ID、地圖 ID、掉落次數、最多 5 個不同的座標；陣營        |
+| `npcs`    | 以 NPC ID 對應的 NPC 名稱，包含商人                                                                   |
+| `quests`  | 以任務 ID 對應的任務名稱                                                                              |
 | `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
 | `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
 | `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
@@ -408,12 +463,17 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 - `scan.lastRun` 保存上次掃描的開始時間、ID 範圍、速率、經過秒數，以及摘要印出的各項計數。
 - 每次在戰鬥外開啟拾取視窗時，每個來源都會記錄一次。來源可能是生物（`kind = "c"`，NPC ID）或遊戲物件
   （`kind = "o"`，物件 ID）；`kind = "?"` 表示用戶端沒有提供來源。用戶端沒有回報地圖與座標時，這兩項會留空。
+- 任務獎勵（`kind = "q"`，任務 ID）或商人物品（`kind = "v"`，商人的 NPC ID）只記錄一次，計數為 `1`，帶有一個座標與
+  `factions`：`1` 為聯盟、`2` 為部落、`3` 為兩者（見[任務獎勵與商人](#任務獎勵與商人)）。
 - 同一次登入期間再次開啟的屍體或物件（例如沒拾取完的屍體）不會增加掉落紀錄，也不會增加拾取屍體數。addon 會記住最近
   200 個來源；`/reload` 後會忘記，所以重新載入後再開啟同一具屍體會重複計算。
 - 只有在拾取的屍體是你的目標或位於滑鼠游標下時，才會記錄 NPC 名稱。
 - `ui` 只記錄瀏覽視窗與小地圖按鈕的位置、視窗大小，以及按鈕是否隱藏；角度在你拖曳按鈕後才儲存，大小在你移動視窗
   或調整大小時儲存，`minimapHidden` 只在按鈕隱藏時存在。它不計入 `Unsaved records`，無效的位置、角度或旗標會在載入時
   捨棄。無效的大小只會單獨捨棄，位置仍會保留。
+
+`TandemDB.schemaVersion` 為 `3`。schema 2 的存檔資料會在載入時遷移，並新增空的 `quests`。較新 schema 的存檔資料會
+原樣保留，在 addon 更新之前不會記錄任何資料。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。當機或強制結束會遺失上次存檔後收集的所有資料；`/tandem count`
 會顯示有多少筆紀錄尚未儲存。長時間掃描後請執行 `/reload`。
@@ -452,8 +512,12 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    `/tandem count` 的掉落紀錄會增加；若是第一次遇到的怪物，NPC 名稱也會多一個。接著執行 `/reload`，確認檔案中的
    `loot` 與 `npcs`。
 7. 執行 `/tandem scan from 200000`，再進行一次小規模掃描，例如 `/tandem scan 20`，確認 Forever 上是否存在這麼大的 ID。
+8. 在戰鬥外，與一位任務獎勵有可裝備物品的任務發布者對話，再開啟一位販售武器或護甲的商人。`/tandem count` 的掉落紀錄
+   會增加，`Unsaved records` 也會增加。關閉商人視窗再開啟一次：掉落紀錄不變。接著執行 `/reload`，確認 `loot` 中有
+   `kind = "q"` 與 `kind = "v"` 的紀錄，`quests` 中有該任務的名稱。
 
-請回報步驟 3 與 7 的摘要、`/tandem count` 的輸出、任何 Lua 錯誤，以及 `SavedVariables/Tandem.lua` 檔案。
+請回報步驟 3 與 7 的摘要、步驟 8 是否有記錄到資料、`/tandem count` 的輸出、任何 Lua 錯誤，以及
+`SavedVariables/Tandem.lua` 檔案。
 
 ### 檢查裝備建議
 
@@ -539,14 +603,17 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    `Tandem: your class cannot use it`。
 3. 滑鼠移到一件你從怪物身上拾取的物品上：一行灰色文字顯示 `Tandem: drops from <source>, <map>`，已知掉落率時附上
    掉落率，還有其他來源時附上 `(+<n> more)`。它與 `/tandem rank` 列出的第一個來源一致。
-4. 滑鼠移到角色資訊視窗中的物品與瀏覽視窗的列上：它們也有相同的幾行。把一件物品 Shift 點擊到聊天視窗並點擊該連結：
+4. 滑鼠移到一件商人販售的物品，或你看過的任務獎勵上：灰色文字顯示 `Tandem: sold by <npc>, <map>` 或
+   `Tandem: reward from <quest>, <map>`，不附掉落率，即使該物品也會掉落。`/tandem rank` 也把同一個來源列在第一個，
+   顯示為 `- vendor` 或 `- quest reward`。
+5. 滑鼠移到角色資訊視窗中的物品與瀏覽視窗的列上：它們也有相同的幾行。把一件物品 Shift 點擊到聊天視窗並點擊該連結：
    開啟的提示框也有這幾行。旁邊顯示的比較提示框則沒有。
-5. 滑鼠移到一件已棄用的物品上，例如取消勾選 `Hide deprecated` 後列出的物品：唯一的 Tandem 文字是灰色的
+6. 滑鼠移到一件已棄用的物品上，例如取消勾選 `Hide deprecated` 後列出的物品：唯一的 Tandem 文字是灰色的
    `Tandem: deprecated item`。
-6. 滑鼠移到一件 Tandem 不認得的物品上，例如任務物品：不會加上任何 Tandem 文字。
-7. 開始戰鬥，在戰鬥中滑鼠移到同樣的物品上：不會加上任何 Tandem 文字，聊天視窗也不會印出任何訊息。
+7. 滑鼠移到一件 Tandem 不認得的物品上，例如任務物品：不會加上任何 Tandem 文字。
+8. 開始戰鬥，在戰鬥中滑鼠移到同樣的物品上：不會加上任何 Tandem 文字，聊天視窗也不會印出任何訊息。
 
-請回報任何提示框說明與 `/tandem rank` 不一致的物品、步驟 4 中聊天連結的提示框是否有出現這幾行，以及任何 Lua 錯誤。
+請回報任何提示框說明與 `/tandem rank` 不一致的物品、步驟 5 中聊天連結的提示框是否有出現這幾行，以及任何 Lua 錯誤。
 
 ## Interface number
 
@@ -577,7 +644,8 @@ make test
 `scripts/wow-dir_test.sh` 與 `scripts/import_test.sh`。本機的 `luac` 版本比遊戲使用的 Lua 5.1 新，因此只能抓出語法錯誤。
 `scripts/addon_test.lua` 會模擬 WoW API 函式，依 `Tandem/Tandem.toc` 列出的順序載入檔案，並檢查 `enUS`、`zhTW`
 與一個不支援的語系下的載入訊息。它也測試 `TandemDB` 的驗證與遷移、`/tandem` 的解析與輸出、以手動計時器與模擬的物品
-API 進行的掃描、以模擬的拾取、戰鬥紀錄、地圖與單位 API 進行的掉落、擊殺與屍體紀錄、以模擬的職業、等級與已穿戴
+API 進行的掃描、以模擬的拾取、戰鬥紀錄、地圖與單位 API 進行的掉落、擊殺與屍體紀錄、以模擬的任務與商人 API
+進行的任務獎勵與商人物品紀錄、以模擬的職業、等級與已穿戴
 物品進行的裝備建議、以模擬的框架、元件與提示框進行的瀏覽視窗，以及以模擬的提示框 API 進行的物品提示框說明。這些測試只能證明邏輯正確；用戶端實際的 API 要在遊戲中檢查。`scripts/import_test.sh` 以拋棄式的
 SavedVariables 檔案與資料夾執行 `make import` 和 `scripts/import.lua`，涵蓋兩位貢獻者、重複匯入、重建、被拒絕的
 檔案與沙箱。
@@ -593,26 +661,28 @@ make import
 ```
 
 ```text
-wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 120 items, 15 kills, 12 looted corpses)
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 15 kills, 12 looted corpses)
 wrote Tandem/Data/Loot.lua (1 contributors, 120 items, 42 loot rows)
 ```
 
 ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一個
 `<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua`，並寫入：
 
-| 檔案                          | 內容                                                                              |
-| ----------------------------- | --------------------------------------------------------------------------------- |
-| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`items`、`kills`、`corpses` 及其語系，每次匯入都會覆寫 |
-| `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                     |
+| 檔案                          | 內容                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses` 及其語系，每次匯入都會覆寫 |
+| `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                               |
 
-合併檔會加總掉落次數、擊殺數與拾取屍體數，每筆掉落紀錄保留最多 5 個座標，NPC 名稱依語系分組，物品快取則取聯集；兩份
+合併檔會加總掉落次數、擊殺數與拾取屍體數，每筆掉落紀錄保留最多 5 個座標，NPC 與任務名稱依語系分組，物品快取則取
+聯集。任務獎勵或商人物品不論各份貢獻在哪張地圖看到，都合併成一列：保留最小的地圖 ID 與該地圖的座標，加總計數（因此
+計數就是看過它的貢獻者人數），並把陣營合併到 `S.factions`，key 為 `"<item>:<kind>:<id>:<map>"`；兩份
 貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。它也以 `contributors` 記錄合併了多少份貢獻。舊版的
-`data/loot.lua` 不再寫入。在匯入擊殺、屍體與物品之前寫成的貢獻檔仍可讀取。
+`data/loot.lua` 不再寫入。在匯入擊殺、屍體、物品與任務之前寫成的貢獻檔仍可讀取。
 
 - `<id>` 是帳號資料夾名稱 SHA-256 的前 12 個十六進位字元。資料夾名稱，也就是帳號號碼，絕不會被寫入或印出；同一個
   帳號永遠得到相同的 ID。
-- 語系取自 `WTF/Config.wtf` 的 `SET textLocale` 這一行，沒有時為 `enUS`。NPC 名稱以用戶端語言儲存，因此
-  `Tandem/Data/Loot.lua` 把它們放在 `names[<locale>]` 底下。
+- 語系取自 `WTF/Config.wtf` 的 `SET textLocale` 這一行，沒有時為 `enUS`。NPC 名稱與任務名稱以用戶端語言儲存，因此
+  `Tandem/Data/Loot.lua` 把它們分別放在 `names[<locale>]` 與 `questNames[<locale>]` 底下。
 - `scan` 與 `ui` 只留在本機。`items` 會匯入，因為只在自己掃描的幾百件物品之間排名意義不大。
 - 重複執行是安全的：每個帳號的貢獻都是完整的快照，會取代上一份，因此掉落次數不會重複加總，相同的輸入也會產生逐位元組
   相同的檔案。
