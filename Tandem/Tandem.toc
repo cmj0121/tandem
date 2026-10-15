@@ -21,6 +21,7 @@ Sources.lua
 Kills.lua
 Advisor.lua
 View.lua
+Check.lua
 Commands.lua
 Browse.lua
 Launcher.lua

@@ -89,8 +89,9 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 | `/tandem export`                      | Shows what `make import` would collect from this account         |
 | `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
 | `/tandem minimap [on\|off]`           | Shows or hides the minimap button; with no argument, toggles it  |
+| `/tandem check`                       | Lists, per feature, which client APIs it needs are found         |
 
-`gear`, `rank`, `export` and `browse` print `Tandem: not available in combat` and do nothing while you are in combat.
+`gear`, `rank`, `export`, `browse` and `check` print `Tandem: not available in combat` and do nothing while you are in combat.
 `minimap` works in combat too.
 
 ### `/tandem scan`
@@ -333,6 +334,19 @@ To contribute: type /reload, then run make import
 
 The counts are this account's saved data plus what is not saved yet. `export` only prints: it does not reload the UI or
 write anything. See [Importing loot logs](#importing-loot-logs).
+
+### `/tandem check`
+
+```text
+Tandem API check:
+Item tooltip: ok (TooltipDataProcessor.AddTooltipPostCall ok, Enum.TooltipDataType.Item ok)
+Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
+```
+
+One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
+either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
+`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert` and `Item stats`.
+A feature whose API is missing stays off instead of raising an error.
 
 ## Gear advice
 
@@ -676,6 +690,27 @@ window, at its smallest size too.
 
 Report back any item whose tooltip line does not match `/tandem rank`, whether the line showed on the chat link
 tooltip in step 5, and any Lua error.
+
+### Check the client APIs
+
+The tooltip and the quest and vendor sources, and the map pins, quest reward pick and upgrade alert still to come,
+use APIs that are not verified on Forever. One pass of `/tandem check` tells which of them the client has:
+
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eight lines, one each for `Item tooltip`,
+   `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert` and
+   `Item stats`, each followed by `ok` or `missing` and its APIs.
+2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
+   whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
+   `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
+   been shown.
+3. Open the world map and run `/tandem check` once more: the `Map pins` line stays the same.
+4. Start a fight and, while in combat, run `/tandem check`: it prints `Tandem: not available in combat` and nothing
+   else.
+5. If `Item tooltip` is `ok`, run the steps of [Check the item tooltip](#check-the-item-tooltip). If `Quest sources` or
+   `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
+   check.
+
+Report back every line of steps 1 and 2 as printed, and any Lua error.
 
 ## Interface number
 

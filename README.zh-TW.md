@@ -87,8 +87,9 @@ make install MODE=copy
 | `/tandem export`                      | 顯示 `make import` 會從這個帳號收集哪些資料                       |
 | `/tandem browse [<slot>]`             | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
 | `/tandem minimap [on\|off]`           | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
+| `/tandem check`                       | 逐項功能列出它需要的用戶端 API 是否存在                           |
 
-戰鬥中執行 `gear`、`rank`、`export` 與 `browse` 時，只會印出 `Tandem: not available in combat`，不做任何事。
+戰鬥中執行 `gear`、`rank`、`export`、`browse` 與 `check` 時，只會印出 `Tandem: not available in combat`，不做任何事。
 `minimap` 在戰鬥中也能使用。
 
 ### `/tandem scan`
@@ -308,6 +309,18 @@ To contribute: type /reload, then run make import
 
 計數包含這個帳號已存檔的資料與尚未存檔的資料。`export` 只會印出訊息：它不會重新載入介面，也不會寫入任何資料。
 見[匯入掉落紀錄](#匯入掉落紀錄)。
+
+### `/tandem check`
+
+```text
+Tandem API check:
+Item tooltip: ok (TooltipDataProcessor.AddTooltipPostCall ok, Enum.TooltipDataType.Item ok)
+Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
+```
+
+每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
+找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
+`Quest reward pick`、`Upgrade alert` 與 `Item stats`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 
 ## 裝備建議
 
@@ -614,6 +627,24 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 8. 開始戰鬥，在戰鬥中滑鼠移到同樣的物品上：不會加上任何 Tandem 文字，聊天視窗也不會印出任何訊息。
 
 請回報任何提示框說明與 `/tandem rank` 不一致的物品、步驟 5 中聊天連結的提示框是否有出現這幾行，以及任何 Lua 錯誤。
+
+### 檢查用戶端 API
+
+物品提示框、任務與商人來源，以及接下來的地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
+執行一次 `/tandem check` 就能知道用戶端有哪些：
+
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與八行，分別是 `Item tooltip`、
+   `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert` 與
+   `Item stats`，每行後面接著 `ok` 或 `missing` 以及它的 API。
+2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
+   `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
+   可能要等視窗顯示過一次才會存在。
+3. 開啟世界地圖，再執行一次 `/tandem check`：`Map pins` 這行不變。
+4. 開始戰鬥，在戰鬥中執行 `/tandem check`：只印出 `Tandem: not available in combat`。
+5. 若 `Item tooltip` 為 `ok`，請進行[檢查物品提示框](#檢查物品提示框)的步驟。若 `Quest sources` 或 `Vendor sources`
+   為 `ok`，請進行[檢查資料收集](#檢查資料收集)的步驟 8 與提示框檢查的步驟 4。
+
+請回報步驟 1 與 2 印出的每一行，以及任何 Lua 錯誤。
 
 ## Interface number
 

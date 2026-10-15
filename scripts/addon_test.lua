@@ -62,6 +62,7 @@ local function loadAddon(locale, opts)
         end,
         SlashCmdList = {},
     }, { __index = _G })
+    env._G = env
     for k, v in pairs(opts.env or {}) do
         env[k] = v
     end
@@ -530,7 +531,8 @@ do
     check("usage lists export", help[8], "  /tandem export - show what make import would collect")
     check("usage lists browse", help[9], "  /tandem browse [<slot>] - browse known gear in a window")
     check("usage lists minimap", help[10], "  /tandem minimap [on|off] - show or hide the minimap button")
-    check("usage line count", #help, 10)
+    check("usage lists check", help[11], "  /tandem check - list the client APIs each feature needs")
+    check("usage line count", #help, 11)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -4819,6 +4821,114 @@ do
     check("browse: the drop follows the same-faction q/v rows", pane[6],
         "  Hogger, Elwynn Forest - drops: 5, 50.0% per kill")
     check("browse: the other-faction vendor is past the cap", pane[7], "  and 1 more sources")
+end
+
+-- Check: /tandem check lists each feature's client APIs (stage 6, unit 1).
+
+-- Every API Check looks for, first alternative only for the either-or ones.
+local function checkAPIs()
+    local fn = function() end
+    return {
+        TooltipDataProcessor = { AddTooltipPostCall = fn },
+        Enum = { TooltipDataType = { Item = 0 } },
+        GetQuestID = fn, GetQuestItemLink = fn, GetNumQuestChoices = fn, GetNumQuestRewards = fn,
+        UnitGUID = fn, GetMerchantNumItems = fn, GetMerchantItemLink = fn,
+        WorldMapFrame = { GetCanvas = fn, GetMapID = fn, OnMapChanged = fn },
+        OpenWorldMap = fn, hooksecurefunc = fn,
+        C_Map = { CanSetUserWaypointOnMap = fn, SetUserWaypoint = fn },
+        UiMapPoint = { CreateFromCoordinates = fn },
+        C_SuperTrack = { SetSuperTrackedUserWaypoint = fn },
+        QuestInfoRewardsFrame = { RewardButtons = {} },
+        C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn },
+        GetInventoryItemLink = fn,
+        C_Item = { GetItemStats = fn },
+    }
+end
+
+-- Returns the check output as { [feature] = line } after the header, plus the raw lines.
+local function runCheck(addon, printed)
+    local out = run(addon, printed, "check")
+    local byName = {}
+    for i = 2, #out do
+        byName[out[i]:match("^(.-):")] = out[i]
+    end
+    return byName, out
+end
+
+do
+    local addon, printed = loadWithDB(nil)
+    local byName, out = runCheck(addon, printed)
+    check("check: header", out[1], "Tandem API check:")
+    check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
+    check("check: eight features", #addon.Check.FEATURES, 8)
+    check("check: tooltip missing without the API", byName["Item tooltip"],
+        "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
+    check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
+        "Quest reward pick: missing (GetNumQuestChoices missing, GetQuestItemLink missing, "
+            .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
+            .. "QuestRewardItem1 missing)")
+    for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
+        "Quest reward pick", "Upgrade alert", "Item stats" }) do
+        check(("check: %s line present"):format(name), byName[name] ~= nil, true)
+        check(("check: %s missing under bare stubs"):format(name),
+            byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
+    end
+    check("check: extra words print usage", run(addon, printed, "check now")[1], "Tandem commands:")
+end
+
+do
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    local byName, out = runCheck(addon, printed)
+    for i = 2, #out do
+        check(("check: %s ok with every API"):format(out[i]:match("^(.-):")), out[i]:match("^[^:]*: (%a+)"), "ok")
+    end
+    check("check: an ok line lists the APIs", byName["Map waypoint"],
+        "Map waypoint: ok (C_Map.CanSetUserWaypointOnMap ok, C_Map.SetUserWaypoint ok, "
+            .. "UiMapPoint.CreateFromCoordinates ok, C_SuperTrack.SetSuperTrackedUserWaypoint ok)")
+    check("check: the other alternative shows missing", byName["Item stats"],
+        "Item stats: ok (C_Item.GetItemStats ok, GetItemStats missing)")
+end
+
+do
+    local env = checkAPIs()
+    env.QuestInfoRewardsFrame = nil
+    env.QuestRewardItem1 = {}
+    env.C_Container = nil
+    env.GetContainerNumSlots = function() end
+    env.WorldMapFrame = 5
+    env.C_SuperTrack = {}
+    local addon, printed = loadWithDB(nil, "enUS", { env = env })
+    local byName = runCheck(addon, printed)
+    check("check: a named reward button is enough", byName["Quest reward pick"],
+        "Quest reward pick: ok (GetNumQuestChoices ok, GetQuestItemLink ok, "
+            .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
+            .. "QuestRewardItem1 ok)")
+    check("check: one need with no alternative fails the feature", byName["Upgrade alert"],
+        "Upgrade alert: missing (C_Container.GetContainerNumSlots missing, GetContainerNumSlots ok, "
+            .. "C_Container.GetContainerItemID missing, GetContainerItemID missing, GetInventoryItemLink ok)")
+    check("check: a non-table step is missing, not an error", byName["Map pins"] and byName["Map pins"]:sub(1, 19),
+        "Map pins: missing (")
+    check("check: a missing field is missing", byName["Map waypoint"]:match("SetSuperTrackedUserWaypoint (%a+)"),
+        "missing")
+    check("check: Has on a nil step", addon.Check.Has("NoSuchTable.Field"), false)
+    check("check: Has on a present value", addon.Check.Has("GetQuestID"), true)
+end
+
+do
+    local addon, printed, env = loadWithDB(nil)
+    env.InCombatLockdown = function()
+        return true
+    end
+    local out = run(addon, printed, "check")
+    check("check: refused in combat", out[1], "Tandem: not available in combat")
+    check("check: prints only the refusal in combat", #out, 1)
+end
+
+do
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    local out = run(addon, printed, "check")
+    check("zhTW check: header", out[1], "Tandem API 檢查：")
+    check("zhTW check: feature line", out[#out], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 if failures > 0 then

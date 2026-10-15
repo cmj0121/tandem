@@ -30,6 +30,7 @@ local function printUsage()
     print(L["  /tandem export - show what make import would collect"])
     print(L["  /tandem browse [<slot>] - browse known gear in a window"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
+    print(L["  /tandem check - list the client APIs each feature needs"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -320,8 +321,21 @@ local function browse(args)
     end
 end
 
+-- Prints one line per feature: ok when every API it needs is present, with each API's state.
+local function check()
+    print(L["Tandem API check:"])
+    for _, feature in ipairs(ns.Check.Status()) do
+        local apis = {}
+        for i, api in ipairs(feature.apis) do
+            apis[i] = api.path .. " " .. (api.ok and L["ok"] or L["missing"])
+        end
+        print(L["%s: %s (%s)"]:format(L[feature.name], feature.ok and L["ok"] or L["missing"],
+            table.concat(apis, ", ")))
+    end
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
-local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true }
+local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true, check = true }
 
 -- minimap [on|off]: no argument toggles. Allowed in combat: the button is not a protected frame.
 local MINIMAP_STATE = { on = true, off = false }
@@ -362,6 +376,8 @@ function Commands.Run(msg)
         browse(args)
     elseif sub == "minimap" then
         minimap(args)
+    elseif sub == "check" and #args == 0 then
+        check()
     else
         printUsage()
     end
