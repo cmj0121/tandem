@@ -280,9 +280,11 @@ end
 -- true for a one-hander the class can also wield in the off hand.
 function Advisor.Place(id, class, level)
     local r = Advisor.Item(id)
-    if not r then
-        return nil
-    end
+    return r and Advisor.PlaceRecord(r, class, level)
+end
+
+-- Returns Place's table for an item record { ilvl, reqLevel, quality, equipLoc, classID, subclassID }.
+function Advisor.PlaceRecord(r, class, level)
     local usable, reason, needLevel = Advisor.Usable(r, class, level)
     return { slot = SLOT_OF[r[4]], usable = usable, reason = reason, needLevel = needLevel,
              deprecated = isDeprecated(r) or nil, offhand = alsoOffhand(r[4], class, level) or nil }

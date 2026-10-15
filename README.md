@@ -494,6 +494,28 @@ compared with what you wear: hover the choice to see its rank and `(upgrade)` ma
 - Nothing happens in combat, while the client does not tell your class or level, or when the `Quest reward pick` line of
   [`/tandem check`](#tandem-check) is `missing`. Nothing is printed.
 
+### Upgrade alert
+
+When an item lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4) that your class and level can use and that beats
+what you wear in its slot by item level, chat shows one line:
+
+```text
+Tandem: upgrade for Chest: [Plate Chest] (item level 45 over 30)
+```
+
+The rule is the `(upgrade)` mark of [`/tandem gear`](#tandem-gear): an empty slot counts as item level 0, a ring or
+trinket is compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker hand, and an
+off-hand item says nothing while you wield a two-hander. Stats are not considered.
+
+- Each item is announced at most once per session, and only when it is new in the bags: the bags you log in with are
+  read silently, and moving an item between bags says nothing.
+- An item the client has not loaded yet is asked for and judged when it arrives (`GET_ITEM_INFO_RECEIVED`), if it is
+  still in the bags.
+- In combat the line waits and is printed when combat ends (`PLAYER_REGEN_ENABLED`); nothing is printed in combat.
+- The alert only advises: Tandem never equips anything.
+- Nothing happens while the client does not tell your class or level, or when the `Upgrade alert` line of
+  [`/tandem check`](#tandem-check) is `missing`.
+
 ### Deprecated items
 
 Items whose name starts with `Deprecated`, in any case and after any leading spaces, are flagged deprecated. The item
@@ -735,8 +757,8 @@ tooltip in step 5, and any Lua error.
 
 ### Check the client APIs
 
-The tooltip, the quest and vendor sources, the map pins and the quest reward pick, and the upgrade alert still to come,
-use APIs that are not verified on Forever. One pass of `/tandem check` tells which of them the client has:
+The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
+not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
 1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eight lines, one each for `Item tooltip`,
    `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert` and
@@ -751,7 +773,8 @@ use APIs that are not verified on Forever. One pass of `/tandem check` tells whi
 5. If `Item tooltip` is `ok`, run the steps of [Check the item tooltip](#check-the-item-tooltip). If `Quest sources` or
    `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
    check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins). If `Quest reward pick` is `ok` in step
-   2, run [Check the quest reward pick](#check-the-quest-reward-pick).
+   2, run [Check the quest reward pick](#check-the-quest-reward-pick). If `Upgrade alert` is `ok`, run
+   [Check the upgrade alert](#check-the-upgrade-alert).
 
 Report back every line of steps 1 and 2 as printed, and any Lua error.
 
@@ -790,6 +813,22 @@ was set, the map ID of any map that refused it, and any Lua error.
 
 Report back the quest, the choices with their item level and quality, which one was marked, whether the icon sat well
 on the button or hid part of it, and any Lua error.
+
+### Check the upgrade alert
+
+1. Log in or run `/reload` with some gear in your bags: no `Tandem: upgrade for` line shows.
+2. Out of combat, loot, buy or take from the mail an item your class can use with a higher item level than what you
+   wear in its slot (or any usable item for an empty slot). Chat shows one line,
+   `Tandem: upgrade for <slot>: <item link> (item level <n> over <m>)`, and nothing is equipped.
+3. Move that item to another bag, sell it and buy it back, or drop and loot it again: no second line for it this
+   session.
+4. Get an item you cannot use, or one no better than what you wear: no line.
+5. Loot an upgrade during a fight: nothing shows in combat; the line shows when the fight ends.
+6. If you can, loot an upgrade the client has never shown before (a fresh drop): the line may come a moment later, once
+   the item has loaded.
+
+Report back each line as printed with the item level of what you wore, any upgrade that got no line or any line for an
+item that is not an upgrade, and any Lua error.
 
 ## Interface number
 

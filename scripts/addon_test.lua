@@ -5407,6 +5407,178 @@ do
     check("quest pick: a closed window is not judged again", ctx.marked(), "")
 end
 
+-- Upgrade alert (stage 6, unit 5): a chat line when a new bag item beats what is worn.
+
+-- Loads gearData() with bags read through opts.api: "container" (C_Container, default), "global" (the old global bag
+-- functions) or "none". ctx.bags[bag] lists the item ids in a bag (0..5); ctx.bagUpdate() changes nothing but fires
+-- BAG_UPDATE_DELAYED. ctx.slotCalls[bag] counts the slot lookups per bag. Item 900 is a plate chest of item level 60
+-- the client has not loaded until ctx.cache[900] is set.
+local function loadUpgrade(opts)
+    opts = opts or {}
+    local bags, slotCalls = { [0] = {} }, {}
+    local function numSlots(bag)
+        return bags[bag] and #bags[bag] or 0
+    end
+    local function itemID(bag, slot)
+        slotCalls[bag] = (slotCalls[bag] or 0) + 1
+        return bags[bag] and bags[bag][slot]
+    end
+    local env = {}
+    if (opts.api or "container") == "container" then
+        env.C_Container = { GetContainerNumSlots = numSlots, GetContainerItemID = itemID }
+    elseif opts.api == "global" then
+        env.GetContainerNumSlots, env.GetContainerItemID = numSlots, itemID
+    end
+    local ctx = loadGear(opts.locale or "enUS", nil, nil, { env = env })
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 900 then
+            return 900, nil, nil, "INVTYPE_CHEST", nil, 4, 4
+        end
+        return instant(id)
+    end
+    ctx.bags, ctx.slotCalls = bags, slotCalls
+    function ctx.bagUpdate()
+        ctx.fire("BAG_UPDATE_DELAYED")
+    end
+    -- Puts ids in the bags and fires BAG_UPDATE_DELAYED; returns the lines printed.
+    function ctx.loot(...)
+        for _, id in ipairs({ ... }) do
+            table.insert(bags[0], id)
+        end
+        local from = #ctx.printed
+        ctx.bagUpdate()
+        return ctx.since(from)
+    end
+    ctx.equipped[5] = "|cff0070dd|Hitem:3::::::::::::::|h[Leather Vest]|h|r"
+    return ctx
+end
+
+local function upgradeLine(slot, id, hex, ilvl, over)
+    return ("Tandem: upgrade for %s: %s (item level %d over %d)"):format(slot, built(id, hex), ilvl, over)
+end
+
+do
+    local ctx = loadUpgrade()
+    check("upgrade: BAG_UPDATE_DELAYED registered", ctx.frame.registered.BAG_UPDATE_DELAYED, true)
+    check("upgrade: PLAYER_REGEN_ENABLED registered", ctx.frame.registered.PLAYER_REGEN_ENABLED, true)
+    ctx.bags[0] = { 1, 13 }
+    local from = #ctx.printed
+    ctx.bagUpdate()
+    check("upgrade: the login snapshot prints nothing", #ctx.since(from), 0)
+    check("upgrade: the login snapshot's items are not judged later", #ctx.loot(), 0)
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    local out = ctx.loot(1)
+    check("upgrade: one line for a new upgrade", #out, 1)
+    check("upgrade: the line names the slot, link and item levels", out[1], upgradeLine("Chest", 1, BLUE, 45, 30))
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    check("upgrade: the same item again prints nothing", #ctx.loot(1), 0)
+    check("upgrade: an item no better than the worn one prints nothing", #ctx.loot(4), 0)
+    check("upgrade: an item the class cannot use prints nothing", #ctx.loot(8), 0)
+    check("upgrade: an item with no ranked slot prints nothing", #ctx.loot(9), 0)
+    check("upgrade: the worn item itself prints nothing", #ctx.loot(3), 0)
+    out = ctx.loot(13, 2)
+    check("upgrade: an empty slot counts as item level 0", out[1], upgradeLine("Legs", 13, BLUE, 50, 0))
+    check("upgrade: only the upgrades of a batch print", #out, 1)
+    check("upgrade: an unchanged bag prints nothing", #ctx.loot(), 0)
+    check("upgrade: reads bags 0 to 4 only", ctx.slotCalls[5], nil)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.equipped[11] = "|cff1eff00|Hitem:16::::::::::::::|h[Ring]|h|r"
+    ctx.cache[16] = { "Ring", nil, 2, 20 }
+    ctx.cache[17] = { "Band", nil, 2, 10 }
+    local loop = "|cff1eff00|Hitem:18::::|h[Loop]|h|r"
+    ctx.cache[18] = { "Loop", loop, 2, 15 }
+    ctx.equipped[12] = "|cff1eff00|Hitem:17::::::::::::::|h[Band]|h|r"
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 18 then
+            return 18, nil, nil, "INVTYPE_FINGER", nil, 4, 0
+        end
+        return instant(id)
+    end
+    ctx.bagUpdate()
+    local out = ctx.loot(18)
+    check("upgrade: a ring is judged against the weaker worn ring", out[1],
+        ("Tandem: upgrade for Finger: %s (item level 15 over 10)"):format(loop))
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.equipped[16] = "|cff1eff00|Hitem:15::::::::::::::|h[Axe]|h|r"
+    ctx.bagUpdate()
+    check("upgrade: no off-hand line while wielding a two-hander", #ctx.loot(5, 14), 0)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bagUpdate()
+    local out = ctx.loot(900)
+    check("upgrade: an uncached item prints nothing yet", #out, 0)
+    check("upgrade: an uncached item is asked for", ctx.requested[900], true)
+    ctx.cache[900] = { "Late Plate", "|cffa335ee|Hitem:900::::|h[Late Plate]|h|r", 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("upgrade: another item's info prints nothing", #ctx.since(from), 0)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    out = ctx.since(from)
+    check("upgrade: a late item prints once it arrives", out[1],
+        "Tandem: upgrade for Chest: |cffa335ee|Hitem:900::::|h[Late Plate]|h|r (item level 60 over 30)")
+    check("upgrade: a late item prints one line", #out, 1)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("upgrade: its info again prints nothing", #ctx.since(from), 1)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bagUpdate()
+    ctx.loot(900)
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("upgrade: a late item gone from the bags prints nothing", #ctx.since(from), 0)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bagUpdate()
+    ctx.combat = true
+    check("upgrade: nothing printed in combat", #ctx.loot(1, 900), 0)
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("upgrade: a late item in combat prints nothing", #ctx.since(from), 0)
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    local out = ctx.since(from)
+    check("upgrade: combat lines print after combat", #out, 2)
+    check("upgrade: combat lines keep their order", out[1], upgradeLine("Chest", 1, BLUE, 45, 30))
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("upgrade: queued lines print once", #ctx.since(from), 2)
+end
+
+for _, api in ipairs({ "global", "none" }) do
+    local ctx = loadUpgrade({ api = api })
+    local ok = pcall(ctx.bagUpdate)
+    ctx.loot(1)
+    local out = ctx.loot(13)
+    check("upgrade: the " .. api .. " bag API is no error", ok, true)
+    check("upgrade: the " .. api .. " bag API", #out, api == "global" and 1 or 0)
+end
+
+do
+    local ctx = loadUpgrade({ locale = "zhTW" })
+    ctx.bagUpdate()
+    check("zhTW upgrade alert line", ctx.loot(1)[1],
+        ("Tandem：胸部的升級：%s（物品等級 45，高於 30）"):format(built(1, BLUE, "物品 #1")))
+end
+
 if failures > 0 then
     os.exit(1)
 end

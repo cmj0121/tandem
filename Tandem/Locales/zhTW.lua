@@ -78,6 +78,7 @@ L["Map waypoint"] = "地圖導航點"
 L["Quest reward pick"] = "任務獎勵建議"
 L["Upgrade alert"] = "升級提醒"
 L["Item stats"] = "物品屬性"
+L["Tandem: upgrade for %s: %s (item level %d over %d)"] = "Tandem：%s的升級：%s（物品等級 %d，高於 %d）"
 L["  /tandem map <item link|id> - pin where an item comes from on the world map"] =
     "  /tandem map <物品連結|id> - 在世界地圖上標記物品的來源位置"
 L["  /tandem map clear - remove the map pins"] = "  /tandem map clear - 移除地圖標記"

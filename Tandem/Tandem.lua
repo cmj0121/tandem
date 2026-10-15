@@ -15,6 +15,8 @@ frame:RegisterEvent("MERCHANT_UPDATE")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+frame:RegisterEvent("BAG_UPDATE_DELAYED")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
@@ -50,6 +52,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Browse.OnItemInfo(...)
         ns.Sources.OnItemInfo(...)
         ns.QuestPick.OnItemInfo(...)
+        ns.Upgrade.OnItemInfo(...)
     elseif event == "LOOT_READY" then
         ns.Loot.OnLootReady()
     elseif event == "LOOT_CLOSED" then
@@ -67,11 +70,16 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Browse.OnCombat()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         ns.Browse.OnEquipmentChanged()
+    elseif event == "BAG_UPDATE_DELAYED" then
+        ns.Upgrade.OnBagUpdate()
     elseif event == "PLAYER_LOGIN" then
         ns.Launcher.OnLogin()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         ns.Kills.OnCombatLog()
-    elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_LOGOUT" then
-        ns.Kills.Flush(event == "PLAYER_LOGOUT")
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        ns.Kills.Flush(false)
+        ns.Upgrade.OnCombatEnd()
+    elseif event == "PLAYER_LOGOUT" then
+        ns.Kills.Flush(true)
     end
 end)

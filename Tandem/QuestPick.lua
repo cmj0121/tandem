@@ -22,33 +22,13 @@ local function choiceID(i)
     return type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
 end
 
--- Returns the item's record, a client-built one, false when it is not equippable (or unknown), or nil while the
--- client has not loaded it.
-local function recordOf(id)
-    local r = ns.Advisor.Item(id)
-    if r then
-        return r
-    end
-    local equipLoc, classID, subclassID = ns.Scanner.Equippable(id)
-    if not equipLoc then
-        return false
-    end
-    local name, _, quality, ilvl, reqLevel = C_Item.GetItemInfo(id)
-    name, quality, ilvl, reqLevel = Safe(name), Safe(quality), Safe(ilvl), Safe(reqLevel)
-    if type(name) ~= "string" or type(ilvl) ~= "number" then
-        return nil
-    end
-    return { ilvl, type(reqLevel) == "number" and reqLevel or 1, type(quality) == "number" and quality or 1,
-             equipLoc, classID, subclassID }
-end
-
 -- QuestPick.Pick(ids, class, level) -> index, pending
 -- Returns the index of the usable choice that beats every other usable one by item level, then quality; nil on a
 -- tie or when none is usable. pending lists the ids not loaded yet, and while any is, nothing is picked.
 function QuestPick.Pick(ids, class, level)
     local best, bestIndex, tied, pending = nil, nil, false, {}
     for i, id in ipairs(ids) do
-        local r = id and recordOf(id)
+        local r = id and ns.View.Record(id)
         if r == nil and id then
             pending[#pending + 1] = id
         elseif r and ns.Advisor.Usable(r, class, level) then
