@@ -25,7 +25,9 @@ local function remember(guid)
     nextSeen = nextSeen % Loot.SEEN_MAX + 1
 end
 
-local function playerPosition()
+-- Loot.PlayerPosition() -> map, x, y
+-- Returns the player's map and 0..1 position on it; nil parts when the client does not tell.
+function Loot.PlayerPosition()
     if not (C_Map and C_Map.GetBestMapForUnit) then
         return nil
     end
@@ -87,7 +89,7 @@ function Loot.OnLootReady()
         return
     end
     recorded = true
-    local map, x, y = playerPosition()
+    local map, x, y = Loot.PlayerPosition()
 
     -- Every slot, money too, so a gold-only corpse still counts.
     local slotSources, isFresh, fresh = {}, {}, {}

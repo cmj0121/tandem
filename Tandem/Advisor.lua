@@ -1,11 +1,12 @@
 local _, ns = ...
 
 -- Read-only view over own TandemDB and the shipped ns.Shipped: which items a class can use, how they rank in their
--- slot, and where they drop. Class and level are arguments; nothing here touches the player.
+-- slot, and where they come from. Class, level and faction are arguments; nothing here touches the player.
 local Advisor = {}
 ns.Advisor = Advisor
 
-local Safe = ns.Store.Safe
+local Store = ns.Store
+local Safe = Store.Safe
 local EMPTY = {}
 
 -- Game objects named in source lines, by locale key.
@@ -346,6 +347,23 @@ local function npcName(npcID)
     return type(name) == "string" and name or nil
 end
 
+-- Returns the quest's title from own data, else from the shipped titles for the client locale, else from the
+-- client, or nil.
+local function questName(questID)
+    local name = own("quests")[questID]
+    if type(name) == "string" then
+        return name
+    end
+    name = field(shipped("questNames"), GetLocale and GetLocale() or nil)[questID]
+    if type(name) == "string" then
+        return name
+    end
+    if C_QuestLog and C_QuestLog.GetTitleForQuestID then
+        name = Safe(C_QuestLog.GetTitleForQuestID(questID))
+        return type(name) == "string" and name ~= "" and name or nil
+    end
+end
+
 local function npcCount(t, npcID)
     local n = t[npcID]
     return type(n) == "number" and n or 0
@@ -381,34 +399,61 @@ local function dropRate(npcID, drops)
     end
 end
 
--- Returns where an item drops: { kind, id, map, count, coords, name, mapName, rate, rateBasis } sorted by count desc,
--- then kind, id, map. Own and shipped rows merge by max count (decision 13); rates follow decision 16.
-function Advisor.Sources(id)
+local SET_ONCE = { q = true, v = true }
+local FACTION_NAMES = { [1] = "Alliance", [2] = "Horde" }
+
+-- Returns 1 for a quest or vendor row the player can use, 2 for a drop, 3 for a quest or vendor row of the other
+-- faction only.
+local function group(row)
+    if not SET_ONCE[row.kind] then
+        return 2
+    end
+    return row.otherFaction and 3 or 1
+end
+
+-- Returns where an item comes from: { kind, id, map, count, coords, name, mapName, rate, rateBasis, factions,
+-- otherFaction }. Own and shipped rows merge by max count (decision 13); rates follow decision 16 and only drops
+-- have one. Quest (q) and vendor (v) rows are one per kind and id whatever the map: they keep the lower map with its
+-- coords and carry factions, own and shipped OR-ed; for a player of faction (a
+-- Store.FACTIONS bit, or nil when unknown) the rows of that faction come first, then drops, then those of the other
+-- faction only, whose otherFaction names it ("Alliance" | "Horde"). Within each, by count desc, then kind, id, map.
+function Advisor.Sources(id, faction)
     local rows, byKey = {}, {}
-    local function add(dataset, kind, srcID, map, count, coords)
-        local key = kind .. ":" .. srcID .. ":" .. map
+    local function add(dataset, kind, srcID, map, count, coords, factions)
+        local once = SET_ONCE[kind]
+        local key = once and kind .. ":" .. srcID or kind .. ":" .. srcID .. ":" .. map
         local row = byKey[key]
         if not row then
-            row = { kind = kind, id = srcID, map = map, count = 0, coords = {}, by = {} }
+            row = { kind = kind, id = srcID, map = map, count = 0, coords = once and coords or {}, by = {} }
             byKey[key] = row
             rows[#rows + 1] = row
         end
         row.by[dataset] = count
-        if count > row.count or (count == row.count and dataset == "shipped") then
+        if once then
+            if map < row.map then
+                row.map, row.coords = map, coords
+            end
+            row.count = math.max(row.count, count)
+            if Store.IsFactions(factions) then
+                row.factions = row.factions and Store.OrFactions(row.factions, factions) or factions
+            end
+        elseif count > row.count or (count == row.count and dataset == "shipped") then
             row.count, row.coords = count, coords
         end
     end
     for _, v in pairs(own("loot")) do
         if type(v) == "table" and v.item == id then
-            add("own", v.kind, v.id, v.map, v.count, v.coords)
+            add("own", v.kind, v.id, v.map, v.count, v.coords, v.factions)
         end
     end
+    local shippedFactions = shipped("factions")
     for _, r in ipairs(shippedByItem()[id] or EMPTY) do
         local coords = {}
         for i = 6, #r - 1, 2 do
             coords[#coords + 1] = { r[i], r[i + 1] }
         end
-        add("shipped", r[2], r[3], r[4], r[5], coords)
+        local factions = shippedFactions[r[1] .. ":" .. r[2] .. ":" .. r[3] .. ":" .. r[4]]
+        add("shipped", r[2], r[3], r[4], r[5], coords, factions)
     end
 
     local drops = {}
@@ -426,11 +471,22 @@ function Advisor.Sources(id)
             row.rate, row.rateBasis = dropRate(row.id, drops[row.id])
         elseif row.kind == "o" and OBJECT_NAMES[row.id] then
             row.name = ns.L[OBJECT_NAMES[row.id]]
+        elseif row.kind == "q" then
+            row.name = questName(row.id)
+        elseif row.kind == "v" then
+            row.name = npcName(row.id)
+        end
+        if faction and row.factions and Store.OrFactions(row.factions, faction) ~= row.factions then
+            row.otherFaction = FACTION_NAMES[row.factions]
         end
         row.mapName = Advisor.MapName(row.map)
         row.by = nil
     end
     table.sort(rows, function(a, b)
+        local ga, gb = group(a), group(b)
+        if ga ~= gb then
+            return ga < gb
+        end
         if a.count ~= b.count then
             return a.count > b.count
         end

@@ -7,6 +7,10 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 frame:RegisterEvent("LOOT_READY")
 frame:RegisterEvent("LOOT_CLOSED")
+frame:RegisterEvent("QUEST_DETAIL")
+frame:RegisterEvent("QUEST_COMPLETE")
+frame:RegisterEvent("MERCHANT_SHOW")
+frame:RegisterEvent("MERCHANT_UPDATE")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
@@ -43,10 +47,15 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         ns.Scanner.OnItemInfo(...)
         ns.Browse.OnItemInfo(...)
+        ns.Sources.OnItemInfo(...)
     elseif event == "LOOT_READY" then
         ns.Loot.OnLootReady()
     elseif event == "LOOT_CLOSED" then
         ns.Loot.OnLootClosed()
+    elseif event == "QUEST_DETAIL" or event == "QUEST_COMPLETE" then
+        ns.Sources.OnQuest()
+    elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
+        ns.Sources.OnMerchant()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Browse.OnCombat()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then

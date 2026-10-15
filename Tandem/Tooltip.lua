@@ -27,14 +27,23 @@ local function entries(class, level)
     return memo.items
 end
 
--- Returns the line naming the item's most frequent source, or false when it has none.
+-- Returns the line naming the item's first source (a quest or vendor of the player's faction, else the most
+-- frequent drop), or false when it has none.
 local function sourceLine(id)
-    local rows = Advisor.Sources(id)
+    local rows = View.Sources(id)
     local top = rows[1]
     if not top then
         return false
     end
-    local text = L["Tandem: drops from %s, %s"]:format(View.SourceName(top), View.MapLabel(top))
+    local name, map = View.SourceName(top), View.MapLabel(top)
+    local text
+    if top.kind == "q" then
+        text = L["Tandem: reward from %s, %s"]:format(name, map) .. View.FactionMark(top)
+    elseif top.kind == "v" then
+        text = L["Tandem: sold by %s, %s"]:format(name, map) .. View.FactionMark(top)
+    else
+        text = L["Tandem: drops from %s, %s"]:format(name, map)
+    end
     if top.rateBasis == "kill" then
         text = text .. L[" (%.1f%% per kill)"]:format(top.rate * 100)
     elseif top.rateBasis == "corpse" then

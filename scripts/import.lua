@@ -1,4 +1,5 @@
--- Imports TandemDB loot, kills, looted corpses and items from saved-variables files into the repo.
+-- Imports TandemDB loot (drops, quest rewards, vendor items), npc and quest names, kills, looted corpses and items
+-- from saved-variables files into the repo.
 -- Usage: lua scripts/import.lua <data-dir> <out-file> [<locale> <contributor-id> <saved-variables-file> ...]
 -- Each file overwrites <data-dir>/contributions/<id>.lua; <out-file> (the addon's Data/Loot.lua) is then rebuilt
 -- from every contribution. With no saved-variables files, only <out-file> is rebuilt.
@@ -12,6 +13,7 @@ local MAX_COUNT = 2 ^ 53 -- sums stop here so they stay exact and finite
 -- constants per function (WoW's Lua 5.1 allows 262143).
 local CHUNK_ROWS = 2000
 local LOOT_FIELDS = { "item", "kind", "id", "map", "count" }
+local SET_ONCE = { q = true, v = true } -- quest and vendor kinds: one source per item, kind and id
 
 -- LuaJIT's compiled loops skip count hooks, which would let a data file run forever.
 local luajit = rawget(_G, "jit")
@@ -77,8 +79,8 @@ end
 -- Validates a contribution's blocks through Store.Load; returns the clean db and the number of dropped entries.
 local function clean(c)
     local db, report = Store.Load({
-        schemaVersion = Store.SCHEMA, loot = c.loot, npcs = c.npcs, items = c.items, kills = c.kills,
-        corpses = c.corpses,
+        schemaVersion = Store.SCHEMA, loot = c.loot, npcs = c.npcs, quests = c.quests, items = c.items,
+        kills = c.kills, corpses = c.corpses,
     })
     return db, report.dropped
 end
@@ -86,6 +88,14 @@ end
 -- Operands are capped first: Lua 5.3+ integers near 2^63 would wrap negative when added.
 local function add(a, b)
     return math.min(math.min(a, MAX_COUNT) + math.min(b, MAX_COUNT), MAX_COUNT)
+end
+
+local function count(t)
+    local n = 0
+    for _ in pairs(t) do
+        n = n + 1
+    end
+    return n
 end
 
 -- Writer: keys sorted (numbers numerically before strings lexically), one entry per line.
@@ -136,6 +146,9 @@ local function lootEntry(e)
         coords[#coords + 1] = "{ " .. scalar(c[1]) .. ", " .. scalar(c[2]) .. " }"
     end
     parts[#parts + 1] = "coords = {" .. (#coords > 0 and " " .. table.concat(coords, ", ") .. " " or "") .. "}"
+    if e.factions then
+        parts[#parts + 1] = "factions = " .. scalar(e.factions)
+    end
     return "{ " .. table.concat(parts, ", ") .. " }"
 end
 
@@ -171,6 +184,7 @@ local function writeContribution(path, locale, db)
     }
     block(out, "    ", "loot", db.loot, lootEntry)
     block(out, "    ", "npcs", db.npcs, scalar)
+    block(out, "    ", "quests", db.quests, scalar)
     block(out, "    ", "items", db.items, list)
     block(out, "    ", "kills", db.kills, scalar)
     block(out, "    ", "corpses", db.corpses, scalar)
@@ -208,11 +222,23 @@ local function sumInto(dst, src)
     end
 end
 
+-- Merges src names into dst[locale], keeping the lexically smallest name per id so the order contributions are
+-- read in does not matter.
+local function mergeNames(dst, locale, src)
+    local t = dst[locale] or {}
+    dst[locale] = t
+    for id, n in pairs(src) do
+        if not t[id] or n < t[id] then
+            t[id] = n
+        end
+    end
+end
+
 -- Rebuilds outFile, the addon's ns.Shipped, from every contribution; returns the number of contributors,
 -- items and loot rows, or nil when it cannot be written.
 local function rebuild(dataDir, outFile)
     local dir = dataDir .. "/contributions"
-    local loot, names, items, kills, corpses, contributors = {}, {}, {}, {}, {}, 0
+    local loot, names, questNames, items, kills, corpses, contributors = {}, {}, {}, {}, {}, {}, 0
     for _, name in ipairs(contributionFiles(dir)) do
         local _, c = sandbox(dir .. "/" .. name)
         if type(c) ~= "table" or type(c.locale) ~= "string" or not c.locale:match("^%a%a%a%a$") then
@@ -223,28 +249,34 @@ local function rebuild(dataDir, outFile)
                 fail(("%s/%s: %d invalid entries ignored"):format(dir, name, dropped))
             end
             contributors = contributors + 1
-            for k, e in pairs(db.loot) do
+            -- A quest or vendor source is one row per item, kind and id across contributions, as in Store: it keeps
+            -- the lowest map and that map's coords, with the counts summed and the factions ORed.
+            for lootKey, e in pairs(db.loot) do
+                local once = SET_ONCE[e.kind]
+                local k = once and e.item .. ":" .. e.kind .. ":" .. e.id or lootKey
                 local agg = loot[k]
                 if not agg then
                     agg = { item = e.item, kind = e.kind, id = e.id, map = e.map, count = 0, coords = {}, seen = {} }
                     loot[k] = agg
+                elseif once and e.map < agg.map then
+                    agg.map, agg.coords, agg.seen = e.map, {}, {}
                 end
                 agg.count = add(agg.count, e.count)
-                for _, xy in ipairs(e.coords) do
-                    local ck = xy[1] .. "," .. xy[2]
-                    if not agg.seen[ck] then
-                        agg.seen[ck] = true
-                        agg.coords[#agg.coords + 1] = { xy[1], xy[2] }
+                if once then
+                    agg.factions = Store.OrFactions(agg.factions or 0, e.factions)
+                end
+                if e.map == agg.map then
+                    for _, xy in ipairs(e.coords) do
+                        local ck = xy[1] .. "," .. xy[2]
+                        if not agg.seen[ck] then
+                            agg.seen[ck] = true
+                            agg.coords[#agg.coords + 1] = { xy[1], xy[2] }
+                        end
                     end
                 end
             end
-            local localeNames = names[c.locale] or {}
-            names[c.locale] = localeNames
-            for npc, n in pairs(db.npcs) do
-                if not localeNames[npc] or n < localeNames[npc] then
-                    localeNames[npc] = n
-                end
-            end
+            mergeNames(names, c.locale, db.npcs)
+            mergeNames(questNames, c.locale, db.quests)
             -- Files are read sorted, so on a conflict the lexically first contribution's record stays; it is flagged
             -- deprecated when any contribution flags it.
             for id, record in pairs(db.items) do
@@ -259,8 +291,11 @@ local function rebuild(dataDir, outFile)
         end
     end
 
-    local rows = {}
+    local rows, factions = {}, {}
     for _, agg in pairs(loot) do
+        if agg.factions then
+            factions[agg.item .. ":" .. agg.kind .. ":" .. agg.id .. ":" .. agg.map] = agg.factions
+        end
         table.sort(agg.coords, function(a, b)
             return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])
         end)
@@ -284,7 +319,7 @@ local function rebuild(dataDir, outFile)
         "-- Rows are filled in functions of " .. CHUNK_ROWS .. " so no function exceeds Lua's constant limit.",
         "local _, ns = ...",
         "local S = { contributors = " .. scalar(contributors)
-            .. ", items = {}, loot = {}, kills = {}, corpses = {}, names = {} }",
+            .. ", items = {}, loot = {}, factions = {}, kills = {}, corpses = {}, names = {}, questNames = {} }",
         "ns.Shipped = S",
     }
     -- Appends `target[key] = value` lines for each { key, value } pair, CHUNK_ROWS per local function.
@@ -316,11 +351,18 @@ local function rebuild(dataDir, outFile)
         lootRows[i] = { i, list(agg.row) }
     end
     emit("S.loot", lootRows)
+    out[#out + 1] = '-- S.factions["item:kind:id:map"]: factions of a quest (q) or vendor (v) row, '
+        .. "1 = Alliance, 2 = Horde, 3 = both"
+    emit("S.factions", keyed(factions, scalar))
     emit("S.kills", keyed(kills, scalar))
     emit("S.corpses", keyed(corpses, scalar))
     for _, locale in ipairs(sortedKeys(names)) do
         out[#out + 1] = "S.names" .. key(locale) .. " = {}"
         emit("S.names" .. key(locale), keyed(names[locale], scalar))
+    end
+    for _, locale in ipairs(sortedKeys(questNames)) do
+        out[#out + 1] = "S.questNames" .. key(locale) .. " = {}"
+        emit("S.questNames" .. key(locale), keyed(questNames[locale], scalar))
     end
     local outDir = outFile:match("^(.*)/[^/]*$")
     if outDir and outDir ~= "" then
@@ -331,11 +373,7 @@ local function rebuild(dataDir, outFile)
         fail(err)
         return nil
     end
-    local nItems = 0
-    for _ in pairs(items) do
-        nItems = nItems + 1
-    end
-    return contributors, nItems, #rows
+    return contributors, count(items), #rows
 end
 
 -- Imports one saved-variables file; returns true when its contribution was written.
@@ -374,8 +412,9 @@ local function import(dataDir, locale, id, path)
     end
     local counts = Store.Counts()
     -- Kills and corpses are sums of hostile values, so they print through scalar rather than %d.
-    print(("wrote %s (%s: %d loot entries, %d npc names, %d items, %s kills, %s looted corpses)"):format(
-        dest, locale, counts.loot, counts.npcs, counts.items, scalar(counts.kills), scalar(counts.corpses)))
+    print(("wrote %s (%s: %d loot entries, %d npc names, %d quest names, %d items, %s kills, %s looted corpses)")
+        :format(dest, locale, counts.loot, counts.npcs, count(db.quests), counts.items, scalar(counts.kills),
+            scalar(counts.corpses)))
     return true
 end
 

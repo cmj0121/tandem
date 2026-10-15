@@ -142,22 +142,23 @@ local function loadWithDB(db, locale, opts)
 end
 
 local function isCurrent(db)
-    return type(db) == "table" and db.schemaVersion == 2 and type(db.items) == "table"
+    return type(db) == "table" and db.schemaVersion == 3 and type(db.items) == "table"
         and type(db.scan) == "table" and db.scan.cursor == 1 and db.scan.nonEquippable == 0
-        and type(db.scan.blocks) == "table" and type(db.npcs) == "table" and type(db.loot) == "table"
+        and type(db.scan.blocks) == "table" and type(db.npcs) == "table" and type(db.quests) == "table"
+        and type(db.loot) == "table"
         and type(db.kills) == "table" and type(db.corpses) == "table"
 end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v2 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v3 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
 end
 
 do
     local _, printed, env = loadWithDB("garbage")
-    check("garbage db becomes a fresh v2 table", isCurrent(env.TandemDB), true)
+    check("garbage db becomes a fresh v3 table", isCurrent(env.TandemDB), true)
     check("garbage db prints a reset line", printed[2], "Tandem: saved data was unreadable and has been reset")
 end
 
@@ -181,7 +182,7 @@ do
         unknownTop = true,
     })
     local db = env.TandemDB
-    check("old db is migrated to v2", db.schemaVersion, 2)
+    check("old db is migrated to v3", db.schemaVersion, 3)
     check("old db keeps a valid item", db.items[25] and db.items[25][4], "INVTYPE_HEAD")
     check("old db strips extra item fields", db.items[25] and #db.items[25], 6)
     check("old db drops an invalid item", db.items[26], nil)
@@ -211,38 +212,172 @@ do
     local _, printed, env = loadWithDB({ schemaVersion = 1, items = { [7] = { 1, 1, 1, "INVTYPE_FEET", 4, 2 } } })
     check("v1 db keeps its items", env.TandemDB.items[7][4], "INVTYPE_FEET")
     check("v1 db fills missing sections", isCurrent(env.TandemDB), true)
-    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 2")
+    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 3")
     check("v1 db prints nothing else", #printed, 2)
 end
 
 for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
     local _, printed, env = loadWithDB({ schemaVersion = bad })
-    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 2)
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 3)
     check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
     local _, printed = loadWithDB({ schemaVersion = 1 }, "zhTW")
-    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 2")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 3")
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 2, kills = { [448] = 2 }, corpses = { [448] = 5 } })
-    check("v2 db keeps kills", env.TandemDB.kills[448], 2)
-    check("v2 db keeps corpses", env.TandemDB.corpses[448], 5)
-    check("valid v2 db prints only the load line", #printed, 1)
+    local _, printed, env = loadWithDB({ schemaVersion = 3, kills = { [448] = 2 }, corpses = { [448] = 5 } })
+    check("v3 db keeps kills", env.TandemDB.kills[448], 2)
+    check("v3 db keeps corpses", env.TandemDB.corpses[448], 5)
+    check("valid v3 db prints only the load line", #printed, 1)
+end
+
+-- Schema 3: a v2 db migrates losslessly (decision 8).
+do
+    local v2 = {
+        schemaVersion = 2,
+        items = { [25] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 }, [26] = { 12, 6, 3, "INVTYPE_FEET", 4, 2, 1 } },
+        scan = { cursor = 500, nonEquippable = 7, minFound = 25, maxFound = 26, blocks = { [0] = 3 },
+                 lastRun = { hits = 3, rate = 0.25 } },
+        npcs = { [100] = "Hogger" },
+        loot = {
+            ["25:c:100:1429"] = { item = 25, kind = "c", id = 100, map = 1429, count = 4,
+                                  coords = { { 1, 2 }, { 3, 4 }, { 5, 6 } } },
+            ["26:o:35591:0"] = { item = 26, kind = "o", id = 35591, map = 0, count = 1, coords = {} },
+        },
+        kills = { [100] = 9 },
+        corpses = { [100] = 5 },
+        ui = { window = { point = "TOP", relativePoint = "TOP", x = 1, y = 2, width = 600, height = 400 },
+               minimap = 45, minimapHidden = true },
+    }
+    -- Returns a deep copy of t.
+    local function deep(t)
+        if type(t) ~= "table" then
+            return t
+        end
+        local out = {}
+        for k, v in pairs(t) do
+            out[k] = deep(v)
+        end
+        return out
+    end
+    -- Returns true when a and b hold the same values.
+    local function same(a, b)
+        if type(a) ~= "table" or type(b) ~= "table" then
+            return a == b
+        end
+        for k, v in pairs(a) do
+            if not same(v, b[k]) then
+                return false
+            end
+        end
+        for k in pairs(b) do
+            if a[k] == nil then
+                return false
+            end
+        end
+        return true
+    end
+    local want = deep(v2)
+    local _, printed, env = loadWithDB(v2)
+    local db = env.TandemDB
+    check("v2 db migrates to v3", db.schemaVersion, 3)
+    check("v2 db gains an empty quests table", type(db.quests) == "table" and next(db.quests) == nil, true)
+    db.schemaVersion, db.quests, want.schemaVersion = nil, nil, nil
+    check("v2 db keeps every other field", same(db, want), true)
+    check("v2 db prints only the upgrade line", printed[2] .. " #" .. #printed,
+        "Tandem: saved data upgraded from schema 2 to 3 #2")
+end
+
+-- Store: quest and vendor sources (stage 5, unit 1).
+do
+    local addon, printed, env = loadWithDB({
+        schemaVersion = 3,
+        quests = { [176] = "Wanted: Hogger", [0] = "zero", [177] = "", [178] = 5 },
+        loot = {
+            a = { item = 1, kind = "q", id = 176, map = 1429, count = 3, coords = { { 1, 2 }, { 3, 4 } },
+                  factions = 3 },
+            b = { item = 2, kind = "v", id = 54, map = 1429, count = 1, factions = 0 },
+            c = { item = 3, kind = "v", id = 54, map = 1429, count = 1 },
+            d = { item = 4, kind = "q", id = 0, map = 1429, count = 1, factions = 1 },
+            e = { item = 5, kind = "v", id = 54, map = 1429, count = 1, factions = 4 },
+            f = { item = 6, kind = "v", id = 54, map = 1429, count = 1, factions = 1.5 },
+            g = { item = 7, kind = "c", id = 100, map = 1429, count = 2, factions = 1 },
+            h = { item = 8, kind = "v", id = 66, map = 1436, count = 1, factions = 2 },
+            i = { item = 8, kind = "v", id = 66, map = 1429, count = 1, factions = 1 },
+        },
+    })
+    local db, Store = env.TandemDB, addon.Store
+    local q = db.loot["1:q:176:1429"]
+    check("sources: a saved quest entry is kept", q and q.factions, 3)
+    check("sources: a saved q/v count becomes 1", q and q.count, 1)
+    check("sources: a saved q/v entry keeps one coord", q and #q.coords .. " " .. q.coords[1][1], "1 1")
+    check("sources: zero factions is dropped", db.loot["2:v:54:1429"], nil)
+    check("sources: missing factions is dropped", db.loot["3:v:54:1429"], nil)
+    check("sources: quest id 0 is dropped", db.loot["4:q:0:1429"], nil)
+    check("sources: factions above 3 is dropped", db.loot["5:v:54:1429"], nil)
+    check("sources: fractional factions is dropped", db.loot["6:v:54:1429"], nil)
+    check("sources: a drop entry carries no factions", db.loot["7:c:100:1429"].factions, nil)
+    local kept = db.loot["8:v:66:1429"]
+    check("sources: a vendor item on two maps keeps the lower map", kept and kept.factions, 3)
+    check("sources: the higher map row is gone", db.loot["8:v:66:1436"], nil)
+    check("sources: a saved quest name is kept", db.quests[176], "Wanted: Hogger")
+    check("sources: bad quest names are dropped", db.quests[0] or db.quests[177] or db.quests[178], nil)
+    -- loot b, c, d, e, f and the duplicate i/h; quests 0, 177, 178
+    check("sources: invalid entries are counted", printed[2], "Tandem: dropped 9 invalid saved entries")
+
+    check("AddSource records a quest reward", Store.AddSource(10, "q", 176, 1429, 0.4123, 0.6, 1), true)
+    local entry = db.loot["10:q:176:1429"]
+    check("AddSource stores count 1", entry.count, 1)
+    check("AddSource stores the first coord", entry.coords[1][1] .. "," .. entry.coords[1][2], "412,600")
+    check("AddSource stores the faction", entry.factions, 1)
+    check("AddSource skips a repeat", Store.AddSource(10, "q", 176, 1429, 0.5, 0.5, 1), false)
+    check("AddSource repeat keeps count and coords", entry.count .. " " .. #entry.coords, "1 1")
+    check("AddSource skips a repeat on another map", Store.AddSource(10, "q", 176, 1436, 0.5, 0.5, 1), false)
+    check("AddSource makes no row for another map", db.loot["10:q:176:1436"], nil)
+    check("AddSource ORs another faction", Store.AddSource(10, "q", 176, 1436, nil, nil, Store.FACTIONS.Horde), true)
+    check("AddSource factions become both", entry.factions, 3)
+    check("AddSource skips a faction already there", Store.AddSource(10, "q", 176, 1429, nil, nil, 2), false)
+    check("AddSource records a vendor item without a map", Store.AddSource(11, "v", 54, nil, nil, nil, 2), true)
+    check("AddSource vendor without position", #db.loot["11:v:54:0"].coords, 0)
+    check("AddSource the same item from another vendor is its own row", Store.AddSource(11, "v", 55, 0, nil, nil, 2),
+        true)
+    check("AddSource finds a migrated entry", Store.AddSource(8, "v", 66, 1436, nil, nil, 1), false)
+    local before = Store.unsaved
+    for name, args in pairs({
+        ["a drop kind"] = { 12, "c", 1, 1, nil, nil, 1 }, ["id 0"] = { 12, "q", 0, 1, nil, nil, 1 },
+        ["no faction"] = { 12, "q", 1, 1 },
+        ["faction 4"] = { 12, "q", 1, 1, nil, nil, 4 }, ["faction string"] = { 12, "q", 1, 1, nil, nil, "Horde" },
+        ["item 0"] = { 0, "q", 1, 1, nil, nil, 1 }, ["map -1"] = { 12, "q", 1, -1, nil, nil, 1 },
+    }) do
+        check("AddSource rejects " .. name,
+            Store.AddSource(args[1], args[2], args[3], args[4], args[5], args[6], args[7]), false)
+    end
+    check("AddSource rejections are not records", Store.unsaved, before)
+    check("AddLoot rejects a quest kind", Store.AddLoot(13, "q", 1, 1), false)
+    check("AddLoot rejects a vendor kind", Store.AddLoot(13, "v", 1, 1), false)
+
+    check("SetQuestName stores a name", Store.SetQuestName(200, "The Fargodeep Mine"), true)
+    check("SetQuestName writes TandemDB", db.quests[200], "The Fargodeep Mine")
+    check("SetQuestName skips an unchanged name", Store.SetQuestName(200, "The Fargodeep Mine"), false)
+    check("SetQuestName rejects an empty name", Store.SetQuestName(201, ""), false)
+    check("SetQuestName rejects quest 0", Store.SetQuestName(0, "x"), false)
 end
 
 do
-    local newer = { schemaVersion = 3, items = "new format" }
+    local newer = { schemaVersion = 4, items = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items, "new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 3; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 4; recording is off until the addon is updated")
     check("newer db blocks AddItem", addon.Store.AddItem(1, 1, 1, 1, "INVTYPE_HEAD", 4, 1), false)
     check("newer db blocks AddLoot", addon.Store.AddLoot(1, "c", 1, 1), false)
     check("newer db blocks SetNpcName", addon.Store.SetNpcName(1, "x"), false)
+    check("newer db blocks AddSource", addon.Store.AddSource(1, "q", 1, 1, nil, nil, 1), false)
+    check("newer db blocks SetQuestName", addon.Store.SetQuestName(1, "x"), false)
     check("newer db blocks AddKill", addon.Store.AddKill(1), false)
     check("newer db blocks AddCorpse", addon.Store.AddCorpse(1), false)
     check("newer db Counts kills does not fail", addon.Store.Counts().kills, 0)
@@ -472,7 +607,7 @@ do
 end
 
 do
-    local addon, printed = loadWithDB({ schemaVersion = 3, items = "new format" })
+    local addon, printed = loadWithDB({ schemaVersion = 4, items = "new format" })
     local out = run(addon, printed, "count")
     check("count on a newer db does not fail", out[1], "Tandem: 0 known items, ? non-equippable")
     check("count on a newer db says read-only", out[#out],
@@ -736,7 +871,7 @@ do
 end
 
 do
-    local ctx = loadScanner({}, { schemaVersion = 3, scan = { cursor = 9 } })
+    local ctx = loadScanner({}, { schemaVersion = 4, scan = { cursor = 9 } })
     local mark = #ctx.printed
     ctx.Scanner.Start({ rate = 10, cap = 5 })
     check("read-only start is refused", ctx.since(mark)[1], "Recording is off: saved data uses a newer schema")
@@ -1002,7 +1137,7 @@ do
 end
 
 do
-    local ctx = loadLoot({ schemaVersion = 3, loot = {} })
+    local ctx = loadLoot({ schemaVersion = 4, loot = {} })
     ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
     ctx.loot()
     check("loot: read-only db is not written", next(ctx.env.TandemDB.loot), nil)
@@ -1137,6 +1272,247 @@ do
     check("dedupe: a reload forgets seen sources", again.env.TandemDB.corpses[448], 2)
 end
 
+-- Sources: quest rewards and merchant items with stubbed quest, merchant and item APIs.
+
+local MERCHANT = "Creature-0-1-0-12-1250-0000CAFE"
+
+-- Loads the addon with a quest frame (ctx.quest = {id, title, choices = {links}, rewards = {links}}), a merchant
+-- (ctx.merchant = {guid, name, items = {links}}) and items ({[id] = {equipLoc, loaded = bool}}); the player is
+-- Alliance at map 1429, 0.4123/0.6789.
+local function loadSources(items)
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 3 })
+    local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
+                  faction = "Alliance", quest = { id = 0, choices = {}, rewards = {} },
+                  merchant = { items = {} }, requested = {} }
+    env.InCombatLockdown = function()
+        return ctx.combat
+    end
+    env.UnitFactionGroup = function(unit)
+        if unit == "player" then
+            return ctx.faction
+        end
+    end
+    env.C_Map = {
+        GetBestMapForUnit = function()
+            return 1429
+        end,
+        GetPlayerMapPosition = function()
+            return {
+                GetXY = function()
+                    return 0.4123, 0.6789
+                end,
+            }
+        end,
+    }
+    env.GetQuestID = function()
+        return ctx.quest.id
+    end
+    env.GetTitleText = function()
+        return ctx.quest.title
+    end
+    env.GetNumQuestChoices = function()
+        return #ctx.quest.choices
+    end
+    env.GetNumQuestRewards = function()
+        return #ctx.quest.rewards
+    end
+    env.GetQuestItemLink = function(list, i)
+        return (list == "choice" and ctx.quest.choices or list == "reward" and ctx.quest.rewards or {})[i]
+    end
+    env.UnitGUID = function(unit)
+        return unit == "npc" and ctx.merchant.guid or nil
+    end
+    env.UnitName = function(unit)
+        return unit == "npc" and ctx.merchant.name or nil
+    end
+    env.GetMerchantNumItems = function()
+        return ctx.merchant.n or #ctx.merchant.items
+    end
+    env.GetMerchantItemLink = function(i)
+        return ctx.merchant.items[i]
+    end
+    env.C_Item = {
+        GetItemInfoInstant = function(id)
+            local it = items[id]
+            if it then
+                return id, "Armor", "Cloth", it[1], 134400, 4, 1
+            end
+        end,
+        GetItemInfo = function(id)
+            local it = items[id]
+            if it and it.loaded ~= false then
+                return "Item " .. id, "link", 2, 20, 15, "Armor", "Cloth", 1, it[1], 134400, 5, 4, 1
+            end
+        end,
+        RequestLoadItemDataByID = function(id)
+            ctx.requested[#ctx.requested + 1] = id
+        end,
+    }
+    function ctx.entry(key)
+        return env.TandemDB.loot[key]
+    end
+    function ctx.loots()
+        return addon.Store.Counts().loot
+    end
+    return ctx
+end
+
+do
+    local ctx = loadSources({})
+    for _, ev in ipairs({ "QUEST_DETAIL", "QUEST_COMPLETE", "MERCHANT_SHOW", "MERCHANT_UPDATE" }) do
+        check("sources: registers " .. ev, ctx.frame.registered[ev], true)
+    end
+end
+
+for _, event in ipairs({ "QUEST_DETAIL", "QUEST_COMPLETE" }) do
+    local ctx = loadSources({ [40] = equip, [41] = { "INVTYPE_CHEST" }, [42] = { "" }, [43] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40), link(41), link(42) },
+                  rewards = { link(43), "|cffffffff|Hcurrency:1220|h[Resources]|h|r" } }
+    ctx.fire(event)
+    local e = ctx.entry("40:q:176:1429")
+    check("sources: " .. event .. " records a choice item", e and e.count, 1)
+    check("sources: " .. event .. " quest entry carries the faction", e and e.factions, 1)
+    check("sources: " .. event .. " quest entry has coords", e and e.coords[1][1] .. "," .. e.coords[1][2],
+        "412,678")
+    check("sources: " .. event .. " records each choice", ctx.entry("41:q:176:1429") ~= nil, true)
+    check("sources: " .. event .. " records a reward item", ctx.entry("43:q:176:1429") ~= nil, true)
+    check("sources: " .. event .. " skips non-equippable and non-item links", ctx.loots(), 3)
+    check("sources: " .. event .. " stores the quest name", ctx.env.TandemDB.quests[176], "Wanted: Hogger")
+    check("sources: " .. event .. " caches the item record",
+        ctx.env.TandemDB.items[40] and ctx.env.TandemDB.items[40][4], "INVTYPE_HEAD")
+    check("sources: " .. event .. " does not cache a non-equippable item", ctx.env.TandemDB.items[42], nil)
+end
+
+do
+    local ctx = loadSources({ [40] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.fire("QUEST_DETAIL")
+    ctx.fire("QUEST_COMPLETE")
+    check("sources: offer and turn-in record the reward once", ctx.entry("40:q:176:1429").count, 1)
+    ctx.faction = "Horde"
+    ctx.fire("QUEST_COMPLETE")
+    check("sources: another faction ORs into the entry", ctx.entry("40:q:176:1429").factions, 3)
+end
+
+do
+    local ctx = loadSources({ [42] = { "" } })
+    ctx.quest = { id = 177, title = "Gold Dust Exchange", choices = {}, rewards = { link(42) } }
+    ctx.fire("QUEST_COMPLETE")
+    check("sources: a quest without gear records nothing", ctx.loots(), 0)
+    check("sources: a quest without gear keeps no name", ctx.env.TandemDB.quests[177], nil)
+end
+
+do
+    local ctx = loadSources({ [50] = equip, [51] = { "INVTYPE_WEAPON" }, [52] = { "INVTYPE_NON_EQUIP_IGNORE" } })
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(50), nil, link(52) }, n = 3 }
+    ctx.fire("MERCHANT_SHOW")
+    local e = ctx.entry("50:v:1250:1429")
+    check("sources: merchant item recorded under the npc", e and e.count, 1)
+    check("sources: merchant entry carries the faction", e and e.factions, 1)
+    check("sources: merchant name stored", ctx.env.TandemDB.npcs[1250], "Andrew Krighton")
+    check("sources: merchant skips missing links and non-equippable items", ctx.loots(), 1)
+    ctx.merchant.items[2] = link(51)
+    ctx.fire("MERCHANT_UPDATE")
+    check("sources: MERCHANT_UPDATE records a late link", ctx.entry("51:v:1250:1429") ~= nil, true)
+    check("sources: MERCHANT_UPDATE does not count again", ctx.entry("50:v:1250:1429").count, 1)
+end
+
+do
+    local ctx = loadSources({ [50] = equip })
+    ctx.merchant = { guid = "Player-1-00000001", name = "Someone", items = { link(50) } }
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: a non-creature merchant records nothing", ctx.loots(), 0)
+    ctx.merchant.guid = nil
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: a merchant without GUID records nothing", ctx.loots(), 0)
+end
+
+do
+    local items = { [60] = { "INVTYPE_HAND", loaded = false }, [61] = { "INVTYPE_FEET", loaded = false } }
+    local ctx = loadSources(items)
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(60), link(61) } }
+    ctx.fire("MERCHANT_SHOW")
+    ctx.fire("MERCHANT_UPDATE")
+    check("sources: an uncached item is still a source", ctx.entry("60:v:1250:1429") ~= nil, true)
+    check("sources: an uncached item has no record yet", ctx.env.TandemDB.items[60], nil)
+    check("sources: an uncached item is requested once", #ctx.requested, 2)
+    check("sources: the request names the item", ctx.requested[1], 60)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 99, true)
+    check("sources: another addon's item info is ignored", ctx.env.TandemDB.items[99], nil)
+    items[60].loaded, items[61].loaded = true, true
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 60, true)
+    local rec = ctx.env.TandemDB.items[60]
+    check("sources: item info arrival stores the record", rec and rec[4], "INVTYPE_HAND")
+    check("sources: stored record keeps its level", rec and rec[1], 20)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 61, false)
+    check("sources: a failed item info stores nothing", ctx.env.TandemDB.items[61], nil)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 61, true)
+    check("sources: a resolved item is no longer pending", ctx.env.TandemDB.items[61], nil)
+end
+
+do
+    local ctx = loadSources({ [40] = equip, [50] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(50) } }
+    ctx.combat = true
+    ctx.fire("QUEST_COMPLETE")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: nothing recorded in combat", ctx.loots(), 0)
+    check("sources: no names recorded in combat", ctx.addon.Store.Counts().npcs, 0)
+    ctx.combat = false
+    ctx.faction = "Neutral"
+    ctx.fire("QUEST_COMPLETE")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: nothing recorded for a neutral player", ctx.loots(), 0)
+    ctx.faction = "Alliance"
+    ctx.addon.Store.readOnly = true
+    ctx.fire("QUEST_COMPLETE")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: nothing recorded while read-only", ctx.loots(), 0)
+end
+
+-- Returns a sources ctx with a quest offering item 40 and a merchant selling item 50.
+local function questAndMerchant()
+    local ctx = loadSources({ [40] = equip, [50] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.merchant = { guid = MERCHANT, name = "Andrew Krighton", items = { link(50) } }
+    return ctx
+end
+
+for _, case in ipairs({
+    { "GetQuestID", "QUEST_DETAIL" }, { "GetQuestItemLink", "QUEST_DETAIL" },
+    { "UnitGUID", "MERCHANT_SHOW" }, { "GetMerchantNumItems", "MERCHANT_SHOW" },
+    { "GetMerchantItemLink", "MERCHANT_SHOW" },
+    { "UnitFactionGroup", "QUEST_DETAIL", "MERCHANT_SHOW" }, { "C_Item", "QUEST_DETAIL", "MERCHANT_SHOW" },
+}) do
+    local ctx = questAndMerchant()
+    ctx.env[case[1]] = nil
+    for i = 2, #case do
+        ctx.fire(case[i])
+    end
+    check("sources: missing " .. case[1] .. " records nothing", ctx.loots(), 0)
+end
+
+do
+    local ctx = questAndMerchant()
+    ctx.env.GetNumQuestChoices, ctx.env.GetTitleText, ctx.env.UnitName, ctx.env.C_Map = nil, nil, nil, nil
+    ctx.fire("QUEST_DETAIL")
+    ctx.fire("MERCHANT_SHOW")
+    check("sources: missing optional APIs still record the merchant", ctx.loots(), 1)
+    check("sources: missing map records map 0", ctx.entry("50:v:1250:0") ~= nil, true)
+    check("sources: missing UnitName keeps no npc name", ctx.env.TandemDB.npcs[1250], nil)
+end
+
+do
+    local ctx = loadSources({ [40] = equip })
+    ctx.quest = { id = 176, title = "Wanted: Hogger", choices = { link(40) }, rewards = {} }
+    ctx.env.issecretvalue = function(v)
+        return v == 176
+    end
+    ctx.fire("QUEST_DETAIL")
+    check("sources: a secret quest ID records nothing", ctx.loots(), 0)
+end
+
 -- Kills: player's PARTY_KILLs from the combat log.
 
 local PLAYER = "Player-1-00000001"
@@ -1161,7 +1537,7 @@ local function loadKills(opts)
             return spread(ctx.cleu)
         end
     end
-    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 2 }, "enUS",
+    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 3 }, "enUS",
         { env = env, blockCLEU = opts.blockCLEU })
     ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = addon, printed, e, fire, frame
     -- Fires one combat log event: timestamp, sub, hideCaster, src, srcName, srcFlags, srcRaidFlags, dst.
@@ -1271,7 +1647,7 @@ do
 end
 
 do
-    local ctx = loadKills({ db = { schemaVersion = 3 } })
+    local ctx = loadKills({ db = { schemaVersion = 4 } })
     ctx.log("PARTY_KILL", PLAYER, HOGGER)
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("kills: read-only db is not written", ctx.env.TandemDB.kills, nil)
@@ -1309,7 +1685,7 @@ local function gearData()
             shippedItems[id] = r
         end
     end
-    local db = { schemaVersion = 2, items = ownItems, loot = {
+    local db = { schemaVersion = 3, items = ownItems, loot = {
         ["1:c:448:1429"] = { item = 1, kind = "c", id = 448, map = 1429, count = 1 },
         ["3:o:77:1429"] = { item = 3, kind = "o", id = 77, map = 1429, count = 1 },
     } }
@@ -1344,7 +1720,7 @@ do
     for i, loc in ipairs(LOCS) do
         items[100 + i], idOf[loc] = { 10, 1, 1, loc, 4, 1 }, 100 + i
     end
-    local A = loadAdvisor({ schemaVersion = 2, items = items })
+    local A = loadAdvisor({ schemaVersion = 3, items = items })
     local function slots(equipLoc, class, level)
         local id, out = idOf[equipLoc], {}
         for _, slot in ipairs(A.SLOTS) do
@@ -1551,7 +1927,7 @@ for name, shipped in pairs({
 end
 
 do
-    local A = loadAdvisor({ schemaVersion = 3, items = "new format", loot = 4 }, select(2, gearData()))
+    local A = loadAdvisor({ schemaVersion = 4, items = "new format", loot = 4 }, select(2, gearData()))
     check("advisor: newer own db is ignored", ids(A.Best("chest", "WARRIOR", 40)), "4,2,12")
     check("advisor: newer own db Sources", #A.Sources(2), 1)
 end
@@ -1566,7 +1942,7 @@ end
 -- Sources: own + shipped merged by max (decision 13), rate per npc (decision 16).
 do
     local db = {
-        schemaVersion = 2,
+        schemaVersion = 3,
         npcs = { [448] = "Hogger" },
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 3, coords = { { 1, 1 } } },
@@ -1626,7 +2002,7 @@ end
 
 do
     local db = {
-        schemaVersion = 2,
+        schemaVersion = 3,
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 1 },
             ["4:c:449:1429"] = { item = 4, kind = "c", id = 449, map = 1429, count = 1 },
@@ -1677,15 +2053,16 @@ end
 
 -- Loads gearData() (or db, shipped) with a stubbed player: ctx.class/className/level for UnitClass/UnitLevel,
 -- ctx.equipped[invSlot] = link, ctx.cache[id] = { name, link, quality, ilvl } for C_Item.GetItemInfo, ctx.combat,
--- ctx.secret values hidden by issecretvalue, ctx.instant[id] / ctx.icons[id] for C_Item.GetItemInfoInstant.
+-- ctx.secret values hidden by issecretvalue, ctx.instant[id] / ctx.icons[id] for C_Item.GetItemInfoInstant,
+-- ctx.faction for UnitFactionGroup (default "Alliance").
 -- C_Item.IsItemDataCachedByID is true for ids in ctx.cache; ctx.infoCalls[id] counts GetItemInfo calls.
 -- opts.env adds globals, opts.widgets goes to loadAddon. Returns ctx with addon, printed, env, fire, frame, run(msg).
 local function loadGear(locale, db, shipped, opts)
     if not db then
         db, shipped = gearData()
     end
-    local ctx = { class = "WARRIOR", className = "Warrior", level = 40, equipped = {}, cache = {}, combat = false,
-                  requested = {}, instant = {}, icons = {}, infoCalls = {} }
+    local ctx = { class = "WARRIOR", className = "Warrior", level = 40, faction = "Alliance", equipped = {}, cache = {},
+                  combat = false, requested = {}, instant = {}, icons = {}, infoCalls = {} }
     local env = {
         UnitClass = function(unit)
             assert(unit == "player")
@@ -1693,6 +2070,10 @@ local function loadGear(locale, db, shipped, opts)
         end,
         UnitLevel = function()
             return ctx.level
+        end,
+        UnitFactionGroup = function(unit)
+            assert(unit == "player")
+            return ctx.faction
         end,
         InCombatLockdown = function()
             return ctx.combat
@@ -1962,7 +2343,7 @@ do
 end
 
 do
-    local ctx = loadGear("enUS", { schemaVersion = 3, items = "new format" }, nil)
+    local ctx = loadGear("enUS", { schemaVersion = 4, items = "new format" }, nil)
     local out = ctx.run("export")
     check("export on a newer db", out[1],
         "Tandem export: 0 loot entries, 0 npc names, 0 items, 0 kills, 0 looted corpses")
@@ -2074,7 +2455,7 @@ end
 
 do
     local ui = { window = { point = "TOPLEFT", x = 120.5, y = -40 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
     local w = env.TandemDB.ui.window
     check("ui: a valid position is kept", w.point .. " " .. w.x .. " " .. w.y, "TOPLEFT 120.5 -40")
     check("ui: a valid position prints only the load line", #printed, 1)
@@ -2103,7 +2484,7 @@ do
 end
 
 do
-    local _, _, env = loadWithDB({ schemaVersion = 2 })
+    local _, _, env = loadWithDB({ schemaVersion = 3 })
     check("ui: a fresh db has no position", env.TandemDB.ui, nil)
     check("ui: a db without ui is current", isCurrent(env.TandemDB), true)
 end
@@ -2115,27 +2496,27 @@ for name, ui in pairs({
     ["NaN y"] = { window = { point = "TOP", x = 0, y = 0 / 0 } }, ["missing y"] = { window = { point = "TOP", x = 0 } },
     ["unknown relativePoint"] = { window = { point = "TOP", relativePoint = "UP", x = 0, y = 0 } },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
     check("ui: drops a position with " .. name, env.TandemDB.ui, nil)
     check("ui: counts a position with " .. name .. " as dropped", printed[2], "Tandem: dropped 1 invalid saved entries")
     check("ui: UIPosition after dropping " .. name, addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { point = "TOP", x = 1, y = 2, extra = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = 1, y = 2, extra = true } })
     check("ui: keys outside window and minimap are not kept", env.TandemDB.ui, nil)
     check("ui: keys outside window and minimap are not counted", #printed, 1)
     check("ui: no position from top-level keys", addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 3, ui = { window = { point = "TOP", x = 5, y = 6 } } })
+    local addon = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = 5, y = 6 } } })
     check("ui: a newer db still gives a valid position", addon.Store.UIPosition().y, 6)
     check("ui: a newer db is not written", addon.Store.SetUIPosition("TOP", "TOP", 1, 1), false)
     check("ui: a newer db keeps its position", addon.Store.db.ui.window.x, 5)
-    addon = loadWithDB({ schemaVersion = 3, ui = { window = { point = "TOP", x = "5", y = 6 } } })
+    addon = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = "5", y = 6 } } })
     check("ui: a newer db with a bad position gives none", addon.Store.UIPosition(), nil)
-    addon = loadWithDB({ schemaVersion = 3, ui = "junk" })
+    addon = loadWithDB({ schemaVersion = 4, ui = "junk" })
     check("ui: a newer db with a junk ui gives no position", addon.Store.UIPosition(), nil)
     check("ui: a newer db with a junk ui gives no angle", addon.Store.MinimapAngle(), nil)
 end
@@ -2687,7 +3068,7 @@ end
 -- Store: minimap button angle in TandemDB.ui (unit 7).
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2,
+    local addon, printed, env = loadWithDB({ schemaVersion = 3,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 90.5 } })
     check("minimap: a valid angle is kept", env.TandemDB.ui.minimap, 90.5)
     check("minimap: kept with the position", addon.Store.UIPosition().point, "TOP")
@@ -2707,11 +3088,11 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { minimap = 200 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimap = 200 } })
     check("minimap: an angle without a position is kept", env.TandemDB.ui.minimap, 200)
     check("minimap: no position from an angle alone", addon.Store.UIPosition(), nil)
     check("minimap: an angle alone prints only the load line", #printed, 1)
-    local fresh = loadWithDB({ schemaVersion = 2 })
+    local fresh = loadWithDB({ schemaVersion = 3 })
     check("minimap: a fresh db has no angle", fresh.Store.MinimapAngle(), nil)
     check("minimap: SetMinimapAngle on a fresh db", fresh.Store.SetMinimapAngle(45) and fresh.Store.db.ui.minimap, 45)
     check("minimap: no position from SetMinimapAngle", fresh.Store.UIPosition(), nil)
@@ -2723,7 +3104,7 @@ for name, case in pairs({
     ["NaN"] = { ui = { minimap = 0 / 0 }, dropped = 1 },
     ["a bad position too"] = { ui = { window = { point = "UP", x = 0, y = 0 }, minimap = -5 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = case.ui })
     check("minimap: drops an angle of " .. name, env.TandemDB.ui, nil)
     check("minimap: counts an angle of " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -2731,7 +3112,7 @@ for name, case in pairs({
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2,
+    local addon, printed, env = loadWithDB({ schemaVersion = 3,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 400 } })
     local ui = env.TandemDB.ui
     check("minimap: a bad angle keeps a good position", ui.window.point .. " " .. tostring(ui.minimap), "TOP nil")
@@ -2740,10 +3121,10 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 3, ui = { minimap = 10 } })
+    local addon = loadWithDB({ schemaVersion = 4, ui = { minimap = 10 } })
     check("minimap: a newer db still gives its angle", addon.Store.MinimapAngle(), 10)
     check("minimap: a newer db is not written", addon.Store.SetMinimapAngle(20), false)
-    addon = loadWithDB({ schemaVersion = 3, ui = { minimap = "10" } })
+    addon = loadWithDB({ schemaVersion = 4, ui = { minimap = "10" } })
     check("minimap: a newer db with a bad angle gives none", addon.Store.MinimapAngle(), nil)
 end
 
@@ -3020,7 +3401,7 @@ end
 
 do
     local db, shipped = gearData()
-    db.schemaVersion = 3
+    db.schemaVersion = 4
     db.ui = { minimap = 10 }
     local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
     ctx.fire("PLAYER_LOGIN")
@@ -3032,7 +3413,7 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { minimapHidden = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = true } })
     check("minimapHidden: kept alone", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: prints only the load line", #printed, 1)
     check("minimapHidden: MinimapHidden", addon.Store.MinimapHidden(), true)
@@ -3050,7 +3431,7 @@ do
     end
     check("minimapHidden: a rejected value keeps the old one", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: not a record", addon.Store.unsaved, 0)
-    local fresh = loadWithDB({ schemaVersion = 2 })
+    local fresh = loadWithDB({ schemaVersion = 3 })
     check("minimapHidden: a fresh db shows the button", fresh.Store.MinimapHidden(), false)
 end
 
@@ -3060,7 +3441,7 @@ for name, case in pairs({
     ["a number"] = { ui = { minimapHidden = 1 }, dropped = 1 },
     ["a bad angle too"] = { ui = { minimapHidden = {}, minimap = 400 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = case.ui })
     check("minimapHidden: drops " .. name, env.TandemDB.ui, nil)
     check("minimapHidden: counts " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3068,14 +3449,14 @@ for name, case in pairs({
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 2, ui = { minimap = 45, minimapHidden = "no" } })
+    local _, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimap = 45, minimapHidden = "no" } })
     check("minimapHidden: a bad flag keeps a good angle", env.TandemDB.ui.minimap .. " "
         .. tostring(env.TandemDB.ui.minimapHidden), "45 nil")
     check("minimapHidden: a bad flag alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
-    local newer = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = true } })
+    local newer = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = true } })
     check("minimapHidden: a newer db still gives its flag", newer.Store.MinimapHidden(), true)
     check("minimapHidden: a newer db is not written", newer.Store.SetMinimapHidden(false), false)
-    newer = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = "yes" } })
+    newer = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = "yes" } })
     check("minimapHidden: a newer db with a bad flag shows the button", newer.Store.MinimapHidden(), false)
 end
 
@@ -3278,7 +3659,7 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 2, items = { [5] = GEAR[5], [7] = GEAR[7] } })
+    local addon = loadWithDB({ schemaVersion = 3, items = { [5] = GEAR[5], [7] = GEAR[7] } })
     check("ItemCount: counted on load", addon.Store.ItemCount(), 2)
     addon.Store.AddItem(9, 1, 1, 1, "INVTYPE_BODY", 4, 0)
     check("ItemCount: AddItem counts", addon.Store.ItemCount(), 3)
@@ -3287,7 +3668,7 @@ do
     check("ItemCount: a repeated or invalid item is not counted", addon.Store.ItemCount(), 3)
     check("ItemCount: matches Counts", addon.Store.Counts().items, 3)
     check("ScanCursor: a fresh scan starts at 1", addon.Store.ScanCursor(), 1)
-    addon = loadWithDB({ schemaVersion = 3, items = "junk", scan = { cursor = 2.5 } })
+    addon = loadWithDB({ schemaVersion = 4, items = "junk", scan = { cursor = 2.5 } })
     check("ItemCount: a newer db with junk items", addon.Store.ItemCount(), 0)
     check("ScanCursor: a fractional cursor gives none", addon.Store.ScanCursor(), nil)
 end
@@ -3295,7 +3676,7 @@ end
 for name, scan in pairs({ ["no scan table"] = false, ["no cursor"] = {}, ["a fractional cursor"] = { cursor = 1.5 },
                           ["a string cursor"] = { cursor = "7" } }) do
     local db, shipped = gearData()
-    db.schemaVersion = 3
+    db.schemaVersion = 4
     db.scan = scan or nil
     local ctx = loadBrowse("enUS", db, shipped)
     ctx.run("browse")
@@ -3436,7 +3817,7 @@ do
         [3] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, true }, [4] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 2 },
         [5] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1, "extra" },
     }
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, items = items })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, items = items })
     local db = env.TandemDB
     check("deprecated: a 7th field of 1 is kept", db.items[1][7], 1)
     check("deprecated: a string 7th field is stripped", #db.items[2], 6)
@@ -3444,7 +3825,7 @@ do
     check("deprecated: another number is stripped", #db.items[4], 6)
     check("deprecated: fields after the flag are stripped", #db.items[5] .. " " .. db.items[5][7], "7 1")
     check("deprecated: a stripped flag is not a drop", #printed, 1)
-    check("deprecated: the schema stays 2", db.schemaVersion, 2)
+    check("deprecated: the schema stays 3", db.schemaVersion, 3)
     check("deprecated: Advisor reads a flagged record", addon.Advisor.Item(1) ~= nil, true)
     check("deprecated: IsDeprecated of a flagged record", addon.Advisor.IsDeprecated(1), true)
     check("deprecated: IsDeprecated of a stripped record", addon.Advisor.IsDeprecated(2), false)
@@ -3463,7 +3844,7 @@ do
 end
 
 do
-    local addon, _, env = loadWithDB({ schemaVersion = 2 })
+    local addon, _, env = loadWithDB({ schemaVersion = 3 })
     local Store = addon.Store
     check("revision: a fresh load starts at 0", Store.revision, 0)
     Store.AddItem(1, 10, 5, 2, "INVTYPE_HEAD", 4, 1, true)
@@ -3488,7 +3869,7 @@ do
     Store.SetUIPosition("TOP", "TOP", 1, 2)
     Store.SetMinimapAngle(10)
     check("revision: ui settings are not records", Store.revision, rev + 4)
-    Store.Load({ schemaVersion = 2 })
+    Store.Load({ schemaVersion = 3 })
     check("revision: Load resets it", Store.revision, 0)
 end
 
@@ -3516,7 +3897,7 @@ do
     check("MarkDeprecated: an invalid id", Store.MarkDeprecated(0, addon.Advisor.Item(4)), false)
     check("MarkDeprecated: nothing stored for refusals", env.TandemDB.items[999], nil)
 
-    local newer = loadWithDB({ schemaVersion = 3, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
+    local newer = loadWithDB({ schemaVersion = 4, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
     check("MarkDeprecated: a newer db is not written", newer.MarkDeprecated(1, { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }),
         false)
     check("MarkDeprecated: a newer db keeps its record", newer.db.items[1][7], nil)
@@ -3626,7 +4007,7 @@ do
         A.Rank(2, "PALADIN", 40)
         return calls > 2
     end)(), true)
-    Store.Load({ schemaVersion = 2 })
+    Store.Load({ schemaVersion = 3 })
     check("rank memo: a new db walks again", A.Rank(2, "WARRIOR", 40).total, 3)
 end
 
@@ -3662,7 +4043,7 @@ end
 
 do
     local ui = { window = { point = "TOP", x = 1, y = 2, width = 700, height = 600.5 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
     local Store = addon.Store
     check("ui size: a valid size is kept", env.TandemDB.ui.window.width .. "x" .. env.TandemDB.ui.window.height,
         "700x600.5")
@@ -3686,12 +4067,12 @@ do
 end
 
 do
-    local Store = loadWithDB({ schemaVersion = 2 }).Store
+    local Store = loadWithDB({ schemaVersion = 3 }).Store
     check("ui size: SetUISize without a position", Store.SetUISize(800, 600), false)
     check("ui size: nothing saved without a position", Store.UISize(), nil)
     Store.SetUIPosition("TOP", "TOP", 0, 0)
     check("ui size: no size until one is saved", Store.UISize(), nil)
-    local newer = loadWithDB({ schemaVersion = 3, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
+    local newer = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
                                                                     height = 700 } } }).Store
     check("ui size: a newer db still gives a valid size", table.concat({ newer.UISize() }, "x"), "900x700")
     check("ui size: a newer db is not written", newer.SetUISize(800, 600), false)
@@ -3704,7 +4085,7 @@ for name, window in pairs({
     ["string height"] = { point = "TOP", x = 1, y = 2, width = 700, height = "700" },
     ["far width"] = { point = "TOP", x = 1, y = 2, width = 10001, height = 700 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { window = window } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { window = window } })
     local w = env.TandemDB.ui and env.TandemDB.ui.window
     check("ui size: " .. name .. " keeps the position", w and w.point .. " " .. w.x .. " " .. w.y, "TOP 1 2")
     check("ui size: " .. name .. " is stripped", tostring(w and w.width) .. " " .. tostring(w and w.height), "nil nil")
@@ -3924,7 +4305,7 @@ do
     check("browse layout: the list stretches with the window", point(win.box) .. " / " .. point(win.box, 2),
         "TOPLEFT TandemBrowseFrame TOPLEFT 12 -138 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
 
-    local again = loadBrowse("enUS", { schemaVersion = 2, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
+    local again = loadBrowse("enUS", { schemaVersion = 3, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
     again.run("browse")
     check("browse size: restores the saved size", again.win().width .. "x" .. again.win().height, "800x700")
 end
@@ -4292,6 +4673,152 @@ for locale, want in pairs({
     check(locale .. " tooltip class line", ctx.hover({ id = 1 }).lines[2].text, want[4])
     ctx.addon.Store.MarkDeprecated(4, ctx.addon.Advisor.Item(4))
     check(locale .. " tooltip deprecated line", ctx.text(4), want[5])
+end
+
+-- Quest and vendor sources in the display (stage 5, unit 4).
+
+-- Item 4: own quest 100 (Alliance) and vendor 200 (Horde), own drop from 448; shipped quest 100 (Horde, so both),
+-- quest 101 (no factions), vendor 201 (Alliance) and quest 102 (an invalid factions mask).
+local function questVendorData()
+    local db = {
+        schemaVersion = 3,
+        npcs = { [200] = "Vendor Bob", [448] = "Hogger" },
+        quests = { [100] = "Own Quest" },
+        loot = {
+            ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, factions = 1 },
+            ["4:v:200:1429"] = { item = 4, kind = "v", id = 200, map = 1429, count = 1, factions = 2 },
+            ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 5 },
+        },
+        kills = { [448] = 10 },
+    }
+    local shipped = {
+        loot = { { 4, "q", 100, 1429, 3 }, { 4, "q", 101, 0, 1 }, { 4, "v", 201, 1429, 2 }, { 4, "q", 102, 1429, 1 } },
+        factions = { ["4:q:100:1429"] = 2, ["4:v:201:1429"] = 1, ["4:q:102:1429"] = 7 },
+        questNames = { enUS = { [101] = "Shipped Quest" }, zhTW = { [101] = "運送任務" } },
+    }
+    return db, shipped
+end
+
+local function sourceRows(rows)
+    local out = {}
+    for _, s in ipairs(rows) do
+        out[#out + 1] = ("%s%d:%d:%s:%s:%s"):format(s.kind, s.id, s.count, tostring(s.factions), tostring(s.name),
+            tostring(s.otherFaction))
+    end
+    return table.concat(out, " ")
+end
+
+do
+    local db, shipped = questVendorData()
+    local env = { C_QuestLog = { GetTitleForQuestID = function(id)
+        return id == 102 and "Client Quest" or nil
+    end } }
+    local A = loadAdvisor(db, shipped, env)
+    check("q/v sources: Alliance order, names and factions", sourceRows(A.Sources(4, 1)),
+        "q100:3:3:Own Quest:nil v201:2:1:nil:nil q101:1:nil:Shipped Quest:nil q102:1:nil:Client Quest:nil "
+        .. "c448:5:nil:Hogger:nil v200:1:2:Vendor Bob:Horde")
+    check("q/v sources: Horde puts the Alliance vendor last", sourceRows(A.Sources(4, 2)),
+        "q100:3:3:Own Quest:nil q101:1:nil:Shipped Quest:nil q102:1:nil:Client Quest:nil v200:1:2:Vendor Bob:nil "
+        .. "c448:5:nil:Hogger:nil v201:2:1:nil:Alliance")
+    check("q/v sources: no faction puts every q/v row first", sourceRows(A.Sources(4)),
+        "q100:3:3:Own Quest:nil v201:2:1:nil:nil q101:1:nil:Shipped Quest:nil q102:1:nil:Client Quest:nil "
+        .. "v200:1:2:Vendor Bob:nil c448:5:nil:Hogger:nil")
+    local rows = A.Sources(4, 1)
+    check("q/v sources: no rate on a quest", tostring(rows[1].rate) .. " " .. tostring(rows[1].rateBasis), "nil nil")
+    check("q/v sources: the drop keeps its rate", rows[5].rate .. " " .. rows[5].rateBasis, "0.5 kill")
+
+    A = loadAdvisor(questVendorData())
+    check("q/v sources: no quest API leaves the quest unnamed", tostring(A.Sources(4, 1)[4].name), "nil")
+    A = loadWithDB(nil, "zhTW", { shipped = select(2, questVendorData()) }).Advisor
+    check("q/v sources: shipped data alone, Alliance", sourceRows(A.Sources(4, 1)),
+        "v201:2:1:nil:nil q101:1:nil:運送任務:nil q102:1:nil:nil:nil q100:3:2:nil:Horde")
+    A = loadAdvisor(nil, { loot = { { 4, "v", 201, 1429, 2 } } })
+    check("q/v sources: shipped data without factions", sourceRows(A.Sources(4, 2)), "v201:2:nil:nil:nil")
+
+    local own = { schemaVersion = 3, loot = {
+        ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, coords = { { 1, 1 } },
+                             factions = 1 },
+    } }
+    A = loadAdvisor(own, { loot = { { 4, "q", 100, 12, 2, 500, 600 } }, factions = { ["4:q:100:12"] = 2 } })
+    rows = A.Sources(4, 1)
+    check("q/v sources: one row per quest across maps", #rows, 1)
+    check("q/v sources: the lower map with its coords, max count, OR-ed factions",
+        ("%d %d %d %d"):format(rows[1].map, rows[1].coords[1][1], rows[1].count, rows[1].factions), "12 500 2 3")
+end
+
+for locale, want in pairs({
+    enUS = {
+        lines = "  Own Quest, Elwynn Forest - quest reward /   npc #201, Elwynn Forest - vendor"
+            .. " /   Shipped Quest, unknown map - quest reward /   quest #102, Elwynn Forest - quest reward"
+            .. " /   Hogger, Elwynn Forest - drops: 5, 50.0% per kill / "
+            .. "  Vendor Bob, Elwynn Forest - vendor (Horde only)",
+        quest = "Tandem: reward from Own Quest, Elwynn Forest (+5 more)",
+        horde = "Tandem: reward from Own Quest, Elwynn Forest (+5 more)",
+        vendor = "Tandem: sold by Vendor Bob, Elwynn Forest (+1 more)",
+        other = "Tandem: sold by npc #300, Elwynn Forest (Horde only)",
+        drop = "Tandem: drops from npc #500, Elwynn Forest (+1 more)",
+    },
+    zhTW = {
+        lines = "  Own Quest，Elwynn Forest：任務獎勵 /   NPC #201，Elwynn Forest：商人販售"
+            .. " /   運送任務，未知地圖：任務獎勵 /   任務 #102，Elwynn Forest：任務獎勵"
+            .. " /   Hogger，Elwynn Forest：掉落 5 次，每次擊殺 50.0% / "
+            .. "  Vendor Bob，Elwynn Forest：商人販售（僅限部落）",
+        quest = "Tandem：Own Quest 的任務獎勵，Elwynn Forest（另有 5 個來源）",
+        horde = "Tandem：Own Quest 的任務獎勵，Elwynn Forest（另有 5 個來源）",
+        vendor = "Tandem：由 Vendor Bob 販售，Elwynn Forest（另有 1 個來源）",
+        other = "Tandem：由 NPC #300 販售，Elwynn Forest（僅限部落）",
+        drop = "Tandem：掉落自 NPC #500，Elwynn Forest（另有 1 個來源）",
+    },
+}) do
+    local db, shipped = questVendorData()
+    local gearDB, gearShipped = gearData()
+    db.items, shipped.items = gearDB.items, gearShipped.items
+    for _, r in ipairs(gearShipped.loot) do
+        if r[1] ~= 4 and r[1] ~= 8 then
+            shipped.loot[#shipped.loot + 1] = r
+        end
+    end
+    -- Item 2: a drop and an other-faction quest; item 8: a Horde vendor only; item 12: a drop and a Horde vendor.
+    shipped.loot[#shipped.loot + 1] = { 8, "v", 300, 1429, 1 }
+    shipped.loot[#shipped.loot + 1] = { 2, "q", 103, 1429, 4 }
+    shipped.loot[#shipped.loot + 1] = { 12, "v", 200, 1429, 1 }
+    shipped.factions["8:v:300:1429"] = 2
+    shipped.factions["2:q:103:1429"] = 2
+    shipped.factions["12:v:200:1429"] = 2
+    local ctx = loadTooltip(locale, db, shipped)
+    check(locale .. " q/v source lines", table.concat(ctx.addon.View.SourceLines(4, 10), " / "), want.lines)
+    local function last(id)
+        local t = ctx.hover({ id = id })
+        return t.lines[#t.lines] and t.lines[#t.lines].text
+    end
+    check(locale .. " tooltip leads with a same-faction quest, no rate", last(4), want.quest)
+    check(locale .. " tooltip: other-faction-only vendor is labelled", last(8), want.other)
+    check(locale .. " tooltip: an other-faction quest sorts after a drop", last(2), want.drop)
+    check(locale .. " tooltip: an other-faction vendor sorts after a drop", last(12), want.drop)
+    ctx.faction = "Horde"
+    ctx.level = 41
+    check(locale .. " tooltip for a Horde player", last(4), want.horde)
+    check(locale .. " tooltip: a Horde player sees the Horde vendor first", last(12), want.vendor)
+end
+
+do
+    local db, shipped = questVendorData()
+    local gearDB, gearShipped = gearData()
+    db.items, shipped.items = gearDB.items, gearShipped.items
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.run("browse chest")
+    local win = ctx.win()
+    for _, b in ipairs(win.box.buttons) do
+        if b.row and b.row.id == 4 then
+            b.scripts.OnClick(b)
+        end
+    end
+    local pane = paneText(win)
+    check("browse: q/v sources lead the pane", pane[2] .. " / " .. pane[3],
+        "  Own Quest, Elwynn Forest - quest reward /   npc #201, Elwynn Forest - vendor")
+    check("browse: the drop follows the same-faction q/v rows", pane[6],
+        "  Hogger, Elwynn Forest - drops: 5, 50.0% per kill")
+    check("browse: the other-faction vendor is past the cap", pane[7], "  and 1 more sources")
 end
 
 if failures > 0 then

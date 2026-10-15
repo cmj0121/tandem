@@ -5,10 +5,17 @@ local _, ns = ...
 local Store = { unsaved = 0, revision = 0, readOnly = false, itemCount = 0 }
 ns.Store = Store
 
-local SCHEMA = 2
+local SCHEMA = 3
 Store.SCHEMA = SCHEMA
 local MAX_COORDS = 5
-local KINDS = { c = true, o = true, ["?"] = true }
+-- c creature, o object, ? unknown: drops counted per loot. q quest (id = questID), v vendor (id = merchant npcID):
+-- sources recorded once with the first sighting's map and coords, and a factions bitmask.
+local KINDS = { c = true, o = true, ["?"] = true, q = true, v = true }
+local SET_ONCE = { q = true, v = true }
+-- UnitFactionGroup("player") to the bit a q/v entry's factions carries.
+local FACTIONS = { Alliance = 1, Horde = 2 }
+Store.FACTIONS = FACTIONS
+local ALL_FACTIONS = 3
 local RUN_FIELDS = {
     "started", "from", "to", "rate", "processed", "skipped", "hits", "misses", "equippable", "deferred",
     "timeouts", "elapsed",
@@ -21,6 +28,18 @@ local ANCHORS = {
 }
 
 local floor = math.floor
+
+-- Returns a | b for two factions masks (1..3); Lua 5.1 has no bit operators.
+local function orFactions(a, b)
+    local out = 0
+    for _, bit in ipairs({ 1, 2 }) do
+        if a % (bit * 2) >= bit or b % (bit * 2) >= bit then
+            out = out + bit
+        end
+    end
+    return out
+end
+Store.OrFactions = orFactions
 
 local function isNum(v)
     return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -44,12 +63,26 @@ local function lootKey(item, kind, id, map)
     return item .. ":" .. kind .. ":" .. id .. ":" .. map
 end
 
+-- A q/v source is one entry per (item, kind, id) whatever its map.
+local function sourceKey(item, kind, id)
+    return item .. ":" .. kind .. ":" .. id
+end
+
+-- sourceKey -> lootKey of the q/v entries in Store.db; rebuilt on load, kept up by AddSource.
+local sources = {}
+
+local function isFactions(v)
+    return isInt(v, 1) and v <= ALL_FACTIONS
+end
+Store.IsFactions = isFactions
+
 local function newDB()
     return {
         schemaVersion = SCHEMA,
         items = {},
         scan = { cursor = 1, nonEquippable = 0, blocks = {} },
         npcs = {},
+        quests = {},
         loot = {},
         kills = {},
         corpses = {},
@@ -65,21 +98,38 @@ local function copyItem(v)
     end
 end
 
--- Returns a clean copy of a loot entry, or nil; invalid coords are left out.
+-- Returns a clean copy of a loot entry, or nil; invalid coords are left out. A q/v entry needs an id of 1 or more
+-- and valid factions; its count becomes 1 and it keeps one coord. Other kinds carry no factions.
 local function copyLoot(v)
     if type(v) ~= "table" or not isInt(v.item, 1) or not KINDS[v.kind] or not isInt(v.id, 0)
         or not isInt(v.map, 0) or not isInt(v.count, 1) then
         return nil
     end
+    local once = SET_ONCE[v.kind]
+    if once and (v.id < 1 or not isFactions(v.factions)) then
+        return nil
+    end
+    local maxCoords = once and 1 or MAX_COORDS
     local coords = {}
     if type(v.coords) == "table" then
         for _, c in ipairs(v.coords) do
-            if #coords < MAX_COORDS and type(c) == "table" and isInt(c[1], 0) and isInt(c[2], 0) then
+            if #coords < maxCoords and type(c) == "table" and isInt(c[1], 0) and isInt(c[2], 0) then
                 coords[#coords + 1] = { c[1], c[2] }
             end
         end
     end
-    return { item = v.item, kind = v.kind, id = v.id, map = v.map, count = v.count, coords = coords }
+    return { item = v.item, kind = v.kind, id = v.id, map = v.map, count = once and 1 or v.count, coords = coords,
+             factions = once and v.factions or nil }
+end
+
+-- Fills sources from db.loot.
+local function indexSources(db)
+    sources = {}
+    for key, entry in pairs(db.loot) do
+        if SET_ONCE[entry.kind] then
+            sources[sourceKey(entry.item, entry.kind, entry.id)] = key
+        end
+    end
 end
 
 local function isAnchor(v)
@@ -206,11 +256,36 @@ local function migrate(raw, report)
         end
     end
 
-    -- Entries are re-keyed from their fields so a mangled key cannot hide a valid record.
+    for quest, name in pairs(entries(raw.quests)) do
+        if isInt(quest, 1) and type(name) == "string" and name ~= "" then
+            db.quests[quest] = name
+        else
+            drop()
+        end
+    end
+
+    -- Entries are re-keyed from their fields so a mangled key cannot hide a valid record. A q/v source seen on two
+    -- maps keeps the lower map with both factions; the other counts as dropped.
+    local seen = {}
     for _, v in pairs(entries(raw.loot)) do
         local entry = copyLoot(v)
-        if entry then
+        local skey = entry and SET_ONCE[entry.kind] and sourceKey(entry.item, entry.kind, entry.id)
+        local other = skey and seen[skey]
+        if other then
+            local keep, gone = other, entry
+            if entry.map < other.map then
+                keep, gone = entry, other
+            end
+            keep.factions = orFactions(keep.factions, gone.factions)
+            db.loot[lootKey(gone.item, gone.kind, gone.id, gone.map)] = nil
+            db.loot[lootKey(keep.item, keep.kind, keep.id, keep.map)] = keep
+            seen[skey] = keep
+            drop()
+        elseif entry then
             db.loot[lootKey(entry.item, entry.kind, entry.id, entry.map)] = entry
+            if skey then
+                seen[skey] = entry
+            end
         else
             drop()
         end
@@ -259,6 +334,10 @@ function Store.Load(raw)
     end
     Store.db = db
     Store.itemCount = count(db.items)
+    sources = {}
+    if not Store.readOnly then
+        indexSources(db)
+    end
     return db, report
 end
 
@@ -315,10 +394,12 @@ function Store.MarkDeprecated(id, record)
     return true
 end
 
--- Counts one drop of item from a source; x, y are 0..1 map fractions or nil.
+-- Counts one drop of item from a source; x, y are 0..1 map fractions or nil. Quest and vendor kinds go through
+-- AddSource.
 function Store.AddLoot(item, kind, id, map, x, y)
     map = map or 0
-    if Store.readOnly or not isInt(item, 1) or not KINDS[kind] or not isInt(id, 0) or not isInt(map, 0) then
+    if Store.readOnly or not isInt(item, 1) or not KINDS[kind] or SET_ONCE[kind] or not isInt(id, 0)
+        or not isInt(map, 0) then
         return false
     end
     local key = lootKey(item, kind, id, map)
@@ -343,6 +424,50 @@ function Store.AddLoot(item, kind, id, map, x, y)
             entry.coords[#entry.coords + 1] = { cx, cy }
         end
     end
+    return true
+end
+
+-- Store.AddSource(item, kind, id, map, x, y, faction) -> changed
+-- Records item as a quest reward (kind "q", id = questID) or vendor item (kind "v", id = merchant npcID) seen on map
+-- (nil = 0) at x, y (0..1 map fractions or nil), by a player of faction (a Store.FACTIONS bit, 1 or 2). The first
+-- sighting makes the entry with count 1 and that map and coord; a later one, on any map, only ORs faction into its
+-- factions. True when the entry was made or gained a faction; false when nothing changed, invalid or read-only.
+function Store.AddSource(item, kind, id, map, x, y, faction)
+    map = map or 0
+    if Store.readOnly or not isInt(item, 1) or not SET_ONCE[kind] or not isInt(id, 1) or not isInt(map, 0)
+        or not isFactions(faction) then
+        return false
+    end
+    local skey = sourceKey(item, kind, id)
+    local entry = sources[skey] and Store.db.loot[sources[skey]]
+    if entry then
+        local factions = orFactions(entry.factions, faction)
+        if factions == entry.factions then
+            return false
+        end
+        entry.factions = factions
+        changed()
+        return true
+    end
+    local key = lootKey(item, kind, id, map)
+    entry = { item = item, kind = kind, id = id, map = map, count = 1, coords = {}, factions = faction }
+    if isNum(x) and isNum(y) and x >= 0 and y >= 0 then
+        entry.coords[1] = { floor(x * 1000), floor(y * 1000) }
+    end
+    Store.db.loot[key] = entry
+    sources[skey] = key
+    changed()
+    return true
+end
+
+-- Records a quest name; false when unchanged, invalid or read-only.
+function Store.SetQuestName(questID, name)
+    if Store.readOnly or not isInt(questID, 1) or type(name) ~= "string" or name == ""
+        or Store.db.quests[questID] == name then
+        return false
+    end
+    Store.db.quests[questID] = name
+    changed()
     return true
 end
 
