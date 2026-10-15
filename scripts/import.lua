@@ -90,17 +90,6 @@ local function add(a, b)
     return math.min(math.min(a, MAX_COUNT) + math.min(b, MAX_COUNT), MAX_COUNT)
 end
 
--- Returns a | b for two factions masks (1..3); Lua 5.1 has no bit operators.
-local function orFactions(a, b)
-    local out = 0
-    for _, bit in ipairs({ 1, 2 }) do
-        if a % (bit * 2) >= bit or b % (bit * 2) >= bit then
-            out = out + bit
-        end
-    end
-    return out
-end
-
 local function count(t)
     local n = 0
     for _ in pairs(t) do
@@ -274,7 +263,7 @@ local function rebuild(dataDir, outFile)
                 end
                 agg.count = add(agg.count, e.count)
                 if once then
-                    agg.factions = orFactions(agg.factions or 0, e.factions)
+                    agg.factions = Store.OrFactions(agg.factions or 0, e.factions)
                 end
                 if e.map == agg.map then
                     for _, xy in ipairs(e.coords) do
