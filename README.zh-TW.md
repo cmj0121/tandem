@@ -6,7 +6,8 @@
 
 Tandem 是一個 World of Warcraft addon。它收集透過掃描物品 ID 建立的可裝備物品快取、每件拾取物品的來源紀錄，以及用來
 計算掉落率的擊殺數與拾取屍體數。它把這些資料與其他玩家貢獻的資料合併，建議你的角色能使用的最佳已知裝備，以及它們從
-哪裡掉落。它絕不會替玩家執行任何動作，戰鬥中不會記錄任何資料，建議類指令與裝備視窗在戰鬥中也都無法使用。
+哪裡掉落。它絕不會替玩家執行任何動作，戰鬥中不會記錄任何資料，建議類指令與裝備視窗在戰鬥中也都無法使用。在戰鬥外，
+它也會在它認得的物品提示框中加上幾行說明。
 
 ## 安裝
 
@@ -167,7 +168,7 @@ ranged`。不論用戶端語言，參數一律使用英文；印出的部位名�
 
 `gear` 預設只列出有已知來源的物品，也就是在你的資料或隨附資料中有掉落紀錄。加上 `all`，例如 `/tandem gear all` 或
 `/tandem gear chest all`，就會一併列出其他快取中的物品，並標示 `(no known source)`。物品快取中也有遊戲裡取得不到的
-物品。
+物品。標記為已棄用的物品（見[已棄用的物品](#已棄用的物品)）不論是否加上 `all` 都不會列出。
 
 ### `/tandem rank`
 
@@ -184,6 +185,8 @@ Ranked by item level, then quality; stats are not considered
 - 你無法使用的物品仍會排名並計入總數，後面接著 `you cannot use it: level <n> required` 或
   `your class cannot use it`，且不會標示為升級。
 - 單手武器以主手武器排名。
+- 標記為已棄用的物品（見[已棄用的物品](#已棄用的物品)）會與其他物品比較排名（其他物品絕不包含已棄用的物品），第一行
+  之後接著 `this item is deprecated`。
 - 沒有已知來源的物品同樣會排名，後面接著 `no known source`。
 - 不在快取中的物品會印出 `Tandem: item <id> is not known; scan or loot it first`。襯衣、外袍、背包與彈藥會印出
   `<item> does not go in a ranked slot`。
@@ -214,11 +217,25 @@ Ranked by item level, then quality; stats are not considered
 視窗上方：
 
 - 部位下拉選單：`All slots`，接著是各部位名稱。選擇 `All slots` 時，每件物品只列出一次，歸在它的第一個部位，因此單手
-  武器只會以主手武器出現一次。
-- `Usable only`：第一次開啟視窗時已勾選。取消勾選後，你的職業或等級無法使用的物品也會列出，並以半透明顯示。
+  武器只會以主手武器出現一次。你的職業在目前等級能雙持時，這類單手武器在這裡會同時與兩隻手比較：任一手穿戴著它時
+  標示 `(equipped)`；它的物品等級高於兩手中（已知物品等級者）較低的那一手時標示 `(upgrade)`。在 `Main hand` 與
+  `Off hand` 部位中，則只與該手比較。
+- 品質下拉選單：`All qualities`，接著是 `Poor`、`Common`、`Uncommon`、`Rare`、`Epic` 與 `Legendary`，各以其品質顏色
+  顯示。選擇一種品質後，只列出該品質的物品。
 - 列出的物品數量，顯示為 `<n> items`。
 
-下方是掃描列，執行與 [`/tandem scan`](#tandem-scan) 相同的掃描：
+其下有三個勾選框：
+
+- `Usable only`：第一次開啟視窗時已勾選。取消勾選後，你的職業或等級無法使用的物品也會列出，並以半透明顯示。
+- `Hide deprecated`：第一次開啟視窗時已勾選。取消勾選後，標記為已棄用的物品（見[已棄用的物品](#已棄用的物品)）也會
+  列出，名稱後面以灰色接著 `(deprecated)` 標示。
+- `Show minimap button`：小地圖按鈕顯示時為勾選；取消勾選即可隱藏按鈕，效果與 `/tandem minimap off` 相同。
+
+每次開啟視窗時都會設定部位：`All slots`，或 `/tandem browse <slot>` 指定的部位。品質選擇、`Usable only` 與
+`Hide deprecated` 在用戶端執行期間會保留，但不會存檔：`/reload` 或登出後，品質回到 `All qualities`，兩個勾選框也都
+再次勾選。
+
+勾選框下方是掃描列，執行與 [`/tandem scan`](#tandem-scan) 相同的掃描：
 
 - `Rate` 與 `Cap` 輸入框，第一次開啟視窗時顯示 `10/s` 與 `100`。規則與指令參數相同：速率為 `<n>/s` 或 `<n>/m`，
   介於 `1/m` 與 `50/s` 之間；上限為 `1` 到 `100000`。空白的輸入框使用預設值。按 Enter 或 Escape 會離開輸入框，
@@ -238,8 +255,6 @@ Ranked by item level, then quality; stats are not considered
 戰鬥中，`Start` 與 `Stop` 只會印出 `Tandem: not available in combat`，不做任何事。掃描結束時（達到上限或被停止），
 已開啟的視窗會重新列出物品，因此掃描找到的物品不必重新開啟視窗就會出現。
 
-掃描列下方的 `Show minimap button` 在小地圖按鈕顯示時為勾選；取消勾選即可隱藏按鈕，效果與 `/tandem minimap off` 相同。
-
 每一列顯示：
 
 - 物品圖示；用戶端沒有提供時顯示問號。
@@ -250,7 +265,9 @@ Ranked by item level, then quality; stats are not considered
   只會以半透明顯示，不會變紅。
 
 用戶端尚未載入的物品會以品質顏色顯示為 `item #<id>`。視窗會向用戶端要求這些物品，資料送達後名稱很快就會補上，不必
-重新開啟視窗。
+重新開啟視窗。物品紀錄中已標記為已棄用的物品（不論在你的資料或隨附資料中），不論名稱是否已載入都會隱藏。尚未標記的
+物品由於名稱還不知道，即使勾選了 `Hide deprecated` 仍會列出。若送達的名稱表示它已棄用，該列會顯示
+灰色的 `(deprecated)` 標示，並在下次重新列出清單時（例如你變更篩選條件時）離開清單，而不會在滑鼠底下突然跳走。
 
 滑鼠移到一列上會顯示遊戲的物品提示框。點擊一列即可選取它：底部的窗格會顯示物品連結與最多 5 個掉落來源，格式與
 `rank` 相同；來源更多時，最後會顯示 `and <n> more sources`。沒有選取任何物品時，窗格顯示
@@ -258,14 +275,19 @@ Ranked by item level, then quality; stats are not considered
 
 把物品放到視窗上即可查詢它：從背包或角色資訊視窗拿起物品，拖到清單或視窗背景上，或拿著它在那裡點擊。物品會離開
 游標並留在原處。下拉選單會切換到該物品的部位，選取該物品並捲動到它那一列，窗格顯示它的掉落來源。你無法使用該物品時，
-`Usable only` 會取消勾選，讓它那一列以半透明列出；可使用的物品則不會改變這個勾選框。沒有排名部位的物品（例如襯衣）
-會把清單切換到 `All slots`，它不會列在清單中，但窗格仍會顯示它的來源。不在快取中的物品不會選取任何物品，也不會改變
-部位；窗格顯示 `Tandem: item <id> is not known; scan or loot it first`。游標上的其他東西（例如法術）會被忽略，並留在
+`Usable only` 會取消勾選，讓它那一列以半透明列出；可使用的物品則不會改變這個勾選框。同樣地，已棄用的物品會取消勾選
+`Hide deprecated`，品質與所選品質不同的物品會把品質下拉選單改回 `All qualities`。沒有排名部位的物品（例如襯衣）
+會把清單切換到 `All slots`，它不會列在清單中，但窗格仍會顯示它的來源，篩選條件也維持不變。不在快取中的物品不會選取
+任何物品，也不會改變部位；窗格顯示 `Tandem: item <id> is not known; scan or loot it first`。游標上的其他東西（例如法術）會被忽略，並留在
 游標上。戰鬥中放上的物品只會印出 `Tandem: not available in combat`，並留在游標上。
 
 視窗在戰鬥中無法使用。`/tandem browse` 會印出 `Tandem: not available in combat`，不會開啟視窗；已開啟的視窗會在戰鬥
 開始時關閉，之後也不會自動重新開啟。按 Escape 也能關閉視窗。用滑鼠左鍵拖曳即可移動視窗。視窗位置存在
 `TandemDB.ui`，`/reload` 或下次登入後會還原；在你第一次移動它之前，視窗會在畫面中央開啟。
+
+視窗開啟時寬 640、高 620。拖曳右下角的拖曳點即可調整大小，範圍從 520 × 480 到 1200 × 1000；畫面較小時，上限為畫面
+大小。清單與物品名稱會隨視窗變寬，窗格則留在底部。每次移動視窗或調整大小時，大小都會與位置一起存在 `TandemDB.ui`，
+`/reload` 或下次登入後會還原，並限制在上述範圍內。用戶端無法調整框架大小時，不會有拖曳點，視窗維持預設大小。
 
 `zhTW` 用戶端的視窗文字會顯示為中文。
 
@@ -303,6 +325,45 @@ To contribute: type /reload, then run make import
   手持雙手武器時 `offhand` 也不會標示。
 - `(no known source)`：沒有它的掉落紀錄（只出現在 `gear ... all` 與瀏覽視窗）。
 
+### 物品提示框
+
+在戰鬥外，滑鼠移到 Tandem 認得的物品上時，遊戲提示框底部會多出幾行。只要物品的提示框是遊戲的主提示框就會出現，
+例如背包、角色資訊視窗與瀏覽視窗中的物品，以及在聊天視窗點擊物品連結時開啟的提示框。顯示你穿戴物品的比較提示框則
+不會加上任何內容。
+
+- 以 Tandem 藍色顯示 `Tandem: rank <n> of <total> for <slot>`，後面接著[裝備如何排名](#裝備如何排名)中的標示：
+  `(equipped)`、`(upgrade)` 或 `(no known source)`。排名與 `/tandem rank` 印出的相同。單手武器以主手武器排名；你的
+  職業在目前等級能雙持時，會像瀏覽視窗的 `All slots` 一樣同時與兩隻手比較。沒有排名部位的物品（例如襯衣）沒有排名
+  這一行。
+- 你無法使用該物品時，以紅色顯示 `Tandem: you cannot use it: level <n> required` 或
+  `Tandem: your class cannot use it`。
+- 以淺灰色顯示該物品掉落次數最多的來源：`Tandem: drops from <source>, <map>`；已知掉落率時接著
+  `(<rate>% per kill)` 或 `(up to <rate>%)`（見[掉落率](#掉落率)），還有其他已知來源時再接著 `(+<n> more)`。來源名稱
+  的顯示方式與 `rank` 相同。沒有已知來源的物品沒有這一行。
+
+例如：
+
+```text
+Tandem: rank 2 of 14 for Chest (upgrade)
+Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)
+```
+
+標記為已棄用的物品只會有一行灰色的 `Tandem: deprecated item`，沒有其他內容。Tandem 不認得的物品不會加上任何內容；
+戰鬥中也不會加上任何一行，聊天視窗也不會印出任何訊息。用戶端尚未提供你的職業或等級時，同樣不會加上任何內容。
+`zhTW` 用戶端會顯示中文。
+
+### 已棄用的物品
+
+名稱以 `Deprecated` 開頭的物品（不分大小寫，忽略開頭的空格）會被標記為已棄用。物品快取不儲存名稱，因此這個標記存在
+物品紀錄中，作為選用的第七個欄位。掃描把物品存入快取時就會設定；之後只要 Tandem 看到用戶端已持有的已知物品名稱，
+也會設定：瀏覽視窗中的列、物品提示框，以及放到視窗上的物品。標記一件只存在於隨附資料中的物品時，會在你自己的 `items`
+中存一份已標記的紀錄，讓下次 `make import` 隨附這個標記；它會計入你的已知物品數與 `Unsaved records`。
+
+`/tandem gear` 絕不會列出已標記的物品，`/tandem rank` 會印出 `this item is deprecated`，瀏覽視窗在勾選
+`Hide deprecated` 時隱藏它們、否則標示 `(deprecated)`，它們的物品提示框則顯示 `Tandem: deprecated item`。物品紀錄中
+已標記的物品（不論在你的資料或隨附資料中）不論用戶端是否已載入名稱都是如此。尚未標記、且用戶端尚未載入名稱的物品
+不會被當作已棄用，與其他物品一樣處理。
+
 ### 掉落率
 
 只有生物會印出掉落率，依每個 NPC 的下列兩種計數之一計算：
@@ -333,15 +394,15 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 所有資料都存在一個帳號共用的表 `TandemDB`，存檔位置為
 `<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
-| Key       | 內容                                                                                          |
-| --------- | --------------------------------------------------------------------------------------------- |
-| `items`   | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class 與 subclass                      |
-| `scan`    | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描             |
-| `loot`    | 依物品、來源與地圖分組：NPC 或物件 ID、地圖 ID、掉落次數，以及最多 5 個不同的座標             |
-| `npcs`    | 以 NPC ID 對應的 NPC 名稱                                                                     |
-| `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                    |
-| `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                        |
-| `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
+| Key       | 內容                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------- |
+| `items`   | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class、subclass；已棄用時第七個欄位為 `1`      |
+| `scan`    | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描                     |
+| `loot`    | 依物品、來源與地圖分組：NPC 或物件 ID、地圖 ID、掉落次數，以及最多 5 個不同的座標                     |
+| `npcs`    | 以 NPC ID 對應的 NPC 名稱                                                                             |
+| `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
+| `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
+| `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
 
 - 存在但不可裝備的物品只計入 `scan.nonEquippable`，不會儲存。
 - `scan.lastRun` 保存上次掃描的開始時間、ID 範圍、速率、經過秒數，以及摘要印出的各項計數。
@@ -350,8 +411,9 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 - 同一次登入期間再次開啟的屍體或物件（例如沒拾取完的屍體）不會增加掉落紀錄，也不會增加拾取屍體數。addon 會記住最近
   200 個來源；`/reload` 後會忘記，所以重新載入後再開啟同一具屍體會重複計算。
 - 只有在拾取的屍體是你的目標或位於滑鼠游標下時，才會記錄 NPC 名稱。
-- `ui` 只記錄瀏覽視窗與小地圖按鈕的位置，以及按鈕是否隱藏；角度在你拖曳按鈕後才儲存，`minimapHidden` 只在按鈕
-  隱藏時存在。它不計入 `Unsaved records`，無效的位置、角度或旗標會在載入時捨棄。
+- `ui` 只記錄瀏覽視窗與小地圖按鈕的位置、視窗大小，以及按鈕是否隱藏；角度在你拖曳按鈕後才儲存，大小在你移動視窗
+  或調整大小時儲存，`minimapHidden` 只在按鈕隱藏時存在。它不計入 `Unsaved records`，無效的位置、角度或旗標會在載入時
+  捨棄。無效的大小只會單獨捨棄，位置仍會保留。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。當機或強制結束會遺失上次存檔後收集的所有資料；`/tandem count`
 會顯示有多少筆紀錄尚未儲存。長時間掃描後請執行 `/reload`。
@@ -416,8 +478,9 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 
 ### 檢查瀏覽視窗
 
-1. 在戰鬥外執行 `/tandem browse`。畫面中央會開啟標題為 `Tandem gear` 的視窗：部位下拉選單顯示 `All slots`，
-   `Usable only` 已勾選，右上角顯示物品數量，中間是清單，底部窗格顯示 `Select an item to see where it drops`。
+1. 在戰鬥外執行 `/tandem browse`。畫面中央會開啟標題為 `Tandem gear` 的視窗：部位下拉選單顯示 `All slots`，品質
+   下拉選單顯示 `All qualities`，`Usable only` 與 `Hide deprecated` 已勾選，右上角顯示物品數量，中間是清單，底部窗格
+   顯示 `Select an item to see where it drops`。
 2. 取消勾選 `Usable only` 並選擇 `All slots`，讓清單有最多約 1.5k 列。用清單右側的捲軸與滑鼠滾輪捲動清單；兩者都能
    順暢捲到底再捲回來。記下是否有出現捲軸。
 3. 在下拉選單中選擇 `Chest`。只會列出胸部物品，數量改變；你穿戴的物品若是已知物品，會標示 `(equipped)`。以
@@ -453,9 +516,37 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
     勾選框會取消勾選，該列以半透明顯示。
 17. 放上一件不在快取中的物品，例如任務物品：窗格顯示 `Tandem: item <id> is not known; scan or loot it first`。
 18. 從法術書拿起一個法術放到視窗上：什麼都不會改變，法術仍留在游標上。
+19. 拖曳右下角的拖曳點：視窗會放大縮小，但不會小於 520 × 480 或大於 1200 × 1000，清單與物品名稱隨寬度變化。把視窗
+    拉寬、移動它，輸入 `/reload`，再執行 `/tandem browse`：視窗以相同的位置與大小開啟。
+20. 在品質下拉選單選擇 `Rare`：只列出藍色（精良）的物品，數量減少。再選回 `All qualities`。選擇 `Rare` 時放上
+    一件普通品質的物品：下拉選單顯示 `All qualities`。
+21. 取消勾選 `Hide deprecated`：名稱以 `Deprecated` 開頭的物品出現，以灰色標示 `(deprecated)`，數量增加。再勾選
+    一次：它們消失。勾選時放上一件已棄用的物品：勾選框會取消勾選。
+22. 在你的職業能雙持時選擇 `All slots`，看一把單手武器：你副手穿戴著它時標示 `(equipped)`，它勝過你兩把武器中較弱的
+    那把時標示 `(upgrade)`。
+23. 以一件已棄用物品的 ID 執行 `/tandem gear` 與 `/tandem rank <id>`：`gear` 絕不會列出它，`rank` 會在排名那一行之後
+    印出 `this item is deprecated`。
 
-請回報捲軸是否出現、步驟 2 捲動的感覺、步驟 11 收納選單與小地圖按鈕是否都有出現、任何 Lua 錯誤，以及任何在視窗中放不下的
-文字。
+請回報捲軸是否出現、步驟 2 捲動的感覺、步驟 11 收納選單與小地圖按鈕是否都有出現、步驟 19 是否有拖曳點、任何 Lua
+錯誤，以及任何在視窗中放不下的文字（視窗最小時也一樣）。
+
+### 檢查物品提示框
+
+1. 在戰鬥外，滑鼠移到背包中一件 Tandem 認得、且有排名部位的物品上。在遊戲的說明文字下方，一行藍色文字顯示
+   `Tandem: rank <n> of <total> for <slot>`，並帶有與瀏覽視窗中同一件物品相同的 `(equipped)`、`(upgrade)` 或
+   `(no known source)`。
+2. 滑鼠移到一件你無法使用的物品上：一行紅色文字顯示 `Tandem: you cannot use it: level <n> required` 或
+   `Tandem: your class cannot use it`。
+3. 滑鼠移到一件你從怪物身上拾取的物品上：一行灰色文字顯示 `Tandem: drops from <source>, <map>`，已知掉落率時附上
+   掉落率，還有其他來源時附上 `(+<n> more)`。它與 `/tandem rank` 列出的第一個來源一致。
+4. 滑鼠移到角色資訊視窗中的物品與瀏覽視窗的列上：它們也有相同的幾行。把一件物品 Shift 點擊到聊天視窗並點擊該連結：
+   開啟的提示框也有這幾行。旁邊顯示的比較提示框則沒有。
+5. 滑鼠移到一件已棄用的物品上，例如取消勾選 `Hide deprecated` 後列出的物品：唯一的 Tandem 文字是灰色的
+   `Tandem: deprecated item`。
+6. 滑鼠移到一件 Tandem 不認得的物品上，例如任務物品：不會加上任何 Tandem 文字。
+7. 開始戰鬥，在戰鬥中滑鼠移到同樣的物品上：不會加上任何 Tandem 文字，聊天視窗也不會印出任何訊息。
+
+請回報任何提示框說明與 `/tandem rank` 不一致的物品、步驟 4 中聊天連結的提示框是否有出現這幾行，以及任何 Lua 錯誤。
 
 ## Interface number
 
@@ -487,7 +578,7 @@ make test
 `scripts/addon_test.lua` 會模擬 WoW API 函式，依 `Tandem/Tandem.toc` 列出的順序載入檔案，並檢查 `enUS`、`zhTW`
 與一個不支援的語系下的載入訊息。它也測試 `TandemDB` 的驗證與遷移、`/tandem` 的解析與輸出、以手動計時器與模擬的物品
 API 進行的掃描、以模擬的拾取、戰鬥紀錄、地圖與單位 API 進行的掉落、擊殺與屍體紀錄、以模擬的職業、等級與已穿戴
-物品進行的裝備建議，以及以模擬的框架、元件與提示框進行的瀏覽視窗。這些測試只能證明邏輯正確；用戶端實際的 API 要在遊戲中檢查。`scripts/import_test.sh` 以拋棄式的
+物品進行的裝備建議、以模擬的框架、元件與提示框進行的瀏覽視窗，以及以模擬的提示框 API 進行的物品提示框說明。這些測試只能證明邏輯正確；用戶端實際的 API 要在遊戲中檢查。`scripts/import_test.sh` 以拋棄式的
 SavedVariables 檔案與資料夾執行 `make import` 和 `scripts/import.lua`，涵蓋兩位貢獻者、重複匯入、重建、被拒絕的
 檔案與沙箱。
 
@@ -515,7 +606,7 @@ ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一
 | `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                     |
 
 合併檔會加總掉落次數、擊殺數與拾取屍體數，每筆掉落紀錄保留最多 5 個座標，NPC 名稱依語系分組，物品快取則取聯集；兩份
-貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準。它也以 `contributors` 記錄合併了多少份貢獻。舊版的
+貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。它也以 `contributors` 記錄合併了多少份貢獻。舊版的
 `data/loot.lua` 不再寫入。在匯入擊殺、屍體與物品之前寫成的貢獻檔仍可讀取。
 
 - `<id>` 是帳號資料夾名稱 SHA-256 的前 12 個十六進位字元。資料夾名稱，也就是帳號號碼，絕不會被寫入或印出；同一個
