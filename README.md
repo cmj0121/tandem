@@ -7,7 +7,8 @@ English | [繁體中文](README.zh-TW.md)
 Tandem is a World of Warcraft addon. It collects a cache of equippable items, built by scanning item IDs, and a log of
 where each looted item came from, with kill and looted-corpse counts for drop rates. From that data, merged with what
 other players contributed, it suggests the best known gear your character can use and where it drops. It never acts for
-the player, it records nothing while you are in combat, and its advice commands do not answer in combat.
+the player, it records nothing while you are in combat, and neither its advice commands nor its gear window are
+available in combat.
 
 ## Install
 
@@ -85,8 +86,11 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 | `/tandem gear [<slot>] [all]`         | Lists the best known gear you can use, per slot or in one slot   |
 | `/tandem rank <item link\|id>`        | Ranks an item in its slot and lists where it drops               |
 | `/tandem export`                      | Shows what `make import` would collect from this account         |
+| `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
+| `/tandem minimap [on\|off]`           | Shows or hides the minimap button; with no argument, toggles it  |
 
-`gear`, `rank` and `export` print `Tandem: not available in combat` and do nothing while you are in combat.
+`gear`, `rank`, `export` and `browse` print `Tandem: not available in combat` and do nothing while you are in combat.
+`minimap` works in combat too.
 
 ### `/tandem scan`
 
@@ -191,8 +195,97 @@ Ranked by item level, then quality; stats are not considered
 - An item with no known source is ranked too, followed by `no known source`.
 - An item that is not cached prints `Tandem: item <id> is not known; scan or loot it first`. Shirts, tabards, bags and
   ammunition print `<item> does not go in a ranked slot`.
-- A source with no recorded name prints as `npc #<id>` or `object #<id>`; a map the client does not name prints as
-  `unknown map`. More than 5 sources end with `and <n> more sources`.
+- Loot from fishing, object 35591 (the Fishing Bobber), prints as `Fishing`. Any other source with no recorded name
+  prints as `npc #<id>` or `object #<id>`; a map the client does not name prints as `unknown map`. More than 5 sources
+  end with `and <n> more sources`.
+
+### `/tandem browse`
+
+`/tandem browse` opens a window titled `Tandem gear` that lists every known item, best first, ranked as described in
+[How gear is ranked](#how-gear-is-ranked); run it again to close the window. `/tandem browse <slot>` opens the window on
+one slot, or switches the open window to it. It takes the slot tokens of `gear`, and an unknown token prints the same
+`Tandem: unknown slot <token>; use one of: ...` line. When the client has not told the addon your class or level yet,
+it prints `Tandem: your class or level is not known yet; try again in a moment` and opens nothing.
+
+The window also opens without a command, from **Tandem** in the minimap's addon compartment, the button by the minimap
+that lists addons; WoW Forever has one. Hovering the entry shows a tooltip, `Tandem` over `Click to browse known gear`.
+A click opens the window on `All slots`, or closes it when it is open. In combat the click prints
+`Tandem: not available in combat` and opens nothing; while your class or level is not known yet it prints
+`Tandem: your class or level is not known yet; try again in a moment` and opens nothing.
+
+A round Tandem button on the edge of the minimap does the same, next to the compartment entry or in its place on a client
+without one. It is shown by default, at the lower left until you move it. Its tooltip adds `Drag to move this button`:
+drag it with the left mouse button to move it around the minimap. Its place is kept in `TandemDB.ui` as an angle and
+restored after a `/reload` or the next login.
+
+Hide the button with `/tandem minimap off` or by unticking `Show minimap button` in the window, and bring it back with
+`/tandem minimap on` or the same box; `/tandem minimap` alone toggles it. The command prints
+`Tandem: minimap button hidden` or `Tandem: minimap button shown`, and the box follows whichever you use. The choice is
+kept in `TandemDB.ui` and applied at the next login.
+
+Along the top of the window:
+
+- A slot dropdown: `All slots`, then each slot by name. `All slots` lists each item once, under its first slot, so a
+  one-hand weapon appears once, as a main-hand weapon.
+- `Usable only`, ticked when the window is first opened. Untick it to also list the items your class or level cannot
+  use; they are dimmed.
+- The number of listed items, as `<n> items`.
+
+Below them, a scan bar runs the same scan as [`/tandem scan`](#tandem-scan):
+
+- `Rate` and `Cap` boxes, which read `10/s` and `100` when the window is first opened. They follow the rules of the
+  command's tokens: a rate of `<n>/s` or `<n>/m` between `1/m` and `50/s`, and a cap from `1` to `100000`. An empty box
+  takes the default. Enter or Escape leaves a box without closing the window. What you type is kept until a `/reload`
+  or logout but never saved; after one, the boxes read `10/s` and `100` again.
+- `Start`, which scans from the cursor with those values. While a scan runs, whether started here or with
+  `/tandem scan`, the button reads `Stop` and stops it as `/tandem scan stop` does.
+- A status line. While a scan runs it reads `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>` and is updated
+  every second while the window is open; otherwise it reads `<n> known items, next scan from ID <id>`.
+
+A scan started from the bar prints the same chat lines as the command, such as `Tandem: scanning <n> IDs from ID <id>`
+and the summary. An invalid value prints the command's usage line and starts nothing:
+
+```text
+  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)
+```
+
+In combat, `Start` and `Stop` print `Tandem: not available in combat` and do nothing. When a scan ends, by reaching its
+cap or by being stopped, an open window lists the items again, so items the scan found show up without reopening it.
+
+Under the scan bar, `Show minimap button` is ticked while the minimap button is shown; untick it to hide the button,
+as `/tandem minimap off` does.
+
+Each row shows:
+
+- The item's icon, or a question mark when the client gives none.
+- Its name in its quality colour, followed in grey by the marks of [How gear is ranked](#how-gear-is-ranked):
+  `(equipped)`, `(upgrade)` or `(no known source)`. Like `gear ... all`, the window lists items with no known source too.
+  A dimmed item is never marked `(upgrade)`.
+- Its item level, then a level. Normally that is the item's required level. When your level is too low to use the
+  item, it is the level from which you could, in red: the higher of the item's required level and the level your class
+  learns that armor or weapon type, so mail for a hunter shows `40`. An item your class cannot use at all is dimmed but
+  never red.
+
+An item the client has not loaded yet shows as `item #<id>` in its quality colour. The window asks the client for it,
+and the names fill in a moment after they arrive, without reopening the window.
+
+Hover a row to see the game's tooltip for the item. Click a row to select it: the pane at the bottom shows the item's
+link and up to 5 places it drops, in the same lines as `rank`, ending with `and <n> more sources` when there are more.
+With nothing selected, the pane reads `Select an item to see where it drops`.
+
+Drop an item on the window to look it up: pick it up from your bags or your character sheet, then drag it onto the list
+or the window's background, or click there with it. The item leaves the cursor and stays where it was. The dropdown
+switches to the item's slot, the item is selected and scrolled to, and the pane shows where it drops. When you cannot
+use the item, `Usable only` is unticked so that its row is listed, dimmed; a usable item leaves the box as it is. An
+item with no ranked slot, such as a shirt, switches the list to `All slots`, where it is not listed, and the pane still
+shows its sources. An item that is not cached selects nothing and leaves the slot as it is; the pane reads
+`Tandem: item <id> is not known; scan or loot it first`. Anything else on the cursor, such as a spell, is ignored and
+stays on the cursor. In combat a dropped item prints `Tandem: not available in combat` and stays on the cursor.
+
+The window is not available in combat. `/tandem browse` prints `Tandem: not available in combat` and opens nothing, and
+an open window closes when combat starts; it stays closed afterwards. Escape closes it too. Drag the window with the
+left mouse button to move it. Its position is kept in `TandemDB.ui` and restored after a `/reload` or the next login;
+until you first move it, it opens in the middle of the screen.
 
 ### `/tandem export`
 
@@ -212,7 +305,8 @@ write anything. See [Importing loot logs](#importing-loot-logs).
 Items are sorted by item level, then by quality, then by item ID. Stats are not considered, so a caster item can rank
 high for a warrior. Each command that ranks says so on its last line.
 
-An item is listed only if your class and level can use it:
+`gear` lists, and `rank` ranks against, only items your class and level can use; the browse window does too while
+`Usable only` is ticked. An item is usable when:
 
 - Required level: your level must reach the item's required level.
 - Armor and weapon types follow the Classic class tables. Cloth and miscellaneous items are open to every class.
@@ -228,7 +322,7 @@ Marks after an item:
 - `(equipped)`: you wear it.
 - `(upgrade)`: its item level is above what you wear in that slot; an empty slot counts as item level 0. No mark is
   given when the client does not reveal what you wear, and none in `offhand` while you wield a two-hand weapon.
-- `(no known source)`: no loot entry for it (`gear ... all` only).
+- `(no known source)`: no loot entry for it (`gear ... all` and the browse window only).
 
 ### Drop rates
 
@@ -237,15 +331,18 @@ A rate is printed only for creatures, from one of two counts per npc:
 - Kills: your character's killing blows, read from the combat log when the client allows it (`/tandem count` says
   whether it does). Kills by pets or party members are not counted. Kills in combat are stored when combat ends.
   WoW Forever 1.60.1 does not allow it: `CombatLogGetCurrentEventInfo` and `C_CombatLog.GetCurrentEventInfo` are
-  absent and registering for the combat log is blocked, so `count` reports `unavailable` and every rate there is per
-  looted corpse.
+  absent and registering for the combat log is blocked, so `count` reports `unavailable`. Experience gives no kill
+  count either: Forever does not deliver `CHAT_MSG_COMBAT_XP_GAIN` to addons, although the experience line shows in
+  chat, and `PLAYER_XP_UPDATE` cannot be tied to the killed mob, because when it arrives the target no longer reads as
+  dead. So Forever has no kill count, and every rate there is per looted corpse.
 - Looted corpses: each distinct corpse you open a loot window on, gold-only corpses included. Corpses with nothing to
   loot cannot be opened, so a rate per looted corpse is an upper bound.
 
 The rate uses kills when there are any for that npc, else looted corpses, and says which. Your own data and the shipped
 data are never added together: the rate takes both its drops and its count from one of them, the one with the larger
 count among those that saw this item drop from that npc. When the drops exceed the count, for example after looting
-kills made by others, no rate is shown rather than one above 100%. Objects such as chests and nodes get no rate.
+kills made by others, no rate is shown rather than one above 100%. Objects such as chests, nodes and fishing get no
+rate.
 
 ### Shipped data
 
@@ -261,14 +358,15 @@ Without the file, the commands use your own data only.
 Everything goes into one account-wide table, `TandemDB`, saved as
 `<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`.
 
-| Key       | Content                                                                                     |
-| --------- | ------------------------------------------------------------------------------------------- |
-| `items`   | Per equippable item ID: item level, required level, quality, equip slot, class and subclass |
-| `scan`    | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run            |
-| `loot`    | Per item, source and map: npc or object ID, map ID, drops, up to 5 positions                |
-| `npcs`    | Npc names by npc ID                                                                         |
-| `kills`   | Per npc ID: your character's killing blows on that npc                                      |
-| `corpses` | Per npc ID: distinct corpses of that npc you looted                                         |
+| Key       | Content                                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------------------- |
+| `items`   | Per equippable item ID: item level, required level, quality, equip slot, class and subclass               |
+| `scan`    | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run                          |
+| `loot`    | Per item, source and map: npc or object ID, map ID, drops, up to 5 positions                              |
+| `npcs`    | Npc names by npc ID                                                                                       |
+| `kills`   | Per npc ID: your character's killing blows on that npc                                                    |
+| `corpses` | Per npc ID: distinct corpses of that npc you looted                                                       |
+| `ui`      | `window`: window anchor, relative point, x, y; `minimap`: button angle; `minimapHidden`: `true` if hidden |
 
 - Items that exist but cannot be equipped are counted in `scan.nonEquippable`, not stored.
 - `scan.lastRun` holds the last run's start time, ID range, rate, elapsed seconds and the counts the summary prints.
@@ -279,6 +377,9 @@ Everything goes into one account-wide table, `TandemDB`, saved as
   corpse. The addon remembers the last 200 sources; a `/reload` forgets them, so opening one again after a reload
   counts it twice.
 - An npc's name is recorded only when the looted corpse is your target or under the mouse.
+- `ui` holds only where the browse window and the minimap button sit and whether the button is hidden; the angle is
+  saved once you drag the button, and `minimapHidden` only while it is hidden. It is not counted in `Unsaved records`,
+  and an invalid position, angle or flag is dropped on load.
 
 The client writes `Tandem.lua` only on logout or `/reload`. A crash or a forced quit loses everything collected since
 the last save; `/tandem count` shows how many records are waiting. `/reload` after a long scan.
@@ -346,6 +447,57 @@ Report back the summary lines from steps 3 and 7, the `/tandem count` output, an
 Report back the `/tandem count` lines from step 1, whether the counts in step 2 changed as described, and any item
 that is listed for your class but cannot be equipped.
 
+### Check the browse window
+
+1. Out of combat, run `/tandem browse`. A window titled `Tandem gear` opens in the middle of the screen: the slot
+   dropdown reads `All slots`, `Usable only` is ticked, the item count is at the top right, the list fills the middle,
+   and the pane at the bottom reads `Select an item to see where it drops`.
+2. Untick `Usable only` and pick `All slots`, so the list holds up to about 1.5k rows. Scroll it with the scroll bar on its
+   right and with the mouse wheel over it; both move smoothly to the end and back. Note whether a scroll bar shows at
+   all.
+3. Pick `Chest` in the dropdown. Only chest items are listed, the count changes, and the item you wear, if it is a
+   known item, is marked `(equipped)`. Close the window with `/tandem browse`, then run `/tandem browse chest`: it opens
+   with `Chest` selected in the dropdown.
+4. Hover a row: the game's tooltip shows the item's stats, and it closes when the mouse leaves.
+5. Click a row: it is highlighted, and the bottom pane shows the item's link and where it drops. An item with more than
+   5 sources ends with `and <n> more sources`, an item you fished lists `Fishing`, and an item with no loot entry shows
+   `no known source`.
+6. Rows that read `item #<id>` change to the item's name within a moment, without reopening the window.
+7. With `Usable only` unticked, items your class or level cannot use are dimmed. An item your level is too low for
+   shows in red the level from which you could use it, such as `40` for mail on a level 20 hunter; an item your class
+   can never use is not red. Tick `Usable only` again: they disappear and the count drops.
+8. Drag the window elsewhere, type `/reload`, then run `/tandem browse`: it opens where you left it.
+9. Press Escape: the window closes.
+10. Open the window and start a fight: it closes as combat starts. While still in combat, run `/tandem browse`: it
+    prints `Tandem: not available in combat` and nothing opens.
+11. Out of combat, open the addon compartment by the minimap: it lists **Tandem**. Hover the entry: a tooltip reads
+    `Tandem` and `Click to browse known gear`, and it closes when the mouse leaves. Click the entry: the window opens on
+    `All slots`. Click it again: the window closes. A Tandem button shows on the minimap's edge as well, also on a
+    client without the compartment; check the same with it, and that its tooltip also reads `Drag to move this button`.
+    Drag it around the minimap, type `/reload`, and check that it is where you left it. Run `/tandem minimap off`: chat
+    shows `Tandem: minimap button hidden`, the button disappears, and `Show minimap button` in the window is unticked.
+    Type `/reload`: the button stays hidden. Tick `Show minimap button`: the button comes back.
+12. Open the window. Below the dropdown, the boxes read `10/s` and `100`, the button reads `Start`, and the status line
+    reads `<n> known items, next scan from ID <id>`, with the known items and the scan cursor of `/tandem count`.
+13. Type `20` in `Cap` and click `Start`. Chat shows `Tandem: scanning 20 IDs from ID <id>`, the button reads `Stop`,
+    and the status line counts up every second. When the summary prints, the button reads `Start` again, the status
+    line shows the new cursor, and the list is refreshed.
+14. Type `1000` in `Cap`, click `Start`, then `Stop`: the summary prints and the button reads `Start`. Close the window,
+    run `/tandem scan 20` and reopen the window while it runs: the status line shows its progress.
+15. Type `abc` in `Rate`, or `0` in `Cap`, and click `Start`: chat shows
+    `/tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)` and no scan starts. Click in a box
+    and press Escape: the box loses focus and the window stays open. Press Escape again: the window closes.
+16. Open the window, pick up an item from your bags and drop it on the list. It stays in your bag and leaves the
+    cursor, the dropdown switches to its slot, its row is selected, and the pane shows where it drops. Do the same
+    with an item from your character sheet, and with a known item your class cannot use while `Usable only` is ticked:
+    the box unticks and the row is dimmed.
+17. Drop an item that is not cached, such as a quest item: the pane reads
+    `Tandem: item <id> is not known; scan or loot it first`.
+18. Pick up a spell from your spellbook and drop it on the window: nothing changes and the spell stays on the cursor.
+
+Report back whether the scroll bar showed, how scrolling felt in step 2, whether the compartment entry and the minimap
+button showed in step 11, any Lua error, and any text that does not fit in the window.
+
 ## Interface number
 
 `Tandem/Tandem.toc` declares `## Interface: 16001`, confirmed in game on client `1.60.1`. When a client update changes
@@ -378,8 +530,9 @@ it catches syntax errors only.
 `scripts/addon_test.lua` loads the files listed in `Tandem/Tandem.toc`, in order, with stubbed WoW API functions, and
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
 migration, `/tandem` parsing and output, the scan with a manual timer and stubbed item API, loot, kill and corpse
-recording with stubbed loot, combat log, map and unit API, and the gear advice with stubbed class, level and equipped
-items. These tests prove the logic only; the client's real API is checked in game.
+recording with stubbed loot, combat log, map and unit API, the gear advice with stubbed class, level and equipped
+items, and the browse window with stubbed frames, widgets and tooltip. These tests prove the logic only; the client's
+real API is checked in game.
 `scripts/import_test.sh` runs `make import` and `scripts/import.lua` against throwaway saved-variables files and data
 folders: two contributors, re-imports, rebuilds, rejected files and the sandbox.
 
@@ -415,7 +568,7 @@ versions is no longer written. Contributions written before kills, corpses and i
   never written or printed, and the same account always gets the same ID.
 - The locale is the `SET textLocale` line of `WTF/Config.wtf`, `enUS` when missing. Npc names are stored in the client
   language, so `Tandem/Data/Loot.lua` keeps them under `names[<locale>]`.
-- `scan` stays local. `items` is imported, because ranking among a few hundred personally scanned items says little.
+- `scan` and `ui` stay local. `items` is imported, because ranking among a few hundred personally scanned items says little.
 - Running it again is safe: each account's contribution is a full snapshot that replaces the last one, so counts are
   never added twice, and the same input gives byte-identical files.
 - Each saved-variables file runs in an empty environment, with no functions to call and a limit on how long it may run,
