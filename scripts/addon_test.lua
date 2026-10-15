@@ -62,6 +62,7 @@ local function loadAddon(locale, opts)
         end,
         SlashCmdList = {},
     }, { __index = _G })
+    env._G = env
     for k, v in pairs(opts.env or {}) do
         env[k] = v
     end
@@ -526,11 +527,16 @@ do
     check("help prints usage", run(addon, printed, "help")[1], "Tandem commands:")
     check("unknown subcommand prints usage", run(addon, printed, "dance")[1], "Tandem commands:")
     check("usage lists gear", help[6], "  /tandem gear [<slot>] [all] - best known gear you can use")
-    check("usage lists rank", help[7], "  /tandem rank <item link|id> - rank an item in its slot")
-    check("usage lists export", help[8], "  /tandem export - show what make import would collect")
-    check("usage lists browse", help[9], "  /tandem browse [<slot>] - browse known gear in a window")
-    check("usage lists minimap", help[10], "  /tandem minimap [on|off] - show or hide the minimap button")
-    check("usage line count", #help, 10)
+    check("usage lists rank", help[8], "  /tandem rank <item link|id> - rank an item in its slot")
+    check("usage lists export", help[9], "  /tandem export - show what make import would collect")
+    check("usage lists browse", help[10], "  /tandem browse [<slot>] - browse known gear in a window")
+    check("usage lists minimap", help[11], "  /tandem minimap [on|off] - show or hide the minimap button")
+    check("usage lists check", help[12], "  /tandem check - list the client APIs each feature needs")
+    check("usage lists map", help[13], "  /tandem map <item link|id> - pin where an item comes from on the world map")
+    check("usage lists map clear", help[14], "  /tandem map clear - remove the map pins")
+    check("usage lists gear search", help[7],
+        "  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line")
+    check("usage line count", #help, 14)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -2129,10 +2135,10 @@ local BLUE, GREEN = "0070dd", "1eff00"
 
 do
     local ctx = loadGear()
-    for _, msg in ipairs({ "gear head foo", "gear head all extra", "gear all all all", "export now" }) do
+    for _, msg in ipairs({ "export now" }) do
         check(("%q prints usage"):format(msg), ctx.run(msg)[1], "Tandem commands:")
     end
-    for _, msg in ipairs({ "gear shirt", "gear foo all", "gear all all" }) do
+    for _, msg in ipairs({ "gear shirt", "gear foo all", "gear all all", "gear all all all", "gear foo stamina" }) do
         check(("%q names an unknown slot"):format(msg), ctx.run(msg)[1]:match("^Tandem: unknown slot (%S+);"),
             (msg:match("^gear (%S+)")))
     end
@@ -2589,6 +2595,9 @@ function WIDGET.StartSizing(w, corner) w.sizing = corner end
 function WIDGET.SetNormalTexture(w, t) w.normal = t end
 function WIDGET.SetPushedTexture(w, t) w.pushed = t end
 function WIDGET.SetHighlightTexture(w, t) w.highlight = t end
+function WIDGET.SetEnabled(w, enabled) w.enabled = enabled end
+function WIDGET.IsEnabled(w) return w.enabled end
+function WIDGET.SetMaxLetters(w, n) w.maxLetters = n end
 
 local function newWidget(ui, kind, name, parent, template)
     local w = setmetatable({ ui = ui, kind = kind, name = name, parent = parent, template = template, shown = true,
@@ -3045,7 +3054,7 @@ end
 
 do
     local ctx = loadBrowse("zhTW")
-    check("zhTW usage lists browse", ctx.run("help")[9], "  /tandem browse [<部位>] - 在視窗中瀏覽已知裝備")
+    check("zhTW usage lists browse", ctx.run("help")[10], "  /tandem browse [<部位>] - 在視窗中瀏覽已知裝備")
     ctx.run("browse")
     local win = ctx.win()
     check("zhTW browse title", win.title, "Tandem 裝備")
@@ -3463,7 +3472,7 @@ end
 do
     local ctx = loadBrowse("zhTW", nil, nil, { env = { Minimap = fakeMinimap() } })
     ctx.fire("PLAYER_LOGIN")
-    check("zhTW usage lists minimap", ctx.run("help")[10], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW usage lists minimap", ctx.run("help")[11], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
     check("zhTW minimap hidden", ctx.run("minimap off")[1], "Tandem：已隱藏小地圖按鈕")
     check("zhTW minimap shown", ctx.run("minimap on")[1], "Tandem：已顯示小地圖按鈕")
     ctx.run("browse")
@@ -4819,6 +4828,1001 @@ do
     check("browse: the drop follows the same-faction q/v rows", pane[6],
         "  Hogger, Elwynn Forest - drops: 5, 50.0% per kill")
     check("browse: the other-faction vendor is past the cap", pane[7], "  and 1 more sources")
+end
+
+-- Check: /tandem check lists each feature's client APIs (stage 6, unit 1).
+
+-- Every API Check looks for, first alternative only for the either-or ones.
+local function checkAPIs()
+    local fn = function() end
+    return {
+        TooltipDataProcessor = { AddTooltipPostCall = fn },
+        Enum = { TooltipDataType = { Item = 0 } },
+        GetQuestID = fn, GetQuestItemLink = fn, GetNumQuestChoices = fn, GetNumQuestRewards = fn,
+        UnitGUID = fn, GetMerchantNumItems = fn, GetMerchantItemLink = fn,
+        WorldMapFrame = { GetCanvas = fn, GetMapID = fn, OnMapChanged = fn },
+        OpenWorldMap = fn, hooksecurefunc = fn,
+        C_Map = { CanSetUserWaypointOnMap = fn, SetUserWaypoint = fn },
+        UiMapPoint = { CreateFromCoordinates = fn },
+        C_SuperTrack = { SetSuperTrackedUserWaypoint = fn },
+        QuestInfoRewardsFrame = { RewardButtons = {} },
+        C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn },
+        GetInventoryItemLink = fn,
+        C_Item = { GetItemStats = fn },
+        C_TooltipInfo = { GetItemByID = fn },
+    }
+end
+
+-- Returns the check output as { [feature] = line } after the header, plus the raw lines.
+local function runCheck(addon, printed)
+    local out = run(addon, printed, "check")
+    local byName = {}
+    for i = 2, #out do
+        byName[out[i]:match("^(.-):")] = out[i]
+    end
+    return byName, out
+end
+
+do
+    local addon, printed = loadWithDB(nil)
+    local byName, out = runCheck(addon, printed)
+    check("check: header", out[1], "Tandem API check:")
+    check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
+    check("check: nine features", #addon.Check.FEATURES, 9)
+    check("check: tooltip missing without the API", byName["Item tooltip"],
+        "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
+    check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
+        "Quest reward pick: missing (GetNumQuestChoices missing, GetQuestItemLink missing, "
+            .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
+            .. "QuestRewardItem1 missing)")
+    for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search" }) do
+        check(("check: %s line present"):format(name), byName[name] ~= nil, true)
+        check(("check: %s missing under bare stubs"):format(name),
+            byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
+    end
+    check("check: extra words print usage", run(addon, printed, "check now")[1], "Tandem commands:")
+end
+
+do
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    local byName, out = runCheck(addon, printed)
+    for i = 2, #out do
+        check(("check: %s ok with every API"):format(out[i]:match("^(.-):")), out[i]:match("^[^:]*: (%a+)"), "ok")
+    end
+    check("check: an ok line lists the APIs", byName["Map waypoint"],
+        "Map waypoint: ok (C_Map.CanSetUserWaypointOnMap ok, C_Map.SetUserWaypoint ok, "
+            .. "UiMapPoint.CreateFromCoordinates ok, C_SuperTrack.SetSuperTrackedUserWaypoint ok)")
+    check("check: the other alternative shows missing", byName["Item stats"],
+        "Item stats: ok (C_Item.GetItemStats ok, GetItemStats missing)")
+end
+
+do
+    local env = checkAPIs()
+    env.QuestInfoRewardsFrame = nil
+    env.QuestRewardItem1 = {}
+    env.C_Container = nil
+    env.GetContainerNumSlots = function() end
+    env.WorldMapFrame = 5
+    env.C_SuperTrack = {}
+    local addon, printed = loadWithDB(nil, "enUS", { env = env })
+    local byName = runCheck(addon, printed)
+    check("check: a named reward button is enough", byName["Quest reward pick"],
+        "Quest reward pick: ok (GetNumQuestChoices ok, GetQuestItemLink ok, "
+            .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
+            .. "QuestRewardItem1 ok)")
+    check("check: one need with no alternative fails the feature", byName["Upgrade alert"],
+        "Upgrade alert: missing (C_Container.GetContainerNumSlots missing, GetContainerNumSlots ok, "
+            .. "C_Container.GetContainerItemID missing, GetContainerItemID missing, GetInventoryItemLink ok)")
+    check("check: a non-table step is missing, not an error", byName["Map pins"] and byName["Map pins"]:sub(1, 19),
+        "Map pins: missing (")
+    check("check: a missing field is missing", byName["Map waypoint"]:match("SetSuperTrackedUserWaypoint (%a+)"),
+        "missing")
+    check("check: Has on a nil step", addon.Check.Has("NoSuchTable.Field"), false)
+    check("check: Has on a present value", addon.Check.Has("GetQuestID"), true)
+end
+
+do
+    local addon, printed, env = loadWithDB(nil)
+    env.InCombatLockdown = function()
+        return true
+    end
+    local out = run(addon, printed, "check")
+    check("check: refused in combat", out[1], "Tandem: not available in combat")
+    check("check: prints only the refusal in combat", #out, 1)
+end
+
+do
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    local out = run(addon, printed, "check")
+    check("zhTW check: header", out[1], "Tandem API 檢查：")
+    check("zhTW check: feature line", out[#out - 1], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+end
+
+-- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
+
+-- gearData() plus coords: item 1 drops from npc 448 on 1429 (own and shipped, one coord shared) and object 77 on 1411;
+-- item 3 only from map 0; item 12 is quest 100's reward on 1429 (own) and 1411 (shipped); item 5 has 60 coords.
+local function mapData()
+    local db, shipped = gearData()
+    db.loot["1:c:448:1429"].coords = { { 400, 600 }, { 410, 610 } }
+    db.loot["1:o:77:1411"] = { item = 1, kind = "o", id = 77, map = 1411, count = 1, coords = { { 100, 200 } } }
+    db.loot["3:c:449:0"] = { item = 3, kind = "c", id = 449, map = 0, count = 1, coords = { { 1, 2 } } }
+    db.loot["12:q:100:1429"] = { item = 12, kind = "q", id = 100, map = 1429, count = 1, coords = { { 300, 300 } },
+                               factions = 3 }
+    shipped.loot[#shipped.loot + 1] = { 1, "c", 448, 1429, 2, 400, 600, 500, 700 }
+    shipped.loot[#shipped.loot + 1] = { 12, "q", 100, 1411, 1, 500, 500 }
+    local a, b = { 5, "c", 501, 1429, 3 }, { 5, "c", 502, 1411, 2 }
+    for i = 1, 30 do
+        for _, row in ipairs({ a, b }) do
+            row[#row + 1] = i
+            row[#row + 1] = i
+        end
+    end
+    shipped.loot[#shipped.loot + 1] = a
+    shipped.loot[#shipped.loot + 1] = b
+    return db, shipped
+end
+
+-- Loads mapData() in the browse harness with a world map: ctx.map.mapID is the shown map, ctx.map.setMap(id) shows
+-- another and runs the hooks, ctx.map.opened the map OpenWorldMap got, ctx.map.waypoint / tracked what was set,
+-- ctx.map.refuse[map] makes a map refuse waypoints. opts.drop lists globals to leave out; opts.locale.
+local function loadMap(opts)
+    opts = opts or {}
+    local m = { hooks = {}, refuse = {}, opens = 0 }
+    local canvas = newWidget({ widgets = {} }, "Frame")
+    canvas:SetSize(1000, 500)
+    m.canvas = canvas
+    local mapFrame = {
+        GetCanvas = function()
+            return canvas
+        end,
+        GetMapID = function()
+            return m.mapID
+        end,
+    }
+    function mapFrame.OnMapChanged() end
+    m.onMapChanged = mapFrame.OnMapChanged
+    m.frame = mapFrame
+    function m.setMap(id)
+        m.mapID = id
+        for _, h in ipairs(m.hooks) do
+            h.fn()
+        end
+    end
+    local env = {
+        WorldMapFrame = mapFrame,
+        hooksecurefunc = function(t, name, fn)
+            m.hooks[#m.hooks + 1] = { t = t, name = name, fn = fn }
+        end,
+        OpenWorldMap = function(id)
+            m.opened, m.opens = id, m.opens + 1
+            m.setMap(id)
+        end,
+        C_Map = {
+            GetMapInfo = function(map)
+                return map == 1429 and { name = "Elwynn Forest" } or nil
+            end,
+            CanSetUserWaypointOnMap = function(map)
+                return not m.refuse[map]
+            end,
+            SetUserWaypoint = function(wp)
+                m.waypoint = wp
+            end,
+        },
+        UiMapPoint = { CreateFromCoordinates = function(map, x, y)
+            return { map = map, x = x, y = y }
+        end },
+        C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v)
+            m.tracked = v
+        end },
+    }
+    for _, name in ipairs(opts.drop or {}) do
+        env[name] = false
+    end
+    local db, shipped = mapData()
+    local ctx = loadBrowse(opts.locale, db, shipped, { env = env })
+    for _, name in ipairs(opts.drop or {}) do
+        ctx.env[name] = nil
+    end
+    ctx.map = m
+    -- Returns the shown pins as sorted "x,y" offsets from the canvas's top left.
+    function ctx.pins()
+        local out = {}
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.parent == canvas and w.kind == "Button" and w:IsShown() then
+                local p = w.points[#w.points]
+                out[#out + 1] = ("%g,%g"):format(p[4], p[5])
+            end
+        end
+        table.sort(out)
+        return table.concat(out, " ")
+    end
+    -- Returns the first shown pin at canvas offset x, y.
+    function ctx.pinAt(x, y)
+        for _, w in ipairs(ctx.ui.widgets) do
+            local p = w.points[#w.points]
+            if w.parent == canvas and w.kind == "Button" and w:IsShown() and p[4] == x and p[5] == y then
+                return w
+            end
+        end
+    end
+    return ctx
+end
+
+-- Returns the browse row button of item id.
+local function rowButton(win, id)
+    for _, b in ipairs(win.box.buttons) do
+        if b.row and b.row.id == id then
+            return b
+        end
+    end
+end
+
+local function pointList(points)
+    local out = {}
+    for _, p in ipairs(points or {}) do
+        out[#out + 1] = ("%g,%g %s"):format(p[1], p[2], p[3])
+    end
+    return table.concat(out, "; ")
+end
+
+do
+    local ctx = loadMap()
+    local Points = ctx.addon.MapPins.Points
+    local byMap, first = Points(1)
+    check("map points: first map is the first source's", first, 1429)
+    check("map points: own then shipped, equal coords once", pointList(byMap[1429]),
+        "0.4,0.6 npc #448; 0.41,0.61 npc #448; 0.5,0.7 npc #448")
+    check("map points: a second source's map", pointList(byMap[1411]), "0.1,0.2 object #77")
+    byMap, first = Points(3)
+    check("map points: map 0 gives no point", next(byMap), nil)
+    check("map points: map 0 gives no first map", first, nil)
+    byMap, first = Points(12)
+    check("map points: a quest merged across maps starts on its lower map", first, 1411)
+    check("map points: the quest's lower map", pointList(byMap[1411]), "0.5,0.5 quest #100")
+    check("map points: the quest's other map", pointList(byMap[1429]), "0.3,0.3 quest #100")
+    byMap = Points(5)
+    check("map points: 50 points at most, first source first", #byMap[1429] .. "+" .. #byMap[1411], "30+20")
+    byMap, first = Points(999)
+    check("map points: an unknown item has none", tostring(next(byMap)) .. " " .. tostring(first), "nil nil")
+end
+
+do
+    local ctx = loadMap()
+    local m = ctx.map
+    check("map: nothing hooked before use", #m.hooks, 0)
+    check("map: no output when pins show", #ctx.run("map 1"), 0)
+    check("map: opens the first source's map", m.opened, 1429)
+    check("map: one pin per coord of the shown map", ctx.pins(), "400,-300 410,-305 500,-350")
+    check("map: hooks OnMapChanged", #m.hooks == 1 and m.hooks[1].t == m.frame and m.hooks[1].name, "OnMapChanged")
+    check("map: Blizzard's method is not replaced", m.frame.OnMapChanged, m.onMapChanged)
+    m.setMap(1411)
+    check("map: another map shows its own pins", ctx.pins(), "100,-100")
+    m.setMap(1)
+    check("map: a map without points shows none", ctx.pins(), "")
+    m.setMap(1429)
+    check("map: back on the first map", ctx.pins(), "400,-300 410,-305 500,-350")
+
+    local pin = ctx.pinAt(410, -305)
+    pin.scripts.OnEnter(pin)
+    check("map: pin tooltip owner", ctx.ui.tooltipOwner, pin)
+    check("map: pin tooltip label", ctx.env.GameTooltip.text, "npc #448")
+    check("map: pin tooltip hint", ctx.ui.tooltipLines[#ctx.ui.tooltipLines], "Click to set a waypoint")
+    local from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: click sets a waypoint", m.waypoint and ("%d %g %g"):format(m.waypoint.map, m.waypoint.x,
+        m.waypoint.y), "1429 0.41 0.61")
+    check("map: click super-tracks it", m.tracked, true)
+    check("map: click says so", ctx.since(from)[1], "Tandem: waypoint set to npc #448")
+
+    m.waypoint, m.tracked, m.refuse[1429] = nil, nil, true
+    from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: a refusing map gets no waypoint", m.waypoint, nil)
+    check("map: a refusing map says so", ctx.since(from)[1], "Tandem: this map does not take a waypoint")
+    m.refuse[1429] = nil
+
+    ctx.env.C_SuperTrack = nil
+    from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: no waypoint without the API", m.waypoint, nil)
+    check("map: missing waypoint API says so", ctx.since(from)[1],
+        "Tandem: waypoints are not available on this client; see /tandem check")
+
+    ctx.combat = true
+    from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: a click in combat is refused", ctx.since(from)[1], "Tandem: not available in combat")
+    check("map: a click in combat sets nothing", m.waypoint, nil)
+    ctx.combat = false
+
+    ctx.run("map 12")
+    check("map: a new item replaces the pins", ctx.pins(), "500,-250")
+    check("map: a new item opens its map", m.opened, 1411)
+    check("map: hooked once", #m.hooks, 1)
+    check("map clear: says so", ctx.run("map clear")[1], "Tandem: map pins cleared")
+    check("map clear: hides every pin", ctx.pins(), "")
+    m.setMap(1429)
+    check("map clear: no pin on a later map change", ctx.pins(), "")
+
+    check("map: a shift-clicked link", #ctx.run("map " .. built(1, "a335ee", "Plate Chest")), 0)
+    check("map: the link's item", ctx.pins(), "400,-300 410,-305 500,-350")
+    check("map: map 0 only", ctx.run("map 3")[1], "Tandem: no known map position for item 3")
+    check("map: no coords keeps the pins", ctx.pins(), "400,-300 410,-305 500,-350")
+    check("map: unknown item", ctx.run("map 999")[1], "Tandem: item 999 is not known; scan or loot it first")
+    check("map: no argument", ctx.run("map")[1], "Tandem: usage /tandem map <item link|id> or /tandem map clear")
+    check("map: two words", ctx.run("map 1 2")[1], "Tandem: usage /tandem map <item link|id> or /tandem map clear")
+
+    ctx.combat = true
+    local opens = m.opens
+    local out = ctx.run("map 12")
+    check("map: refused in combat", out[1], "Tandem: not available in combat")
+    check("map: prints only the refusal in combat", #out, 1)
+    check("map: nothing opened in combat", m.opens, opens)
+    check("map clear: refused in combat", ctx.run("map clear")[1], "Tandem: not available in combat")
+    local ok, reason = ctx.addon.MapPins.Show(12)
+    check("map: Show in combat", tostring(ok) .. " " .. reason, "false combat")
+end
+
+do
+    local ctx = loadMap({ drop = { "WorldMapFrame" } })
+    local ok, out = pcall(ctx.run, "map 1")
+    check("map: no error without the map API", ok, true)
+    check("map: missing map API says so", ok and out[1],
+        "Tandem: map pins are not available on this client; see /tandem check")
+    check("map: Show without the map API", select(2, ctx.addon.MapPins.Show(1)), "noapi")
+    check("map: nothing hooked without the map API", #ctx.map.hooks, 0)
+end
+
+do
+    local ctx = loadMap({ drop = { "hooksecurefunc" } })
+    check("map: missing hooksecurefunc says so", ctx.run("map 1")[1],
+        "Tandem: map pins are not available on this client; see /tandem check")
+    check("map: nothing opened without hooksecurefunc", ctx.map.opened, nil)
+end
+
+do
+    local ctx = loadMap()
+    ctx.level = 45
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local map = win.pane.map
+    check("browse map: button label", map:GetText(), "Show on map")
+    check("browse map: button template", map.template, "UIPanelButtonTemplate")
+    check("browse map: disabled with nothing selected", map:IsEnabled(), false)
+    local b1 = rowButton(win, 1)
+    b1.scripts.OnClick(b1)
+    check("browse map: enabled once an item is selected", map:IsEnabled(), true)
+    check("browse map: no output when pins show", (function()
+        local from = #ctx.printed
+        map.scripts.OnClick(map)
+        return #ctx.since(from)
+    end)(), 0)
+    check("browse map: opens the source's map", ctx.map.opened, 1429)
+    check("browse map: pins the selected item", ctx.pins(), "400,-300 410,-305 500,-350")
+    b1.scripts.OnClick(b1)
+    check("browse map: selecting the same item keeps the pins", ctx.pins(), "400,-300 410,-305 500,-350")
+    local b3 = rowButton(win, 3)
+    b3.scripts.OnClick(b3)
+    check("browse map: a new selection clears the pins", ctx.pins(), "")
+    local from = #ctx.printed
+    map.scripts.OnClick(map)
+    check("browse map: an item without coords says so", ctx.since(from)[1],
+        "Tandem: no known map position for item 3")
+    ctx.combat = true
+    local opens = ctx.map.opens
+    from = #ctx.printed
+    b1.scripts.OnClick(b1)
+    map.scripts.OnClick(map)
+    check("browse map: refused in combat", ctx.since(from)[1], "Tandem: not available in combat")
+    check("browse map: nothing opened in combat", ctx.map.opens, opens)
+end
+
+do
+    local ctx = loadMap({ locale = "zhTW" })
+    check("zhTW map: no coords", ctx.run("map 3")[1], "Tandem：物品 3 沒有已知的地圖位置")
+    check("zhTW map: cleared", ctx.run("map clear")[1], "Tandem：已移除地圖標記")
+end
+
+-- Quest reward pick (stage 6, unit 4): an icon on the best choice's button at turn-in.
+
+-- Loads gearData() with a reward window offering choices (item ids) through the API the client has: opts.style is
+-- "list" (QuestInfoRewardsFrame.RewardButtons, choices typed and numbered), "named"
+-- (QuestInfoRewardsFrameQuestInfoItem<i>), "old" (QuestRewardItem<i>) or "none". Every quest selection API is a
+-- stub that counts its calls in ctx.selected. ctx.quest.choices can change before firing again.
+local function loadQuest(choices, opts)
+    opts = opts or {}
+    local q = { choices = choices, buttons = {} }
+    local ui = { widgets = {} }
+    local style = opts.style or "list"
+    local env = {
+        GetNumQuestChoices = function()
+            return #q.choices
+        end,
+        GetQuestItemLink = function(list, i)
+            local id = list == "choice" and q.choices[i]
+            return id and built(id, "ffffff")
+        end,
+    }
+    local list = {}
+    for i = 1, 6 do
+        local b = newWidget(ui, "Button", style == "named" and ("QuestInfoRewardsFrameQuestInfoItem" .. i)
+            or ("QuestRewardItem" .. i))
+        q.buttons[i] = b
+        if style == "list" then
+            b.type = "choice"
+            function b.GetID()
+                return i
+            end
+            list[#list + 1] = b
+        elseif style == "named" then
+            env["QuestInfoRewardsFrameQuestInfoItem" .. i] = b
+        elseif style == "old" then
+            env["QuestRewardItem" .. i] = b
+        end
+    end
+    if style == "list" then
+        local reward = newWidget(ui, "Button")
+        reward.type = "reward"
+        function reward.GetID()
+            return 1
+        end
+        table.insert(list, 1, reward)
+        q.reward = reward
+        env.QuestInfoRewardsFrame = { RewardButtons = list }
+    end
+    local selected = {}
+    for _, name in ipairs({ "GetQuestReward", "SelectQuestReward", "QuestInfoItem_OnClick", "CompleteQuest" }) do
+        env[name] = function()
+            selected[#selected + 1] = name
+        end
+    end
+    local ctx = loadGear("enUS", nil, nil, { env = env })
+    ctx.quest, ctx.selected = q, selected
+    -- Returns the indexes of the buttons with a shown Tandem mark, as "1,3".
+    function ctx.marked()
+        local out = {}
+        for i, b in ipairs(q.buttons) do
+            for _, w in ipairs(ui.widgets) do
+                if w.parent == b and w.kind == "Texture" and w:IsShown() then
+                    out[#out + 1] = tostring(i)
+                end
+            end
+        end
+        return table.concat(out, ",")
+    end
+    -- Returns the mark texture on button i, shown or not.
+    function ctx.mark(i)
+        for _, w in ipairs(ui.widgets) do
+            if w.parent == q.buttons[i] and w.kind == "Texture" then
+                return w
+            end
+        end
+    end
+    function ctx.complete()
+        ctx.fire("QUEST_COMPLETE")
+    end
+    return ctx
+end
+
+do
+    local ctx = loadQuest({ 3, 1, 12 })
+    local from = #ctx.printed
+    ctx.complete()
+    check("quest pick: marks the highest item level", ctx.marked(), "2")
+    check("quest pick: nothing on the fixed reward", ctx.quest.reward.texture, nil)
+    check("quest pick: the mark is the Tandem icon", ctx.mark(2).texture, "Interface\\AddOns\\Tandem\\Media\\icon")
+    check("quest pick: the mark sits on the button's top right", ctx.mark(2).points[1][1], "TOPRIGHT")
+    check("quest pick: never selects", #ctx.selected, 0)
+    check("quest pick: prints nothing", #ctx.since(from), 0)
+    ctx.fire("QUEST_FINISHED")
+    check("quest pick: QUEST_FINISHED hides the mark", ctx.marked(), "")
+    ctx.quest.choices = { 2, 3 }
+    ctx.complete()
+    check("quest pick: same item level, higher quality wins", ctx.marked(), "2")
+    ctx.quest.choices = { 1, 2 }
+    ctx.complete()
+    check("quest pick: a new window moves the mark", ctx.marked(), "1")
+    check("quest pick: still never selects", #ctx.selected, 0)
+end
+
+do
+    local ctx = loadQuest({ 3, 4 })
+    ctx.complete()
+    check("quest pick: a tie on item level and quality marks none", ctx.marked(), "")
+    ctx.quest.choices = { 3, 4, 1 }
+    ctx.complete()
+    check("quest pick: a tie below the best still marks the best", ctx.marked(), "3")
+    ctx.quest.choices = { 1 }
+    ctx.complete()
+    check("quest pick: one choice marks none", ctx.marked(), "")
+    ctx.quest.choices = { 8, 12 }
+    ctx.complete()
+    check("quest pick: an unusable choice never wins", ctx.marked(), "2")
+end
+
+do
+    local ctx = loadQuest({ 1, 13 })
+    ctx.level = 10
+    ctx.complete()
+    check("quest pick: no usable choice marks none", ctx.marked(), "")
+    ctx.quest.choices = { 9, 99 }
+    ctx.level = 40
+    ctx.complete()
+    check("quest pick: non-equippable choices mark none", ctx.marked(), "")
+    check("quest pick: non-equippable choices are not asked for", next(ctx.requested), nil)
+end
+
+do
+    local ctx = loadQuest({ 3, 1 })
+    ctx.combat = true
+    local from = #ctx.printed
+    ctx.complete()
+    check("quest pick: nothing in combat", ctx.marked(), "")
+    check("quest pick: nothing printed in combat", #ctx.since(from), 0)
+end
+
+for _, style in ipairs({ "named", "old" }) do
+    local ctx = loadQuest({ 3, 1 }, { style = style })
+    ctx.complete()
+    check("quest pick: the " .. style .. " buttons", ctx.marked(), "2")
+end
+
+do
+    local ctx = loadQuest({ 3, 1 }, { style = "none" })
+    local ok = pcall(ctx.complete)
+    check("quest pick: no button found is no error", ok, true)
+    check("quest pick: no button found marks none", ctx.marked(), "")
+end
+
+do
+    local ctx = loadQuest({ 3, 1 })
+    ctx.env.GetNumQuestChoices = nil
+    local ok = pcall(ctx.complete)
+    check("quest pick: a missing quest API is no error", ok, true)
+    check("quest pick: a missing quest API marks none", ctx.marked(), "")
+end
+
+do
+    -- Item 900 is a plate chest of item level 60 the client has not loaded yet.
+    local ctx = loadQuest({ 1, 900 })
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 900 then
+            return 900, nil, nil, "INVTYPE_CHEST", nil, 4, 4
+        end
+        return instant(id)
+    end
+    ctx.complete()
+    check("quest pick: an uncached choice is asked for", ctx.requested[900], true)
+    check("quest pick: nothing marked while a choice is loading", ctx.marked(), "")
+    ctx.cache[900] = { "Late Plate", nil, 3, 60 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("quest pick: another item's info changes nothing", ctx.marked(), "")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("quest pick: judged again once it arrives", ctx.marked(), "2")
+    ctx.fire("QUEST_FINISHED")
+    ctx.cache[900] = nil
+    ctx.complete()
+    ctx.fire("QUEST_FINISHED")
+    ctx.cache[900] = { "Late Plate", nil, 3, 60 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("quest pick: a closed window is not judged again", ctx.marked(), "")
+end
+
+-- Upgrade alert (stage 6, unit 5): a chat line when a new bag item beats what is worn.
+
+-- Loads gearData() with bags read through opts.api: "container" (C_Container, default), "global" (the old global bag
+-- functions) or "none". ctx.bags[bag] lists the item ids in a bag (0..5); ctx.bagUpdate() changes nothing but fires
+-- BAG_UPDATE_DELAYED. ctx.slotCalls[bag] counts the slot lookups per bag. Item 900 is a plate chest of item level 60
+-- the client has not loaded until ctx.cache[900] is set.
+local function loadUpgrade(opts)
+    opts = opts or {}
+    local bags, slotCalls = { [0] = {} }, {}
+    local function numSlots(bag)
+        return bags[bag] and #bags[bag] or 0
+    end
+    local function itemID(bag, slot)
+        slotCalls[bag] = (slotCalls[bag] or 0) + 1
+        return bags[bag] and bags[bag][slot]
+    end
+    local env = {}
+    if (opts.api or "container") == "container" then
+        env.C_Container = { GetContainerNumSlots = numSlots, GetContainerItemID = itemID }
+    elseif opts.api == "global" then
+        env.GetContainerNumSlots, env.GetContainerItemID = numSlots, itemID
+    end
+    local ctx = loadGear(opts.locale or "enUS", nil, nil, { env = env })
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 900 then
+            return 900, nil, nil, "INVTYPE_CHEST", nil, 4, 4
+        end
+        return instant(id)
+    end
+    ctx.bags, ctx.slotCalls = bags, slotCalls
+    function ctx.bagUpdate()
+        ctx.fire("BAG_UPDATE_DELAYED")
+    end
+    -- Puts ids in the bags and fires BAG_UPDATE_DELAYED; returns the lines printed.
+    function ctx.loot(...)
+        for _, id in ipairs({ ... }) do
+            table.insert(bags[0], id)
+        end
+        local from = #ctx.printed
+        ctx.bagUpdate()
+        return ctx.since(from)
+    end
+    ctx.equipped[5] = "|cff0070dd|Hitem:3::::::::::::::|h[Leather Vest]|h|r"
+    return ctx
+end
+
+local function upgradeLine(slot, id, hex, ilvl, over)
+    return ("Tandem: upgrade for %s: %s (item level %d over %d)"):format(slot, built(id, hex), ilvl, over)
+end
+
+do
+    local ctx = loadUpgrade()
+    check("upgrade: BAG_UPDATE_DELAYED registered", ctx.frame.registered.BAG_UPDATE_DELAYED, true)
+    check("upgrade: PLAYER_REGEN_ENABLED registered", ctx.frame.registered.PLAYER_REGEN_ENABLED, true)
+    ctx.bags[0] = { 1, 13 }
+    local from = #ctx.printed
+    ctx.bagUpdate()
+    check("upgrade: the login snapshot prints nothing", #ctx.since(from), 0)
+    check("upgrade: the login snapshot's items are not judged later", #ctx.loot(), 0)
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    local out = ctx.loot(1)
+    check("upgrade: one line for a new upgrade", #out, 1)
+    check("upgrade: the line names the slot, link and item levels", out[1], upgradeLine("Chest", 1, BLUE, 45, 30))
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    check("upgrade: the same item again prints nothing", #ctx.loot(1), 0)
+    check("upgrade: an item no better than the worn one prints nothing", #ctx.loot(4), 0)
+    check("upgrade: an item the class cannot use prints nothing", #ctx.loot(8), 0)
+    check("upgrade: an item with no ranked slot prints nothing", #ctx.loot(9), 0)
+    check("upgrade: the worn item itself prints nothing", #ctx.loot(3), 0)
+    out = ctx.loot(13, 2)
+    check("upgrade: an empty slot counts as item level 0", out[1], upgradeLine("Legs", 13, BLUE, 50, 0))
+    check("upgrade: only the upgrades of a batch print", #out, 1)
+    check("upgrade: an unchanged bag prints nothing", #ctx.loot(), 0)
+    check("upgrade: reads bags 0 to 4 only", ctx.slotCalls[5], nil)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.equipped[11] = "|cff1eff00|Hitem:16::::::::::::::|h[Ring]|h|r"
+    ctx.cache[16] = { "Ring", nil, 2, 20 }
+    ctx.cache[17] = { "Band", nil, 2, 10 }
+    local loop = "|cff1eff00|Hitem:18::::|h[Loop]|h|r"
+    ctx.cache[18] = { "Loop", loop, 2, 15 }
+    ctx.equipped[12] = "|cff1eff00|Hitem:17::::::::::::::|h[Band]|h|r"
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 18 then
+            return 18, nil, nil, "INVTYPE_FINGER", nil, 4, 0
+        end
+        return instant(id)
+    end
+    ctx.bagUpdate()
+    local out = ctx.loot(18)
+    check("upgrade: a ring is judged against the weaker worn ring", out[1],
+        ("Tandem: upgrade for Finger: %s (item level 15 over 10)"):format(loop))
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.equipped[16] = "|cff1eff00|Hitem:15::::::::::::::|h[Axe]|h|r"
+    ctx.bagUpdate()
+    check("upgrade: no off-hand line while wielding a two-hander", #ctx.loot(5, 14), 0)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bagUpdate()
+    local out = ctx.loot(900)
+    check("upgrade: an uncached item prints nothing yet", #out, 0)
+    check("upgrade: an uncached item is asked for", ctx.requested[900], true)
+    ctx.cache[900] = { "Late Plate", "|cffa335ee|Hitem:900::::|h[Late Plate]|h|r", 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("upgrade: another item's info prints nothing", #ctx.since(from), 0)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    out = ctx.since(from)
+    check("upgrade: a late item prints once it arrives", out[1],
+        "Tandem: upgrade for Chest: |cffa335ee|Hitem:900::::|h[Late Plate]|h|r (item level 60 over 30)")
+    check("upgrade: a late item prints one line", #out, 1)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("upgrade: its info again prints nothing", #ctx.since(from), 1)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bagUpdate()
+    ctx.loot(900)
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("upgrade: a late item gone from the bags prints nothing", #ctx.since(from), 0)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bagUpdate()
+    ctx.combat = true
+    check("upgrade: nothing printed in combat", #ctx.loot(1, 900), 0)
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("upgrade: a late item in combat prints nothing", #ctx.since(from), 0)
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    local out = ctx.since(from)
+    check("upgrade: combat lines print after combat", #out, 2)
+    check("upgrade: combat lines keep their order", out[1], upgradeLine("Chest", 1, BLUE, 45, 30))
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("upgrade: queued lines print once", #ctx.since(from), 2)
+end
+
+for _, api in ipairs({ "global", "none" }) do
+    local ctx = loadUpgrade({ api = api })
+    local ok = pcall(ctx.bagUpdate)
+    ctx.loot(1)
+    local out = ctx.loot(13)
+    check("upgrade: the " .. api .. " bag API is no error", ok, true)
+    check("upgrade: the " .. api .. " bag API", #out, api == "global" and 1 or 0)
+end
+
+do
+    local ctx = loadUpgrade({ locale = "zhTW" })
+    ctx.bagUpdate()
+    check("zhTW upgrade alert line", ctx.loot(1)[1],
+        ("Tandem：胸部的升級：%s（物品等級 45，高於 30）"):format(built(1, BLUE, "物品 #1")))
+end
+
+-- Stat search (stage 6, unit 6): tooltip lines that hold every term, sorted by their number.
+
+-- Loads the browse harness with C_TooltipInfo.GetItemByID over ctx.tips[id] (a list of left texts or {left, right});
+-- ctx.tip(id, lines) sets an item's lines and marks it loaded; ctx.tipCalls[id] counts the reads. opts.noAPI leaves
+-- the tooltip API out; opts.locale.
+local function loadSearch(opts)
+    opts = opts or {}
+    local tips, calls = {}, {}
+    local env = {}
+    if not opts.noAPI then
+        env.C_TooltipInfo = { GetItemByID = function(id)
+            calls[id] = (calls[id] or 0) + 1
+            if not tips[id] then
+                return nil
+            end
+            local lines = {}
+            for i, l in ipairs(tips[id]) do
+                lines[i] = type(l) == "table" and { leftText = l[1], rightText = l[2] } or { leftText = l }
+            end
+            return { lines = lines }
+        end }
+    end
+    local ctx = loadBrowse(opts.locale, nil, nil, { env = env })
+    ctx.tips, ctx.tipCalls = tips, calls
+    function ctx.tip(id, lines)
+        tips[id] = lines
+        ctx.cache[id] = ctx.cache[id] or { "Item " .. id }
+    end
+    return ctx
+end
+
+-- Chest items for a level 40 warrior: 1 (plate), 3, 4 (ilvl 30, blue), 2 (ilvl 30, green, not loaded), 12 (green).
+local function chestTips(ctx)
+    ctx.tip(1, { "Plate Chest", "|cffffffff+10 Stamina|r", "+5 Strength" })
+    ctx.tip(3, { "Leather Chest", "+15 Stamina" })
+    ctx.tip(4, { "Robe", { "+3 Stamina", "Cloth" }, "Equip: Improves your chance to get a critical strike with "
+        .. "spells by 1.5%." })
+    ctx.tip(12, { "Mail Chest", "+20 Strength" })
+    ctx.tips[2] = { "Mail Robe", "+12 Stamina" }
+end
+
+local function searchRow(i, id, hex, ilvl, level, line)
+    return ("%d. %s, ilvl %d, level %d (upgrade): %s"):format(i, built(id, hex), ilvl, level, line)
+end
+
+do
+    local ctx = loadSearch()
+    local Parse = ctx.addon.StatSearch.Parse
+    check("stat search: + dropped and lower-cased", table.concat(Parse("+Stamina"), ","), "stamina")
+    check("stat search: terms split on spaces", table.concat(Parse("  spell  +Critical "), ","), "spell,critical")
+    check("stat search: blank query", Parse("  "), nil)
+    check("stat search: a lone + is blank", Parse("+"), nil)
+    check("stat search: nil query", Parse(nil), nil)
+    check("stat search: no zhTW alias on enUS", table.concat(Parse("+體力"), ","), "體力")
+
+    chestTips(ctx)
+    local Match = ctx.addon.StatSearch.Match
+    local value, line = Match(1, Parse("+stamina"))
+    check("stat search: colour codes stripped, first number", tostring(value) .. "|" .. line, "10|+10 Stamina")
+    check("stat search: right text is part of the line", (select(2, Match(4, Parse("stamina cloth")))),
+        "+3 Stamina Cloth")
+    check("stat search: decimal percent", Match(4, Parse("spells critical")), 1.5)
+    check("stat search: every term on one line", Match(1, Parse("stamina strength")), nil)
+    local none, pending = Match(12, Parse("stamina"))
+    check("stat search: no match is not pending", tostring(none) .. " " .. tostring(pending), "nil false")
+    local wait, loading = Match(2, Parse("stamina"))
+    check("stat search: an unloaded item is pending", tostring(wait) .. " " .. tostring(loading), "nil true")
+    check("stat search: an unloaded item is asked for", ctx.requested[2], true)
+    check("stat search: an unloaded item's tooltip is not read", ctx.tipCalls[2], nil)
+    Match(1, Parse("strength"))
+    Match(1, Parse("plate"))
+    check("stat search: tooltip lines cached per item", ctx.tipCalls[1], 1)
+    ctx.tips[5] = {}
+    ctx.cache[5] = { "Shield" }
+    check("stat search: empty tooltip data is pending", select(2, Match(5, Parse("stamina"))), true)
+end
+
+do
+    local ctx = loadSearch()
+    ctx.env.C_TooltipInfo = { GetItemByID = function(id)
+        return { lines = {
+            { args = { { field = "leftText", stringVal = "Item " .. id } } },
+            { args = { { field = "leftText", stringVal = "+" .. id .. " Stamina" } } },
+        } }
+    end }
+    local surfaced = 0
+    ctx.env.TooltipUtil = { SurfaceArgs = function(line)
+        surfaced = surfaced + 1
+        for _, arg in ipairs(line.args) do
+            line[arg.field] = arg.stringVal
+        end
+    end }
+    ctx.cache[3] = { "Item 3" }
+    local value, line = ctx.addon.StatSearch.Match(3, { "stamina" })
+    check("stat search: args-only lines are surfaced", tostring(value) .. "|" .. tostring(line), "3|+3 Stamina")
+    check("stat search: SurfaceArgs once per line", surfaced, 2)
+    ctx.env.TooltipUtil = { SurfaceArgs = function()
+        error("bad line")
+    end }
+    ctx.cache[4] = { "Item 4" }
+    local ok, missing = pcall(ctx.addon.StatSearch.Match, 4, { "stamina" })
+    check("stat search: a failing SurfaceArgs is no error and no match", tostring(ok) .. " " .. tostring(missing),
+        "true nil")
+end
+
+do
+    local ctx = loadSearch({ locale = "zhTW" })
+    local Parse = ctx.addon.StatSearch.Parse
+    check("zhTW stat search: 體力 is 耐力", table.concat(Parse("+體力"), ","), "耐力")
+    check("zhTW stat search: 法術暴擊 is two terms", table.concat(Parse("+法術暴擊"), ","), "法術,致命一擊")
+    check("zhTW stat search: 暴擊 alias in a multi-term query", table.concat(Parse("法術 暴擊"), ","), "法術,致命一擊")
+    ctx.tip(1, { "+10 耐力" })
+    ctx.tip(3, { "+15 耐力" })
+    ctx.tip(4, { "裝備：使你的法術造成致命一擊的機率提高1%。" })
+    ctx.tip(12, { "裝備：使你的法術造成致命一擊的機率提高2%。" })
+    ctx.tip(2, { "+5 敏捷" })
+    local out = ctx.run("gear chest +體力")
+    check("zhTW gear search header", out[1], "最佳胸部（40 級Warrior，符合「+體力」）：")
+    check("zhTW gear search best first", out[2],
+        ("1. %s，物品等級 30，需求等級 25（升級）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
+    check("zhTW gear search second", out[3],
+        ("2. %s，物品等級 45，需求等級 40（升級）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
+    check("zhTW gear search footer", out[4], "依符合的提示行上的數字排序，再依物品等級與品質")
+    out = ctx.run("gear chest +法術暴擊")
+    check("zhTW gear search spell crit by value", out[2]:match("^1%. .-(%d)%%。$") .. out[3]:match("^2%. .-(%d)%%。$"),
+        "21")
+    check("zhTW gear search no match", ctx.run("gear chest 法術 耐力")[2], "沒有你能使用的已知胸部符合「法術 耐力」")
+end
+
+do
+    local ctx = loadSearch()
+    chestTips(ctx)
+    local out = ctx.run("gear chest +Stamina")
+    check("gear search header", out[1], 'Best Chest for level 40 Warrior matching "+stamina":')
+    check("gear search highest value first", out[2], searchRow(1, 3, BLUE, 30, 25, "+15 Stamina"))
+    check("gear search then lower values", out[3], searchRow(2, 1, BLUE, 45, 40, "+10 Stamina"))
+    check("gear search lowest value", out[4], searchRow(3, 4, BLUE, 30, 25, "+3 Stamina Cloth"))
+    check("gear search loading line", out[5], "1 items are still loading; run the command again in a moment")
+    check("gear search footer", out[6],
+        "Sorted by the number on the matching tooltip line, then item level and quality")
+    check("gear search line count", #out, 6)
+    ctx.cache[2] = { "Item 2" }
+    out = ctx.run("gear chest +stamina")
+    check("gear search a loaded item joins", out[3], searchRow(2, 2, GREEN, 30, 25, "+12 Stamina"))
+    check("gear search nothing loading", #out, 6)
+    ctx.tips[3] = { "+12 Stamina" }
+    check("gear search keeps the session's lines", ctx.run("gear chest +stamina")[2],
+        searchRow(1, 3, BLUE, 30, 25, "+15 Stamina"))
+    out = ctx.run("gear chest strength")
+    check("gear search other stat", out[2] .. out[3],
+        searchRow(1, 12, GREEN, 20, 10, "+20 Strength") .. searchRow(2, 1, BLUE, 45, 40, "+5 Strength"))
+    check("gear search without all skips sourceless items", #ctx.run("gear chest robe"), 4)
+    ctx.tip(11, { "GM Robe", "+99 Stamina" })
+    out = ctx.run("gear chest all +stamina")
+    check("gear search with all includes sourceless items", out[2],
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source): +99 Stamina")
+    out = ctx.run("gear chest all")
+    check("gear chest all alone still ranks", out[#out], "Ranked by item level, then quality; stats are not considered")
+    out = ctx.run("gear chest nothing")
+    check("gear search no match", out[2], 'No known Chest you can use matches "nothing"')
+    check("gear search no match line count", #out, 3)
+    ctx.combat = true
+    check("gear search refused in combat", ctx.run("gear chest stamina")[1], "Tandem: not available in combat")
+end
+
+do
+    local ctx = loadSearch()
+    for _, id in ipairs({ 12, 4, 3, 1 }) do
+        ctx.tip(id, { "+5 Stamina" })
+    end
+    local out = ctx.run("gear chest stamina")
+    check("gear search ties keep the usual order", table.concat({ out[2], out[3], out[4], out[5] }, "/"),
+        table.concat({ searchRow(1, 1, BLUE, 45, 40, "+5 Stamina"), searchRow(2, 3, BLUE, 30, 25, "+5 Stamina"),
+            searchRow(3, 4, BLUE, 30, 25, "+5 Stamina"), searchRow(4, 12, GREEN, 20, 10, "+5 Stamina") }, "/"))
+end
+
+do
+    local ctx = loadSearch({ noAPI = true })
+    local out = ctx.run("gear chest +stamina")
+    check("gear search without the API says so", out[1],
+        "Tandem: stat search is not available on this client; see /tandem check")
+    check("gear search without the API prints one line", #out, 1)
+    check("gear without a query works without the API", ctx.run("gear chest")[1], "Best Chest for level 40 Warrior:")
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("browse search box disabled without the API", win.search:IsEnabled(), false)
+    check("browse search label says why", win.searchLabel:GetText(), "Stat search: not on this client")
+    check("browse search box has no text handler without the API", win.search.scripts.OnTextChanged, nil)
+    win.search:SetText("stamina")
+    ctx.addon.Browse.Refresh()
+    check("browse ignores typed text without the API", rowIDs(win), "11,1,3,4,2,12")
+end
+
+do
+    local ctx = loadSearch()
+    chestTips(ctx)
+    ctx.tip(11, { "GM Robe", "+99 Stamina" })
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("browse search box enabled", win.search:IsEnabled() ~= false, true)
+    check("browse search label", win.searchLabel:GetText(), "Stat search")
+    check("browse search box takes a long query", win.search.maxLetters, 60)
+    check("browse before search", rowIDs(win), "11,1,3,4,2,12")
+    win.search:SetText("+stamina")
+    win.search.scripts.OnTextChanged(win.search, true)
+    check("browse search filters and sorts by value", rowIDs(win), "11,3,1,4")
+    check("browse search count says what is loading", win.count:GetText(), "4 items, 1 loading")
+    win.search:SetFocus()
+    win.search.scripts.OnEscapePressed(win.search)
+    check("browse search Escape drops the focus", win.search.focused, false)
+    ctx.cache[2] = { "Item 2" }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 2, true)
+    check("browse search waits for the redraw", rowIDs(win), "11,3,1,4")
+    ctx.tick()
+    check("browse search a late item appears", rowIDs(win), "11,3,2,1,4")
+    check("browse search count after the late item", win.count:GetText(), "5 items")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("browse search ignores other items", #ctx.ui.timers, 0)
+    ctx.level = 30
+    ctx.addon.Browse.Refresh()
+    check("browse search keeps the other filters", rowIDs(win), "11,3,2,4")
+    ctx.level = 40
+    win.search:SetText("strength")
+    win.search.scripts.OnTextChanged(win.search, true)
+    check("browse search another stat", rowIDs(win), "12,1")
+    check("browse search count", win.count:GetText(), "2 items")
+    win.search:SetText("")
+    win.search.scripts.OnTextChanged(win.search, true)
+    check("browse search cleared lists all", rowIDs(win), "11,1,3,4,2,12")
+    win.search:SetText("stamina")
+    ctx.cursor = { "item", 12 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse drop clears the search", win.search:GetText(), "")
+    check("browse drop shows the dropped item", rowIDs(win):find("12", 1, true) ~= nil, true)
+end
+
+do
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    local out = run(addon, printed, "check")
+    check("zhTW check: stat search line", out[#out], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
 end
 
 if failures > 0 then

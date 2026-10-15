@@ -26,10 +26,14 @@ local function printUsage()
     print(L["  /tandem scan from <id> - set the next item ID to scan"])
     print(L["  /tandem scan stop - stop the scan"])
     print(L["  /tandem gear [<slot>] [all] - best known gear you can use"])
+    print(L["  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line"])
     print(L["  /tandem rank <item link|id> - rank an item in its slot"])
     print(L["  /tandem export - show what make import would collect"])
     print(L["  /tandem browse [<slot>] - browse known gear in a window"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
+    print(L["  /tandem check - list the client APIs each feature needs"])
+    print(L["  /tandem map <item link|id> - pin where an item comes from on the world map"])
+    print(L["  /tandem map clear - remove the map pins"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -226,21 +230,55 @@ local function unknownSlot(slot)
     print(L["Tandem: unknown slot %s; use one of: %s"]:format(slot, table.concat(ns.Advisor.SLOTS, " ")))
 end
 
--- gear [<slot>] [all]
+-- Lists the slot's usable items whose tooltip has every term on one line, by the number on that line.
+local function gearSearch(slot, all, terms, query, className, level, classFile)
+    if not ns.StatSearch.Ready() then
+        print(L["Tandem: stat search is not available on this client; see /tandem check"])
+        return
+    end
+    local list, pending = ns.StatSearch.Filter(ns.Advisor.Best(slot, classFile, level, { all = all }), terms)
+    print(L["Best %s for level %d %s matching \"%s\":"]:format(View.SlotLabel(slot), level, className, query))
+    local worn = View.Equipped(slot)
+    if #list == 0 then
+        print(L["No known %s you can use matches \"%s\""]:format(View.SlotLabel(slot), query))
+    end
+    for i = 1, math.min(#list, GEAR_ROWS) do
+        local e = list[i]
+        print(L["%d. %s, ilvl %d, level %d%s: %s"]:format(i, View.LinkOf(e.id), e.ilvl, e.reqLevel,
+            View.Marks(e, worn), View.Escape(e.line)))
+    end
+    local loading = 0
+    for _ in pairs(pending) do
+        loading = loading + 1
+    end
+    if loading > 0 then
+        print(L["%d items are still loading; run the command again in a moment"]:format(loading))
+    end
+    print(L["Sorted by the number on the matching tooltip line, then item level and quality"])
+end
+
+-- gear [<slot>] [all] [<words>]: "all" right after the slot (or alone) also lists sourceless items; the words after
+-- them search the tooltips and need a slot.
 local function gear(args)
-    local all = args[#args] == "all"
-    if all then
-        args[#args] = nil
+    local slot = table.remove(args, 1)
+    local all = false
+    if slot == "all" and #args == 0 then
+        slot, all = nil, true
+    elseif args[1] == "all" then
+        all = true
+        table.remove(args, 1)
     end
-    if #args > 1 then
-        return printUsage()
-    end
-    local slot = args[1]
     if slot and not View.SLOT_LABELS[slot] then
         return unknownSlot(slot)
     end
+    local query = table.concat(args, " ")
+    local terms = ns.StatSearch.Parse(query)
     local className, classFile, level = View.Player()
     if not className then
+        return
+    end
+    if terms then
+        gearSearch(slot, all, terms, query, className, level, classFile)
         return
     end
     if slot then
@@ -251,10 +289,15 @@ local function gear(args)
     print(L["Ranked by item level, then quality; stats are not considered"])
 end
 
+-- Returns the item ID of a shift-clicked link among args, or of a lone number, or nil.
+local function itemArg(args)
+    local id = table.concat(args, " "):match("item:(%d+)") or (#args == 1 and args[1]:match("^%d+$")) or nil
+    return tonumber(id)
+end
+
 -- rank <item link|id>
 local function rank(args)
-    local id = table.concat(args, " "):match("item:(%d+)") or (#args == 1 and args[1]:match("^%d+$")) or nil
-    id = tonumber(id)
+    local id = itemArg(args)
     if not id then
         print(L["Tandem: usage /tandem rank <item link|id>"])
         return
@@ -320,8 +363,36 @@ local function browse(args)
     end
 end
 
+-- Prints one line per feature: ok when every API it needs is present, with each API's state.
+local function check()
+    print(L["Tandem API check:"])
+    for _, feature in ipairs(ns.Check.Status()) do
+        local apis = {}
+        for i, api in ipairs(feature.apis) do
+            apis[i] = api.path .. " " .. (api.ok and L["ok"] or L["missing"])
+        end
+        print(L["%s: %s (%s)"]:format(L[feature.name], feature.ok and L["ok"] or L["missing"],
+            table.concat(apis, ", ")))
+    end
+end
+
+-- map <item link|id> | clear
+local function map(args)
+    if #args == 1 and args[1] == "clear" then
+        ns.MapPins.Clear()
+        print(L["Tandem: map pins cleared"])
+        return
+    end
+    local id = itemArg(args)
+    if not id then
+        print(L["Tandem: usage /tandem map <item link|id> or /tandem map clear"])
+        return
+    end
+    ns.MapPins.Open(id)
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
-local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true }
+local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true, check = true, map = true }
 
 -- minimap [on|off]: no argument toggles. Allowed in combat: the button is not a protected frame.
 local MINIMAP_STATE = { on = true, off = false }
@@ -362,6 +433,10 @@ function Commands.Run(msg)
         browse(args)
     elseif sub == "minimap" then
         minimap(args)
+    elseif sub == "check" and #args == 0 then
+        check()
+    elseif sub == "map" then
+        map(args)
     else
         printUsage()
     end

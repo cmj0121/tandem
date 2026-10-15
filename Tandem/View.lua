@@ -174,6 +174,26 @@ local function wornID(inv)
     return type(raw) == "string" and tonumber(raw:match("item:(%d+)")) or nil
 end
 
+-- Returns the item's record, a client-built one, false when it is not equippable (or unknown), or nil while the
+-- client has not loaded it.
+function View.Record(id)
+    local r = ns.Advisor.Item(id)
+    if r then
+        return r
+    end
+    local equipLoc, classID, subclassID = ns.Scanner.Equippable(id)
+    if not equipLoc then
+        return false
+    end
+    local name, _, quality, ilvl, reqLevel = C_Item.GetItemInfo(id)
+    name, quality, ilvl, reqLevel = Safe(name), Safe(quality), Safe(ilvl), Safe(reqLevel)
+    if type(name) ~= "string" or type(ilvl) ~= "number" then
+        return nil
+    end
+    return { ilvl, type(reqLevel) == "number" and reqLevel or 1, type(quality) == "number" and quality or 1,
+             equipLoc, classID, subclassID }
+end
+
 -- Returns an item's equipLoc from the cache, else from the client, or nil.
 local function equipLocOf(id)
     local r = ns.Advisor.Item(id)

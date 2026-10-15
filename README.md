@@ -85,12 +85,16 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 | `/tandem scan from <id>`              | Sets the scan cursor to `<id>`; does not start a scan            |
 | `/tandem scan stop`                   | Stops the running scan and prints its summary                    |
 | `/tandem gear [<slot>] [all]`         | Lists the best known gear you can use, per slot or in one slot   |
+| `/tandem gear <slot> [all] <words>`   | Lists a slot's gear whose tooltip has the words on one line      |
 | `/tandem rank <item link\|id>`        | Ranks an item in its slot and lists where to get it              |
 | `/tandem export`                      | Shows what `make import` would collect from this account         |
 | `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
 | `/tandem minimap [on\|off]`           | Shows or hides the minimap button; with no argument, toggles it  |
+| `/tandem check`                       | Lists, per feature, which client APIs it needs are found         |
+| `/tandem map <item link\|id>`         | Opens the world map with a pin on each known place of the item   |
+| `/tandem map clear`                   | Removes the map pins                                             |
 
-`gear`, `rank`, `export` and `browse` print `Tandem: not available in combat` and do nothing while you are in combat.
+`gear`, `rank`, `export`, `browse`, `check` and `map` print `Tandem: not available in combat` and do nothing while you are in combat.
 `minimap` works in combat too.
 
 ### `/tandem scan`
@@ -179,6 +183,9 @@ in `/tandem gear all` or `/tandem gear chest all`, to include the other cached i
 item cache also holds items that cannot be obtained in game. Items flagged deprecated (see
 [Deprecated items](#deprecated-items)) are never listed, with or without `all`.
 
+Words after the slot, or after `all`, search the item tooltips instead: `/tandem gear chest +stamina` or
+`/tandem gear chest all +stamina`. See [Stat search](#stat-search).
+
 ### `/tandem rank`
 
 `/tandem rank` takes an item link, shift-clicked into chat, or an item ID. It prints the item's rank in its slot among
@@ -265,6 +272,7 @@ Below the boxes, a scan bar runs the same scan as [`/tandem scan`](#tandem-scan)
   or logout but never saved; after one, the boxes read `10/s` and `100` again.
 - `Start`, which scans from the cursor with those values. While a scan runs, whether started here or with
   `/tandem scan`, the button reads `Stop` and stops it as `/tandem scan stop` does.
+- A `Stat search` box at the end of the row; see [Stat search](#stat-search).
 - A status line. While a scan runs it reads `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>` and is updated
   every second while the window is open; otherwise it reads `<n> known items, next scan from ID <id>`.
 
@@ -299,7 +307,9 @@ filter, rather than jumping away under the mouse.
 
 Hover a row to see the game's tooltip for the item. Click a row to select it: the pane at the bottom shows the item's
 link and up to 5 places to get it, in the same lines and order as `rank`, ending with `and <n> more sources` when there
-are more. With nothing selected, the pane reads `Select an item to see where it drops`.
+are more. With nothing selected, the pane reads `Select an item to see where it drops`. The `Show on map` button at
+the pane's top right does what `/tandem map` does for the selected item; it is greyed out while nothing is selected, and
+selecting another item removes the pins of the earlier one.
 
 Drop an item on the window to look it up: pick it up from your bags or your character sheet, then drag it onto the list
 or the window's background, or click there with it. The item leaves the cursor and stays where it was. The dropdown
@@ -333,6 +343,40 @@ To contribute: type /reload, then run make import
 
 The counts are this account's saved data plus what is not saved yet. `export` only prints: it does not reload the UI or
 write anything. See [Importing loot logs](#importing-loot-logs).
+
+### `/tandem check`
+
+```text
+Tandem API check:
+Item tooltip: ok (TooltipDataProcessor.AddTooltipPostCall ok, Enum.TooltipDataType.Item ok)
+Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
+```
+
+One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
+either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
+`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats` and
+`Stat search`. A feature whose API is missing stays off instead of raising an error.
+
+### `/tandem map`
+
+`/tandem map <item link|id>` takes an item ID or a shift-clicked item link, as `rank` does. It opens the world map on
+the map of the item's first source, in the order `rank` lists them, that has a known place, and puts a pin on each
+place where the item was seen: up to 50, each place once. A pin shows only while its own map is shown, so switch the
+map to see the pins of the other sources. Hover a pin to see the source's name; click it to set the game's waypoint
+there and track it, which prints `Tandem: waypoint set to <source>`.
+
+Pinning another item replaces the pins, and `/tandem map clear` removes them, printing `Tandem: map pins cleared`.
+Pins are not projected onto the continent or world map, and they grow and shrink with the map's zoom.
+
+When nothing can be pinned, it says why and opens nothing:
+
+- `Tandem: map pins are not available on this client; see /tandem check` when the `Map pins` APIs are missing.
+- `Tandem: item <id> is not known; scan or loot it first` for an item with neither a record nor a source.
+- `Tandem: no known map position for item <id>` when no source has a place, such as one seen on an unknown map.
+
+A click on a pin prints `Tandem: this map does not take a waypoint` on a map that refuses waypoints, and
+`Tandem: waypoints are not available on this client; see /tandem check` when the `Map waypoint` APIs are missing.
+In combat the command, the button and a pin click print `Tandem: not available in combat` and do nothing.
 
 ## Gear advice
 
@@ -437,6 +481,85 @@ faction mark are in Chinese, such as `（僅限部落）`.
 
 A quest or vendor source means the item is known to come from there, not that you can get it now: a vendor may have
 limited stock or ask for reputation, and a quest may follow a chain, be one-off, or need a class or level.
+
+### Quest reward pick
+
+When you hand in a quest that lets you choose one of two or more rewards (`QUEST_COMPLETE`), Tandem puts a small Tandem
+icon on the top right of the best choice's button. The best choice is the one your class and level can use that beats
+every other usable choice by item level, then by quality, as in [How gear is ranked](#how-gear-is-ranked). It is not
+compared with what you wear: hover the choice to see its rank and `(upgrade)` mark in the
+[item tooltip](#item-tooltip).
+
+- No icon when two usable choices share the best item level and quality, when no choice is usable, or when the quest
+  offers a single choice.
+- A choice the client has not loaded yet is asked for; the icon shows once every choice has arrived, while the reward
+  window is still open.
+- The icon only advises: Tandem never selects a reward, and you still click the one you want.
+- The icon goes when the reward window closes (`QUEST_FINISHED`).
+- Nothing happens in combat, while the client does not tell your class or level, or when the `Quest reward pick` line of
+  [`/tandem check`](#tandem-check) is `missing`. Nothing is printed.
+
+### Upgrade alert
+
+When an item lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4) that your class and level can use and that beats
+what you wear in its slot by item level, chat shows one line:
+
+```text
+Tandem: upgrade for Chest: [Plate Chest] (item level 45 over 30)
+```
+
+The rule is the `(upgrade)` mark of [`/tandem gear`](#tandem-gear): an empty slot counts as item level 0, a ring or
+trinket is compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker hand, and an
+off-hand item says nothing while you wield a two-hander. Stats are not considered.
+
+- Each item is announced at most once per session, and only when it is new in the bags: the bags you log in with are
+  read silently, and moving an item between bags says nothing.
+- An item the client has not loaded yet is asked for and judged when it arrives (`GET_ITEM_INFO_RECEIVED`), if it is
+  still in the bags.
+- In combat the line waits and is printed when combat ends (`PLAYER_REGEN_ENABLED`); nothing is printed in combat.
+- The alert only advises: Tandem never equips anything.
+- Nothing happens while the client does not tell your class or level, or when the `Upgrade alert` line of
+  [`/tandem check`](#tandem-check) is `missing`.
+
+### Stat search
+
+Find gear by what its tooltip says, such as stamina or spell critical strike. Type words in the `Stat search` box of
+the browse window, or after the slot of `/tandem gear`:
+
+```text
+/tandem gear chest +stamina
+/tandem gear chest all +stamina
+```
+
+- An item matches when one line of its tooltip holds every word. Words are split on spaces, a leading `+` is dropped,
+  and case does not matter. `spell critical` matches `Equip: Improves your chance to get a critical strike with spells
+by 1%.`, but not a tooltip with `spell` on one line and `critical` on another.
+- Matching items are sorted by the first number on that line, highest first, then as usual (item level, then quality).
+  The number may be a decimal or a percentage: `1.5%` counts as `1.5`. A matching line with no number counts as 0.
+- The search reads the tooltip in the client's language, so type the client's own words. On a zhTW client stamina
+  reads `耐力` and spell critical strike reads `裝備：使你的法術造成致命一擊的機率提高1%。`, so search `耐力` or
+  `法術 致命一擊`. A few common words are translated for you on zhTW: `體力` searches `耐力`, `暴擊` searches
+  `致命一擊`, and `法術暴擊` searches `法術 致命一擊`. Other words must match the tooltip as written.
+- Only items that pass the other filters are searched: the slot and quality dropdowns, `Usable only` and
+  `Hide deprecated` in the window; the slot, usable items and, without `all`, items with a known source in the command.
+- The window lists the matches as you type and the count follows. An item the client has not loaded yet counts as not
+  matching and is asked for: the count reads `<n> items, <m> loading`, and the item joins the list when it arrives.
+  The command prints `<m> items are still loading; run the command again in a moment` instead.
+- Each item's tooltip is read once per session. Dropping an item on the window clears the search so the item shows.
+- `/tandem gear <slot> <words>` prints up to 10 matches, each with the matching line, and ends with
+  `Sorted by the number on the matching tooltip line, then item level and quality`. Words need a slot: `all` alone is
+  the flag of [`/tandem gear`](#tandem-gear), and `/tandem gear all <words>` is an unknown slot.
+
+```text
+Best Chest for level 40 Warrior matching "+stamina":
+1. [Leather Chest], ilvl 30, level 25 (upgrade): +15 Stamina
+2. [Plate Chest], ilvl 45, level 40 (upgrade): +10 Stamina
+Sorted by the number on the matching tooltip line, then item level and quality
+```
+
+The search reads `C_TooltipInfo.GetItemByID`. When the `Stat search` line of [`/tandem check`](#tandem-check) is
+`missing`, the box is greyed out and its label reads `Stat search: not on this client`, and the command prints
+`Tandem: stat search is not available on this client; see /tandem check`.
 
 ### Deprecated items
 
@@ -676,6 +799,101 @@ window, at its smallest size too.
 
 Report back any item whose tooltip line does not match `/tandem rank`, whether the line showed on the chat link
 tooltip in step 5, and any Lua error.
+
+### Check the client APIs
+
+The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
+not verified on Forever. One pass of `/tandem check` tells which of them the client has:
+
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nine lines, one each for `Item tooltip`,
+   `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
+   `Item stats` and `Stat search`, each followed by `ok` or `missing` and its APIs.
+2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
+   whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
+   `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
+   been shown.
+3. Open the world map and run `/tandem check` once more: the `Map pins` line stays the same.
+4. Start a fight and, while in combat, run `/tandem check`: it prints `Tandem: not available in combat` and nothing
+   else.
+5. If `Item tooltip` is `ok`, run the steps of [Check the item tooltip](#check-the-item-tooltip). If `Quest sources` or
+   `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
+   check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins). If `Quest reward pick` is `ok` in step
+   2, run [Check the quest reward pick](#check-the-quest-reward-pick). If `Upgrade alert` is `ok`, run
+   [Check the upgrade alert](#check-the-upgrade-alert). If `Stat search` is `ok`, run
+   [Check the stat search](#check-the-stat-search).
+
+Report back every line of steps 1 and 2 as printed, and any Lua error.
+
+### Check the map pins
+
+1. Out of combat, run `/tandem rank <item link>` for an item you looted from a mob, so you know its sources and maps.
+2. Run `/tandem map <item link>` with the same link. The world map opens on the map of the first listed source with a
+   known place, and small Tandem icons mark where the item was seen. Nothing is printed.
+3. Hover a pin: the tooltip shows the source's name and `Click to set a waypoint`. Click it: chat shows
+   `Tandem: waypoint set to <source>`, the waypoint appears on the map and the minimap, and it is tracked.
+4. Switch the world map to another zone and back: the pins show only on their own map. If the item has a source on
+   another map, open that map and check its pins.
+5. Open `/tandem browse`, select an item and click `Show on map`: the map opens with that item's pins. Select another
+   item: the pins are gone.
+6. Run `/tandem map clear`: chat shows `Tandem: map pins cleared` and the pins are gone.
+7. Run `/tandem map` for an item that has no known place, such as one only seen on map 0: chat shows
+   `Tandem: no known map position for item <id>` and the map does not open.
+8. Start a fight and, while in combat, run `/tandem map <item link>` and click a pin left on the map: each prints
+   `Tandem: not available in combat` and nothing else happens.
+
+Report back whether the pins sit on the right spots, whether they hide behind other map icons, whether the waypoint
+was set, the map ID of any map that refused it, and any Lua error.
+
+### Check the quest reward pick
+
+1. Out of combat, hand in a quest that offers a choice of two or more rewards, at least one of which your class can
+   use. In the reward window, a small Tandem icon sits on the top right of one choice's button. Nothing is printed and
+   no reward is selected.
+2. Hover each choice: the marked one has the highest item level among the choices you can use, or the same item level
+   and a better quality. Note the item level and quality of each choice.
+3. Close the reward window without choosing, then talk to the quest giver again: the icon shows again on the same
+   choice.
+4. For a quest whose usable choices share item level and quality, or that offers nothing your class can use, no icon
+   shows.
+5. If you can, open a reward window in combat: no icon shows and nothing is printed.
+
+Report back the quest, the choices with their item level and quality, which one was marked, whether the icon sat well
+on the button or hid part of it, and any Lua error.
+
+### Check the upgrade alert
+
+1. Log in or run `/reload` with some gear in your bags: no `Tandem: upgrade for` line shows.
+2. Out of combat, loot, buy or take from the mail an item your class can use with a higher item level than what you
+   wear in its slot (or any usable item for an empty slot). Chat shows one line,
+   `Tandem: upgrade for <slot>: <item link> (item level <n> over <m>)`, and nothing is equipped.
+3. Move that item to another bag, sell it and buy it back, or drop and loot it again: no second line for it this
+   session.
+4. Get an item you cannot use, or one no better than what you wear: no line.
+5. Loot an upgrade during a fight: nothing shows in combat; the line shows when the fight ends.
+6. If you can, loot an upgrade the client has never shown before (a fresh drop): the line may come a moment later, once
+   the item has loaded.
+
+Report back each line as printed with the item level of what you wore, any upgrade that got no line or any line for an
+item that is not an upgrade, and any Lua error.
+
+### Check the stat search
+
+1. Out of combat, run `/tandem browse chest`, or another slot you have scanned. The scan row ends with a
+   `Stat search` box.
+2. Type `+stamina` (`耐力` on a zhTW client). The list shrinks to items with stamina, the one with the most stamina
+   first, and the count follows. Hover the top rows: each tooltip has a stamina line with a number no lower than the
+   rows below it.
+3. Type `spell critical` (`法術 致命一擊` on zhTW, or `+法術暴擊`): items whose tooltip has an equip line about spell
+   critical strike are listed, highest percentage first. Type `體力` on zhTW: the same list as `耐力`.
+4. If the count reads `<n> items, <m> loading`, wait a moment: rows join the list and the loading part goes away.
+5. Press Escape in the box: the focus leaves it and the window stays open. Clear the box: every item is listed again.
+6. Untick `Usable only` or pick a quality with words in the box: the search follows the filters.
+7. Run `/tandem gear chest +stamina` (`/tandem gear chest 耐力` on zhTW) and `/tandem gear chest all +stamina`: chat
+   lists the matches with their tooltip line, highest number first, and ends with the sorting note.
+8. Note how long the first search over `All slots` with `Usable only` unticked takes, and whether the game stalls.
+
+Report back the query, the first rows with the line their tooltip shows, any item that should match but does not (with
+the tooltip line as the client words it), the stall in step 8, and any Lua error.
 
 ## Interface number
 

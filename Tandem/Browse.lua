@@ -17,6 +17,7 @@ local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ROW_HEIGHT = 20
 local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
+local SEARCH_LETTERS = 60
 local REDRAW_DELAY = 0.2
 local PROGRESS_INTERVAL = 1
 local DEFAULT_RATE_TEXT = ("%d/s"):format(ns.Commands.DEFAULT_RATE)
@@ -28,8 +29,10 @@ local QUALITY_NAMES = { [0] = "Poor", "Common", "Uncommon", "Rare", "Epic", "Leg
 local HANDS = "mainhand+offhand"
 
 local frame, progress
-local slot, onlyQuality, selected, unknown, pending, paneStale
+local slot, onlyQuality, selected, unknown, pending, paneStale, relist
 local rows, listed, worn = {}, {}, {}
+-- Items the stat search waits for: when one loads, the list is made again.
+local searching = {}
 -- Items whose cached name refresh has read: a name does not change, so each is read once per session.
 local peeked = {}
 
@@ -56,6 +59,7 @@ end
 local function updateSources()
     local pane = frame.pane
     local lines = {}
+    pane.map:SetEnabled(selected ~= nil)
     if selected then
         pane.header:SetText(View.LinkOf(selected))
         lines = View.SourceLines(selected, SOURCE_ROWS)
@@ -83,11 +87,20 @@ end
 
 local onDrop
 
+-- Selects an item (nil: none); a new selection drops the map pins of the earlier one.
+local function selectItem(id)
+    if id ~= selected then
+        ns.MapPins.Clear()
+    end
+    selected = id
+end
+
 local function onClick(self)
     if onDrop() or not self.row then
         return
     end
-    selected, unknown = self.row.id, nil
+    selectItem(self.row.id)
+    unknown = nil
     updateSources()
     frame.box:ForEachFrame(updateSelected)
 end
@@ -242,6 +255,17 @@ local function makeResizable(f, maxW, maxH, onSized)
     return true
 end
 
+-- A UIPanelButtonTemplate button when the client has it, else a plain one.
+local function panelButton(parent, width)
+    local ok, b = pcall(CreateFrame, "Button", nil, parent, "UIPanelButtonTemplate")
+    if not ok or not b then
+        b = CreateFrame("Button", nil, parent)
+        b:SetNormalFontObject("GameFontNormal")
+    end
+    b:SetSize(width, 22)
+    return b
+end
+
 -- The scan bar: rate, cap, Start/Stop and a status line under them.
 local function buildScanBar(f)
     local rateLabel = label(f, L["Rate"])
@@ -252,17 +276,26 @@ local function buildScanBar(f)
     capLabel:SetPoint("LEFT", f.rate, "RIGHT", 12, 0)
     f.cap = editBox(f, 60, DEFAULT_CAP_TEXT)
     f.cap:SetPoint("LEFT", capLabel, "RIGHT", 8, 0)
-    local ok, button = pcall(CreateFrame, "Button", nil, f, "UIPanelButtonTemplate")
-    if not ok or not button then
-        button = CreateFrame("Button", nil, f)
-        button:SetNormalFontObject("GameFontNormal")
-    end
-    button:SetSize(80, 22)
-    button:SetPoint("LEFT", f.cap, "RIGHT", 12, 0)
-    button:SetScript("OnClick", function()
+    f.scan = panelButton(f, 80)
+    f.scan:SetPoint("LEFT", f.cap, "RIGHT", 12, 0)
+    f.scan:SetScript("OnClick", function()
         Browse.ToggleScan()
     end)
-    f.scan = button
+    -- Stat search: the rest of the row; disabled with a note when the client lacks the tooltip data API.
+    f.searchLabel = label(f, L["Stat search"])
+    f.searchLabel:SetPoint("LEFT", f.scan, "RIGHT", 12, 0)
+    f.search = editBox(f, 120, "")
+    f.search:SetMaxLetters(SEARCH_LETTERS)
+    f.search:SetPoint("LEFT", f.searchLabel, "RIGHT", 8, 0)
+    f.search:SetPoint("RIGHT", f, "RIGHT", -14, 0)
+    if ns.StatSearch.Ready() then
+        f.search:SetScript("OnTextChanged", function()
+            Browse.Refresh()
+        end)
+    else
+        f.search:SetEnabled(false)
+        f.searchLabel:SetText(L["Stat search: not on this client"])
+    end
     f.status = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.status:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -12)
     f.status:SetPoint("RIGHT", f, "RIGHT", -14, 0)
@@ -410,9 +443,13 @@ local function build()
     pane:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
     pane:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 8)
     pane:SetHeight(PANE_HEIGHT)
+    pane.map = panelButton(pane, 110)
+    pane.map:SetPoint("TOPRIGHT", pane, "TOPRIGHT", 0, 2)
+    pane.map:SetText(L["Show on map"])
+    pane.map:SetScript("OnClick", Browse.ShowOnMap)
     pane.header = pane:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     pane.header:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, 0)
-    pane.header:SetPoint("RIGHT", pane, "RIGHT", 0, 0)
+    pane.header:SetPoint("RIGHT", pane.map, "LEFT", -8, 0)
     pane.header:SetJustifyH("LEFT")
     pane.lines = {}
     for i = 1, SOURCE_ROWS + 1 do
@@ -446,8 +483,25 @@ local function refresh(class, level)
             listed[row.id] = true
         end
     end
+    searching = {}
+    local terms = ns.StatSearch.Ready() and ns.StatSearch.Parse(frame.search:GetText())
+    local loading = 0
+    if terms then
+        rows, searching = ns.StatSearch.Filter(rows, terms)
+        listed = {}
+        for _, row in ipairs(rows) do
+            listed[row.id] = true
+        end
+        for _ in pairs(searching) do
+            loading = loading + 1
+        end
+    end
     frame.box:SetDataProvider(CreateDataProvider(rows))
-    frame.count:SetText(L["%d items"]:format(#rows))
+    if loading > 0 then
+        frame.count:SetText(L["%d items, %d loading"]:format(#rows, loading))
+    else
+        frame.count:SetText(L["%d items"]:format(#rows))
+    end
     updateSources()
 end
 
@@ -502,26 +556,31 @@ end
 local function redraw()
     pending = false
     if frame:IsShown() then
-        frame.box:ForEachFrame(reinit)
-        if paneStale then
-            updateSources()
+        if relist then
+            Browse.Refresh()
+        else
+            frame.box:ForEachFrame(reinit)
+            if paneStale then
+                updateSources()
+            end
         end
     end
-    paneStale = false
+    paneStale, relist = false, false
 end
 
 -- Redraws the rows once shortly after the client loads an item they show, so a burst of loads costs one redraw;
--- the sources pane only when the selected item loaded.
+-- the sources pane only when the selected item loaded. An item the stat search waits for lists the items again.
 function Browse.OnItemInfo(id, success)
     if not frame or not frame:IsShown() then
         return
     end
     id = Safe(id)
-    if not id or not (listed[id] or id == selected) or Safe(success) == false then
+    if not id or not (listed[id] or id == selected or searching[id]) or Safe(success) == false then
         return
     end
     -- Checked before pending: the selected item may load inside a burst another item started.
     paneStale = paneStale or id == selected
+    relist = relist or searching[id] == true
     if pending then
         return
     end
@@ -531,6 +590,14 @@ function Browse.OnItemInfo(id, success)
     else
         redraw()
     end
+end
+
+-- Show on map: pins the selected item's sources on the world map; refused in combat.
+function Browse.ShowOnMap()
+    if not selected or View.InCombat() then
+        return
+    end
+    ns.MapPins.Open(selected)
 end
 
 function Browse.OnCombat()
@@ -631,9 +698,12 @@ local function lookup(id)
         return
     end
     View.NoteName(id, View.CachedName(id))
+    -- A search could hide the dropped item.
+    frame.search:SetText("")
     local r = ns.Advisor.Place(id, class, level)
     if r then
-        selected, unknown = id, nil
+        selectItem(id)
+        unknown = nil
         slot = r.slot
         -- An item with no ranked slot is never listed, so the filters stay as they are.
         if r.slot and not r.usable then
@@ -646,7 +716,8 @@ local function lookup(id)
             onlyQuality = nil
         end
     else
-        selected, unknown = nil, id
+        selectItem(nil)
+        unknown = id
     end
     for _, menu in ipairs({ frame.dropdown, frame.quality }) do
         if menu.GenerateMenu then
