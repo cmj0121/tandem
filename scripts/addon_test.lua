@@ -313,15 +313,32 @@ end
 
 -- Commands: /tandem parsing and output.
 
--- Runs msg through /tandem; returns the lines it printed.
-local function run(addon, printed, msg)
-    local from = #printed
-    addon.Commands.Run(msg)
+-- Returns the lines printed after the first from.
+local function linesSince(printed, from)
     local out = {}
     for i = from + 1, #printed do
         out[#out + 1] = printed[i]
     end
     return out
+end
+
+-- Returns a fake C_Timer.NewTicker that appends each ticker { interval, fn, cancelled } to list.
+local function fakeTicker(list)
+    return function(interval, fn)
+        local t = { interval = interval, fn = fn }
+        function t.Cancel(self)
+            self.cancelled = true
+        end
+        list[#list + 1] = t
+        return t
+    end
+end
+
+-- Runs msg through /tandem; returns the lines it printed.
+local function run(addon, printed, msg)
+    local from = #printed
+    addon.Commands.Run(msg)
+    return linesSince(printed, from)
 end
 
 -- Replaces ns.Scanner with a stub that records its calls.
@@ -356,6 +373,14 @@ do
     check("ParseRate no unit", ParseRate("10"), nil)
     check("ParseRate fraction", ParseRate("1.5/s"), nil)
     check("ParseRate nil", ParseRate(nil), nil)
+    local ScanOptions = addon.Commands.ScanOptions
+    local opts = ScanOptions(" 20/M ", "\t7 ")
+    check("ScanOptions trims and lowercases", opts.rate .. " " .. opts.cap, (20 / 60) .. " 7")
+    opts = ScanOptions("  ", nil)
+    check("ScanOptions blank takes the defaults", opts.rate .. " " .. opts.cap,
+        addon.Commands.DEFAULT_RATE .. " " .. addon.Commands.DEFAULT_CAP)
+    check("ScanOptions defaults", addon.Commands.DEFAULT_RATE .. " " .. addon.Commands.DEFAULT_CAP, "10 100")
+    check("ScanOptions inner spaces are invalid", ScanOptions("10 /s", ""), nil)
 
     check("SLASH_TANDEM1 is /tandem", env.SLASH_TANDEM1, "/tandem")
     check("SlashCmdList.TANDEM is Run", env.SlashCmdList.TANDEM, addon.Commands.Run)
@@ -476,16 +501,7 @@ local function loadScanner(items, db, locale)
     env.InCombatLockdown = function()
         return ctx.combat
     end
-    env.C_Timer = {
-        NewTicker = function(interval, fn)
-            local t = { interval = interval, fn = fn }
-            function t.Cancel(self)
-                self.cancelled = true
-            end
-            ctx.tickers[#ctx.tickers + 1] = t
-            return t
-        end,
-    }
+    env.C_Timer = { NewTicker = fakeTicker(ctx.tickers) }
     env.C_Item = {
         DoesItemExistByID = function(id)
             return items[id] ~= nil
@@ -524,11 +540,7 @@ local function loadScanner(items, db, locale)
         return env.TandemDB.scan.lastRun
     end
     function ctx.since(from)
-        local out = {}
-        for i = from + 1, #printed do
-            out[#out + 1] = printed[i]
-        end
-        return out
+        return linesSince(printed, from)
     end
     return ctx
 end
@@ -1322,10 +1334,28 @@ local function ids(list)
     return table.concat(out, ",")
 end
 
+-- Slots per equipLoc: one cloth-typed item per equipLoc, found through List (every slot it fills) and Place.
 do
-    local A = loadAdvisor(gearData())
+    local LOCS = { "INVTYPE_ROBE", "INVTYPE_CLOAK", "INVTYPE_WEAPON", "INVTYPE_WEAPONMAINHAND", "INVTYPE_SHIELD",
+                   "INVTYPE_HOLDABLE", "INVTYPE_2HWEAPON", "INVTYPE_RELIC", "INVTYPE_THROWN", "INVTYPE_BODY",
+                   "INVTYPE_TABARD", "INVTYPE_WHATEVER" }
+    local items, idOf = {}, {}
+    for i, loc in ipairs(LOCS) do
+        items[100 + i], idOf[loc] = { 10, 1, 1, loc, 4, 1 }, 100 + i
+    end
+    local A = loadAdvisor({ schemaVersion = 2, items = items })
     local function slots(equipLoc, class, level)
-        return table.concat(A.SlotsOf(equipLoc, class, level), ",")
+        local id, out = idOf[equipLoc], {}
+        for _, slot in ipairs(A.SLOTS) do
+            for _, row in ipairs(A.List(slot, class, level)) do
+                if row.id == id then
+                    out[#out + 1] = slot
+                end
+            end
+        end
+        local place = A.Place(id, class, level)
+        check("advisor: Place of " .. equipLoc .. " is its first listed slot", place.slot, out[1])
+        return table.concat(out, ",")
     end
     check("advisor: SLOTS order", table.concat(A.SLOTS, " "),
         "head neck shoulder back chest wrist hands waist legs feet finger trinket mainhand offhand twohand ranged")
@@ -1345,6 +1375,12 @@ do
     check("advisor: shirt is not advised", slots("INVTYPE_BODY", "MAGE", 60), "")
     check("advisor: tabard is not advised", slots("INVTYPE_TABARD", "MAGE", 60), "")
     check("advisor: unknown equipLoc is not advised", slots("INVTYPE_WHATEVER", "MAGE", 60), "")
+    check("advisor: all slots lists a dual-wield weapon once", ids(A.List(nil, "ROGUE", 60)):find(
+        tostring(idOf.INVTYPE_WEAPON), 1, true) ~= nil, true)
+end
+
+do
+    local A = loadAdvisor(gearData())
 
     local function usable(id, class, level)
         local ok, reason, need = A.Usable(GEAR[id], class, level)
@@ -1428,6 +1464,16 @@ do
     r = A.Rank(9, "WARRIOR", 60)
     check("advisor: Rank of an unranked slot", tostring(r.slot) .. " " .. tostring(r.rank), "nil nil")
     check("advisor: Rank of an unknown item", A.Rank(999, "WARRIOR", 60), nil)
+
+    local p = A.Place(1, "WARRIOR", 30)
+    check("advisor: Place of an item", p.slot .. " " .. tostring(p.usable) .. " " .. p.reason .. " " .. p.needLevel,
+        "chest false level 40")
+    check("advisor: Place has no rank", tostring(p.rank) .. " " .. tostring(p.total), "nil nil")
+    p = A.Place(7, "ROGUE", 20)
+    check("advisor: Place of a one-hander is the main hand", p.slot .. " " .. tostring(p.usable), "mainhand true")
+    p = A.Place(9, "WARRIOR", 60)
+    check("advisor: Place of an unranked slot", tostring(p.slot) .. " " .. p.reason, "nil slot")
+    check("advisor: Place of an unknown item", A.Place(999, "WARRIOR", 60), nil)
 end
 
 -- Advisor.List: every known item per slot (unit 4).
@@ -1575,7 +1621,6 @@ for locale, label in pairs({ enUS = "Fishing", zhTW = "釣魚" }) do
     check(locale .. " sources: fishing object is named", rows[1].id .. " " .. tostring(rows[1].name), "35591 " .. label)
     check(locale .. " sources: fishing has no rate", tostring(rows[1].rate), "nil")
     check(locale .. " sources: other objects stay unnamed", rows[2].id .. " " .. tostring(rows[2].name), "77 nil")
-    check(locale .. " sources: FISHING_OBJECT", A.FISHING_OBJECT, 35591)
 end
 
 do
@@ -1686,6 +1731,9 @@ local function loadGear(locale, db, shipped, opts)
     ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = loadWithDB(db, locale or "enUS", loadOpts)
     function ctx.run(msg)
         return run(ctx.addon, ctx.printed, msg)
+    end
+    function ctx.since(from)
+        return linesSince(ctx.printed, from)
     end
     return ctx
 end
@@ -1841,7 +1889,8 @@ end
 do
     local ctx = loadGear()
     ctx.combat = true
-    for _, msg in ipairs({ "gear", "gear chest", "gear shirt", "rank 1", "rank", "export" }) do
+    for _, msg in ipairs({ "gear", "gear chest", "gear shirt", "gear a b c", "rank 1", "rank", "export",
+                           "export now", "GEAR" }) do
         local out = ctx.run(msg)
         check(("%q refuses in combat"):format(msg), out[1], "Tandem: not available in combat")
         check(("%q prints only the refusal"):format(msg), #out, 1)
@@ -2018,20 +2067,22 @@ end
 -- Store: browse window position (decision 8).
 
 do
-    local ui = { point = "TOPLEFT", x = 120.5, y = -40 }
+    local ui = { window = { point = "TOPLEFT", x = 120.5, y = -40 } }
     local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
-    check("ui: a valid position is kept", env.TandemDB.ui.point .. " " .. env.TandemDB.ui.x .. " " .. env.TandemDB.ui.y,
-        "TOPLEFT 120.5 -40")
+    local w = env.TandemDB.ui.window
+    check("ui: a valid position is kept", w.point .. " " .. w.x .. " " .. w.y, "TOPLEFT 120.5 -40")
     check("ui: a valid position prints only the load line", #printed, 1)
     check("ui: UIPosition returns it", addon.Store.UIPosition().x, 120.5)
     check("ui: a position saved without relativePoint uses point", addon.Store.UIPosition().relativePoint,
         "TOPLEFT")
     check("ui: SetUIPosition saves", addon.Store.SetUIPosition("BOTTOMRIGHT", "TOPLEFT", -3, 4), true)
-    check("ui: SetUIPosition writes TandemDB", env.TandemDB.ui.point .. " " .. env.TandemDB.ui.relativePoint .. " "
-        .. env.TandemDB.ui.x .. " " .. env.TandemDB.ui.y, "BOTTOMRIGHT TOPLEFT -3 4")
+    w = env.TandemDB.ui.window
+    check("ui: SetUIPosition writes TandemDB.ui.window", w.point .. " " .. w.relativePoint .. " " .. w.x .. " " .. w.y,
+        "BOTTOMRIGHT TOPLEFT -3 4")
+    check("ui: SetUIPosition writes only the window", env.TandemDB.ui.minimap, nil)
     check("ui: SetUIPosition is not a record", addon.Store.unsaved, 0)
     check("ui: SetUIPosition without relativePoint uses point", addon.Store.SetUIPosition("TOP", nil, 1, 2)
-        and env.TandemDB.ui.relativePoint, "TOP")
+        and env.TandemDB.ui.window.relativePoint, "TOP")
     addon.Store.SetUIPosition("BOTTOMRIGHT", "TOPLEFT", -3, 4)
     for name, args in pairs({
         ["unknown point"] = { "MIDDLE", "TOP", 1, 1 }, ["nil point"] = { nil, "TOP", 1, 1 },
@@ -2042,7 +2093,7 @@ do
         check("ui: SetUIPosition rejects " .. name,
             addon.Store.SetUIPosition(args[1], args[2], args[3], args[4]), false)
     end
-    check("ui: a rejected position keeps the old one", env.TandemDB.ui.point, "BOTTOMRIGHT")
+    check("ui: a rejected position keeps the old one", env.TandemDB.ui.window.point, "BOTTOMRIGHT")
 end
 
 do
@@ -2052,10 +2103,11 @@ do
 end
 
 for name, ui in pairs({
-    ["not a table"] = "left", ["unknown point"] = { point = "MIDDLE", x = 0, y = 0 },
-    ["far x"] = { point = "TOP", x = -10001, y = 0 }, ["NaN y"] = { point = "TOP", x = 0, y = 0 / 0 },
-    ["missing y"] = { point = "TOP", x = 0 },
-    ["unknown relativePoint"] = { point = "TOP", relativePoint = "UP", x = 0, y = 0 },
+    ["not a table"] = "left", ["a window that is not a table"] = { window = "left" },
+    ["unknown point"] = { window = { point = "MIDDLE", x = 0, y = 0 } },
+    ["far x"] = { window = { point = "TOP", x = -10001, y = 0 } },
+    ["NaN y"] = { window = { point = "TOP", x = 0, y = 0 / 0 } }, ["missing y"] = { window = { point = "TOP", x = 0 } },
+    ["unknown relativePoint"] = { window = { point = "TOP", relativePoint = "UP", x = 0, y = 0 } },
 }) do
     local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
     check("ui: drops a position with " .. name, env.TandemDB.ui, nil)
@@ -2064,12 +2116,22 @@ for name, ui in pairs({
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = 5, y = 6 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { point = "TOP", x = 1, y = 2, extra = true } })
+    check("ui: keys outside window and minimap are not kept", env.TandemDB.ui, nil)
+    check("ui: keys outside window and minimap are not counted", #printed, 1)
+    check("ui: no position from top-level keys", addon.Store.UIPosition(), nil)
+end
+
+do
+    local addon = loadWithDB({ schemaVersion = 3, ui = { window = { point = "TOP", x = 5, y = 6 } } })
     check("ui: a newer db still gives a valid position", addon.Store.UIPosition().y, 6)
     check("ui: a newer db is not written", addon.Store.SetUIPosition("TOP", "TOP", 1, 1), false)
-    check("ui: a newer db keeps its position", addon.Store.db.ui.x, 5)
-    addon = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = "5", y = 6 } })
+    check("ui: a newer db keeps its position", addon.Store.db.ui.window.x, 5)
+    addon = loadWithDB({ schemaVersion = 3, ui = { window = { point = "TOP", x = "5", y = 6 } } })
     check("ui: a newer db with a bad position gives none", addon.Store.UIPosition(), nil)
+    addon = loadWithDB({ schemaVersion = 3, ui = "junk" })
+    check("ui: a newer db with a junk ui gives no position", addon.Store.UIPosition(), nil)
+    check("ui: a newer db with a junk ui gives no angle", addon.Store.MinimapAngle(), nil)
 end
 
 -- Browse window (unit 5) under fake widgets.
@@ -2104,6 +2166,13 @@ end
 function WIDGET.SetFocus(w) w.focused = true end
 function WIDGET.ClearFocus(w) w.focused = false end
 function WIDGET.IsShown(w) return w.shown end
+function WIDGET.SetShown(w, shown)
+    if shown then
+        w:Show()
+    else
+        w:Hide()
+    end
+end
 function WIDGET.SetScript(w, name, fn) w.scripts[name] = fn end
 function WIDGET.GetScript(w, name) return w.scripts[name] end
 function WIDGET.SetText(w, text) w.text = text end
@@ -2213,14 +2282,7 @@ local function loadBrowse(locale, db, shipped, opts)
             After = function(delay, fn)
                 ui.timers[#ui.timers + 1] = { delay = delay, fn = fn }
             end,
-            NewTicker = function(interval, fn)
-                local t = { interval = interval, fn = fn }
-                function t.Cancel(self)
-                    self.cancelled = true
-                end
-                ui.tickers[#ui.tickers + 1] = t
-                return t
-            end,
+            NewTicker = fakeTicker(ui.tickers),
         },
         GetTime = function()
             return 100
@@ -2408,6 +2470,30 @@ do
 end
 
 do
+    local ctx = loadBrowse()
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, false)
+    check("browse gear change: harmless before the window is built", ctx.win(), nil)
+    ctx.equipped[5] = "|Hitem:3:|h"
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local b = win.box.buttons
+    check("browse gear change: listens for it", ctx.frame.registered.PLAYER_EQUIPMENT_CHANGED, true)
+    check("browse gear change: worn item marked", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped)|r")
+    ctx.equipped[5] = "|Hitem:4:|h"
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, false)
+    check("browse gear change: old item no longer marked", b[3].name:GetText(), "|cff0070dditem #3|r")
+    check("browse gear change: new item marked", b[4].name:GetText(), "|cff0070dditem #4|r" .. GREY .. " (equipped)|r")
+    ctx.run("browse")
+    ctx.equipped[5] = nil
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, true)
+    check("browse gear change: nothing redrawn while hidden", b[4].name:GetText(),
+        "|cff0070dditem #4|r" .. GREY .. " (equipped)|r")
+    ctx.run("browse chest")
+    check("browse gear change: showing again reads the gear", b[4].name:GetText(),
+        "|cff0070dditem #4|r" .. GREY .. " (upgrade)|r")
+end
+
+do
     local db, shipped = gearData()
     db.npcs = { [448] = "Hogger" }
     for npc = 600, 606 do
@@ -2435,6 +2521,21 @@ do
     ctx.fire("GET_ITEM_INFO_RECEIVED", 11, true)
     ctx.tick()
     check("browse click: header link refreshes after the item loads", paneText(win)[1], ctx.cache[11][2])
+
+    local looked = 0
+    local sources = ctx.addon.Advisor.Sources
+    ctx.addon.Advisor.Sources = function(id)
+        looked = looked + 1
+        return sources(id)
+    end
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 3, true)
+    ctx.tick()
+    check("browse redraw: another row loading keeps the sources pane", looked, 0)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 3, true)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 11, true)
+    ctx.tick()
+    check("browse redraw: the selected item loading in a burst redraws the pane once", looked, 1)
+    ctx.addon.Advisor.Sources = sources
 end
 
 do
@@ -2480,14 +2581,14 @@ do
     local win = ctx.win()
     win.points = { { "TOPLEFT", ctx.env.UIParent, "BOTTOMLEFT", 200, 650 } }
     win.scripts.OnDragStop(win)
-    local ui = ctx.env.TandemDB.ui
+    local ui = ctx.env.TandemDB.ui.window
     check("browse drag: saves the position", ui.point .. " " .. ui.relativePoint .. " " .. ui.x .. " " .. ui.y,
         "TOPLEFT BOTTOMLEFT 200 650")
     check("browse drag: user-placed left alone with SetDontSavePosition", win.userPlaced, true)
     check("browse drag: is not an unsaved record", ctx.addon.Store.unsaved, 0)
     check("browse drag: drag starts on the left button", type(win.scripts.OnDragStart), "function")
 
-    db.ui = { point = "TOPLEFT", relativePoint = "BOTTOMLEFT", x = 200, y = 650 }
+    db.ui = { window = { point = "TOPLEFT", relativePoint = "BOTTOMLEFT", x = 200, y = 650 } }
     local again = loadBrowse("enUS", db, shipped)
     again.run("browse")
     local p = again.win().points[1]
@@ -2495,7 +2596,7 @@ do
         "TOPLEFT BOTTOMLEFT 200 650")
     check("browse: restores relative to UIParent", p[2], again.env.UIParent)
 
-    db.ui = { point = "TOPLEFT", x = 200, y = -150 }
+    db.ui = { window = { point = "TOPLEFT", x = 200, y = -150 } }
     local old = loadBrowse("enUS", db, shipped)
     old.run("browse")
     p = old.win().points[1]
@@ -2508,7 +2609,7 @@ do
     nw.scripts.OnDragStop(nw)
     check("browse drag: not user-placed without SetDontSavePosition", nw.userPlaced, false)
 
-    db.ui = { point = "NOWHERE", x = 200, y = -150 }
+    db.ui = { window = { point = "NOWHERE", x = 200, y = -150 } }
     local bad = loadBrowse("enUS", db, shipped)
     bad.run("browse")
     check("browse: a bad saved position is centred", bad.win().points[1][1], "CENTER")
@@ -2563,7 +2664,8 @@ end
 -- Store: minimap button angle in TandemDB.ui (unit 7).
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { point = "TOP", x = 1, y = 2, minimap = 90.5 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 2,
+                                             ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 90.5 } })
     check("minimap: a valid angle is kept", env.TandemDB.ui.minimap, 90.5)
     check("minimap: kept with the position", addon.Store.UIPosition().point, "TOP")
     check("minimap: a valid angle prints only the load line", #printed, 1)
@@ -2571,7 +2673,7 @@ do
     check("minimap: SetUIPosition keeps the angle", addon.Store.SetUIPosition("LEFT", "LEFT", 3, 4)
         and env.TandemDB.ui.minimap, 90.5)
     check("minimap: SetMinimapAngle saves", addon.Store.SetMinimapAngle(0), true)
-    check("minimap: SetMinimapAngle keeps the position", env.TandemDB.ui.point .. " " .. env.TandemDB.ui.minimap,
+    check("minimap: SetMinimapAngle keeps the position", env.TandemDB.ui.window.point .. " " .. env.TandemDB.ui.minimap,
         "LEFT 0")
     check("minimap: SetMinimapAngle is not a record", addon.Store.unsaved, 0)
     for name, angle in pairs({ ["360"] = 360, ["negative"] = -1, ["string"] = "90", ["NaN"] = 0 / 0,
@@ -2596,7 +2698,7 @@ for name, case in pairs({
     ["360"] = { ui = { minimap = 360 }, dropped = 1 },
     ["a string"] = { ui = { minimap = "90" }, dropped = 1 },
     ["NaN"] = { ui = { minimap = 0 / 0 }, dropped = 1 },
-    ["a bad position too"] = { ui = { point = "UP", x = 0, y = 0, minimap = -5 }, dropped = 2 },
+    ["a bad position too"] = { ui = { window = { point = "UP", x = 0, y = 0 }, minimap = -5 }, dropped = 2 },
 }) do
     local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = case.ui })
     check("minimap: drops an angle of " .. name, env.TandemDB.ui, nil)
@@ -2606,9 +2708,10 @@ for name, case in pairs({
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { point = "TOP", x = 1, y = 2, minimap = 400 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 2,
+                                             ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 400 } })
     local ui = env.TandemDB.ui
-    check("minimap: a bad angle keeps a good position", ui.point .. " " .. tostring(ui.minimap), "TOP nil")
+    check("minimap: a bad angle keeps a good position", ui.window.point .. " " .. tostring(ui.minimap), "TOP nil")
     check("minimap: a bad angle alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
     check("minimap: UIPosition with a dropped angle", addon.Store.UIPosition().x, 1)
 end
@@ -2821,14 +2924,6 @@ local function tickers(ctx, interval)
     return out
 end
 
-local function since(ctx, before)
-    local out = {}
-    for i = before + 1, #ctx.printed do
-        out[#out + 1] = ctx.printed[i]
-    end
-    return out
-end
-
 -- Types rate and cap into the scan bar and presses its button; returns the lines printed.
 local function pressScan(ctx, rate, cap)
     local win = ctx.win()
@@ -2840,7 +2935,7 @@ local function pressScan(ctx, rate, cap)
     end
     local before = #ctx.printed
     win.scan.scripts.OnClick(win.scan)
-    return since(ctx, before)
+    return ctx.since(before)
 end
 
 do
@@ -2853,7 +2948,7 @@ do
     check("scan bar: button template", win.scan.template, "UIPanelButtonTemplate")
     check("scan bar: idle button", win.scan:GetText(), "Start")
     check("scan bar: idle status", win.status:GetText(), "8 known items, next scan from ID 1")
-    check("scan bar: progress ticker while shown", #tickers(ctx, 1), 1)
+    check("scan bar: no progress ticker while idle", #tickers(ctx, 1), 0)
 
     win.rate:SetFocus()
     win.rate.scripts.OnEnterPressed(win.rate)
@@ -2863,17 +2958,21 @@ do
     check("scan bar: Escape drops the focus", win.cap.focused, false)
 
     ctx.run("browse")
-    check("scan bar: ticker cancelled on hide", #tickers(ctx, 1), 0)
     ctx.run("browse")
-    check("scan bar: ticker again on show", #tickers(ctx, 1), 1)
-    ctx.run("browse chest")
-    check("scan bar: one ticker while shown", #tickers(ctx, 1), 1)
+    check("scan bar: no progress ticker on an idle show", #tickers(ctx, 1), 0)
 
     win.rate:SetFocus()
     local out = pressScan(ctx, " 5/s ", "3")
     check("scan bar: start prints the scan line", out[1], "Tandem: scanning 3 IDs from ID 1")
     check("scan bar: start runs the scanner", ctx.addon.Scanner.IsRunning(), true)
     check("scan bar: start drops the focus", win.rate.focused, false)
+    check("scan bar: progress ticker while a scan runs", #tickers(ctx, 1), 1)
+    ctx.run("browse")
+    check("scan bar: progress ticker cancelled on hide", #tickers(ctx, 1), 0)
+    ctx.run("browse")
+    check("scan bar: progress ticker again on show", #tickers(ctx, 1), 1)
+    ctx.run("browse chest")
+    check("scan bar: one progress ticker while shown", #tickers(ctx, 1), 1)
     local scanTicker = tickers(ctx, 0.2)[1]
     check("scan bar: rate from the box", scanTicker ~= nil, true)
     check("scan bar: running button", win.scan:GetText(), "Stop")
@@ -2887,6 +2986,7 @@ do
     check("scan bar: stop prints the stop line", out[1]:match("^Tandem: scan stopped"), "Tandem: scan stopped")
     check("scan bar: stop stops the scanner", ctx.addon.Scanner.IsRunning(), false)
     check("scan bar: stop cancels the scan ticker", scanTicker.cancelled, true)
+    check("scan bar: stop cancels the progress ticker", #tickers(ctx, 1), 0)
     check("scan bar: idle again", win.scan:GetText() .. "|" .. win.status:GetText(),
         "Start|8 known items, next scan from ID 3")
     check("scan bar: stop refreshes the list", win.box.provider ~= provider, true)
@@ -2940,10 +3040,15 @@ do
     check("scan bar: a scan started by command shows Stop", win.scan:GetText(), "Stop")
     check("scan bar: a scan started by command shows progress", win.status:GetText(),
         "Scanning: 0 of 5 IDs, 0 found, next ID 1")
+    check("scan bar: a scan started by command ticks the progress", #tickers(ctx, 1), 1)
     ctx.run("browse")
     local provider = win.box.provider
     ctx.run("scan stop")
     check("scan bar: a stop while hidden does not refresh", win.box.provider, provider)
+    ctx.run("browse")
+    ctx.run("scan 10/s 5")
+    check("scan bar: a command start while shown shows Stop", win.scan:GetText(), "Stop")
+    check("scan bar: a command start while shown ticks the progress", #tickers(ctx, 1), 1)
 end
 
 do
@@ -3014,8 +3119,7 @@ for name, scan in pairs({ ["no scan table"] = false, ["no cursor"] = {}, ["a fra
     check("scan bar: a newer db with " .. name .. " opens", win and win:IsShown(), true)
     check("scan bar: a newer db with " .. name .. " shows ? for the next ID", win.status:GetText(),
         "8 known items, next scan from ID ?")
-    tickers(ctx, 1)[1].fn()
-    check("scan bar: a newer db with " .. name .. " ticks", win.status:GetText(), "8 known items, next scan from ID ?")
+    check("scan bar: a newer db with " .. name .. " has no progress ticker", #tickers(ctx, 1), 0)
     check("scan bar: a newer db with " .. name .. " refuses a scan", pressScan(ctx, "10/s", "5")[1],
         "Recording is off: saved data uses a newer schema")
 end

@@ -8,7 +8,8 @@ ns.Advisor = Advisor
 local Safe = ns.Store.Safe
 local EMPTY = {}
 
-Advisor.FISHING_OBJECT = 35591
+-- Game objects named in source lines, by locale key.
+local OBJECT_NAMES = { [35591] = "Fishing" }
 
 Advisor.SLOTS = {
     "head", "neck", "shoulder", "back", "chest", "wrist", "hands", "waist", "legs", "feet", "finger", "trinket",
@@ -80,24 +81,21 @@ local function isRecord(r)
         and type(r[4]) == "string" and type(r[5]) == "number" and type(r[6]) == "number"
 end
 
--- Returns the player-facing slot tokens an equipLoc fills for a class at a level.
-function Advisor.SlotsOf(equipLoc, class, level)
-    local slot = SLOT_OF[equipLoc]
-    if not slot then
-        return {}
-    end
-    if equipLoc == "INVTYPE_WEAPON" then
-        local dual = Advisor.PROFICIENCY[class] and Advisor.PROFICIENCY[class].dualWield
-        if dual and level >= dual then
-            return { "mainhand", "offhand" }
-        end
-    end
-    return { slot }
+local function dualWields(class, level)
+    local dual = Advisor.PROFICIENCY[class] and Advisor.PROFICIENCY[class].dualWield
+    return dual ~= nil and level >= dual
+end
+
+-- Returns true when an equipLoc fills slot for a class at a level: its own slot, and the off hand too for a
+-- one-hand weapon once the class dual-wields.
+local function fills(equipLoc, slot, class, level)
+    return SLOT_OF[equipLoc] == slot
+        or (slot == "offhand" and equipLoc == "INVTYPE_WEAPON" and dualWields(class, level))
 end
 
 -- Returns ok, reason ("slot" | "proficiency" | "level"), needLevel (only for "level").
 function Advisor.Usable(item, class, level)
-    if #Advisor.SlotsOf(item[4], class, level) == 0 then
+    if not SLOT_OF[item[4]] then
         return false, "slot"
     end
     local classID, sub = item[5], item[6]
@@ -131,23 +129,23 @@ function Advisor.Item(id)
     end
 end
 
-local index, indexedFrom
+local lootIndex, indexedFrom
 
 -- Returns the shipped loot rows grouped by item; rebuilt only when ns.Shipped.loot changes.
 local function shippedByItem()
     local loot = shipped("loot")
     if indexedFrom ~= loot then
-        index, indexedFrom = {}, loot
+        lootIndex, indexedFrom = {}, loot
         for _, r in ipairs(loot) do
             if type(r) == "table" and type(r[1]) == "number" and type(r[2]) == "string" and type(r[3]) == "number"
                 and type(r[4]) == "number" and type(r[5]) == "number" then
-                local rows = index[r[1]] or {}
-                index[r[1]] = rows
+                local rows = lootIndex[r[1]] or {}
+                lootIndex[r[1]] = rows
                 rows[#rows + 1] = r
             end
         end
     end
-    return index
+    return lootIndex
 end
 
 local function ownSourced()
@@ -160,12 +158,18 @@ local function ownSourced()
     return set
 end
 
-local function isSourced(id, sourcedOwn, sourcedShipped)
-    return sourcedOwn[id] == true or sourcedShipped[id] ~= nil
+-- Returns the item ids with a known source: { own = {[id] = true}, shipped = {[id] = rows} }. Build it once and
+-- pass it as opts.index to several Best calls.
+function Advisor.SourceIndex()
+    return { own = ownSourced(), shipped = shippedByItem() }
+end
+
+local function isSourced(id, index)
+    return index.own[id] == true or index.shipped[id] ~= nil
 end
 
 function Advisor.HasSource(id)
-    return isSourced(id, ownSourced(), shippedByItem())
+    return isSourced(id, Advisor.SourceIndex())
 end
 
 local function before(a, b)
@@ -178,18 +182,9 @@ local function before(a, b)
     return a.id < b.id
 end
 
-local function fills(r, slot, class, level)
-    for _, s in ipairs(Advisor.SlotsOf(r[4], class, level)) do
-        if s == slot then
-            return true
-        end
-    end
-    return false
-end
-
 -- Walks own and shipped items once (own records win) and returns the rows for slot (nil: every ranked slot, each
--- item once under its first slot), sorted best first.
-local function list(slot, class, level, usableOnly, sourcedOwn, sourcedShipped)
+-- item once under its first slot), sorted best first. sourcedOnly drops sourceless items before a row is built.
+local function list(slot, class, level, usableOnly, sourcedOnly, index)
     local out, done = {}, {}
     local function consider(id)
         if done[id] or type(id) ~= "number" then
@@ -200,22 +195,19 @@ local function list(slot, class, level, usableOnly, sourcedOwn, sourcedShipped)
         if not r then
             return
         end
-        local rowSlot = slot
-        if slot then
-            if not fills(r, slot, class, level) then
-                return
-            end
-        else
-            rowSlot = Advisor.SlotsOf(r[4], class, level)[1]
-            if not rowSlot then
-                return
-            end
+        -- The first slot an item fills is SLOT_OF[equipLoc] (a one-hander is listed under main hand).
+        local rowSlot = slot or SLOT_OF[r[4]]
+        if not rowSlot or (slot and not fills(r[4], slot, class, level)) then
+            return
+        end
+        local sourced = isSourced(id, index)
+        if sourcedOnly and not sourced then
+            return
         end
         local usable, reason, needLevel = Advisor.Usable(r, class, level)
         if usable or not usableOnly then
             out[#out + 1] = { id = id, slot = rowSlot, ilvl = r[1], quality = r[3], reqLevel = r[2], usable = usable,
-                              reason = reason, needLevel = needLevel,
-                              sourced = isSourced(id, sourcedOwn, sourcedShipped) }
+                              reason = reason, needLevel = needLevel, sourced = sourced }
         end
     end
     for id in pairs(own("items")) do
@@ -228,14 +220,8 @@ local function list(slot, class, level, usableOnly, sourcedOwn, sourcedShipped)
     return out
 end
 
-local function best(slot, class, level, all, sourcedOwn, sourcedShipped)
-    local out = {}
-    for _, row in ipairs(list(slot, class, level, true, sourcedOwn, sourcedShipped)) do
-        if row.sourced or all then
-            out[#out + 1] = row
-        end
-    end
-    return out
+local function best(slot, class, level, all, index)
+    return list(slot, class, level, true, not all, index)
 end
 
 -- Returns every known item for slot, or for all ranked slots when slot is nil, sorted best first:
@@ -245,34 +231,44 @@ function Advisor.List(slot, class, level, opts)
     if slot ~= nil and not IS_SLOT[slot] then
         return nil
     end
-    return list(slot, class, level, opts and opts.usableOnly, ownSourced(), shippedByItem())
+    return list(slot, class, level, opts and opts.usableOnly, false, Advisor.SourceIndex())
 end
 
--- Returns the usable items for slot sorted best first (List rows); sourceless items only with opts.all. nil for an
--- unknown slot.
+-- Returns the usable items for slot sorted best first (List rows); sourceless items only with opts.all. opts.index
+-- reuses an Advisor.SourceIndex() across calls. nil for an unknown slot.
 function Advisor.Best(slot, class, level, opts)
     if not IS_SLOT[slot] then
         return nil
     end
-    return best(slot, class, level, opts and opts.all, ownSourced(), shippedByItem())
+    return best(slot, class, level, opts and opts.all, opts and opts.index or Advisor.SourceIndex())
+end
+
+-- Returns where an item goes for a class at a level without walking the other items: nil for an unknown item, else
+-- { slot, usable, reason, needLevel }; slot is nil when the item has no ranked slot.
+function Advisor.Place(id, class, level)
+    local r = Advisor.Item(id)
+    if not r then
+        return nil
+    end
+    local usable, reason, needLevel = Advisor.Usable(r, class, level)
+    return { slot = SLOT_OF[r[4]], usable = usable, reason = reason, needLevel = needLevel }
 end
 
 -- Returns nil for an unknown item, else { rank, total, slot, usable, reason, needLevel, sourced }; rank and total are
 -- nil when the item has no ranked slot.
 function Advisor.Rank(id, class, level)
-    local r = Advisor.Item(id)
-    if not r then
+    local result = Advisor.Place(id, class, level)
+    if not result then
         return nil
     end
-    local sourcedOwn, sourcedShipped = ownSourced(), shippedByItem()
-    local usable, reason, needLevel = Advisor.Usable(r, class, level)
-    local result = { slot = Advisor.SlotsOf(r[4], class, level)[1], usable = usable, reason = reason,
-                     needLevel = needLevel, sourced = isSourced(id, sourcedOwn, sourcedShipped) }
+    local index = Advisor.SourceIndex()
+    result.sourced = isSourced(id, index)
     if not result.slot then
         return result
     end
+    local r = Advisor.Item(id)
     local me = { id = id, ilvl = r[1], quality = r[3] }
-    local ranked = best(result.slot, class, level, false, sourcedOwn, sourcedShipped)
+    local ranked = best(result.slot, class, level, false, index)
     local rank, listed = 1, false
     for _, e in ipairs(ranked) do
         if e.id == id then
@@ -382,8 +378,8 @@ function Advisor.Sources(id)
         if row.kind == "c" then
             row.name = npcName(row.id)
             row.rate, row.rateBasis = dropRate(row.id, drops[row.id])
-        elseif row.kind == "o" and row.id == Advisor.FISHING_OBJECT then
-            row.name = ns.L["Fishing"]
+        elseif row.kind == "o" and OBJECT_NAMES[row.id] then
+            row.name = ns.L[OBJECT_NAMES[row.id]]
         end
         row.mapName = Advisor.MapName(row.map)
         row.by = nil

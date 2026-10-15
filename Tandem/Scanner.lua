@@ -144,6 +144,10 @@ function Scanner.Start(opts)
     running = true
     print(L["Tandem: scanning %d IDs from ID %d"]:format(cap, scan.cursor))
     ticker = C_Timer.NewTicker(1 / opts.rate, Scanner.Tick)
+    -- The browse window shows the progress of a scan started from it or from /tandem scan.
+    if Scanner.onStart then
+        Scanner.onStart()
+    end
 end
 
 -- Stops the scan and prints its summary, then runs Scanner.onStop when set (the browse window refreshes).

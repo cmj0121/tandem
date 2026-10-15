@@ -9,6 +9,7 @@ frame:RegisterEvent("LOOT_READY")
 frame:RegisterEvent("LOOT_CLOSED")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 
 local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
@@ -48,6 +49,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Loot.OnLootClosed()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Browse.OnCombat()
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        ns.Browse.OnEquipmentChanged()
     elseif event == "PLAYER_LOGIN" then
         ns.Launcher.OnLogin()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then

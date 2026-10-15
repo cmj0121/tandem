@@ -16,57 +16,21 @@ local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
 local REDRAW_DELAY = 0.2
 local PROGRESS_INTERVAL = 1
-local DEFAULT_RATE_TEXT, DEFAULT_CAP_TEXT = "10/s", "100"
+local DEFAULT_RATE_TEXT = ("%d/s"):format(ns.Commands.DEFAULT_RATE)
+local DEFAULT_CAP_TEXT = tostring(ns.Commands.DEFAULT_CAP)
 local GREY, RED = "|cff808080", "|cffff2020"
 local NO_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local frame, progress
-local slot, selected, unknown, pending
-local requested = {}
+local slot, selected, unknown, pending, paneStale
 local rows, listed, worn = {}, {}, {}
 
-local startProgress, stopProgress
+local updateScan, startProgress, stopProgress
 
+-- What the player wears per slot, read once per listing (refresh clears it).
 local function wornFor(rowSlot)
     worn[rowSlot] = worn[rowSlot] or View.Equipped(rowSlot)
     return worn[rowSlot]
-end
-
--- Asks the client to load an item, once per session.
-local function request(id)
-    if not requested[id] and C_Item and C_Item.RequestLoadItemDataByID then
-        requested[id] = true
-        C_Item.RequestLoadItemDataByID(id)
-    end
-end
-
--- Returns the item's link once the client has it, else one built from its record.
-local function linkOf(id)
-    if C_Item and C_Item.GetItemInfo then
-        local link = Safe((select(2, C_Item.GetItemInfo(id))))
-        if type(link) == "string" then
-            return link
-        end
-    end
-    request(id)
-    local r = ns.Advisor.Item(id)
-    return View.BuiltLink(id, r and r[3])
-end
-
--- Returns the item's name in its quality colour once the client has it; else "item #id" in the record's colour,
--- and asks the client to load it.
-local function coloredName(row)
-    local name, quality
-    if C_Item and C_Item.GetItemInfo then
-        local n, _, q = C_Item.GetItemInfo(row.id)
-        name, quality = Safe(n), Safe(q)
-    end
-    if type(name) ~= "string" then
-        request(row.id)
-        name, quality = L["item #%d"]:format(row.id), row.quality
-    end
-    local hex = View.QUALITY_HEX[quality] or View.QUALITY_HEX[row.quality] or View.QUALITY_HEX[1]
-    return ("|cff%s%s|r"):format(hex, View.Escape(name))
 end
 
 local function iconOf(id)
@@ -77,19 +41,11 @@ local function iconOf(id)
     return icon or NO_ICON
 end
 
-local function showIf(region, shown)
-    if shown then
-        region:Show()
-    else
-        region:Hide()
-    end
-end
-
 local function updateSources()
     local pane = frame.pane
     local lines = {}
     if selected then
-        pane.header:SetText(linkOf(selected))
+        pane.header:SetText(View.LinkOf(selected))
         lines = View.SourceLines(selected, SOURCE_ROWS)
     elseif unknown then
         pane.header:SetText(L["Tandem: item %d is not known; scan or loot it first"]:format(unknown))
@@ -109,14 +65,8 @@ local function onEnter(self)
     end
 end
 
-local function onLeave()
-    if GameTooltip then
-        GameTooltip:Hide()
-    end
-end
-
 local function updateSelected(button)
-    showIf(button.selected, button.row ~= nil and button.row.id == selected)
+    button.selected:SetShown(button.row ~= nil and button.row.id == selected)
 end
 
 local onDrop
@@ -154,7 +104,7 @@ local function buildRow(button)
     hover:SetAllPoints()
     hover:SetColorTexture(1, 1, 1, 0.1)
     button:SetScript("OnEnter", onEnter)
-    button:SetScript("OnLeave", onLeave)
+    button:SetScript("OnLeave", View.HideTooltip)
     button:SetScript("OnClick", onClick)
     button:SetScript("OnReceiveDrag", onDrop)
     button.built = true
@@ -165,13 +115,9 @@ local function initRow(button, row)
         buildRow(button)
     end
     button.row = row
-    local w = wornFor(row.slot)
-    if not row.usable then
-        w = { ids = w.ids, list = w.list }
-    end
-    local marks = View.Marks(row.id, row.ilvl, row.sourced, w)
+    local marks = View.Marks(row, wornFor(row.slot))
     button.icon:SetTexture(iconOf(row.id))
-    button.name:SetText(coloredName(row) .. (marks ~= "" and GREY .. marks .. "|r" or ""))
+    button.name:SetText(View.ItemName(row.id, row.quality) .. (marks ~= "" and GREY .. marks .. "|r" or ""))
     button.ilvl:SetText(tostring(row.ilvl))
     if row.needLevel then
         button.level:SetText(RED .. row.needLevel .. "|r")
@@ -311,9 +257,7 @@ local function build()
     usable:SetScript("OnClick", function()
         Browse.Refresh()
     end)
-    local usableText = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    usableText:SetPoint("LEFT", usable, "RIGHT", 2, 0)
-    usableText:SetText(L["Usable only"])
+    label(f, L["Usable only"]):SetPoint("LEFT", usable, "RIGHT", 2, 0)
     f.usable = usable
 
     f.count = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -342,7 +286,10 @@ local function build()
         target:SetScript("OnReceiveDrag", onDrop)
         target:SetScript("OnMouseUp", onDrop)
     end
-    f:SetScript("OnShow", startProgress)
+    f:SetScript("OnShow", function()
+        updateScan()
+        startProgress()
+    end)
     f:SetScript("OnHide", stopProgress)
 
     local pane = CreateFrame("Frame", nil, f)
@@ -421,22 +368,34 @@ function Browse.Toggle()
     end
 end
 
+local function reinit(button, row)
+    initRow(button, row or button.row)
+end
+
 local function redraw()
     pending = false
     if frame:IsShown() then
-        worn = {}
-        frame.box:ForEachFrame(function(button, row)
-            initRow(button, row or button.row)
-        end)
-        updateSources()
+        frame.box:ForEachFrame(reinit)
+        if paneStale then
+            updateSources()
+        end
     end
+    paneStale = false
 end
 
--- Redraws the rows once shortly after the client loads an item they show, so a burst of loads costs one redraw.
+-- Redraws the rows once shortly after the client loads an item they show, so a burst of loads costs one redraw;
+-- the sources pane only when the selected item loaded.
 function Browse.OnItemInfo(id, success)
+    if not frame or not frame:IsShown() then
+        return
+    end
     id = Safe(id)
-    if Safe(success) == false or not frame or not frame:IsShown() or not id or not (listed[id] or id == selected)
-        or pending then
+    if not id or not (listed[id] or id == selected) or Safe(success) == false then
+        return
+    end
+    -- Checked before pending: the selected item may load inside a burst another item started.
+    paneStale = paneStale or id == selected
+    if pending then
         return
     end
     pending = true
@@ -451,8 +410,17 @@ function Browse.OnCombat()
     Browse.Hide()
 end
 
+-- PLAYER_EQUIPMENT_CHANGED: what is worn decides the (equipped) and (upgrade) marks, so read it again and redraw
+-- the rows; nothing while the window is hidden, since showing it lists them afresh.
+function Browse.OnEquipmentChanged()
+    if frame and frame:IsShown() then
+        worn = {}
+        frame.box:ForEachFrame(reinit)
+    end
+end
+
 -- Shows the scan's progress while one runs, else how many items are known and where the next scan starts.
-local function updateScan()
+updateScan = function()
     if not frame then
         return
     end
@@ -468,9 +436,9 @@ local function updateScan()
     end
 end
 
+-- Ticks the progress while a scan runs and the window is shown.
 startProgress = function()
-    updateScan()
-    if not progress and C_Timer and C_Timer.NewTicker then
+    if not progress and frame:IsShown() and ns.Scanner.IsRunning() and C_Timer and C_Timer.NewTicker then
         progress = C_Timer.NewTicker(PROGRESS_INTERVAL, updateScan)
     end
 end
@@ -480,10 +448,6 @@ stopProgress = function()
         progress:Cancel()
         progress = nil
     end
-end
-
-local function trim(text)
-    return (text or ""):match("^%s*(.-)%s*$")
 end
 
 -- Start/Stop: stops a running scan, else starts one with the typed rate and cap (the /tandem scan rules).
@@ -497,8 +461,7 @@ function Browse.ToggleScan()
     else
         frame.rate:ClearFocus()
         frame.cap:ClearFocus()
-        -- Lowercased like the slash command's input, so "10/S" works in both.
-        local opts = ns.Commands.ScanOptions(trim(frame.rate:GetText()):lower(), trim(frame.cap:GetText()))
+        local opts = ns.Commands.ScanOptions(frame.rate:GetText(), frame.cap:GetText())
         if opts then
             scanner.Start(opts)
         else
@@ -508,8 +471,18 @@ function Browse.ToggleScan()
     updateScan()
 end
 
+-- Scanner.onStart: a scan started here or by /tandem scan shows its progress.
+function Browse.OnScanStarted()
+    if frame and frame:IsShown() then
+        updateScan()
+        startProgress()
+    end
+end
+ns.Scanner.onStart = Browse.OnScanStarted
+
 -- Scanner.onStop: a finished or stopped scan may have found items, so list them.
 function Browse.OnScanStopped()
+    stopProgress()
     if frame and frame:IsShown() then
         Browse.Refresh()
         updateScan()
@@ -523,7 +496,7 @@ local function lookup(id)
     if not class then
         return
     end
-    local r = ns.Advisor.Rank(id, class, level)
+    local r = ns.Advisor.Place(id, class, level)
     if r then
         selected, unknown = id, nil
         slot = r.slot

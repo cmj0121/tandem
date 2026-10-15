@@ -4,8 +4,9 @@ local _, ns = ...
 local Commands = {}
 ns.Commands = Commands
 
-local DEFAULT_RATE = 10
-local DEFAULT_CAP = 100
+-- Scan defaults, shared with the browse window's scan bar.
+Commands.DEFAULT_RATE = 10
+Commands.DEFAULT_CAP = 100
 local MAX_CAP = 100000
 local MIN_RATE = 1 / 60
 local MAX_RATE = 50
@@ -55,10 +56,17 @@ function Commands.ParseRate(s)
     return rate
 end
 
--- Returns {rate, cap} for a scan from a rate ("<n>/s" or "<n>/m") and a cap (1..100000) as typed; nil or ""
--- takes the default. Nil when either is invalid. Shared by /tandem scan and the browse window's scan bar.
+-- Returns text without surrounding spaces and in lower case, or nil for nil.
+local function normalise(text)
+    return text and text:match("^%s*(.-)%s*$"):lower()
+end
+
+-- Returns {rate, cap} for a scan from a rate ("<n>/s" or "<n>/m") and a cap (1..100000) as typed, in any case and
+-- with surrounding spaces; nil or blank takes the default. Nil when either is invalid. Shared by /tandem scan and
+-- the browse window's scan bar.
 function Commands.ScanOptions(rateText, capText)
-    local rate, cap = DEFAULT_RATE, DEFAULT_CAP
+    rateText, capText = normalise(rateText), normalise(capText)
+    local rate, cap = Commands.DEFAULT_RATE, Commands.DEFAULT_CAP
     if rateText and rateText ~= "" then
         rate = Commands.ParseRate(rateText)
     end
@@ -180,11 +188,12 @@ end
 
 local function gearOverview(all, className, level, classFile)
     print(L["Best known gear for level %d %s:"]:format(level, className))
+    local opts = { all = all, index = ns.Advisor.SourceIndex() }
     for _, slot in ipairs(ns.Advisor.SLOTS) do
-        local top = ns.Advisor.Best(slot, classFile, level, { all = all })[1]
+        local top = ns.Advisor.Best(slot, classFile, level, opts)[1]
         if top then
             print(L["%s: %s, ilvl %d%s"]:format(View.SlotLabel(slot), View.LinkOf(top.id), top.ilvl,
-                View.Marks(top.id, top.ilvl, top.sourced, View.Equipped(slot))))
+                View.Marks(top, View.Equipped(slot))))
         else
             print(L["%s: none known"]:format(View.SlotLabel(slot)))
         end
@@ -208,7 +217,7 @@ local function gearSlot(slot, all, className, level, classFile)
     for i = 1, math.min(#list, GEAR_ROWS) do
         local e = list[i]
         print(L["%d. %s, ilvl %d, level %d%s"]:format(i, View.LinkOf(e.id), e.ilvl, e.reqLevel,
-            View.Marks(e.id, e.ilvl, e.sourced, worn)))
+            View.Marks(e, worn)))
     end
 end
 
@@ -218,9 +227,6 @@ end
 
 -- gear [<slot>] [all]
 local function gear(args)
-    if View.InCombat() then
-        return
-    end
     local all = args[#args] == "all"
     if all then
         args[#args] = nil
@@ -246,9 +252,6 @@ end
 
 -- rank <item link|id>
 local function rank(args)
-    if View.InCombat() then
-        return
-    end
     local id = table.concat(args, " "):match("item:(%d+)") or (#args == 1 and args[1]:match("^%d+$")) or nil
     id = tonumber(id)
     if not id then
@@ -266,12 +269,10 @@ local function rank(args)
     end
     local link = View.LinkOf(id)
     if r.slot then
-        local worn = View.Equipped(r.slot)
-        if not r.usable then
-            worn.ilvl = nil
-        end
-        print(L["%s: rank %d of %d for %s"]:format(link .. View.Marks(id, ns.Advisor.Item(id)[1], true, worn), r.rank,
-            r.total, View.SlotLabel(r.slot)))
+        -- Sourced: the sources follow, so no "(no known source)" mark.
+        local row = { id = id, ilvl = ns.Advisor.Item(id)[1], sourced = true, usable = r.usable }
+        print(L["%s: rank %d of %d for %s"]:format(link .. View.Marks(row, View.Equipped(r.slot)), r.rank, r.total,
+            View.SlotLabel(r.slot)))
     else
         print(L["%s does not go in a ranked slot"]:format(link))
     end
@@ -290,9 +291,6 @@ end
 
 -- Prints what make import would collect (decision 8); never reloads.
 local function export()
-    if View.InCombat() then
-        return
-    end
     local c = ns.Store.Counts()
     print(L["Tandem export: %d loot entries, %d npc names, %d items, %d kills, %d looted corpses"]:format(c.loot,
         c.npcs, c.items, c.kills, c.corpses))
@@ -305,9 +303,6 @@ end
 
 -- browse [<slot>]: toggles the window, or opens it on a slot.
 local function browse(args)
-    if View.InCombat() then
-        return
-    end
     if #args > 1 then
         return printUsage()
     end
@@ -321,12 +316,18 @@ local function browse(args)
     end
 end
 
+-- Subcommands refused in combat (decision 9), before their arguments are read.
+local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true }
+
 function Commands.Run(msg)
     local args = {}
     for token in (msg or ""):lower():gmatch("%S+") do
         args[#args + 1] = token
     end
     local sub = table.remove(args, 1)
+    if NOT_IN_COMBAT[sub] and View.InCombat() then
+        return
+    end
     if sub == "count" and #args == 0 then
         count()
     elseif sub == "scan" then

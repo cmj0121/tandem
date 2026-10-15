@@ -86,7 +86,7 @@ end
 
 -- Returns a clean copy of a saved window position { point, relativePoint, x, y }, or nil. A position saved
 -- without relativePoint uses point.
-local function copyUI(v)
+local function copyWindow(v)
     if type(v) == "table" and isAnchor(v.point) and (v.relativePoint == nil or isAnchor(v.relativePoint))
         and isNum(v.x) and isNum(v.y) and math.abs(v.x) <= MAX_OFFSET and math.abs(v.y) <= MAX_OFFSET then
         return { point = v.point, relativePoint = v.relativePoint or v.point, x = v.x, y = v.y }
@@ -97,24 +97,26 @@ local function isAngle(v)
     return isNum(v) and v >= 0 and v < 360
 end
 
--- Returns a clean copy of the saved ui table (window position fields and minimap angle), or nil when nothing in
--- it is valid; drop is called once for an invalid position and once for an invalid angle.
-local function copyUITable(v, drop)
+-- Returns a clean copy of the saved ui table { window = position, minimap = angle }, or nil when nothing in it is
+-- valid; drop is called once for an invalid window position and once for an invalid angle.
+local function copyUI(v, drop)
     if type(v) ~= "table" then
         drop()
         return nil
     end
-    local out = copyUI(v)
-    if not out and (v.point ~= nil or v.relativePoint ~= nil or v.x ~= nil or v.y ~= nil) then
-        drop()
+    local out = {}
+    if v.window ~= nil then
+        out.window = copyWindow(v.window)
+        if not out.window then
+            drop()
+        end
     end
     if isAngle(v.minimap) then
-        out = out or {}
         out.minimap = v.minimap
     elseif v.minimap ~= nil then
         drop()
     end
-    return out
+    return next(out) and out or nil
 end
 
 -- Copies every entry of raw that passes its type check into a fresh current-schema table.
@@ -207,7 +209,7 @@ local function migrate(raw, report)
     end
 
     if raw.ui ~= nil then
-        db.ui = copyUITable(raw.ui, drop)
+        db.ui = copyUI(raw.ui, drop)
     end
     return db
 end
@@ -334,7 +336,7 @@ function Store.Counts()
     local db = Store.db
     local scan = type(db.scan) == "table" and db.scan or {}
     return {
-        items = count(db.items),
+        items = Store.itemCount,
         nonEquippable = scan.nonEquippable,
         cursor = scan.cursor,
         minFound = scan.minFound,
@@ -363,22 +365,38 @@ function Store.ScanCursor()
     end
 end
 
+-- Returns the saved ui table, or nil when there is none or it is not a table (a newer db is kept raw).
+local function savedUI()
+    local ui = Store.db and Store.db.ui
+    if type(ui) == "table" then
+        return ui
+    end
+end
+
+-- Sets one key of TandemDB.ui, leaving the others alone.
+local function setUI(key, value)
+    Store.db.ui = Store.db.ui or {}
+    Store.db.ui[key] = value
+end
+
 -- Saves the browse window position; false when invalid or read-only. A position is not a record: unsaved is
 -- unchanged.
 function Store.SetUIPosition(point, relativePoint, x, y)
-    local ui = not Store.readOnly and copyUI({ point = point, relativePoint = relativePoint, x = x, y = y })
-    if not ui then
+    local window = not Store.readOnly and copyWindow({ point = point, relativePoint = relativePoint, x = x, y = y })
+    if not window then
         return false
     end
-    ui.minimap = Store.db.ui and Store.db.ui.minimap
-    Store.db.ui = ui
+    setUI("window", window)
     return true
 end
 
 -- Returns the saved browse window position { point, relativePoint, x, y }, or nil; checked again since a newer
 -- db is kept raw.
 function Store.UIPosition()
-    return copyUI(Store.db and Store.db.ui)
+    local ui = savedUI()
+    if ui then
+        return copyWindow(ui.window)
+    end
 end
 
 -- Saves the minimap button's angle in degrees (0 <= angle < 360); false when invalid or read-only. Not a record.
@@ -386,15 +404,14 @@ function Store.SetMinimapAngle(angle)
     if Store.readOnly or not isAngle(angle) then
         return false
     end
-    Store.db.ui = Store.db.ui or {}
-    Store.db.ui.minimap = angle
+    setUI("minimap", angle)
     return true
 end
 
 -- Returns the saved minimap button angle, or nil; checked again since a newer db is kept raw.
 function Store.MinimapAngle()
-    local ui = Store.db and Store.db.ui
-    if type(ui) == "table" and isAngle(ui.minimap) then
+    local ui = savedUI()
+    if ui and isAngle(ui.minimap) then
         return ui.minimap
     end
 end

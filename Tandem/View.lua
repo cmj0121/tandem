@@ -26,6 +26,8 @@ View.QUALITY_HEX = {
 }
 local QUALITY_HEX = View.QUALITY_HEX
 
+local requested = {}
+
 -- Prints the refusal and returns true while in combat (decision 9).
 function View.InCombat()
     if InCombatLockdown and InCombatLockdown() then
@@ -52,6 +54,19 @@ function View.Player()
     return type(name) == "string" and name or classFile, classFile, level
 end
 
+-- Asks the client to load an item, once per session.
+function View.RequestItem(id)
+    if not requested[id] and C_Item and C_Item.RequestLoadItemDataByID then
+        requested[id] = true
+        C_Item.RequestLoadItemDataByID(id)
+    end
+end
+
+-- Returns the name shown for an item the client has not loaded.
+local function placeholder(id)
+    return L["item #%d"]:format(id)
+end
+
 -- Returns the client's link for an item when cached; else builds one from the id in its quality colour and asks
 -- the client to load the item for next time.
 function View.ItemLink(id, quality)
@@ -61,8 +76,8 @@ function View.ItemLink(id, quality)
         if type(link) == "string" then
             return link
         end
-        if Safe(name) == nil and C_Item.RequestLoadItemDataByID then
-            C_Item.RequestLoadItemDataByID(id)
+        if Safe(name) == nil then
+            View.RequestItem(id)
         end
     end
     return View.BuiltLink(id, quality)
@@ -71,12 +86,35 @@ end
 -- Returns a link built from the id in its quality colour, for an item the client has not loaded.
 function View.BuiltLink(id, quality)
     return ("|cff%s|Hitem:%d::::::::::::::|h[%s]|h|r"):format(QUALITY_HEX[quality] or QUALITY_HEX[1], id,
-        L["item #%d"]:format(id))
+        placeholder(id))
 end
 
+-- Returns the item's link, coloured by its record's quality when the client has not loaded it.
 function View.LinkOf(id)
     local r = ns.Advisor.Item(id)
     return View.ItemLink(id, r and r[3])
+end
+
+-- Returns the item's name in its quality colour once the client has it; else "item #id" in quality's colour, and
+-- asks the client to load it.
+function View.ItemName(id, quality)
+    local name, clientQuality
+    if C_Item and C_Item.GetItemInfo then
+        local n, _, q = C_Item.GetItemInfo(id)
+        name, clientQuality = Safe(n), Safe(q)
+    end
+    if type(name) ~= "string" then
+        View.RequestItem(id)
+        name, clientQuality = placeholder(id), nil
+    end
+    local hex = QUALITY_HEX[clientQuality] or QUALITY_HEX[quality] or QUALITY_HEX[1]
+    return ("|cff%s%s|r"):format(hex, View.Escape(name))
+end
+
+function View.HideTooltip()
+    if GameTooltip then
+        GameTooltip:Hide()
+    end
 end
 
 function View.SlotLabel(slot)
@@ -154,14 +192,16 @@ function View.Equipped(slot)
     return out
 end
 
-function View.Marks(id, ilvl, sourced, worn)
+-- Returns the marks after an item row { id, ilvl, sourced, usable } against what is worn in its slot: an item the
+-- player cannot use is never an upgrade.
+function View.Marks(row, worn)
     local s = ""
-    if worn.ids[id] then
+    if worn.ids[row.id] then
         s = s .. L[" (equipped)"]
-    elseif worn.ilvl and ilvl > worn.ilvl then
+    elseif row.usable and worn.ilvl and row.ilvl > worn.ilvl then
         s = s .. L[" (upgrade)"]
     end
-    if not sourced then
+    if not row.sourced then
         s = s .. L[" (no known source)"]
     end
     return s

@@ -25,32 +25,19 @@ local function showTooltip(owner)
     GameTooltip:Show()
 end
 
-local function hideTooltip()
-    if GameTooltip then
-        GameTooltip:Hide()
-    end
-end
-
--- Toggles the browse window; in combat it prints the refusal, as /tandem browse does.
-function Launcher.Click()
-    if ns.View.InCombat() then
-        return
-    end
+-- Toggles the browse window; in combat Browse.Show prints the refusal, as /tandem browse does.
+local function click()
     ns.Browse.Toggle()
 end
 
 -- The .toc's AddonCompartmentFunc entries.
-function Tandem_OnCompartmentClick()
-    Launcher.Click()
-end
+Tandem_OnCompartmentClick = click
 
 function Tandem_OnCompartmentEnter(_, menuButton)
     showTooltip(menuButton)
 end
 
-function Tandem_OnCompartmentLeave()
-    hideTooltip()
-end
+Tandem_OnCompartmentLeave = ns.View.HideTooltip
 
 -- Returns the angle in degrees (0 <= a < 360) of point (x, y) around the centre (cx, cy). A tiny negative angle
 -- rounds to 360 under % 360, so that wraps to 0.
@@ -102,11 +89,11 @@ local function buildButton()
     border:SetSize(53, 53)
     border:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    b:SetScript("OnClick", Launcher.Click)
+    b:SetScript("OnClick", click)
     b:SetScript("OnEnter", showTooltip)
-    b:SetScript("OnLeave", hideTooltip)
+    b:SetScript("OnLeave", ns.View.HideTooltip)
     b:SetScript("OnDragStart", function(self)
-        hideTooltip()
+        ns.View.HideTooltip()
         self:SetScript("OnUpdate", follow)
     end)
     b:SetScript("OnDragStop", function(self)
