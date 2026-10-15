@@ -1425,6 +1425,50 @@ do
     check("advisor: Rank of an unknown item", A.Rank(999, "WARRIOR", 60), nil)
 end
 
+-- Advisor.List: every known item per slot (unit 4).
+do
+    local A = loadAdvisor(gearData())
+    local function slotsOf(list)
+        local out = {}
+        for _, e in ipairs(list) do
+            out[#out + 1] = e.slot
+        end
+        return table.concat(out, ",")
+    end
+    check("list: chest sorts ilvl, quality, id", ids(A.List("chest", "WARRIOR", 40)), "11,1,3,4,2,12")
+    check("list: chest keeps unusable items", ids(A.List("chest", "MAGE", 60)), "11,1,3,4,2,12")
+    check("list: chest usableOnly", ids(A.List("chest", "MAGE", 60, { usableOnly = true })), "11,4")
+    check("list: usableOnly false keeps unusable items", ids(A.List("chest", "MAGE", 60, { usableOnly = false })),
+        "11,1,3,4,2,12")
+    local rows = A.List("chest", "WARRIOR", 30)
+    local r = rows[2]
+    check("list: unusable row fields", ("%d %s %s %s %d %d %d %d %s"):format(r.id, r.slot, tostring(r.usable),
+        r.reason, r.needLevel, r.ilvl, r.quality, r.reqLevel, tostring(r.sourced)),
+        "1 chest false level 40 45 3 40 true")
+    check("list: usable row has no reason", tostring(rows[3].usable) .. " " .. tostring(rows[3].reason) .. " "
+        .. tostring(rows[3].needLevel), "true nil nil")
+    check("list: proficiency reason", A.List("chest", "MAGE", 60)[2].reason, "proficiency")
+    check("list: sourceless item", rows[1].id .. " " .. tostring(rows[1].sourced), "11 false")
+    check("list: usableOnly drops a level-locked item", ids(A.List("chest", "WARRIOR", 30, { usableOnly = true })),
+        "11,3,4,2,12")
+    check("list: offhand includes dual-wield one-handers", ids(A.List("offhand", "WARRIOR", 40)), "7,14,5")
+    check("list: offhand before dual wield", ids(A.List("offhand", "ROGUE", 9)), "14,5")
+    check("list: twohand lists the fishing pole", ids(A.List("twohand", "WARRIOR", 60)), "15,10")
+    check("list: twohand usableOnly skips the fishing pole",
+        ids(A.List("twohand", "WARRIOR", 60, { usableOnly = true })), "15")
+    check("list: unknown slot", A.List("shirt", "WARRIOR", 60), nil)
+
+    local all = A.List(nil, "WARRIOR", 40)
+    check("list: all slots", ids(all), "11,13,1,3,4,2,15,7,14,8,5,6,12,10")
+    check("list: all slots row slots", slotsOf(all),
+        "chest,legs,chest,chest,chest,chest,twohand,mainhand,offhand,ranged,offhand,ranged,chest,twohand")
+    check("list: all slots usableOnly", ids(A.List(nil, "WARRIOR", 40, { usableOnly = true })),
+        "11,13,1,3,4,2,15,7,14,5,12")
+    check("list: all slots usableOnly for a priest", ids(A.List(nil, "PRIEST", 60, { usableOnly = true })),
+        "11,4,8")
+    check("list: Best is List filtered", ids(A.Best("chest", "WARRIOR", 30)), "3,4,2,12")
+end
+
 do
     local db, shipped = gearData()
     shipped.items[1] = { 10, 1, 1, "INVTYPE_CHEST", 4, 1 }
@@ -1441,9 +1485,12 @@ for name, shipped in pairs({
     ["garbage fields"] = { items = "x", loot = 5, kills = true, corpses = {}, names = 7 },
     ["garbage records"] = { items = { [50] = "bad", [51] = { 1 }, x = { 1, 1, 1, "INVTYPE_CHEST", 4, 1 } },
                             loot = { "bad", { "x" }, { 50 }, { 50, "c" } } },
+    empty = {},
 }) do
     local db = gearData()
     local A = loadAdvisor(db, shipped)
+    check("advisor: " .. name .. " shipped List uses own data", ids(A.List(nil, "WARRIOR", 40)), "11,13,1,3,15,7,5")
+    check("advisor: " .. name .. " shipped List sourced", tostring(A.List("chest", "WARRIOR", 40)[2].sourced), "true")
     check("advisor: " .. name .. " shipped data uses own data", ids(A.Best("chest", "WARRIOR", 40)), "1,3")
     check("advisor: " .. name .. " shipped item is unknown", A.Item(2), nil)
     check("advisor: " .. name .. " shipped Sources", #A.Sources(1), 1)
@@ -1461,6 +1508,7 @@ do
     local A = loadAdvisor(nil, nil)
     check("advisor: no data at all", ids(A.Best("chest", "WARRIOR", 40)), "")
     check("advisor: no data Sources", #A.Sources(1), 0)
+    check("advisor: no data List", ids(A.List(nil, "WARRIOR", 40)), "")
 end
 
 -- Sources: own + shipped merged by max (decision 13), rate per npc (decision 16).
@@ -1512,6 +1560,17 @@ do
     check("sources: a rate over 100% is no rate", tostring(A.Sources(6)[1].rate), "nil")
     check("advisor: MapName of map 0", A.MapName(0), nil)
     check("advisor: MapName of an unknown map", A.MapName(5), nil)
+end
+
+-- Fishing label (unit 2): object 35591 is named, other objects are not.
+for locale, label in pairs({ enUS = "Fishing", zhTW = "釣魚" }) do
+    local shipped = { loot = { { 4, "o", 35591, 1429, 3 }, { 4, "o", 77, 1429, 1 } } }
+    local A = loadWithDB(nil, locale, { shipped = shipped }).Advisor
+    local rows = A.Sources(4)
+    check(locale .. " sources: fishing object is named", rows[1].id .. " " .. tostring(rows[1].name), "35591 " .. label)
+    check(locale .. " sources: fishing has no rate", tostring(rows[1].rate), "nil")
+    check(locale .. " sources: other objects stay unnamed", rows[2].id .. " " .. tostring(rows[2].name), "77 nil")
+    check(locale .. " sources: FISHING_OBJECT", A.FISHING_OBJECT, 35591)
 end
 
 do
@@ -1936,6 +1995,17 @@ do
     local ctx = loadGear("enUS", db, shipped, { env = env })
     check("rank escapes the npc and map names", ctx.run("rank 1")[2],
         "  Hog||cffff0000ger||r, Elw||Hitem:1||hynn - drops: 1")
+end
+
+for locale, want in pairs({
+    enUS = { "  Fishing, Elwynn Forest - drops: 3", "  npc #500, Elwynn Forest - drops: 1" },
+    zhTW = { "  釣魚，Elwynn Forest：掉落 3 次", "  NPC #500，Elwynn Forest：掉落 1 次" },
+}) do
+    local db, shipped = gearData()
+    shipped.loot[#shipped.loot + 1] = { 2, "o", 35591, 1429, 3 }
+    local out = loadGear(locale, db, shipped).run("rank 2")
+    check(locale .. " rank fishing source", out[2], want[1])
+    check(locale .. " rank keeps the npc source", out[3], want[2])
 end
 
 if failures > 0 then

@@ -75,6 +75,7 @@ L["  %s, %s - drops: %d, %.1f%% per looted corpse (upper bound)"] =
 L["  and %d more sources"] = "  還有 %d 個來源"
 L["npc #%d"] = "NPC #%d"
 L["object #%d"] = "物件 #%d"
+L["Fishing"] = "釣魚"
 L["unknown source"] = "未知來源"
 L["unknown map"] = "未知地圖"
 L["item #%d"] = "物品 #%d"

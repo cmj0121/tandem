@@ -8,6 +8,8 @@ ns.Advisor = Advisor
 local Safe = ns.Store.Safe
 local EMPTY = {}
 
+Advisor.FISHING_OBJECT = 35591
+
 Advisor.SLOTS = {
     "head", "neck", "shoulder", "back", "chest", "wrist", "hands", "waist", "legs", "feet", "finger", "trinket",
     "mainhand", "offhand", "twohand", "ranged",
@@ -185,7 +187,9 @@ local function fills(r, slot, class, level)
     return false
 end
 
-local function best(slot, class, level, all, sourcedOwn, sourcedShipped)
+-- Walks own and shipped items once (own records win) and returns the rows for slot (nil: every ranked slot, each
+-- item once under its first slot), sorted best first.
+local function list(slot, class, level, usableOnly, sourcedOwn, sourcedShipped)
     local out, done = {}, {}
     local function consider(id)
         if done[id] or type(id) ~= "number" then
@@ -193,11 +197,25 @@ local function best(slot, class, level, all, sourcedOwn, sourcedShipped)
         end
         done[id] = true
         local r = Advisor.Item(id)
-        if r and fills(r, slot, class, level) and Advisor.Usable(r, class, level) then
-            local sourced = isSourced(id, sourcedOwn, sourcedShipped)
-            if sourced or all then
-                out[#out + 1] = { id = id, ilvl = r[1], quality = r[3], reqLevel = r[2], sourced = sourced }
+        if not r then
+            return
+        end
+        local rowSlot = slot
+        if slot then
+            if not fills(r, slot, class, level) then
+                return
             end
+        else
+            rowSlot = Advisor.SlotsOf(r[4], class, level)[1]
+            if not rowSlot then
+                return
+            end
+        end
+        local usable, reason, needLevel = Advisor.Usable(r, class, level)
+        if usable or not usableOnly then
+            out[#out + 1] = { id = id, slot = rowSlot, ilvl = r[1], quality = r[3], reqLevel = r[2], usable = usable,
+                              reason = reason, needLevel = needLevel,
+                              sourced = isSourced(id, sourcedOwn, sourcedShipped) }
         end
     end
     for id in pairs(own("items")) do
@@ -210,8 +228,28 @@ local function best(slot, class, level, all, sourcedOwn, sourcedShipped)
     return out
 end
 
--- Returns the usable items for slot sorted best first ({ id, ilvl, quality, reqLevel, sourced }); sourceless items
--- only with opts.all. nil for an unknown slot.
+local function best(slot, class, level, all, sourcedOwn, sourcedShipped)
+    local out = {}
+    for _, row in ipairs(list(slot, class, level, true, sourcedOwn, sourcedShipped)) do
+        if row.sourced or all then
+            out[#out + 1] = row
+        end
+    end
+    return out
+end
+
+-- Returns every known item for slot, or for all ranked slots when slot is nil, sorted best first:
+-- { id, slot, ilvl, quality, reqLevel, usable, reason, needLevel, sourced }. opts.usableOnly drops rows the class or
+-- level cannot use. nil for an unknown slot.
+function Advisor.List(slot, class, level, opts)
+    if slot ~= nil and not IS_SLOT[slot] then
+        return nil
+    end
+    return list(slot, class, level, opts and opts.usableOnly, ownSourced(), shippedByItem())
+end
+
+-- Returns the usable items for slot sorted best first (List rows); sourceless items only with opts.all. nil for an
+-- unknown slot.
 function Advisor.Best(slot, class, level, opts)
     if not IS_SLOT[slot] then
         return nil
@@ -234,16 +272,16 @@ function Advisor.Rank(id, class, level)
         return result
     end
     local me = { id = id, ilvl = r[1], quality = r[3] }
-    local list = best(result.slot, class, level, false, sourcedOwn, sourcedShipped)
+    local ranked = best(result.slot, class, level, false, sourcedOwn, sourcedShipped)
     local rank, listed = 1, false
-    for _, e in ipairs(list) do
+    for _, e in ipairs(ranked) do
         if e.id == id then
             listed = true
         elseif before(e, me) then
             rank = rank + 1
         end
     end
-    result.rank, result.total = rank, #list + (listed and 0 or 1)
+    result.rank, result.total = rank, #ranked + (listed and 0 or 1)
     return result
 end
 
@@ -344,6 +382,8 @@ function Advisor.Sources(id)
         if row.kind == "c" then
             row.name = npcName(row.id)
             row.rate, row.rateBasis = dropRate(row.id, drops[row.id])
+        elseif row.kind == "o" and row.id == Advisor.FISHING_OBJECT then
+            row.name = ns.L["Fishing"]
         end
         row.mapName = Advisor.MapName(row.map)
         row.by = nil
