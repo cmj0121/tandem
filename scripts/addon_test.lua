@@ -394,7 +394,8 @@ do
     check("usage lists rank", help[7], "  /tandem rank <item link|id> - rank an item in its slot")
     check("usage lists export", help[8], "  /tandem export - show what make import would collect")
     check("usage lists browse", help[9], "  /tandem browse [<slot>] - browse known gear in a window")
-    check("usage line count", #help, 9)
+    check("usage lists minimap", help[10], "  /tandem minimap [on|off] - show or hide the minimap button")
+    check("usage line count", #help, 10)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -2814,7 +2815,7 @@ do
     local ctx = loadBrowse("enUS", nil, nil, { env = { AddonCompartmentFrame = {}, Minimap = fakeMinimap() } })
     check("launcher: listens for login", ctx.frame.registered.PLAYER_LOGIN, true)
     ctx.fire("PLAYER_LOGIN")
-    check("launcher: no minimap button with the compartment", minimapButton(ctx), nil)
+    check("launcher: a minimap button with the compartment too", minimapButton(ctx) ~= nil, true)
 end
 
 do
@@ -2909,6 +2910,167 @@ do
     b.scripts.OnEnter(b)
     check("zhTW minimap tooltip hint", ctx.ui.tooltipLines[1], "點擊以瀏覽已知裝備")
     check("zhTW minimap tooltip drag hint", ctx.ui.tooltipLines[2], "拖曳以移動此按鈕")
+end
+
+-- Minimap button visibility: shown by default, /tandem minimap [on|off] and the browse window's checkbox.
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { AddonCompartmentFrame = {}, Minimap = fakeMinimap() } })
+    ctx.fire("PLAYER_LOGIN")
+    local b = minimapButton(ctx)
+    check("minimap: built with the compartment too", b ~= nil, true)
+    check("minimap: shown by default", b:IsShown(), true)
+    check("minimap: no flag saved by default", ctx.env.TandemDB.ui, nil)
+
+    local out = ctx.run("minimap")
+    check("minimap: no argument toggles off", out[1] .. "|" .. #out, "Tandem: minimap button hidden|1")
+    check("minimap: toggled off hides the button", b:IsShown(), false)
+    check("minimap: hidden flag saved", ctx.env.TandemDB.ui.minimapHidden, true)
+    check("minimap: hiding is not a record", ctx.addon.Store.unsaved, 0)
+    out = ctx.run("minimap")
+    check("minimap: no argument toggles on", out[1], "Tandem: minimap button shown")
+    check("minimap: toggled on shows the button", b:IsShown(), true)
+    check("minimap: shown removes the flag", ctx.env.TandemDB.ui.minimapHidden, nil)
+    check("minimap off", ctx.run("MINIMAP OFF")[1], "Tandem: minimap button hidden")
+    check("minimap off again stays hidden", ctx.run("minimap off")[1] .. " " .. tostring(b:IsShown()),
+        "Tandem: minimap button hidden false")
+    check("minimap on", ctx.run("minimap on")[1] .. " " .. tostring(b:IsShown()), "Tandem: minimap button shown true")
+    for _, msg in ipairs({ "minimap yes", "minimap on off", "minimap toggle" }) do
+        local bad = ctx.run(msg)
+        check(("%q prints usage"):format(msg), bad[1], "Tandem commands:")
+        check(("%q leaves the button"):format(msg), b:IsShown(), true)
+    end
+    ctx.combat = true
+    out = ctx.run("minimap off")
+    check("minimap: allowed in combat", out[1] .. "|" .. #out, "Tandem: minimap button hidden|1")
+    check("minimap: hidden in combat", b:IsShown(), false)
+    ctx.combat = false
+    ctx.run("minimap on")
+
+    -- The browse window's checkbox follows the setting both ways.
+    ctx.run("browse")
+    local win = ctx.win()
+    check("minimap checkbox: template", win.minimap.template, "UICheckButtonTemplate")
+    check("minimap checkbox: ticked while shown", win.minimap:GetChecked(), true)
+    local labelled
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.kind == "FontString" and w.text == "Show minimap button" then
+            labelled = true
+        end
+    end
+    check("minimap checkbox: label", labelled, true)
+    ctx.run("minimap off")
+    check("minimap checkbox: unticked by the command", win.minimap:GetChecked(), false)
+    win.minimap:SetChecked(true)
+    win.minimap:GetScript("OnClick")(win.minimap)
+    check("minimap checkbox: ticking shows the button", b:IsShown(), true)
+    check("minimap checkbox: ticking saves", ctx.env.TandemDB.ui.minimapHidden, nil)
+    win.minimap:SetChecked(false)
+    win.minimap:GetScript("OnClick")(win.minimap)
+    check("minimap checkbox: unticking hides the button", b:IsShown(), false)
+    check("minimap checkbox: unticking saves", ctx.env.TandemDB.ui.minimapHidden, true)
+    check("minimap checkbox: prints nothing", #ctx.run("browse"), 0)
+end
+
+do
+    local db, shipped = gearData()
+    db.ui = { minimapHidden = true, minimap = 90 }
+    local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
+    check("minimap: a saved hidden flag is kept", ctx.env.TandemDB.ui.minimapHidden, true)
+    ctx.fire("PLAYER_LOGIN")
+    local b = minimapButton(ctx)
+    check("minimap: built while hidden", b ~= nil, true)
+    check("minimap: hidden after login", b:IsShown(), false)
+    ctx.run("browse")
+    check("minimap checkbox: unticked while hidden", ctx.win().minimap:GetChecked(), false)
+    check("minimap: on after a hidden login", ctx.run("minimap")[1] .. " " .. tostring(b:IsShown()),
+        "Tandem: minimap button shown true")
+    check("minimap checkbox: ticked by the command", ctx.win().minimap:GetChecked(), true)
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { Minimap = false } })
+    ctx.fire("PLAYER_LOGIN")
+    check("minimap: without a minimap the command still answers", ctx.run("minimap off")[1],
+        "Tandem: minimap button hidden")
+    check("minimap: without a minimap the flag is saved", ctx.env.TandemDB.ui.minimapHidden, true)
+end
+
+do
+    local db, shipped = gearData()
+    db.schemaVersion = 3
+    db.ui = { minimap = 10 }
+    local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
+    ctx.fire("PLAYER_LOGIN")
+    local b = minimapButton(ctx)
+    check("minimap: a newer db hides for the session", ctx.run("minimap off")[1] .. " " .. tostring(b:IsShown()),
+        "Tandem: minimap button hidden false")
+    check("minimap: a newer db is not written", ctx.env.TandemDB.ui.minimapHidden, nil)
+    check("minimap: a newer db toggles back on", ctx.run("minimap")[1], "Tandem: minimap button shown")
+end
+
+do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { minimapHidden = true } })
+    check("minimapHidden: kept alone", env.TandemDB.ui.minimapHidden, true)
+    check("minimapHidden: prints only the load line", #printed, 1)
+    check("minimapHidden: MinimapHidden", addon.Store.MinimapHidden(), true)
+    check("minimapHidden: SetMinimapHidden(false)", addon.Store.SetMinimapHidden(false), true)
+    check("minimapHidden: false removes the key", env.TandemDB.ui.minimapHidden, nil)
+    check("minimapHidden: MinimapHidden after false", addon.Store.MinimapHidden(), false)
+    addon.Store.SetMinimapAngle(30)
+    addon.Store.SetUIPosition("TOP", "TOP", 1, 2)
+    check("minimapHidden: SetMinimapHidden(true)", addon.Store.SetMinimapHidden(true), true)
+    local ui = env.TandemDB.ui
+    check("minimapHidden: writes only its key",
+        ui.minimap .. " " .. ui.window.point .. " " .. tostring(ui.minimapHidden), "30 TOP true")
+    for name, v in pairs({ ["nil"] = nil, ["a string"] = "yes", ["a number"] = 1 }) do
+        check("minimapHidden: SetMinimapHidden rejects " .. name, addon.Store.SetMinimapHidden(v), false)
+    end
+    check("minimapHidden: a rejected value keeps the old one", env.TandemDB.ui.minimapHidden, true)
+    check("minimapHidden: not a record", addon.Store.unsaved, 0)
+    local fresh = loadWithDB({ schemaVersion = 2 })
+    check("minimapHidden: a fresh db shows the button", fresh.Store.MinimapHidden(), false)
+end
+
+for name, case in pairs({
+    ["false"] = { ui = { minimapHidden = false }, dropped = 1 },
+    ["a string"] = { ui = { minimapHidden = "true" }, dropped = 1 },
+    ["a number"] = { ui = { minimapHidden = 1 }, dropped = 1 },
+    ["a bad angle too"] = { ui = { minimapHidden = {}, minimap = 400 }, dropped = 2 },
+}) do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = case.ui })
+    check("minimapHidden: drops " .. name, env.TandemDB.ui, nil)
+    check("minimapHidden: counts " .. name, printed[2],
+        ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
+    check("minimapHidden: shown after dropping " .. name, addon.Store.MinimapHidden(), false)
+end
+
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 2, ui = { minimap = 45, minimapHidden = "no" } })
+    check("minimapHidden: a bad flag keeps a good angle", env.TandemDB.ui.minimap .. " "
+        .. tostring(env.TandemDB.ui.minimapHidden), "45 nil")
+    check("minimapHidden: a bad flag alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
+    local newer = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = true } })
+    check("minimapHidden: a newer db still gives its flag", newer.Store.MinimapHidden(), true)
+    check("minimapHidden: a newer db is not written", newer.Store.SetMinimapHidden(false), false)
+    newer = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = "yes" } })
+    check("minimapHidden: a newer db with a bad flag shows the button", newer.Store.MinimapHidden(), false)
+end
+
+do
+    local ctx = loadBrowse("zhTW", nil, nil, { env = { Minimap = fakeMinimap() } })
+    ctx.fire("PLAYER_LOGIN")
+    check("zhTW usage lists minimap", ctx.run("help")[10], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW minimap hidden", ctx.run("minimap off")[1], "Tandem：已隱藏小地圖按鈕")
+    check("zhTW minimap shown", ctx.run("minimap on")[1], "Tandem：已顯示小地圖按鈕")
+    ctx.run("browse")
+    local labelled
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.kind == "FontString" and w.text == "顯示小地圖按鈕" then
+            labelled = true
+        end
+    end
+    check("zhTW minimap checkbox label", labelled, true)
 end
 
 -- Scan bar in the browse window (unit 8).

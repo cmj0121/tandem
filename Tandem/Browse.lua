@@ -10,7 +10,7 @@ local View = ns.View
 local Safe = ns.Store.Safe
 
 local NAME = "TandemBrowseFrame"
-local WIDTH, HEIGHT = 440, 570
+local WIDTH, HEIGHT = 440, 594
 local ROW_HEIGHT = 20
 local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
@@ -265,8 +265,19 @@ local function build()
 
     buildScanBar(f)
 
+    -- Under the scan bar: the minimap button's visibility, the same setting as /tandem minimap.
+    local minimap = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    minimap:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -110)
+    minimap:SetSize(24, 24)
+    minimap:SetChecked(ns.Launcher.IsButtonShown())
+    minimap:SetScript("OnClick", function(self)
+        ns.Launcher.SetButtonShown(self:GetChecked() and true or false)
+    end)
+    label(f, L["Show minimap button"]):SetPoint("LEFT", minimap, "RIGHT", 2, 0)
+    f.minimap = minimap
+
     local box = CreateFrame("Frame", nil, f, "WowScrollBoxList")
-    box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -114)
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -138)
     box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, PANE_HEIGHT + 8)
     local view = CreateScrollBoxListLinearView()
     view:SetElementExtent(ROW_HEIGHT)
@@ -408,6 +419,13 @@ end
 
 function Browse.OnCombat()
     Browse.Hide()
+end
+
+-- Launcher.SetButtonShown: ticks the checkbox to match /tandem minimap; nothing when the window was never built.
+function Browse.OnMinimapButtonChanged()
+    if frame then
+        frame.minimap:SetChecked(ns.Launcher.IsButtonShown())
+    end
 end
 
 -- PLAYER_EQUIPMENT_CHANGED: what is worn decides the (equipped) and (upgrade) marks, so read it again and redraw

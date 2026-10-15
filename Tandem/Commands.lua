@@ -29,6 +29,7 @@ local function printUsage()
     print(L["  /tandem rank <item link|id> - rank an item in its slot"])
     print(L["  /tandem export - show what make import would collect"])
     print(L["  /tandem browse [<slot>] - browse known gear in a window"])
+    print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -319,6 +320,22 @@ end
 -- Subcommands refused in combat (decision 9), before their arguments are read.
 local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true }
 
+-- minimap [on|off]: no argument toggles. Allowed in combat: the button is not a protected frame.
+local MINIMAP_STATE = { on = true, off = false }
+
+local function minimap(args)
+    local shown
+    if #args == 0 then
+        shown = not ns.Launcher.IsButtonShown()
+    elseif #args == 1 and MINIMAP_STATE[args[1]] ~= nil then
+        shown = MINIMAP_STATE[args[1]]
+    else
+        return printUsage()
+    end
+    ns.Launcher.SetButtonShown(shown)
+    print(shown and L["Tandem: minimap button shown"] or L["Tandem: minimap button hidden"])
+end
+
 function Commands.Run(msg)
     local args = {}
     for token in (msg or ""):lower():gmatch("%S+") do
@@ -340,6 +357,8 @@ function Commands.Run(msg)
         export()
     elseif sub == "browse" then
         browse(args)
+    elseif sub == "minimap" then
+        minimap(args)
     else
         printUsage()
     end

@@ -97,8 +97,9 @@ local function isAngle(v)
     return isNum(v) and v >= 0 and v < 360
 end
 
--- Returns a clean copy of the saved ui table { window = position, minimap = angle }, or nil when nothing in it is
--- valid; drop is called once for an invalid window position and once for an invalid angle.
+-- Returns a clean copy of the saved ui table { window = position, minimap = angle, minimapHidden = true }, or nil
+-- when nothing in it is valid; drop is called once for each invalid key. minimapHidden is kept only as true: absent
+-- means the button is shown.
 local function copyUI(v, drop)
     if type(v) ~= "table" then
         drop()
@@ -114,6 +115,11 @@ local function copyUI(v, drop)
     if isAngle(v.minimap) then
         out.minimap = v.minimap
     elseif v.minimap ~= nil then
+        drop()
+    end
+    if v.minimapHidden == true then
+        out.minimapHidden = true
+    elseif v.minimapHidden ~= nil then
         drop()
     end
     return next(out) and out or nil
@@ -406,6 +412,22 @@ function Store.SetMinimapAngle(angle)
     end
     setUI("minimap", angle)
     return true
+end
+
+-- Saves whether the minimap button is hidden (true) or shown (false: the key is removed); false when not a
+-- boolean or read-only. Not a record.
+function Store.SetMinimapHidden(hidden)
+    if Store.readOnly or type(hidden) ~= "boolean" then
+        return false
+    end
+    setUI("minimapHidden", hidden or nil)
+    return true
+end
+
+-- Returns true when the minimap button was hidden; checked again since a newer db is kept raw.
+function Store.MinimapHidden()
+    local ui = savedUI()
+    return ui ~= nil and ui.minimapHidden == true
 end
 
 -- Returns the saved minimap button angle, or nil; checked again since a newer db is kept raw.

@@ -1,7 +1,7 @@
 local _, ns = ...
 
--- Opens the browse window without a command: the addon compartment entry from the .toc, or a minimap button on a
--- client without the compartment.
+-- Opens the browse window without a command: the addon compartment entry from the .toc, and a minimap button that
+-- is shown unless the player hides it.
 local Launcher = {}
 ns.Launcher = Launcher
 
@@ -105,10 +105,33 @@ local function buildButton()
     return b
 end
 
--- PLAYER_LOGIN: the compartment entry needs nothing; without the compartment, a minimap button stands in.
+-- Whether the minimap button is hidden this session: read from TandemDB once, then kept here so a read-only db
+-- still hides and shows it until logout.
+local hidden
+
+-- Returns true unless the minimap button was hidden with /tandem minimap off or the browse window's checkbox.
+function Launcher.IsButtonShown()
+    if hidden == nil then
+        hidden = ns.Store.MinimapHidden()
+    end
+    return not hidden
+end
+
+-- Shows or hides the minimap button, saves the choice and ticks the browse window's checkbox to match.
+function Launcher.SetButtonShown(shown)
+    hidden = not shown
+    ns.Store.SetMinimapHidden(hidden)
+    if Launcher.button then
+        Launcher.button:SetShown(shown)
+    end
+    ns.Browse.OnMinimapButtonChanged()
+end
+
+-- PLAYER_LOGIN: the compartment entry needs nothing; the minimap button is built next to it, shown unless hidden.
 function Launcher.OnLogin()
-    if AddonCompartmentFrame or not Minimap or Launcher.button then
+    if not Minimap or Launcher.button then
         return
     end
     Launcher.button = buildButton()
+    Launcher.button:SetShown(Launcher.IsButtonShown())
 end
