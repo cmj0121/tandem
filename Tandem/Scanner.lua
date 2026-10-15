@@ -105,6 +105,15 @@ function Scanner.IsRunning()
     return running
 end
 
+-- Returns the running scan's IDs processed, cap and hits, or nil when no scan runs.
+function Scanner.Progress()
+    if not running then
+        return nil
+    end
+    local run = scanDB().lastRun
+    return run.processed, cap, run.hits
+end
+
 function Scanner.Start(opts)
     if running then
         print(L["Tandem: scan already running"])
@@ -137,6 +146,7 @@ function Scanner.Start(opts)
     ticker = C_Timer.NewTicker(1 / opts.rate, Scanner.Tick)
 end
 
+-- Stops the scan and prints its summary, then runs Scanner.onStop when set (the browse window refreshes).
 function Scanner.Stop()
     if not running then
         print(L["Tandem: no scan running"])
@@ -155,6 +165,9 @@ function Scanner.Stop()
         num(run.from), num(run.to), ("%.1f"):format(run.elapsed), run.processed, run.skipped))
     print(L["  %s hits (%s equippable), %s misses, %s deferred, %s timeouts"]:format(
         run.hits, run.equippable, run.misses, run.deferred, run.timeouts))
+    if Scanner.onStop then
+        Scanner.onStop()
+    end
 end
 
 function Scanner.SetCursor(id)

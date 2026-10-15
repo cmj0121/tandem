@@ -8,21 +8,28 @@ exclude_files = { "data/", "Tandem/Data/" }
 globals = {
     "SLASH_TANDEM1",
     "SlashCmdList",
+    "Tandem_OnCompartmentClick",
+    "Tandem_OnCompartmentEnter",
+    "Tandem_OnCompartmentLeave",
     "TandemDB",
 }
 
 -- WoW API used by the addon; add new ones here as the addon grows.
 read_globals = {
+    "AddonCompartmentFrame",
     "ButtonFrameTemplate_HideButtonBar",
     "ButtonFrameTemplate_HidePortrait",
     "C_Item",
     "C_Map",
     "C_Timer",
+    "ClearCursor",
     "CombatLogGetCurrentEventInfo",
     "CreateDataProvider",
     "CreateFrame",
     "CreateScrollBoxListLinearView",
     "GameTooltip",
+    "GetCursorInfo",
+    "GetCursorPosition",
     "GetInventoryItemLink",
     "GetLocale",
     "GetLootSlotLink",
@@ -31,6 +38,7 @@ read_globals = {
     "GetTime",
     "InCombatLockdown",
     "issecretvalue",
+    "Minimap",
     "ScrollUtil",
     "time",
     "UIParent",

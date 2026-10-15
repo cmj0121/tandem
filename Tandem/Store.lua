@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer.
-local Store = { unsaved = 0, readOnly = false }
+local Store = { unsaved = 0, readOnly = false, itemCount = 0 }
 ns.Store = Store
 
 local SCHEMA = 2
@@ -91,6 +91,30 @@ local function copyUI(v)
         and isNum(v.x) and isNum(v.y) and math.abs(v.x) <= MAX_OFFSET and math.abs(v.y) <= MAX_OFFSET then
         return { point = v.point, relativePoint = v.relativePoint or v.point, x = v.x, y = v.y }
     end
+end
+
+local function isAngle(v)
+    return isNum(v) and v >= 0 and v < 360
+end
+
+-- Returns a clean copy of the saved ui table (window position fields and minimap angle), or nil when nothing in
+-- it is valid; drop is called once for an invalid position and once for an invalid angle.
+local function copyUITable(v, drop)
+    if type(v) ~= "table" then
+        drop()
+        return nil
+    end
+    local out = copyUI(v)
+    if not out and (v.point ~= nil or v.relativePoint ~= nil or v.x ~= nil or v.y ~= nil) then
+        drop()
+    end
+    if isAngle(v.minimap) then
+        out = out or {}
+        out.minimap = v.minimap
+    elseif v.minimap ~= nil then
+        drop()
+    end
+    return out
 end
 
 -- Copies every entry of raw that passes its type check into a fresh current-schema table.
@@ -183,10 +207,7 @@ local function migrate(raw, report)
     end
 
     if raw.ui ~= nil then
-        db.ui = copyUI(raw.ui)
-        if not db.ui then
-            drop()
-        end
+        db.ui = copyUITable(raw.ui, drop)
     end
     return db
 end
@@ -216,6 +237,7 @@ function Store.Load(raw)
         db = migrate(raw, report)
     end
     Store.db = db
+    Store.itemCount = count(db.items)
     return db, report
 end
 
@@ -229,6 +251,7 @@ function Store.AddItem(id, ilvl, reqLevel, quality, equipLoc, classID, subclassI
         return false
     end
     Store.db.items[id] = item
+    Store.itemCount = Store.itemCount + 1
     Store.unsaved = Store.unsaved + 1
     return true
 end
@@ -326,6 +349,20 @@ function Store.Counts()
     }
 end
 
+-- Returns the number of known items without walking them: counted on load, kept up by AddItem.
+function Store.ItemCount()
+    return Store.itemCount
+end
+
+-- Returns the next item ID to scan, or nil when the saved one is not a whole number (a newer db is kept raw).
+function Store.ScanCursor()
+    local scan = Store.db and Store.db.scan
+    local cursor = type(scan) == "table" and scan.cursor
+    if isInt(cursor, 1) then
+        return cursor
+    end
+end
+
 -- Saves the browse window position; false when invalid or read-only. A position is not a record: unsaved is
 -- unchanged.
 function Store.SetUIPosition(point, relativePoint, x, y)
@@ -333,6 +370,7 @@ function Store.SetUIPosition(point, relativePoint, x, y)
     if not ui then
         return false
     end
+    ui.minimap = Store.db.ui and Store.db.ui.minimap
     Store.db.ui = ui
     return true
 end
@@ -341,6 +379,24 @@ end
 -- db is kept raw.
 function Store.UIPosition()
     return copyUI(Store.db and Store.db.ui)
+end
+
+-- Saves the minimap button's angle in degrees (0 <= angle < 360); false when invalid or read-only. Not a record.
+function Store.SetMinimapAngle(angle)
+    if Store.readOnly or not isAngle(angle) then
+        return false
+    end
+    Store.db.ui = Store.db.ui or {}
+    Store.db.ui.minimap = angle
+    return true
+end
+
+-- Returns the saved minimap button angle, or nil; checked again since a newer db is kept raw.
+function Store.MinimapAngle()
+    local ui = Store.db and Store.db.ui
+    if type(ui) == "table" and isAngle(ui.minimap) then
+        return ui.minimap
+    end
 end
 
 local GUID_KINDS = { Creature = "c", Vehicle = "c", GameObject = "o" }

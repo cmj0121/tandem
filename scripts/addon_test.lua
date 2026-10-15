@@ -2086,8 +2086,23 @@ WIDGET.__index = function(_, key)
         return noop
     end
 end
-function WIDGET.Show(w) w.shown = true end
-function WIDGET.Hide(w) w.shown = false end
+-- Show and Hide run OnShow / OnHide when the state changes, as a real frame does.
+function WIDGET.Show(w)
+    local was = w.shown
+    w.shown = true
+    if not was and w.scripts.OnShow then
+        w.scripts.OnShow(w)
+    end
+end
+function WIDGET.Hide(w)
+    local was = w.shown
+    w.shown = false
+    if was and w.scripts.OnHide then
+        w.scripts.OnHide(w)
+    end
+end
+function WIDGET.SetFocus(w) w.focused = true end
+function WIDGET.ClearFocus(w) w.focused = false end
 function WIDGET.IsShown(w) return w.shown end
 function WIDGET.SetScript(w, name, fn) w.scripts[name] = fn end
 function WIDGET.GetScript(w, name) return w.scripts[name] end
@@ -2141,13 +2156,14 @@ local function radios(dropdown)
     return out
 end
 
--- Loads gearData() (or db, shipped) with fake widgets. opts.failBars lists scroll bar templates that fail to build;
--- opts.noInitList removes ScrollUtil.InitScrollBoxList, opts.noDontSave hides SetDontSavePosition. Returns the
--- loadGear ctx; ctx.ui records widgets, timers, the tooltip item and the scroll bar, and ctx.win() returns the
--- window once built.
+-- Loads gearData() (or db, shipped) with fake widgets. opts.failBars lists templates that fail to build;
+-- opts.noInitList removes ScrollUtil.InitScrollBoxList, opts.noDontSave hides SetDontSavePosition, opts.env adds or
+-- replaces globals. Returns the loadGear ctx; ctx.ui records widgets, timers (C_Timer.After), tickers
+-- (C_Timer.NewTicker), the tooltip item, owner and lines and the scroll bar; ctx.win() returns the window once built.
+-- ctx.cursor = { kind, id } is what GetCursorInfo returns; ClearCursor empties it and sets ctx.cleared.
 local function loadBrowse(locale, db, shipped, opts)
     opts = opts or {}
-    local ui = { widgets = {}, timers = {} }
+    local ui = { widgets = {}, timers = {}, tickers = {}, tooltipLines = {} }
     local failBars = {}
     for _, t in ipairs(opts.failBars or {}) do
         failBars[t] = true
@@ -2169,6 +2185,10 @@ local function loadBrowse(locale, db, shipped, opts)
     function tooltip.SetItemByID(_, id)
         ui.tooltip = id
     end
+    function tooltip.AddLine(_, text)
+        ui.tooltipLines[#ui.tooltipLines + 1] = text
+    end
+    local cursor = {}
     local env = {
         UIParent = { name = "UIParent" },
         UISpecialFrames = {},
@@ -2189,16 +2209,44 @@ local function loadBrowse(locale, db, shipped, opts)
                 box.view, ui.bar = view, bar
             end,
         },
-        C_Timer = { After = function(delay, fn)
-            ui.timers[#ui.timers + 1] = { delay = delay, fn = fn }
-        end },
+        C_Timer = {
+            After = function(delay, fn)
+                ui.timers[#ui.timers + 1] = { delay = delay, fn = fn }
+            end,
+            NewTicker = function(interval, fn)
+                local t = { interval = interval, fn = fn }
+                function t.Cancel(self)
+                    self.cancelled = true
+                end
+                ui.tickers[#ui.tickers + 1] = t
+                return t
+            end,
+        },
+        GetTime = function()
+            return 100
+        end,
+        time = function()
+            return 1700000000
+        end,
+        GetCursorInfo = function()
+            if cursor.ctx.cursor then
+                return cursor.ctx.cursor[1], cursor.ctx.cursor[2]
+            end
+        end,
+        ClearCursor = function()
+            cursor.ctx.cursor, cursor.ctx.cleared = nil, true
+        end,
     }
     if not opts.noInitList then
         env.ScrollUtil.InitScrollBoxList = function(box, view)
             box.view, ui.initList = view, true
         end
     end
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
     local ctx = loadGear(locale, db, shipped, { env = env, widgets = widgets })
+    cursor.ctx = ctx
     ctx.ui = ui
     function ctx.win()
         for _, w in ipairs(ui.widgets) do
@@ -2510,6 +2558,586 @@ do
     ctx.combat = true
     ctx.run("browse")
     check("zhTW browse in combat", ctx.run("browse")[1], "Tandem：戰鬥中無法使用")
+end
+
+-- Store: minimap button angle in TandemDB.ui (unit 7).
+
+do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { point = "TOP", x = 1, y = 2, minimap = 90.5 } })
+    check("minimap: a valid angle is kept", env.TandemDB.ui.minimap, 90.5)
+    check("minimap: kept with the position", addon.Store.UIPosition().point, "TOP")
+    check("minimap: a valid angle prints only the load line", #printed, 1)
+    check("minimap: MinimapAngle returns it", addon.Store.MinimapAngle(), 90.5)
+    check("minimap: SetUIPosition keeps the angle", addon.Store.SetUIPosition("LEFT", "LEFT", 3, 4)
+        and env.TandemDB.ui.minimap, 90.5)
+    check("minimap: SetMinimapAngle saves", addon.Store.SetMinimapAngle(0), true)
+    check("minimap: SetMinimapAngle keeps the position", env.TandemDB.ui.point .. " " .. env.TandemDB.ui.minimap,
+        "LEFT 0")
+    check("minimap: SetMinimapAngle is not a record", addon.Store.unsaved, 0)
+    for name, angle in pairs({ ["360"] = 360, ["negative"] = -1, ["string"] = "90", ["NaN"] = 0 / 0,
+                               ["nil"] = nil, ["huge"] = math.huge }) do
+        check("minimap: SetMinimapAngle rejects " .. name, addon.Store.SetMinimapAngle(angle), false)
+    end
+    check("minimap: a rejected angle keeps the old one", env.TandemDB.ui.minimap, 0)
+end
+
+do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { minimap = 200 } })
+    check("minimap: an angle without a position is kept", env.TandemDB.ui.minimap, 200)
+    check("minimap: no position from an angle alone", addon.Store.UIPosition(), nil)
+    check("minimap: an angle alone prints only the load line", #printed, 1)
+    local fresh = loadWithDB({ schemaVersion = 2 })
+    check("minimap: a fresh db has no angle", fresh.Store.MinimapAngle(), nil)
+    check("minimap: SetMinimapAngle on a fresh db", fresh.Store.SetMinimapAngle(45) and fresh.Store.db.ui.minimap, 45)
+    check("minimap: no position from SetMinimapAngle", fresh.Store.UIPosition(), nil)
+end
+
+for name, case in pairs({
+    ["360"] = { ui = { minimap = 360 }, dropped = 1 },
+    ["a string"] = { ui = { minimap = "90" }, dropped = 1 },
+    ["NaN"] = { ui = { minimap = 0 / 0 }, dropped = 1 },
+    ["a bad position too"] = { ui = { point = "UP", x = 0, y = 0, minimap = -5 }, dropped = 2 },
+}) do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = case.ui })
+    check("minimap: drops an angle of " .. name, env.TandemDB.ui, nil)
+    check("minimap: counts an angle of " .. name, printed[2],
+        ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
+    check("minimap: MinimapAngle after dropping " .. name, addon.Store.MinimapAngle(), nil)
+end
+
+do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { point = "TOP", x = 1, y = 2, minimap = 400 } })
+    local ui = env.TandemDB.ui
+    check("minimap: a bad angle keeps a good position", ui.point .. " " .. tostring(ui.minimap), "TOP nil")
+    check("minimap: a bad angle alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
+    check("minimap: UIPosition with a dropped angle", addon.Store.UIPosition().x, 1)
+end
+
+do
+    local addon = loadWithDB({ schemaVersion = 3, ui = { minimap = 10 } })
+    check("minimap: a newer db still gives its angle", addon.Store.MinimapAngle(), 10)
+    check("minimap: a newer db is not written", addon.Store.SetMinimapAngle(20), false)
+    addon = loadWithDB({ schemaVersion = 3, ui = { minimap = "10" } })
+    check("minimap: a newer db with a bad angle gives none", addon.Store.MinimapAngle(), nil)
+end
+
+-- Launcher (unit 7): addon compartment entry and minimap fallback.
+
+do
+    local want = {
+        ["AddonCompartmentFunc"] = "Tandem_OnCompartmentClick",
+        ["AddonCompartmentFuncOnEnter"] = "Tandem_OnCompartmentEnter",
+        ["AddonCompartmentFuncOnLeave"] = "Tandem_OnCompartmentLeave",
+    }
+    local got = {}
+    for raw in io.lines(addonDir .. "Tandem.toc") do
+        local key, value = raw:match("^## (%S+): (%S+)$")
+        if key and want[key] then
+            got[key] = value
+        end
+    end
+    local ctx = loadBrowse()
+    for key, fn in pairs(want) do
+        check("toc " .. key, got[key], fn)
+        check("launcher: global " .. fn, type(ctx.env[fn]), "function")
+    end
+
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    check("compartment click opens the window", ctx.win() and ctx.win():IsShown(), true)
+    check("compartment click prints nothing", #ctx.printed, 1)
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    check("compartment click closes the window", ctx.win():IsShown(), false)
+
+    local menuButton = { name = "menu" }
+    ctx.env.Tandem_OnCompartmentEnter("Tandem", menuButton)
+    check("compartment tooltip owner", ctx.ui.tooltipOwner, menuButton)
+    check("compartment tooltip title", ctx.env.GameTooltip:GetText(), "Tandem")
+    check("compartment tooltip hint", ctx.ui.tooltipLines[1], "Click to browse known gear")
+    check("compartment tooltip has no drag hint", ctx.ui.tooltipLines[2], nil)
+    check("compartment tooltip shown", ctx.env.GameTooltip:IsShown(), true)
+    ctx.env.Tandem_OnCompartmentLeave("Tandem", menuButton)
+    check("compartment tooltip hidden", ctx.env.GameTooltip:IsShown(), false)
+    ctx.env.Tandem_OnCompartmentEnter("Tandem", nil)
+    check("compartment tooltip without a frame is skipped", #ctx.ui.tooltipLines, 1)
+
+    ctx.combat = true
+    local before = #ctx.printed
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    check("compartment click in combat refused", ctx.printed[before + 1], "Tandem: not available in combat")
+    check("compartment click in combat one line", #ctx.printed, before + 1)
+    check("compartment click in combat stays closed", ctx.win():IsShown(), false)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    ctx.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    ctx.combat = false
+    check("launcher: combat hid the window", ctx.win():IsShown(), false)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.combat = true
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    check("compartment click in combat builds nothing", ctx.win(), nil)
+end
+
+-- Returns the fake minimap and the button Tandem put on it, after PLAYER_LOGIN.
+local function minimapButton(ctx)
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.name == "TandemMinimapButton" then
+            return w
+        end
+    end
+end
+
+local function fakeMinimap()
+    local m = newWidget({ widgets = {} }, "Minimap", "Minimap")
+    m.GetWidth = function()
+        return 140
+    end
+    m.GetCenter = function()
+        return 500, 400
+    end
+    m.GetEffectiveScale = function()
+        return 2
+    end
+    return m
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { AddonCompartmentFrame = {}, Minimap = fakeMinimap() } })
+    check("launcher: listens for login", ctx.frame.registered.PLAYER_LOGIN, true)
+    ctx.fire("PLAYER_LOGIN")
+    check("launcher: no minimap button with the compartment", minimapButton(ctx), nil)
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { Minimap = false } })
+    ctx.fire("PLAYER_LOGIN")
+    check("launcher: no minimap and no compartment builds nothing", minimapButton(ctx), nil)
+end
+
+local function near(a, b)
+    return math.abs(a - b) < 1e-6
+end
+
+do
+    local Launcher = loadBrowse().addon.Launcher
+    check("angle: east is 0", near(Launcher.Angle(10, 0, 0, 0), 0), true)
+    check("angle: north is 90", near(Launcher.Angle(0, 10, 0, 0), 90), true)
+    check("angle: west is 180", near(Launcher.Angle(-10, 0, 0, 0), 180), true)
+    check("angle: south is 270", near(Launcher.Angle(0, -10, 0, 0), 270), true)
+    check("angle: around a centre", near(Launcher.Angle(6, 6, 5, 5), 45), true)
+    check("angle: a tiny negative angle wraps to 0", Launcher.Angle(1, -1e-300, 0, 0), 0)
+    check("angle: just below 360 stays below", Launcher.Angle(1, -1e-3, 0, 0) < 360, true)
+end
+
+do
+    local db, shipped = gearData()
+    local minimap = fakeMinimap()
+    local cursorAt = { 1000, 1000 }
+    local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = minimap, GetCursorPosition = function()
+        return cursorAt[1], cursorAt[2]
+    end } })
+    ctx.fire("PLAYER_LOGIN")
+    local b = minimapButton(ctx)
+    check("minimap button: built without the compartment", b ~= nil, true)
+    check("minimap button: on the minimap", b.parent, minimap)
+    check("minimap button: icon", b.icon.texture, "Interface\\AddOns\\Tandem\\Media\\icon")
+    local p = b.points[1]
+    check("minimap button: default angle 225", p[1] .. " " .. tostring(p[2] == minimap) .. " " .. p[3],
+        "CENTER true CENTER")
+    check("minimap button: default position", near(p[4], -80 * math.sqrt(0.5)) and near(p[5], -80 * math.sqrt(0.5)),
+        true)
+    ctx.fire("PLAYER_LOGIN")
+    check("minimap button: built once", #(function()
+        local n = {}
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemMinimapButton" then
+                n[#n + 1] = w
+            end
+        end
+        return n
+    end)(), 1)
+
+    b.scripts.OnClick(b, "LeftButton")
+    check("minimap button: click opens the window", ctx.win():IsShown(), true)
+    b.scripts.OnClick(b, "LeftButton")
+    check("minimap button: click closes the window", ctx.win():IsShown(), false)
+    b.scripts.OnEnter(b)
+    check("minimap button: tooltip owner", ctx.ui.tooltipOwner, b)
+    check("minimap button: tooltip drag hint", ctx.ui.tooltipLines[2], "Drag to move this button")
+    b.scripts.OnLeave(b)
+    check("minimap button: tooltip hidden", ctx.env.GameTooltip:IsShown(), false)
+
+    b.scripts.OnDragStart(b)
+    check("minimap button: follows the cursor while dragged", type(b.scripts.OnUpdate), "function")
+    cursorAt = { 1200, 800 }
+    b.scripts.OnUpdate(b)
+    check("minimap button: drag moves it (scaled cursor east)", near(b.points[1][4], 80) and near(b.points[1][5], 0),
+        true)
+    cursorAt = { 1200, 1000 }
+    b.scripts.OnUpdate(b)
+    b.scripts.OnDragStop(b)
+    check("minimap button: stops following", b.scripts.OnUpdate, nil)
+    check("minimap button: angle saved", near(ctx.env.TandemDB.ui.minimap, 45), true)
+    check("minimap button: angle is not a record", ctx.addon.Store.unsaved, 0)
+
+    ctx.combat = true
+    local before = #ctx.printed
+    b.scripts.OnClick(b, "LeftButton")
+    check("minimap button: refused in combat", ctx.printed[before + 1], "Tandem: not available in combat")
+    check("minimap button: stays closed in combat", ctx.win():IsShown(), false)
+
+    db.ui = { minimap = 90 }
+    local again = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
+    again.fire("PLAYER_LOGIN")
+    local q = minimapButton(again).points[1]
+    check("minimap button: restores the saved angle", near(q[4], 0) and near(q[5], 80), true)
+end
+
+do
+    local ctx = loadBrowse("zhTW", nil, nil, { env = { Minimap = fakeMinimap() } })
+    ctx.fire("PLAYER_LOGIN")
+    local b = minimapButton(ctx)
+    b.scripts.OnEnter(b)
+    check("zhTW minimap tooltip hint", ctx.ui.tooltipLines[1], "點擊以瀏覽已知裝備")
+    check("zhTW minimap tooltip drag hint", ctx.ui.tooltipLines[2], "拖曳以移動此按鈕")
+end
+
+-- Scan bar in the browse window (unit 8).
+
+-- Returns the live tickers with the given interval.
+local function tickers(ctx, interval)
+    local out = {}
+    for _, t in ipairs(ctx.ui.tickers) do
+        if t.interval == interval and not t.cancelled then
+            out[#out + 1] = t
+        end
+    end
+    return out
+end
+
+local function since(ctx, before)
+    local out = {}
+    for i = before + 1, #ctx.printed do
+        out[#out + 1] = ctx.printed[i]
+    end
+    return out
+end
+
+-- Types rate and cap into the scan bar and presses its button; returns the lines printed.
+local function pressScan(ctx, rate, cap)
+    local win = ctx.win()
+    if rate then
+        win.rate:SetText(rate)
+    end
+    if cap then
+        win.cap:SetText(cap)
+    end
+    local before = #ctx.printed
+    win.scan.scripts.OnClick(win.scan)
+    return since(ctx, before)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.run("browse")
+    local win = ctx.win()
+    check("scan bar: rate box template", win.rate.template, "InputBoxTemplate")
+    check("scan bar: rate default", win.rate:GetText(), "10/s")
+    check("scan bar: cap default", win.cap:GetText(), "100")
+    check("scan bar: button template", win.scan.template, "UIPanelButtonTemplate")
+    check("scan bar: idle button", win.scan:GetText(), "Start")
+    check("scan bar: idle status", win.status:GetText(), "8 known items, next scan from ID 1")
+    check("scan bar: progress ticker while shown", #tickers(ctx, 1), 1)
+
+    win.rate:SetFocus()
+    win.rate.scripts.OnEnterPressed(win.rate)
+    check("scan bar: Enter drops the focus", win.rate.focused, false)
+    win.cap:SetFocus()
+    win.cap.scripts.OnEscapePressed(win.cap)
+    check("scan bar: Escape drops the focus", win.cap.focused, false)
+
+    ctx.run("browse")
+    check("scan bar: ticker cancelled on hide", #tickers(ctx, 1), 0)
+    ctx.run("browse")
+    check("scan bar: ticker again on show", #tickers(ctx, 1), 1)
+    ctx.run("browse chest")
+    check("scan bar: one ticker while shown", #tickers(ctx, 1), 1)
+
+    win.rate:SetFocus()
+    local out = pressScan(ctx, " 5/s ", "3")
+    check("scan bar: start prints the scan line", out[1], "Tandem: scanning 3 IDs from ID 1")
+    check("scan bar: start runs the scanner", ctx.addon.Scanner.IsRunning(), true)
+    check("scan bar: start drops the focus", win.rate.focused, false)
+    local scanTicker = tickers(ctx, 0.2)[1]
+    check("scan bar: rate from the box", scanTicker ~= nil, true)
+    check("scan bar: running button", win.scan:GetText(), "Stop")
+    check("scan bar: running status", win.status:GetText(), "Scanning: 0 of 3 IDs, 0 found, next ID 1")
+    scanTicker.fn(scanTicker)
+    scanTicker.fn(scanTicker)
+    tickers(ctx, 1)[1].fn()
+    check("scan bar: progress on tick", win.status:GetText(), "Scanning: 2 of 3 IDs, 1 found, next ID 3")
+    local provider = win.box.provider
+    out = pressScan(ctx)
+    check("scan bar: stop prints the stop line", out[1]:match("^Tandem: scan stopped"), "Tandem: scan stopped")
+    check("scan bar: stop stops the scanner", ctx.addon.Scanner.IsRunning(), false)
+    check("scan bar: stop cancels the scan ticker", scanTicker.cancelled, true)
+    check("scan bar: idle again", win.scan:GetText() .. "|" .. win.status:GetText(),
+        "Start|8 known items, next scan from ID 3")
+    check("scan bar: stop refreshes the list", win.box.provider ~= provider, true)
+
+    pressScan(ctx, "", "")
+    check("scan bar: empty boxes use the defaults", tickers(ctx, 0.1)[1] ~= nil, true)
+    check("scan bar: default cap", ctx.win().status:GetText(), "Scanning: 0 of 100 IDs, 0 found, next ID 3")
+    pressScan(ctx)
+
+    pressScan(ctx, "20/m", "1")
+    local slow = tickers(ctx, 3)[1]
+    check("scan bar: per-minute rate", slow ~= nil, true)
+    provider = win.box.provider
+    slow.fn(slow)
+    check("scan bar: finished scan stops", ctx.addon.Scanner.IsRunning(), false)
+    check("scan bar: finished scan refreshes the list", win.box.provider ~= provider, true)
+    check("scan bar: finished scan shows idle", win.scan:GetText(), "Start")
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.run("browse")
+    for name, input in pairs({
+        ["too fast"] = { "51/s", "10" }, ["no unit"] = { "10", "10" }, ["bad unit"] = { "10/h", "10" },
+        ["zero cap"] = { "10/s", "0" }, ["huge cap"] = { "10/s", "100001" }, ["text cap"] = { "10/s", "5x" },
+        ["negative cap"] = { "10/s", "-5" }, ["slower than 1/m"] = { "0/m", "10" },
+    }) do
+        local out = pressScan(ctx, input[1], input[2])
+        check("scan bar: " .. name .. " prints the scan usage", out[1] .. "|" .. #out,
+            "  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)|1")
+        check("scan bar: " .. name .. " does not start", ctx.addon.Scanner.IsRunning(), false)
+    end
+    check("scan bar: the cap limit is accepted", pressScan(ctx, "50/s", "100000")[1],
+        "Tandem: scanning 100000 IDs from ID 1")
+    pressScan(ctx)
+    check("scan bar: an upper-case unit is accepted like the command", pressScan(ctx, "10/S", "5")[1],
+        "Tandem: scanning 5 IDs from ID 1")
+    pressScan(ctx)
+
+    ctx.combat = true
+    local out = pressScan(ctx, "10/s", "5")
+    check("scan bar: refused in combat", out[1] .. "|" .. #out, "Tandem: not available in combat|1")
+    check("scan bar: nothing started in combat", ctx.addon.Scanner.IsRunning(), false)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.run("scan 10/s 5")
+    ctx.run("browse")
+    local win = ctx.win()
+    check("scan bar: a scan started by command shows Stop", win.scan:GetText(), "Stop")
+    check("scan bar: a scan started by command shows progress", win.status:GetText(),
+        "Scanning: 0 of 5 IDs, 0 found, next ID 1")
+    ctx.run("browse")
+    local provider = win.box.provider
+    ctx.run("scan stop")
+    check("scan bar: a stop while hidden does not refresh", win.box.provider, provider)
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { failBars = { "InputBoxTemplate", "UIPanelButtonTemplate" } })
+    ctx.run("browse")
+    local win = ctx.win()
+    check("scan bar: plain edit box without the template", win.rate.kind .. " " .. tostring(win.rate.template),
+        "EditBox nil")
+    check("scan bar: plain button without the template", win.scan.kind .. " " .. tostring(win.scan.template),
+        "Button nil")
+    check("scan bar: plain boxes still start a scan", pressScan(ctx, "10/s", "2")[1],
+        "Tandem: scanning 2 IDs from ID 1")
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { C_Timer = { After = noop } } })
+    ctx.run("browse")
+    check("scan bar: no ticker API still shows the status", ctx.win().status:GetText(),
+        "8 known items, next scan from ID 1")
+    ctx.run("browse")
+    check("scan bar: no ticker API hides cleanly", ctx.win():IsShown(), false)
+end
+
+do
+    local ctx = loadBrowse("zhTW")
+    ctx.run("browse")
+    local win = ctx.win()
+    check("zhTW scan bar idle", win.scan:GetText() .. "|" .. win.status:GetText(), "開始|已知物品 8 件，下次從 ID 1 開始掃描")
+    pressScan(ctx, "10/s", "4")
+    check("zhTW scan bar running", win.scan:GetText() .. "|" .. win.status:GetText(),
+        "停止|掃描中：0／4 個 ID，找到 0 個，下一個 ID 1")
+    local labels = {}
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.kind == "FontString" and (w.text == "速度" or w.text == "上限") then
+            labels[#labels + 1] = w.text
+        end
+    end
+    check("zhTW scan bar labels", table.concat(labels, ","), "速度,上限")
+    local out = pressScan(ctx)
+    pressScan(ctx, "bad", "")
+    check("zhTW scan bar usage", ctx.printed[#ctx.printed]:match("^  /tandem scan") ~= nil, true)
+    check("zhTW scan bar stop", out[1]:match("^Tandem：掃描已停止") ~= nil, true)
+end
+
+do
+    local addon = loadWithDB({ schemaVersion = 2, items = { [5] = GEAR[5], [7] = GEAR[7] } })
+    check("ItemCount: counted on load", addon.Store.ItemCount(), 2)
+    addon.Store.AddItem(9, 1, 1, 1, "INVTYPE_BODY", 4, 0)
+    check("ItemCount: AddItem counts", addon.Store.ItemCount(), 3)
+    addon.Store.AddItem(9, 1, 1, 1, "INVTYPE_BODY", 4, 0)
+    addon.Store.AddItem(10, "bad", 1, 1, "INVTYPE_BODY", 4, 0)
+    check("ItemCount: a repeated or invalid item is not counted", addon.Store.ItemCount(), 3)
+    check("ItemCount: matches Counts", addon.Store.Counts().items, 3)
+    check("ScanCursor: a fresh scan starts at 1", addon.Store.ScanCursor(), 1)
+    addon = loadWithDB({ schemaVersion = 3, items = "junk", scan = { cursor = 2.5 } })
+    check("ItemCount: a newer db with junk items", addon.Store.ItemCount(), 0)
+    check("ScanCursor: a fractional cursor gives none", addon.Store.ScanCursor(), nil)
+end
+
+for name, scan in pairs({ ["no scan table"] = false, ["no cursor"] = {}, ["a fractional cursor"] = { cursor = 1.5 },
+                          ["a string cursor"] = { cursor = "7" } }) do
+    local db, shipped = gearData()
+    db.schemaVersion = 3
+    db.scan = scan or nil
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.run("browse")
+    local win = ctx.win()
+    check("scan bar: a newer db with " .. name .. " opens", win and win:IsShown(), true)
+    check("scan bar: a newer db with " .. name .. " shows ? for the next ID", win.status:GetText(),
+        "8 known items, next scan from ID ?")
+    tickers(ctx, 1)[1].fn()
+    check("scan bar: a newer db with " .. name .. " ticks", win.status:GetText(), "8 known items, next scan from ID ?")
+    check("scan bar: a newer db with " .. name .. " refuses a scan", pressScan(ctx, "10/s", "5")[1],
+        "Recording is off: saved data uses a newer schema")
+end
+
+-- Drop an item on the browse window (unit 9).
+
+do
+    local ctx = loadBrowse()
+    ctx.run("browse")
+    local win = ctx.win()
+    local scrolled
+    win.ScrollToElementData = nil
+    win.box.ScrollToElementData = function(_, row)
+        scrolled = row.id
+    end
+
+    ctx.cursor = { "item", 15 }
+    win.scripts.OnReceiveDrag(win)
+    check("drop: switches to the item's slot", rowIDs(win), "15")
+    check("drop: the dropdown follows", radios(win.dropdown)[16].isSelected(radios(win.dropdown)[16].data)
+        and radios(win.dropdown)[16].data, "twohand")
+    check("drop: selects the item", win.box.buttons[1].selected:IsShown(), true)
+    check("drop: header is its link", paneText(win)[1], built(15, GREEN))
+    check("drop: shows its sources", paneText(win)[2], "  no known source")
+    check("drop: scrolls to it", scrolled, 15)
+    check("drop: clears the cursor", ctx.cursor == nil and ctx.cleared, true)
+
+    ctx.level = 30
+    ctx.cursor = { "item", 1 }
+    win.box.scripts.OnMouseUp(win.box)
+    check("drop on the list: chest", rowIDs(win), "11,1,3,4,2,12")
+    check("drop: an unusable item turns off usable only", win.usable:GetChecked(), false)
+    check("drop: unusable item selected", win.box.buttons[2].selected:IsShown(), true)
+    check("drop: its source", paneText(win)[2], "  npc #448, Elwynn Forest - drops: 1")
+
+    win.usable:SetChecked(true)
+    ctx.cursor = { "item", 9 }
+    win.scripts.OnMouseUp(win)
+    check("drop: an item without a ranked slot lists all slots", radios(win.dropdown)[1].isSelected(nil), true)
+    check("drop: an item without a ranked slot keeps usable only", win.usable:GetChecked(), true)
+    check("drop: its header", paneText(win)[1], built(9, "ffffff"))
+
+    ctx.cleared = false
+    ctx.cursor = { "item", 999 }
+    win.scripts.OnReceiveDrag(win)
+    check("drop: unknown item says so", paneText(win)[1], "Tandem: item 999 is not known; scan or loot it first")
+    check("drop: unknown item has no source lines", paneText(win)[2], "")
+    check("drop: unknown item clears the cursor", ctx.cursor == nil and ctx.cleared, true)
+    check("drop: unknown item selects no row", (function()
+        for _, b in ipairs(win.box.buttons) do
+            if b.selected:IsShown() then
+                return true
+            end
+        end
+        return false
+    end)(), false)
+    local b = win.box.buttons[1]
+    b.scripts.OnClick(b)
+    check("drop: a click after an unknown item selects again",
+        paneText(win)[1]:find("|Hitem:" .. b.row.id .. ":", 1, true) ~= nil, true)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local rows = rowIDs(win)
+    for name, cursor in pairs({
+        spell = { "spell", 133 }, money = { "money", 50 }, empty = false, ["string id"] = { "item", "15" },
+        ["secret id"] = { "item", secret() }, ["secret kind"] = { secret(), 15 },
+    }) do
+        ctx.cursor, ctx.cleared = cursor or nil, false
+        win.scripts.OnReceiveDrag(win)
+        check("drop " .. name .. ": nothing changes", rowIDs(win), rows)
+        check("drop " .. name .. ": cursor kept", ctx.cleared, false)
+        check("drop " .. name .. ": nothing printed", #ctx.printed, 1)
+    end
+
+    ctx.cursor = { "item", 15 }
+    local b = win.box.buttons[2]
+    b.scripts.OnClick(b)
+    check("drop on a row: looks up the held item instead", rowIDs(win), "15")
+    check("drop on a row: cursor cleared", ctx.cursor, nil)
+    ctx.run("browse chest")
+    ctx.cursor = { "item", 15 }
+    b = win.box.buttons[1]
+    b.scripts.OnReceiveDrag(b)
+    check("drop on a row: OnReceiveDrag", rowIDs(win), "15")
+
+    ctx.run("browse chest")
+    ctx.combat = true
+    ctx.cursor, ctx.cleared = { "item", 15 }, false
+    local before = #ctx.printed
+    win.scripts.OnReceiveDrag(win)
+    check("drop in combat: refused", ctx.printed[before + 1], "Tandem: not available in combat")
+    check("drop in combat: list unchanged", rowIDs(win), rows)
+    check("drop in combat: cursor kept", ctx.cleared, false)
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { GetCursorInfo = false, ClearCursor = false } })
+    ctx.run("browse chest")
+    local win = ctx.win()
+    win.scripts.OnReceiveDrag(win)
+    check("drop without the cursor API is harmless", rowIDs(win), "11,1,3,4,2,12")
+    local b = win.box.buttons[1]
+    b.scripts.OnClick(b)
+    check("click without the cursor API still selects", b.selected:IsShown(), true)
+
+    ctx = loadBrowse("enUS", nil, nil, { env = { ClearCursor = false } })
+    ctx.run("browse")
+    ctx.cursor = { "item", 15 }
+    ctx.win().scripts.OnReceiveDrag(ctx.win())
+    check("drop without ClearCursor still looks up", rowIDs(ctx.win()), "15")
+end
+
+do
+    local ctx = loadBrowse("zhTW")
+    ctx.run("browse")
+    ctx.cursor = { "item", 999 }
+    ctx.win().scripts.OnReceiveDrag(ctx.win())
+    check("zhTW drop unknown item", paneText(ctx.win())[1], "Tandem：未知的物品 999；請先掃描或拾取")
 end
 
 if failures > 0 then

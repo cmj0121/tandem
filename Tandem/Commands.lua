@@ -16,10 +16,12 @@ local SOURCE_ROWS = 5
 local L = ns.L
 local View = ns.View
 
+Commands.SCAN_USAGE = "  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)"
+
 local function printUsage()
     print(L["Tandem commands:"])
     print(L["  /tandem count - show collected data"])
-    print(L["  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)"])
+    print(L[Commands.SCAN_USAGE])
     print(L["  /tandem scan from <id> - set the next item ID to scan"])
     print(L["  /tandem scan stop - stop the scan"])
     print(L["  /tandem gear [<slot>] [all] - best known gear you can use"])
@@ -53,29 +55,41 @@ function Commands.ParseRate(s)
     return rate
 end
 
--- Returns {rate, cap} for the tokens after "scan", or nil when any token is invalid or repeated.
-local function parseStart(args)
-    local rate, cap
-    for _, token in ipairs(args) do
-        if token:find("/", 1, true) then
-            if rate then
-                return nil
-            end
-            rate = Commands.ParseRate(token)
-            if not rate then
-                return nil
-            end
-        else
-            if cap then
-                return nil
-            end
-            cap = parseInt(token, 1)
-            if not cap or cap > MAX_CAP then
-                return nil
-            end
+-- Returns {rate, cap} for a scan from a rate ("<n>/s" or "<n>/m") and a cap (1..100000) as typed; nil or ""
+-- takes the default. Nil when either is invalid. Shared by /tandem scan and the browse window's scan bar.
+function Commands.ScanOptions(rateText, capText)
+    local rate, cap = DEFAULT_RATE, DEFAULT_CAP
+    if rateText and rateText ~= "" then
+        rate = Commands.ParseRate(rateText)
+    end
+    if capText and capText ~= "" then
+        cap = parseInt(capText, 1)
+        if cap and cap > MAX_CAP then
+            cap = nil
         end
     end
-    return { rate = rate or DEFAULT_RATE, cap = cap or DEFAULT_CAP }
+    if rate and cap then
+        return { rate = rate, cap = cap }
+    end
+end
+
+-- Returns {rate, cap} for the tokens after "scan", or nil when any token is invalid or repeated.
+local function parseStart(args)
+    local rateText, capText
+    for _, token in ipairs(args) do
+        if token:find("/", 1, true) then
+            if rateText then
+                return nil
+            end
+            rateText = token
+        else
+            if capText then
+                return nil
+            end
+            capText = token
+        end
+    end
+    return Commands.ScanOptions(rateText, capText)
 end
 
 local function scan(args)

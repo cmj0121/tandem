@@ -1,6 +1,7 @@
 local _, ns = ...
 
--- The /tandem browse window: every known item for a slot, best first, with where the selected one drops.
+-- The /tandem browse window: every known item for a slot, best first, with where the selected one drops; a scan bar
+-- that runs /tandem scan, and an item dropped on the window is looked up.
 local Browse = {}
 ns.Browse = Browse
 
@@ -9,18 +10,22 @@ local View = ns.View
 local Safe = ns.Store.Safe
 
 local NAME = "TandemBrowseFrame"
-local WIDTH, HEIGHT = 440, 520
+local WIDTH, HEIGHT = 440, 570
 local ROW_HEIGHT = 20
 local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
 local REDRAW_DELAY = 0.2
+local PROGRESS_INTERVAL = 1
+local DEFAULT_RATE_TEXT, DEFAULT_CAP_TEXT = "10/s", "100"
 local GREY, RED = "|cff808080", "|cffff2020"
 local NO_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
-local frame
-local slot, selected, pending
+local frame, progress
+local slot, selected, unknown, pending
 local requested = {}
 local rows, listed, worn = {}, {}, {}
+
+local startProgress, stopProgress
 
 local function wornFor(rowSlot)
     worn[rowSlot] = worn[rowSlot] or View.Equipped(rowSlot)
@@ -86,6 +91,8 @@ local function updateSources()
     if selected then
         pane.header:SetText(linkOf(selected))
         lines = View.SourceLines(selected, SOURCE_ROWS)
+    elseif unknown then
+        pane.header:SetText(L["Tandem: item %d is not known; scan or loot it first"]:format(unknown))
     else
         pane.header:SetText(L["Select an item to see where it drops"])
     end
@@ -112,11 +119,13 @@ local function updateSelected(button)
     showIf(button.selected, button.row ~= nil and button.row.id == selected)
 end
 
+local onDrop
+
 local function onClick(self)
-    if not self.row then
+    if onDrop() or not self.row then
         return
     end
-    selected = self.row.id
+    selected, unknown = self.row.id, nil
     updateSources()
     frame.box:ForEachFrame(updateSelected)
 end
@@ -147,6 +156,7 @@ local function buildRow(button)
     button:SetScript("OnEnter", onEnter)
     button:SetScript("OnLeave", onLeave)
     button:SetScript("OnClick", onClick)
+    button:SetScript("OnReceiveDrag", onDrop)
     button.built = true
 end
 
@@ -180,6 +190,58 @@ local function scrollBar(parent)
             return bar
         end
     end
+end
+
+-- An edit box from InputBoxTemplate when the client has it, else a plain one; Enter and Escape drop the focus so
+-- Escape does not stay captured by the box.
+local function editBox(parent, width, text)
+    local ok, box = pcall(CreateFrame, "EditBox", nil, parent, "InputBoxTemplate")
+    if not ok or not box then
+        box = CreateFrame("EditBox", nil, parent)
+        if box.SetFontObject then
+            box:SetFontObject("ChatFontNormal")
+        end
+    end
+    box:SetSize(width, 20)
+    box:SetAutoFocus(false)
+    box:SetMaxLetters(8)
+    box:SetText(text)
+    box:SetScript("OnEnterPressed", box.ClearFocus)
+    box:SetScript("OnEscapePressed", box.ClearFocus)
+    return box
+end
+
+local function label(parent, text)
+    local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fs:SetText(text)
+    return fs
+end
+
+-- The scan bar: rate, cap, Start/Stop and a status line under them.
+local function buildScanBar(f)
+    local rateLabel = label(f, L["Rate"])
+    rateLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -70)
+    f.rate = editBox(f, 60, DEFAULT_RATE_TEXT)
+    f.rate:SetPoint("LEFT", rateLabel, "RIGHT", 8, 0)
+    local capLabel = label(f, L["Cap"])
+    capLabel:SetPoint("LEFT", f.rate, "RIGHT", 12, 0)
+    f.cap = editBox(f, 60, DEFAULT_CAP_TEXT)
+    f.cap:SetPoint("LEFT", capLabel, "RIGHT", 8, 0)
+    local ok, button = pcall(CreateFrame, "Button", nil, f, "UIPanelButtonTemplate")
+    if not ok or not button then
+        button = CreateFrame("Button", nil, f)
+        button:SetNormalFontObject("GameFontNormal")
+    end
+    button:SetSize(80, 22)
+    button:SetPoint("LEFT", f.cap, "RIGHT", 12, 0)
+    button:SetScript("OnClick", function()
+        Browse.ToggleScan()
+    end)
+    f.scan = button
+    f.status = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    f.status:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -12)
+    f.status:SetPoint("RIGHT", f, "RIGHT", -14, 0)
+    f.status:SetJustifyH("LEFT")
 end
 
 local function build()
@@ -257,8 +319,10 @@ local function build()
     f.count = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.count:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -36)
 
+    buildScanBar(f)
+
     local box = CreateFrame("Frame", nil, f, "WowScrollBoxList")
-    box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -64)
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -114)
     box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, PANE_HEIGHT + 8)
     local view = CreateScrollBoxListLinearView()
     view:SetElementExtent(ROW_HEIGHT)
@@ -274,6 +338,12 @@ local function build()
         box:Init(view)
     end
     f.box = box
+    for _, target in ipairs({ f, box }) do
+        target:SetScript("OnReceiveDrag", onDrop)
+        target:SetScript("OnMouseUp", onDrop)
+    end
+    f:SetScript("OnShow", startProgress)
+    f:SetScript("OnHide", stopProgress)
 
     local pane = CreateFrame("Frame", nil, f)
     pane:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
@@ -379,4 +449,121 @@ end
 
 function Browse.OnCombat()
     Browse.Hide()
+end
+
+-- Shows the scan's progress while one runs, else how many items are known and where the next scan starts.
+local function updateScan()
+    if not frame then
+        return
+    end
+    local scanner = ns.Scanner
+    local processed, cap, hits = scanner.Progress()
+    local cursor = tostring(ns.Store.ScanCursor() or "?")
+    if processed then
+        frame.status:SetText(L["Scanning: %d of %d IDs, %d found, next ID %s"]:format(processed, cap, hits, cursor))
+        frame.scan:SetText(L["Stop"])
+    else
+        frame.status:SetText(L["%d known items, next scan from ID %s"]:format(ns.Store.ItemCount(), cursor))
+        frame.scan:SetText(L["Start"])
+    end
+end
+
+startProgress = function()
+    updateScan()
+    if not progress and C_Timer and C_Timer.NewTicker then
+        progress = C_Timer.NewTicker(PROGRESS_INTERVAL, updateScan)
+    end
+end
+
+stopProgress = function()
+    if progress then
+        progress:Cancel()
+        progress = nil
+    end
+end
+
+local function trim(text)
+    return (text or ""):match("^%s*(.-)%s*$")
+end
+
+-- Start/Stop: stops a running scan, else starts one with the typed rate and cap (the /tandem scan rules).
+function Browse.ToggleScan()
+    if View.InCombat() then
+        return
+    end
+    local scanner = ns.Scanner
+    if scanner.IsRunning() then
+        scanner.Stop()
+    else
+        frame.rate:ClearFocus()
+        frame.cap:ClearFocus()
+        -- Lowercased like the slash command's input, so "10/S" works in both.
+        local opts = ns.Commands.ScanOptions(trim(frame.rate:GetText()):lower(), trim(frame.cap:GetText()))
+        if opts then
+            scanner.Start(opts)
+        else
+            print(L[ns.Commands.SCAN_USAGE])
+        end
+    end
+    updateScan()
+end
+
+-- Scanner.onStop: a finished or stopped scan may have found items, so list them.
+function Browse.OnScanStopped()
+    if frame and frame:IsShown() then
+        Browse.Refresh()
+        updateScan()
+    end
+end
+ns.Scanner.onStop = Browse.OnScanStopped
+
+-- Shows a dropped item: its slot in the list (all slots when it has none) and its sources; an unknown item says so.
+local function lookup(id)
+    local _, class, level = View.Player()
+    if not class then
+        return
+    end
+    local r = ns.Advisor.Rank(id, class, level)
+    if r then
+        selected, unknown = id, nil
+        slot = r.slot
+        -- An item with no ranked slot is never listed, so the filter stays as it is.
+        if r.slot and not r.usable then
+            frame.usable:SetChecked(false)
+        end
+    else
+        selected, unknown = nil, id
+    end
+    if frame.dropdown.GenerateMenu then
+        frame.dropdown:GenerateMenu()
+    end
+    refresh(class, level)
+    for _, row in ipairs(rows) do
+        if row.id == id then
+            if frame.box.ScrollToElementData then
+                frame.box:ScrollToElementData(row)
+            end
+            break
+        end
+    end
+end
+
+-- OnReceiveDrag / OnMouseUp: looks up an item held on the cursor and clears it; true when the cursor held one.
+onDrop = function()
+    if not GetCursorInfo then
+        return false
+    end
+    local kind, id = GetCursorInfo()
+    kind, id = Safe(kind), Safe(id)
+    if kind ~= "item" or type(id) ~= "number" then
+        return false
+    end
+    if View.InCombat() then
+        return true
+    end
+    if ClearCursor then
+        ClearCursor()
+    end
+    lookup(id)
+    return true
 end
