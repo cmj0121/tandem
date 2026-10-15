@@ -21,6 +21,7 @@ read_globals = {
     "ButtonFrameTemplate_HidePortrait",
     "C_Item",
     "C_Map",
+    "C_QuestLog",
     "C_Timer",
     "ClearCursor",
     "CombatLogGetCurrentEventInfo",

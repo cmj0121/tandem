@@ -2053,15 +2053,16 @@ end
 
 -- Loads gearData() (or db, shipped) with a stubbed player: ctx.class/className/level for UnitClass/UnitLevel,
 -- ctx.equipped[invSlot] = link, ctx.cache[id] = { name, link, quality, ilvl } for C_Item.GetItemInfo, ctx.combat,
--- ctx.secret values hidden by issecretvalue, ctx.instant[id] / ctx.icons[id] for C_Item.GetItemInfoInstant.
+-- ctx.secret values hidden by issecretvalue, ctx.instant[id] / ctx.icons[id] for C_Item.GetItemInfoInstant,
+-- ctx.faction for UnitFactionGroup (default "Alliance").
 -- C_Item.IsItemDataCachedByID is true for ids in ctx.cache; ctx.infoCalls[id] counts GetItemInfo calls.
 -- opts.env adds globals, opts.widgets goes to loadAddon. Returns ctx with addon, printed, env, fire, frame, run(msg).
 local function loadGear(locale, db, shipped, opts)
     if not db then
         db, shipped = gearData()
     end
-    local ctx = { class = "WARRIOR", className = "Warrior", level = 40, equipped = {}, cache = {}, combat = false,
-                  requested = {}, instant = {}, icons = {}, infoCalls = {} }
+    local ctx = { class = "WARRIOR", className = "Warrior", level = 40, faction = "Alliance", equipped = {}, cache = {},
+                  combat = false, requested = {}, instant = {}, icons = {}, infoCalls = {} }
     local env = {
         UnitClass = function(unit)
             assert(unit == "player")
@@ -2069,6 +2070,10 @@ local function loadGear(locale, db, shipped, opts)
         end,
         UnitLevel = function()
             return ctx.level
+        end,
+        UnitFactionGroup = function(unit)
+            assert(unit == "player")
+            return ctx.faction
         end,
         InCombatLockdown = function()
             return ctx.combat
@@ -4668,6 +4673,142 @@ for locale, want in pairs({
     check(locale .. " tooltip class line", ctx.hover({ id = 1 }).lines[2].text, want[4])
     ctx.addon.Store.MarkDeprecated(4, ctx.addon.Advisor.Item(4))
     check(locale .. " tooltip deprecated line", ctx.text(4), want[5])
+end
+
+-- Quest and vendor sources in the display (stage 5, unit 4).
+
+-- Item 4: own quest 100 (Alliance) and vendor 200 (Horde), own drop from 448; shipped quest 100 (Horde, so both),
+-- quest 101 (no factions), vendor 201 (Alliance) and quest 102 (an invalid factions mask).
+local function questVendorData()
+    local db = {
+        schemaVersion = 3,
+        npcs = { [200] = "Vendor Bob", [448] = "Hogger" },
+        quests = { [100] = "Own Quest" },
+        loot = {
+            ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, factions = 1 },
+            ["4:v:200:1429"] = { item = 4, kind = "v", id = 200, map = 1429, count = 1, factions = 2 },
+            ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 5 },
+        },
+        kills = { [448] = 10 },
+    }
+    local shipped = {
+        loot = { { 4, "q", 100, 1429, 3 }, { 4, "q", 101, 0, 1 }, { 4, "v", 201, 1429, 2 }, { 4, "q", 102, 1429, 1 } },
+        factions = { ["4:q:100:1429"] = 2, ["4:v:201:1429"] = 1, ["4:q:102:1429"] = 7 },
+        questNames = { enUS = { [101] = "Shipped Quest" }, zhTW = { [101] = "運送任務" } },
+    }
+    return db, shipped
+end
+
+local function sourceRows(rows)
+    local out = {}
+    for _, s in ipairs(rows) do
+        out[#out + 1] = ("%s%d:%d:%s:%s:%s"):format(s.kind, s.id, s.count, tostring(s.factions), tostring(s.name),
+            tostring(s.otherFaction))
+    end
+    return table.concat(out, " ")
+end
+
+do
+    local db, shipped = questVendorData()
+    local env = { C_QuestLog = { GetTitleForQuestID = function(id)
+        return id == 102 and "Client Quest" or nil
+    end } }
+    local A = loadAdvisor(db, shipped, env)
+    check("q/v sources: Alliance order, names and factions", sourceRows(A.Sources(4, 1)),
+        "q100:3:3:Own Quest:nil v201:2:1:nil:nil q101:1:nil:Shipped Quest:nil q102:1:nil:Client Quest:nil "
+        .. "c448:5:nil:Hogger:nil v200:1:2:Vendor Bob:Horde")
+    check("q/v sources: Horde puts the Alliance vendor last", sourceRows(A.Sources(4, 2)),
+        "q100:3:3:Own Quest:nil q101:1:nil:Shipped Quest:nil q102:1:nil:Client Quest:nil v200:1:2:Vendor Bob:nil "
+        .. "c448:5:nil:Hogger:nil v201:2:1:nil:Alliance")
+    check("q/v sources: no faction puts every q/v row first", sourceRows(A.Sources(4)),
+        "q100:3:3:Own Quest:nil v201:2:1:nil:nil q101:1:nil:Shipped Quest:nil q102:1:nil:Client Quest:nil "
+        .. "v200:1:2:Vendor Bob:nil c448:5:nil:Hogger:nil")
+    local rows = A.Sources(4, 1)
+    check("q/v sources: no rate on a quest", tostring(rows[1].rate) .. " " .. tostring(rows[1].rateBasis), "nil nil")
+    check("q/v sources: the drop keeps its rate", rows[5].rate .. " " .. rows[5].rateBasis, "0.5 kill")
+
+    A = loadAdvisor(questVendorData())
+    check("q/v sources: no quest API leaves the quest unnamed", tostring(A.Sources(4, 1)[4].name), "nil")
+    A = loadWithDB(nil, "zhTW", { shipped = select(2, questVendorData()) }).Advisor
+    check("q/v sources: shipped data alone, Alliance", sourceRows(A.Sources(4, 1)),
+        "v201:2:1:nil:nil q101:1:nil:運送任務:nil q102:1:nil:nil:nil q100:3:2:nil:Horde")
+    A = loadAdvisor(nil, { loot = { { 4, "v", 201, 1429, 2 } } })
+    check("q/v sources: shipped data without factions", sourceRows(A.Sources(4, 2)), "v201:2:nil:nil:nil")
+end
+
+for locale, want in pairs({
+    enUS = {
+        lines = "  Own Quest, Elwynn Forest - quest reward /   npc #201, Elwynn Forest - vendor"
+            .. " /   Shipped Quest, unknown map - quest reward /   quest #102, Elwynn Forest - quest reward"
+            .. " /   Hogger, Elwynn Forest - drops: 5, 50.0% per kill / "
+            .. "  Vendor Bob, Elwynn Forest - vendor (Horde only)",
+        quest = "Tandem: reward from Own Quest, Elwynn Forest (+5 more)",
+        horde = "Tandem: reward from Own Quest, Elwynn Forest (+5 more)",
+        vendor = "Tandem: sold by Vendor Bob, Elwynn Forest (+1 more)",
+        other = "Tandem: sold by npc #300, Elwynn Forest (Horde only)",
+        drop = "Tandem: drops from npc #500, Elwynn Forest (+1 more)",
+    },
+    zhTW = {
+        lines = "  Own Quest，Elwynn Forest：任務獎勵 /   NPC #201，Elwynn Forest：商人販售"
+            .. " /   運送任務，未知地圖：任務獎勵 /   任務 #102，Elwynn Forest：任務獎勵"
+            .. " /   Hogger，Elwynn Forest：掉落 5 次，每次擊殺 50.0% / "
+            .. "  Vendor Bob，Elwynn Forest：商人販售（僅限部落）",
+        quest = "Tandem：Own Quest 的任務獎勵，Elwynn Forest（另有 5 個來源）",
+        horde = "Tandem：Own Quest 的任務獎勵，Elwynn Forest（另有 5 個來源）",
+        vendor = "Tandem：由 Vendor Bob 販售，Elwynn Forest（另有 1 個來源）",
+        other = "Tandem：由 NPC #300 販售，Elwynn Forest（僅限部落）",
+        drop = "Tandem：掉落自 NPC #500，Elwynn Forest（另有 1 個來源）",
+    },
+}) do
+    local db, shipped = questVendorData()
+    local gearDB, gearShipped = gearData()
+    db.items, shipped.items = gearDB.items, gearShipped.items
+    for _, r in ipairs(gearShipped.loot) do
+        if r[1] ~= 4 and r[1] ~= 8 then
+            shipped.loot[#shipped.loot + 1] = r
+        end
+    end
+    -- Item 2: a drop and an other-faction quest; item 8: a Horde vendor only; item 12: a drop and a Horde vendor.
+    shipped.loot[#shipped.loot + 1] = { 8, "v", 300, 1429, 1 }
+    shipped.loot[#shipped.loot + 1] = { 2, "q", 103, 1429, 4 }
+    shipped.loot[#shipped.loot + 1] = { 12, "v", 200, 1429, 1 }
+    shipped.factions["8:v:300:1429"] = 2
+    shipped.factions["2:q:103:1429"] = 2
+    shipped.factions["12:v:200:1429"] = 2
+    local ctx = loadTooltip(locale, db, shipped)
+    check(locale .. " q/v source lines", table.concat(ctx.addon.View.SourceLines(4, 10), " / "), want.lines)
+    local function last(id)
+        local t = ctx.hover({ id = id })
+        return t.lines[#t.lines] and t.lines[#t.lines].text
+    end
+    check(locale .. " tooltip leads with a same-faction quest, no rate", last(4), want.quest)
+    check(locale .. " tooltip: other-faction-only vendor is labelled", last(8), want.other)
+    check(locale .. " tooltip: an other-faction quest sorts after a drop", last(2), want.drop)
+    check(locale .. " tooltip: an other-faction vendor sorts after a drop", last(12), want.drop)
+    ctx.faction = "Horde"
+    ctx.level = 41
+    check(locale .. " tooltip for a Horde player", last(4), want.horde)
+    check(locale .. " tooltip: a Horde player sees the Horde vendor first", last(12), want.vendor)
+end
+
+do
+    local db, shipped = questVendorData()
+    local gearDB, gearShipped = gearData()
+    db.items, shipped.items = gearDB.items, gearShipped.items
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.run("browse chest")
+    local win = ctx.win()
+    for _, b in ipairs(win.box.buttons) do
+        if b.row and b.row.id == 4 then
+            b.scripts.OnClick(b)
+        end
+    end
+    local pane = paneText(win)
+    check("browse: q/v sources lead the pane", pane[2] .. " / " .. pane[3],
+        "  Own Quest, Elwynn Forest - quest reward /   npc #201, Elwynn Forest - vendor")
+    check("browse: the drop follows the same-faction q/v rows", pane[6],
+        "  Hogger, Elwynn Forest - drops: 5, 50.0% per kill")
+    check("browse: the other-faction vendor is past the cap", pane[7], "  and 1 more sources")
 end
 
 if failures > 0 then

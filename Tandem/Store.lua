@@ -39,6 +39,7 @@ local function orFactions(a, b)
     end
     return out
 end
+Store.OrFactions = orFactions
 
 local function isNum(v)
     return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -73,6 +74,7 @@ local sources = {}
 local function isFactions(v)
     return isInt(v, 1) and v <= ALL_FACTIONS
 end
+Store.IsFactions = isFactions
 
 local function newDB()
     return {

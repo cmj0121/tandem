@@ -262,8 +262,28 @@ function View.SourceName(s)
     if s.name then
         return escape(s.name)
     end
-    return s.kind == "c" and L["npc #%d"]:format(s.id) or s.kind == "o" and L["object #%d"]:format(s.id)
+    return (s.kind == "c" or s.kind == "v") and L["npc #%d"]:format(s.id)
+        or s.kind == "o" and L["object #%d"]:format(s.id)
+        or s.kind == "q" and L["quest #%d"]:format(s.id)
         or L["unknown source"]
+end
+
+-- Returns the player's faction as a Store.FACTIONS bit, or nil when the client does not tell.
+function View.Faction()
+    if UnitFactionGroup then
+        local group = Safe((UnitFactionGroup("player")))
+        return type(group) == "string" and Store.FACTIONS[group] or nil
+    end
+end
+
+-- Returns the player's sources of an item (Advisor.Sources for the player's faction).
+function View.Sources(id)
+    return ns.Advisor.Sources(id, View.Faction())
+end
+
+-- Returns " (Horde only)" for a source row of the other faction only, else "".
+function View.FactionMark(s)
+    return s.otherFaction and L[" (%s only)"]:format(L[s.otherFaction]) or ""
 end
 
 -- Returns a source row's map name, escaped, or "unknown map".
@@ -271,9 +291,9 @@ function View.MapLabel(s)
     return s.mapName and escape(s.mapName) or L["unknown map"]
 end
 
--- Returns the lines describing where an item drops: up to max sources, then how many more there are.
+-- Returns the lines describing where an item comes from: up to max sources, then how many more there are.
 function View.SourceLines(id, max)
-    local rows = ns.Advisor.Sources(id)
+    local rows = View.Sources(id)
     if #rows == 0 then
         return { L["  no known source"] }
     end
@@ -281,7 +301,11 @@ function View.SourceLines(id, max)
     for i = 1, math.min(#rows, max) do
         local s = rows[i]
         local name, map = View.SourceName(s), View.MapLabel(s)
-        if s.rateBasis == "kill" then
+        if s.kind == "q" then
+            lines[#lines + 1] = L["  %s, %s - quest reward"]:format(name, map) .. View.FactionMark(s)
+        elseif s.kind == "v" then
+            lines[#lines + 1] = L["  %s, %s - vendor"]:format(name, map) .. View.FactionMark(s)
+        elseif s.rateBasis == "kill" then
             lines[#lines + 1] = L["  %s, %s - drops: %d, %.1f%% per kill"]:format(name, map, s.count, s.rate * 100)
         elseif s.rateBasis == "corpse" then
             lines[#lines + 1] = L["  %s, %s - drops: %d, %.1f%% per looted corpse (upper bound)"]:format(name, map,
