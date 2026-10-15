@@ -4054,6 +4054,246 @@ do
     check("rank memo: replacing ns.Shipped walks again", r.rank .. "/" .. r.total, "5/6")
 end
 
+-- Tooltip (stage 4 unit 2): the Tandem lines on item tooltips.
+
+-- A fake tooltip: AddLine records { text, r, g, b, wrap }; forbidden makes IsForbidden true.
+local function fakeTooltip()
+    local t = { lines = {}, forbidden = false }
+    function t.AddLine(self, text, r, g, b, wrap)
+        self.lines[#self.lines + 1] = { text = text, r = r, g = g, b = b, wrap = wrap }
+    end
+    function t.IsForbidden(self)
+        return self.forbidden
+    end
+    return t
+end
+
+local function texts(tooltip)
+    local out = {}
+    for _, l in ipairs(tooltip.lines) do
+        out[#out + 1] = l.text
+    end
+    return table.concat(out, " / ")
+end
+
+local function colour(line)
+    return line and (line.r .. "," .. line.g .. "," .. line.b) or "nil"
+end
+
+-- Loads gearData() plus named sources with the tooltip API stubbed; ctx.hover(id [, tooltip]) clears the tooltip,
+-- runs the captured post-call with { id = id } and returns the tooltip.
+local function loadTooltip(locale, db, shipped, opts)
+    opts = opts or {}
+    if not db then
+        db, shipped = gearData()
+        db.npcs = { [448] = "Hogger" }
+        db.kills = { [448] = 4 }
+        db.corpses = { [449] = 2 }
+        db.loot["3:c:449:1429"] = { item = 3, kind = "c", id = 449, map = 1429, count = 1 }
+        db.loot["9:c:448:1429"] = { item = 9, kind = "c", id = 448, map = 1429, count = 1 }
+        -- Item 50 has a source but no record until a test adds one.
+        shipped.loot[#shipped.loot + 1] = { 50, "c", 500, 1429, 1 }
+    end
+    local hooks = {}
+    local env = {
+        GameTooltip = fakeTooltip(),
+        ItemRefTooltip = fakeTooltip(),
+        Enum = { TooltipDataType = { Item = 0 } },
+        TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn)
+            hooks[#hooks + 1] = { kind = kind, fn = fn }
+        end },
+    }
+    if opts.noAPI then
+        env.TooltipDataProcessor = nil
+    end
+    local ctx = loadGear(locale or "enUS", db, shipped, { env = env })
+    ctx.hooks = hooks
+    function ctx.hover(data, tooltip)
+        tooltip = tooltip or ctx.env.GameTooltip
+        tooltip.lines = {}
+        hooks[1].fn(tooltip, data)
+        return tooltip
+    end
+    function ctx.text(id, tooltip)
+        return texts(ctx.hover({ id = id }, tooltip))
+    end
+    return ctx
+end
+
+do
+    local ctx = loadTooltip()
+    check("tooltip: one post-call registered", #ctx.hooks, 1)
+    check("tooltip: registered for item tooltips", ctx.hooks[1].kind, 0)
+    check("tooltip: the post-call is Tooltip.OnItem", ctx.hooks[1].fn, ctx.addon.Tooltip.OnItem)
+    local before = #ctx.printed
+
+    local t = ctx.hover({ id = 1 })
+    check("tooltip: rank, upgrade and kill-rate source", texts(t),
+        "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    check("tooltip: rank line is blue", colour(t.lines[1]), "0.4,0.8,1")
+    check("tooltip: source line is grey-white", colour(t.lines[2]), "0.8,0.8,0.8")
+    check("tooltip: lines do not wrap", t.lines[1].wrap, false)
+
+    check("tooltip: corpse-rate source with more", ctx.text(3),
+        "Tandem: rank 2 of 5 for Chest (upgrade) / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
+    check("tooltip: source without a rate", ctx.text(2),
+        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+    check("tooltip: unsourced item has only the rank line", ctx.text(11),
+        "Tandem: rank 1 of 6 for Chest (upgrade) (no known source)")
+    check("tooltip: no ranked slot shows only the source", ctx.text(9),
+        "Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    check("tooltip: ItemRefTooltip gets the lines too", ctx.text(2, ctx.env.ItemRefTooltip),
+        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+
+    ctx.equipped[5] = "|Hitem:1:|h"
+    check("tooltip: equipped mark", ctx.text(1),
+        "Tandem: rank 1 of 5 for Chest (equipped) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    ctx.equipped[5] = nil
+
+    ctx.level = 30
+    t = ctx.hover({ id = 1 })
+    check("tooltip: too low a level gives no upgrade and a red line", texts(t),
+        "Tandem: rank 1 of 5 for Chest / Tandem: you cannot use it: level 40 required"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    check("tooltip: unusable line is red", colour(t.lines[2]), "1,0.25,0.25")
+    ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
+    t = ctx.hover({ id = 1 })
+    check("tooltip: class cannot use it", t.lines[2] and t.lines[2].text, "Tandem: your class cannot use it")
+    check("tooltip: class line is red", colour(t.lines[2]), "1,0.25,0.25")
+    ctx.class, ctx.className, ctx.level = "WARRIOR", "Warrior", 40
+
+    -- Nothing at all.
+    ctx.combat = true
+    check("tooltip: nothing in combat", ctx.text(1), "")
+    ctx.combat = false
+    ctx.env.GameTooltip.forbidden = true
+    check("tooltip: nothing on a forbidden tooltip", ctx.text(1), "")
+    ctx.env.GameTooltip.forbidden = false
+    check("tooltip: nothing on a shopping tooltip", ctx.text(1, fakeTooltip()), "")
+    check("tooltip: nothing for an unknown item", ctx.text(999), "")
+    check("tooltip: nothing for a secret id", ctx.text(secret()), "")
+    check("tooltip: nothing for secret data", texts(ctx.hover(secret())), "")
+    check("tooltip: nothing without data", texts(ctx.hover(nil)), "")
+    for _, bad in ipairs({ 0, -1, 1.5, "1" }) do
+        check("tooltip: nothing for id " .. tostring(bad), ctx.text(bad), "")
+    end
+    ctx.class = nil
+    check("tooltip: nothing while the class is unknown", ctx.text(1), "")
+    ctx.class = "WARRIOR"
+    check("tooltip: hovering never prints", #ctx.printed, before)
+    check("tooltip: /tandem rank still prints when the class is unknown", (function()
+        ctx.class = nil
+        local out = ctx.run("rank 1")
+        ctx.class = "WARRIOR"
+        return out[1]
+    end)(), "Tandem: your class or level is not known yet; try again in a moment")
+end
+
+do
+    local ctx = loadTooltip(nil, nil, nil, { noAPI = true })
+    check("tooltip: no post-call without the API", #ctx.hooks, 0)
+    check("tooltip: the module still loads", type(ctx.addon.Tooltip.OnItem), "function")
+    local db, shipped = gearData()
+    local addon = loadWithDB(db, "enUS", { shipped = shipped, env = { Enum = {}, TooltipDataProcessor = {} } })
+    check("tooltip: an API without AddTooltipPostCall is ignored", type(addon.Tooltip), "table")
+end
+
+-- Deprecated items: one grey line, from the record or from the client's name.
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local ctx = loadTooltip("enUS", db, shipped)
+    local t = ctx.hover({ id = 3 })
+    check("tooltip: a deprecated record shows one line", texts(t), "Tandem: deprecated item")
+    check("tooltip: the deprecated line is grey", colour(t.lines[1]), "0.5,0.5,0.5")
+    ctx.cache[1] = { "Deprecated Plate", "|Hitem:1:|h", 3, 45 }
+    check("tooltip: a deprecated client name flags the item", ctx.text(1), "Tandem: deprecated item")
+    check("tooltip: the flag is stored", ctx.addon.Advisor.IsDeprecated(1), true)
+end
+
+-- One-handers of a dual-wielder compare against both hands.
+do
+    local ctx = loadTooltip()
+    ctx.cache[778] = { "Main", "|Hitem:778:|h", 2, 30 }
+    ctx.cache[779] = { "Off", "|Hitem:779:|h", 2, 20 }
+    ctx.equipped[16] = "|Hitem:778:|h"
+    ctx.equipped[17] = "|Hitem:779:|h"
+    local line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%)$") ~= nil, true)
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:779:|h", "|Hitem:7:|h"
+    line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: equipped in the off hand", line:match("%(equipped%)$") ~= nil, true)
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:778:|h", "|Hitem:779:|h"
+    ctx.class, ctx.className = "PALADIN", "Paladin"
+    line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: a non-dual-wielder compares with the main hand only", line:match("%(upgrade%)") == nil, true)
+    ctx.class, ctx.className = "WARRIOR", "Warrior"
+    ctx.cache[777] = { "Great", "|Hitem:777:|h", 2, 30 }
+    ctx.instant[777] = "INVTYPE_2HWEAPON"
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:777:|h", nil
+    line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: an off hand behind a two-hander is ignored", line:match("%(upgrade%)") == nil, true)
+end
+
+-- The per-item memo: one Rank and one Sources per item until a record changes or the level does.
+do
+    local ctx = loadTooltip()
+    local A = ctx.addon.Advisor
+    local calls = { rank = 0, sources = 0 }
+    local rank, sources = A.Rank, A.Sources
+    A.Rank = function(...)
+        calls.rank = calls.rank + 1
+        return rank(...)
+    end
+    A.Sources = function(...)
+        calls.sources = calls.sources + 1
+        return sources(...)
+    end
+    local function counts()
+        return calls.rank .. "/" .. calls.sources
+    end
+    ctx.hover({ id = 2 })
+    ctx.hover({ id = 2 })
+    check("tooltip memo: a second hover reuses the first", counts(), "1/1")
+    ctx.equipped[5] = "|Hitem:2:|h"
+    check("tooltip memo: worn marks are not memoised", ctx.text(2):find("(equipped)", 1, true) ~= nil, true)
+    check("tooltip memo: still one walk", counts(), "1/1")
+    ctx.addon.Store.AddItem(50, 60, 30, 4, "INVTYPE_CHEST", 4, 4)
+    check("tooltip memo: AddItem invalidates it", ctx.text(2),
+        "Tandem: rank 5 of 6 for Chest (equipped) / Tandem: drops from npc #500, Elwynn Forest")
+    check("tooltip memo: AddItem walks again", counts(), "2/2")
+    ctx.addon.Store.AddLoot(2, "c", 448, 1429)
+    check("tooltip memo: AddLoot invalidates it", ctx.text(2),
+        "Tandem: rank 5 of 6 for Chest (equipped)"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill) (+1 more)")
+    check("tooltip memo: AddLoot walks again", counts(), "3/3")
+    ctx.level = 41
+    ctx.hover({ id = 2 })
+    check("tooltip memo: a level-up walks again", counts(), "4/4")
+    ctx.hover({ id = 1 })
+    check("tooltip memo: another item has its own entry", counts(), "5/5")
+end
+
+for locale, want in pairs({
+    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
+             "Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)",
+             "Tandem: you cannot use it: level 40 required", "Tandem: your class cannot use it",
+             "Tandem: deprecated item" },
+    zhTW = { "Tandem：排名第 1／5（胸部）（升級） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
+             "Tandem：掉落自 NPC #449，Elwynn Forest（最高 50.0%）（另有 1 個來源）",
+             "Tandem：你無法使用：需要等級 40", "Tandem：你的職業無法使用", "Tandem：已棄用的物品" },
+}) do
+    local ctx = loadTooltip(locale)
+    check(locale .. " tooltip rank and source", ctx.text(1), want[1])
+    check(locale .. " tooltip corpse source", ctx.hover({ id = 3 }).lines[2].text, want[2])
+    ctx.level = 30
+    check(locale .. " tooltip level line", ctx.hover({ id = 1 }).lines[2].text, want[3])
+    ctx.class, ctx.level = "MAGE", 60
+    check(locale .. " tooltip class line", ctx.hover({ id = 1 }).lines[2].text, want[4])
+    ctx.addon.Store.MarkDeprecated(4, ctx.addon.Advisor.Item(4))
+    check(locale .. " tooltip deprecated line", ctx.text(4), want[5])
+end
+
 if failures > 0 then
     os.exit(1)
 end

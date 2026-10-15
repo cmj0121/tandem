@@ -38,8 +38,9 @@ function View.InCombat()
     return false
 end
 
--- Returns the player's localised class name, class file and level, or nil when the client hides any of them.
-function View.Player()
+-- Returns the player's localised class name, class file and level, or nil when the client hides any of them; says
+-- so unless quiet.
+function View.Player(quiet)
     local name, classFile, level
     if UnitClass then
         name, classFile = UnitClass("player")
@@ -49,7 +50,9 @@ function View.Player()
         level = Safe(UnitLevel("player"))
     end
     if type(classFile) ~= "string" or type(level) ~= "number" or level < 1 then
-        print(L["Tandem: your class or level is not known yet; try again in a moment"])
+        if not quiet then
+            print(L["Tandem: your class or level is not known yet; try again in a moment"])
+        end
         return nil
     end
     return type(name) == "string" and name or classFile, classFile, level
@@ -254,6 +257,20 @@ function View.Escape(text)
 end
 local escape = View.Escape
 
+-- Returns a source row's name, escaped, or what stands in for an unnamed one.
+function View.SourceName(s)
+    if s.name then
+        return escape(s.name)
+    end
+    return s.kind == "c" and L["npc #%d"]:format(s.id) or s.kind == "o" and L["object #%d"]:format(s.id)
+        or L["unknown source"]
+end
+
+-- Returns a source row's map name, escaped, or "unknown map".
+function View.MapLabel(s)
+    return s.mapName and escape(s.mapName) or L["unknown map"]
+end
+
 -- Returns the lines describing where an item drops: up to max sources, then how many more there are.
 function View.SourceLines(id, max)
     local rows = ns.Advisor.Sources(id)
@@ -263,12 +280,7 @@ function View.SourceLines(id, max)
     local lines = {}
     for i = 1, math.min(#rows, max) do
         local s = rows[i]
-        local name = s.name and escape(s.name)
-        if not name then
-            name = s.kind == "c" and L["npc #%d"]:format(s.id) or s.kind == "o" and L["object #%d"]:format(s.id)
-                or L["unknown source"]
-        end
-        local map = s.mapName and escape(s.mapName) or L["unknown map"]
+        local name, map = View.SourceName(s), View.MapLabel(s)
         if s.rateBasis == "kill" then
             lines[#lines + 1] = L["  %s, %s - drops: %d, %.1f%% per kill"]:format(name, map, s.count, s.rate * 100)
         elseif s.rateBasis == "corpse" then
