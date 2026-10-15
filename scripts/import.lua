@@ -13,6 +13,7 @@ local MAX_COUNT = 2 ^ 53 -- sums stop here so they stay exact and finite
 -- constants per function (WoW's Lua 5.1 allows 262143).
 local CHUNK_ROWS = 2000
 local LOOT_FIELDS = { "item", "kind", "id", "map", "count" }
+local SET_ONCE = { q = true, v = true } -- quest and vendor kinds: one source per item, kind and id
 
 -- LuaJIT's compiled loops skip count hooks, which would let a data file run forever.
 local luajit = rawget(_G, "jit")
@@ -259,21 +260,29 @@ local function rebuild(dataDir, outFile)
                 fail(("%s/%s: %d invalid entries ignored"):format(dir, name, dropped))
             end
             contributors = contributors + 1
-            for k, e in pairs(db.loot) do
+            -- A quest or vendor source is one row per item, kind and id across contributions, as in Store: it keeps
+            -- the lowest map and that map's coords, with the counts summed and the factions ORed.
+            for lootKey, e in pairs(db.loot) do
+                local once = SET_ONCE[e.kind]
+                local k = once and e.item .. ":" .. e.kind .. ":" .. e.id or lootKey
                 local agg = loot[k]
                 if not agg then
                     agg = { item = e.item, kind = e.kind, id = e.id, map = e.map, count = 0, coords = {}, seen = {} }
                     loot[k] = agg
+                elseif once and e.map < agg.map then
+                    agg.map, agg.coords, agg.seen = e.map, {}, {}
                 end
                 agg.count = add(agg.count, e.count)
-                if e.factions then
+                if once then
                     agg.factions = orFactions(agg.factions or 0, e.factions)
                 end
-                for _, xy in ipairs(e.coords) do
-                    local ck = xy[1] .. "," .. xy[2]
-                    if not agg.seen[ck] then
-                        agg.seen[ck] = true
-                        agg.coords[#agg.coords + 1] = { xy[1], xy[2] }
+                if e.map == agg.map then
+                    for _, xy in ipairs(e.coords) do
+                        local ck = xy[1] .. "," .. xy[2]
+                        if not agg.seen[ck] then
+                            agg.seen[ck] = true
+                            agg.coords[#agg.coords + 1] = { xy[1], xy[2] }
+                        end
                     end
                 end
             end
@@ -294,8 +303,10 @@ local function rebuild(dataDir, outFile)
     end
 
     local rows, factions = {}, {}
-    for k, agg in pairs(loot) do
-        factions[k] = agg.factions
+    for _, agg in pairs(loot) do
+        if agg.factions then
+            factions[agg.item .. ":" .. agg.kind .. ":" .. agg.id .. ":" .. agg.map] = agg.factions
+        end
         table.sort(agg.coords, function(a, b)
             return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])
         end)

@@ -249,6 +249,47 @@ shipped "a contribution's bad q/v rows drop only those rows" "$qv/Loot.lua" '
 assert(S.contributors == 4 and #S.loot == 3 and S.factions["61:v:200:12"] == 3 and S.loot[2][5] == 3)
 assert(S.questNames.enUS[103] == "Kept" and S.questNames.enUS[102] == nil)'
 
+# The same quest on different maps from different contributors is one row on the lowest map, with that map's
+# coords, the counts summed and the factions ORed; drops on two maps stay two rows.
+sv m1.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 3,
+	loot = {
+		{ item = 70, kind = "q", id = 300, map = 1429, count = 1, coords = { { 100, 100 } }, factions = 1 },
+		{ item = 71, kind = "c", id = 448, map = 1429, count = 1, coords = {} },
+	},
+}
+EOF
+sv m2.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 3,
+	loot = {
+		{ item = 70, kind = "q", id = 300, map = 12, count = 1, coords = { { 500, 500 } }, factions = 2 },
+		{ item = 71, kind = "c", id = 448, map = 12, count = 1, coords = {} },
+	},
+}
+EOF
+sv m3.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 3,
+	loot = { { item = 70, kind = "q", id = 300, map = 12, count = 1, coords = { { 600, 600 } }, factions = 2 } },
+}
+EOF
+maps="$tmp/maps"
+import "$maps" "$maps/Loot.lua" enUS m1 "$tmp/m1.lua" enUS m2 "$tmp/m2.lua" enUS m3 "$tmp/m3.lua"
+check "a quest on two maps imports" "$?" "0"
+contains "a quest on two maps is one row on the lower map with its coords and the summed count" "$maps/Loot.lua" \
+	't[1] = { 70, "q", 300, 12, 3, 500, 500, 600, 600 }'
+contains "the success line counts the collapsed row once" "$tmp/out" '(3 contributors, 0 items, 3 loot rows)'
+shipped "a collapsed quest row keeps ORed factions under the lower map" "$maps/Loot.lua" '
+assert(S.factions["70:q:300:12"] == 3 and S.factions["70:q:300:1429"] == nil)
+assert(S.loot[2][1] == 71 and S.loot[2][4] == 12 and S.loot[3][1] == 71 and S.loot[3][4] == 1429)'
+cp "$maps/Loot.lua" "$tmp/maps1"
+rm "$maps/contributions/m2.lua"
+import "$maps" "$maps/Loot.lua" enUS m2 "$tmp/m2.lua"
+cmp -s "$maps/Loot.lua" "$tmp/maps1"
+check "re-importing one contributor gives a byte-identical collapsed row" "$?" "0"
+
 # Contributions written before kills, corpses and items existed still import.
 old="$tmp/old"
 mkdir -p "$old/contributions"
