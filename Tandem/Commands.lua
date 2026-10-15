@@ -31,6 +31,8 @@ local function printUsage()
     print(L["  /tandem browse [<slot>] - browse known gear in a window"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
     print(L["  /tandem check - list the client APIs each feature needs"])
+    print(L["  /tandem map <item link|id> - pin where an item comes from on the world map"])
+    print(L["  /tandem map clear - remove the map pins"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -252,10 +254,15 @@ local function gear(args)
     print(L["Ranked by item level, then quality; stats are not considered"])
 end
 
+-- Returns the item ID of a shift-clicked link among args, or of a lone number, or nil.
+local function itemArg(args)
+    local id = table.concat(args, " "):match("item:(%d+)") or (#args == 1 and args[1]:match("^%d+$")) or nil
+    return tonumber(id)
+end
+
 -- rank <item link|id>
 local function rank(args)
-    local id = table.concat(args, " "):match("item:(%d+)") or (#args == 1 and args[1]:match("^%d+$")) or nil
-    id = tonumber(id)
+    local id = itemArg(args)
     if not id then
         print(L["Tandem: usage /tandem rank <item link|id>"])
         return
@@ -334,8 +341,23 @@ local function check()
     end
 end
 
+-- map <item link|id> | clear
+local function map(args)
+    if #args == 1 and args[1] == "clear" then
+        ns.MapPins.Clear()
+        print(L["Tandem: map pins cleared"])
+        return
+    end
+    local id = itemArg(args)
+    if not id then
+        print(L["Tandem: usage /tandem map <item link|id> or /tandem map clear"])
+        return
+    end
+    ns.MapPins.Open(id)
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
-local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true, check = true }
+local NOT_IN_COMBAT = { gear = true, rank = true, export = true, browse = true, check = true, map = true }
 
 -- minimap [on|off]: no argument toggles. Allowed in combat: the button is not a protected frame.
 local MINIMAP_STATE = { on = true, off = false }
@@ -378,6 +400,8 @@ function Commands.Run(msg)
         minimap(args)
     elseif sub == "check" and #args == 0 then
         check()
+    elseif sub == "map" then
+        map(args)
     else
         printUsage()
     end

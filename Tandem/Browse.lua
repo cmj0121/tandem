@@ -56,6 +56,7 @@ end
 local function updateSources()
     local pane = frame.pane
     local lines = {}
+    pane.map:SetEnabled(selected ~= nil)
     if selected then
         pane.header:SetText(View.LinkOf(selected))
         lines = View.SourceLines(selected, SOURCE_ROWS)
@@ -83,11 +84,20 @@ end
 
 local onDrop
 
+-- Selects an item (nil: none); a new selection drops the map pins of the earlier one.
+local function selectItem(id)
+    if id ~= selected then
+        ns.MapPins.Clear()
+    end
+    selected = id
+end
+
 local function onClick(self)
     if onDrop() or not self.row then
         return
     end
-    selected, unknown = self.row.id, nil
+    selectItem(self.row.id)
+    unknown = nil
     updateSources()
     frame.box:ForEachFrame(updateSelected)
 end
@@ -242,6 +252,17 @@ local function makeResizable(f, maxW, maxH, onSized)
     return true
 end
 
+-- A UIPanelButtonTemplate button when the client has it, else a plain one.
+local function panelButton(parent, width)
+    local ok, b = pcall(CreateFrame, "Button", nil, parent, "UIPanelButtonTemplate")
+    if not ok or not b then
+        b = CreateFrame("Button", nil, parent)
+        b:SetNormalFontObject("GameFontNormal")
+    end
+    b:SetSize(width, 22)
+    return b
+end
+
 -- The scan bar: rate, cap, Start/Stop and a status line under them.
 local function buildScanBar(f)
     local rateLabel = label(f, L["Rate"])
@@ -252,17 +273,11 @@ local function buildScanBar(f)
     capLabel:SetPoint("LEFT", f.rate, "RIGHT", 12, 0)
     f.cap = editBox(f, 60, DEFAULT_CAP_TEXT)
     f.cap:SetPoint("LEFT", capLabel, "RIGHT", 8, 0)
-    local ok, button = pcall(CreateFrame, "Button", nil, f, "UIPanelButtonTemplate")
-    if not ok or not button then
-        button = CreateFrame("Button", nil, f)
-        button:SetNormalFontObject("GameFontNormal")
-    end
-    button:SetSize(80, 22)
-    button:SetPoint("LEFT", f.cap, "RIGHT", 12, 0)
-    button:SetScript("OnClick", function()
+    f.scan = panelButton(f, 80)
+    f.scan:SetPoint("LEFT", f.cap, "RIGHT", 12, 0)
+    f.scan:SetScript("OnClick", function()
         Browse.ToggleScan()
     end)
-    f.scan = button
     f.status = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.status:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -12)
     f.status:SetPoint("RIGHT", f, "RIGHT", -14, 0)
@@ -410,9 +425,13 @@ local function build()
     pane:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
     pane:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 8)
     pane:SetHeight(PANE_HEIGHT)
+    pane.map = panelButton(pane, 110)
+    pane.map:SetPoint("TOPRIGHT", pane, "TOPRIGHT", 0, 2)
+    pane.map:SetText(L["Show on map"])
+    pane.map:SetScript("OnClick", Browse.ShowOnMap)
     pane.header = pane:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     pane.header:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, 0)
-    pane.header:SetPoint("RIGHT", pane, "RIGHT", 0, 0)
+    pane.header:SetPoint("RIGHT", pane.map, "LEFT", -8, 0)
     pane.header:SetJustifyH("LEFT")
     pane.lines = {}
     for i = 1, SOURCE_ROWS + 1 do
@@ -533,6 +552,14 @@ function Browse.OnItemInfo(id, success)
     end
 end
 
+-- Show on map: pins the selected item's sources on the world map; refused in combat.
+function Browse.ShowOnMap()
+    if not selected or View.InCombat() then
+        return
+    end
+    ns.MapPins.Open(selected)
+end
+
 function Browse.OnCombat()
     Browse.Hide()
 end
@@ -633,7 +660,8 @@ local function lookup(id)
     View.NoteName(id, View.CachedName(id))
     local r = ns.Advisor.Place(id, class, level)
     if r then
-        selected, unknown = id, nil
+        selectItem(id)
+        unknown = nil
         slot = r.slot
         -- An item with no ranked slot is never listed, so the filters stay as they are.
         if r.slot and not r.usable then
@@ -646,7 +674,8 @@ local function lookup(id)
             onlyQuality = nil
         end
     else
-        selected, unknown = nil, id
+        selectItem(nil)
+        unknown = id
     end
     for _, menu in ipairs({ frame.dropdown, frame.quality }) do
         if menu.GenerateMenu then

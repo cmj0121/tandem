@@ -182,6 +182,11 @@ function Advisor.SourceIndex()
     return { own = ownSourced(), shipped = shippedByItem() }
 end
 
+-- Returns the shipped loot rows of an item: { item, kind, id, map, count, x1, y1, ... }; empty when none.
+function Advisor.ShippedRows(id)
+    return shippedByItem()[id] or EMPTY
+end
+
 local function isSourced(id, index)
     return index.own[id] == true or index.shipped[id] ~= nil
 end

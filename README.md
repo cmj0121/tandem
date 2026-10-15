@@ -90,8 +90,10 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 | `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
 | `/tandem minimap [on\|off]`           | Shows or hides the minimap button; with no argument, toggles it  |
 | `/tandem check`                       | Lists, per feature, which client APIs it needs are found         |
+| `/tandem map <item link\|id>`         | Opens the world map with a pin on each known place of the item   |
+| `/tandem map clear`                   | Removes the map pins                                             |
 
-`gear`, `rank`, `export`, `browse` and `check` print `Tandem: not available in combat` and do nothing while you are in combat.
+`gear`, `rank`, `export`, `browse`, `check` and `map` print `Tandem: not available in combat` and do nothing while you are in combat.
 `minimap` works in combat too.
 
 ### `/tandem scan`
@@ -300,7 +302,9 @@ filter, rather than jumping away under the mouse.
 
 Hover a row to see the game's tooltip for the item. Click a row to select it: the pane at the bottom shows the item's
 link and up to 5 places to get it, in the same lines and order as `rank`, ending with `and <n> more sources` when there
-are more. With nothing selected, the pane reads `Select an item to see where it drops`.
+are more. With nothing selected, the pane reads `Select an item to see where it drops`. The `Show on map` button at
+the pane's top right does what `/tandem map` does for the selected item; it is greyed out while nothing is selected, and
+selecting another item removes the pins of the earlier one.
 
 Drop an item on the window to look it up: pick it up from your bags or your character sheet, then drag it onto the list
 or the window's background, or click there with it. The item leaves the cursor and stays where it was. The dropdown
@@ -347,6 +351,27 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert` and `Item stats`.
 A feature whose API is missing stays off instead of raising an error.
+
+### `/tandem map`
+
+`/tandem map <item link|id>` takes an item ID or a shift-clicked item link, as `rank` does. It opens the world map on
+the map of the item's first source, in the order `rank` lists them, that has a known place, and puts a pin on each
+place where the item was seen: up to 50, each place once. A pin shows only while its own map is shown, so switch the
+map to see the pins of the other sources. Hover a pin to see the source's name; click it to set the game's waypoint
+there and track it, which prints `Tandem: waypoint set to <source>`.
+
+Pinning another item replaces the pins, and `/tandem map clear` removes them, printing `Tandem: map pins cleared`.
+Pins are not projected onto the continent or world map, and they grow and shrink with the map's zoom.
+
+When nothing can be pinned, it says why and opens nothing:
+
+- `Tandem: map pins are not available on this client; see /tandem check` when the `Map pins` APIs are missing.
+- `Tandem: item <id> is not known; scan or loot it first` for an item with neither a record nor a source.
+- `Tandem: no known map position for item <id>` when no source has a place, such as one seen on an unknown map.
+
+A click on a pin prints `Tandem: this map does not take a waypoint` on a map that refuses waypoints, and
+`Tandem: waypoints are not available on this client; see /tandem check` when the `Map waypoint` APIs are missing.
+In combat the command, the button and a pin click print `Tandem: not available in combat` and do nothing.
 
 ## Gear advice
 
@@ -693,7 +718,7 @@ tooltip in step 5, and any Lua error.
 
 ### Check the client APIs
 
-The tooltip and the quest and vendor sources, and the map pins, quest reward pick and upgrade alert still to come,
+The tooltip, the quest and vendor sources and the map pins, and the quest reward pick and upgrade alert still to come,
 use APIs that are not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
 1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eight lines, one each for `Item tooltip`,
@@ -708,9 +733,29 @@ use APIs that are not verified on Forever. One pass of `/tandem check` tells whi
    else.
 5. If `Item tooltip` is `ok`, run the steps of [Check the item tooltip](#check-the-item-tooltip). If `Quest sources` or
    `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
-   check.
+   check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins).
 
 Report back every line of steps 1 and 2 as printed, and any Lua error.
+
+### Check the map pins
+
+1. Out of combat, run `/tandem rank <item link>` for an item you looted from a mob, so you know its sources and maps.
+2. Run `/tandem map <item link>` with the same link. The world map opens on the map of the first listed source with a
+   known place, and small Tandem icons mark where the item was seen. Nothing is printed.
+3. Hover a pin: the tooltip shows the source's name and `Click to set a waypoint`. Click it: chat shows
+   `Tandem: waypoint set to <source>`, the waypoint appears on the map and the minimap, and it is tracked.
+4. Switch the world map to another zone and back: the pins show only on their own map. If the item has a source on
+   another map, open that map and check its pins.
+5. Open `/tandem browse`, select an item and click `Show on map`: the map opens with that item's pins. Select another
+   item: the pins are gone.
+6. Run `/tandem map clear`: chat shows `Tandem: map pins cleared` and the pins are gone.
+7. Run `/tandem map` for an item that has no known place, such as one only seen on map 0: chat shows
+   `Tandem: no known map position for item <id>` and the map does not open.
+8. Start a fight and, while in combat, run `/tandem map <item link>` and click a pin left on the map: each prints
+   `Tandem: not available in combat` and nothing else happens.
+
+Report back whether the pins sit on the right spots, whether they hide behind other map icons, whether the waypoint
+was set, the map ID of any map that refused it, and any Lua error.
 
 ## Interface number
 

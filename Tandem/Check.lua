@@ -50,6 +50,25 @@ function Check.Has(path)
     return v ~= nil
 end
 
+-- Returns true when every need of the named feature is met; a feature gates on this before touching its API.
+function Check.Ready(name)
+    for _, feature in ipairs(Check.FEATURES) do
+        if feature.name == name then
+            for _, need in ipairs(feature.needs) do
+                local met = false
+                for _, path in ipairs(need) do
+                    met = met or Check.Has(path)
+                end
+                if not met then
+                    return false
+                end
+            end
+            return true
+        end
+    end
+    return false
+end
+
 -- Returns { {name, ok, apis = { {path, ok}, ... }}, ... } in FEATURES order; ok when every need is met.
 function Check.Status()
     local out = {}

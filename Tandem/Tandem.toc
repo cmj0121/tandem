@@ -22,6 +22,7 @@ Kills.lua
 Advisor.lua
 View.lua
 Check.lua
+MapPins.lua
 Commands.lua
 Browse.lua
 Launcher.lua

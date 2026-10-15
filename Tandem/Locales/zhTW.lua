@@ -78,6 +78,21 @@ L["Map waypoint"] = "地圖導航點"
 L["Quest reward pick"] = "任務獎勵建議"
 L["Upgrade alert"] = "升級提醒"
 L["Item stats"] = "物品屬性"
+L["  /tandem map <item link|id> - pin where an item comes from on the world map"] =
+    "  /tandem map <物品連結|id> - 在世界地圖上標記物品的來源位置"
+L["  /tandem map clear - remove the map pins"] = "  /tandem map clear - 移除地圖標記"
+L["Tandem: usage /tandem map <item link|id> or /tandem map clear"] =
+    "Tandem：用法 /tandem map <物品連結|id> 或 /tandem map clear"
+L["Tandem: map pins cleared"] = "Tandem：已移除地圖標記"
+L["Tandem: map pins are not available on this client; see /tandem check"] =
+    "Tandem：此用戶端無法使用地圖標記；請見 /tandem check"
+L["Tandem: no known map position for item %d"] = "Tandem：物品 %d 沒有已知的地圖位置"
+L["Tandem: waypoints are not available on this client; see /tandem check"] =
+    "Tandem：此用戶端無法使用導航點；請見 /tandem check"
+L["Tandem: this map does not take a waypoint"] = "Tandem：此地圖無法設定導航點"
+L["Tandem: waypoint set to %s"] = "Tandem：已設定導航點至 %s"
+L["Click to set a waypoint"] = "點擊以設定導航點"
+L["Show on map"] = "在地圖上顯示"
 L["Hide deprecated"] = "隱藏已棄用"
 L[" (deprecated)"] = "（已棄用）"
 L["  this item is deprecated"] = "  此物品已棄用"

@@ -532,7 +532,9 @@ do
     check("usage lists browse", help[9], "  /tandem browse [<slot>] - browse known gear in a window")
     check("usage lists minimap", help[10], "  /tandem minimap [on|off] - show or hide the minimap button")
     check("usage lists check", help[11], "  /tandem check - list the client APIs each feature needs")
-    check("usage line count", #help, 11)
+    check("usage lists map", help[12], "  /tandem map <item link|id> - pin where an item comes from on the world map")
+    check("usage lists map clear", help[13], "  /tandem map clear - remove the map pins")
+    check("usage line count", #help, 13)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -2591,6 +2593,8 @@ function WIDGET.StartSizing(w, corner) w.sizing = corner end
 function WIDGET.SetNormalTexture(w, t) w.normal = t end
 function WIDGET.SetPushedTexture(w, t) w.pushed = t end
 function WIDGET.SetHighlightTexture(w, t) w.highlight = t end
+function WIDGET.SetEnabled(w, enabled) w.enabled = enabled end
+function WIDGET.IsEnabled(w) return w.enabled end
 
 local function newWidget(ui, kind, name, parent, template)
     local w = setmetatable({ ui = ui, kind = kind, name = name, parent = parent, template = template, shown = true,
@@ -4929,6 +4933,292 @@ do
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
     check("zhTW check: feature line", out[#out], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+end
+
+-- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
+
+-- gearData() plus coords: item 1 drops from npc 448 on 1429 (own and shipped, one coord shared) and object 77 on 1411;
+-- item 3 only from map 0; item 12 is quest 100's reward on 1429 (own) and 1411 (shipped); item 5 has 60 coords.
+local function mapData()
+    local db, shipped = gearData()
+    db.loot["1:c:448:1429"].coords = { { 400, 600 }, { 410, 610 } }
+    db.loot["1:o:77:1411"] = { item = 1, kind = "o", id = 77, map = 1411, count = 1, coords = { { 100, 200 } } }
+    db.loot["3:c:449:0"] = { item = 3, kind = "c", id = 449, map = 0, count = 1, coords = { { 1, 2 } } }
+    db.loot["12:q:100:1429"] = { item = 12, kind = "q", id = 100, map = 1429, count = 1, coords = { { 300, 300 } },
+                               factions = 3 }
+    shipped.loot[#shipped.loot + 1] = { 1, "c", 448, 1429, 2, 400, 600, 500, 700 }
+    shipped.loot[#shipped.loot + 1] = { 12, "q", 100, 1411, 1, 500, 500 }
+    local a, b = { 5, "c", 501, 1429, 3 }, { 5, "c", 502, 1411, 2 }
+    for i = 1, 30 do
+        for _, row in ipairs({ a, b }) do
+            row[#row + 1] = i
+            row[#row + 1] = i
+        end
+    end
+    shipped.loot[#shipped.loot + 1] = a
+    shipped.loot[#shipped.loot + 1] = b
+    return db, shipped
+end
+
+-- Loads mapData() in the browse harness with a world map: ctx.map.mapID is the shown map, ctx.map.setMap(id) shows
+-- another and runs the hooks, ctx.map.opened the map OpenWorldMap got, ctx.map.waypoint / tracked what was set,
+-- ctx.map.refuse[map] makes a map refuse waypoints. opts.drop lists globals to leave out; opts.locale.
+local function loadMap(opts)
+    opts = opts or {}
+    local m = { hooks = {}, refuse = {}, opens = 0 }
+    local canvas = newWidget({ widgets = {} }, "Frame")
+    canvas:SetSize(1000, 500)
+    m.canvas = canvas
+    local mapFrame = {
+        GetCanvas = function()
+            return canvas
+        end,
+        GetMapID = function()
+            return m.mapID
+        end,
+    }
+    function mapFrame.OnMapChanged() end
+    m.onMapChanged = mapFrame.OnMapChanged
+    m.frame = mapFrame
+    function m.setMap(id)
+        m.mapID = id
+        for _, h in ipairs(m.hooks) do
+            h.fn()
+        end
+    end
+    local env = {
+        WorldMapFrame = mapFrame,
+        hooksecurefunc = function(t, name, fn)
+            m.hooks[#m.hooks + 1] = { t = t, name = name, fn = fn }
+        end,
+        OpenWorldMap = function(id)
+            m.opened, m.opens = id, m.opens + 1
+            m.setMap(id)
+        end,
+        C_Map = {
+            GetMapInfo = function(map)
+                return map == 1429 and { name = "Elwynn Forest" } or nil
+            end,
+            CanSetUserWaypointOnMap = function(map)
+                return not m.refuse[map]
+            end,
+            SetUserWaypoint = function(wp)
+                m.waypoint = wp
+            end,
+        },
+        UiMapPoint = { CreateFromCoordinates = function(map, x, y)
+            return { map = map, x = x, y = y }
+        end },
+        C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v)
+            m.tracked = v
+        end },
+    }
+    for _, name in ipairs(opts.drop or {}) do
+        env[name] = false
+    end
+    local db, shipped = mapData()
+    local ctx = loadBrowse(opts.locale, db, shipped, { env = env })
+    for _, name in ipairs(opts.drop or {}) do
+        ctx.env[name] = nil
+    end
+    ctx.map = m
+    -- Returns the shown pins as sorted "x,y" offsets from the canvas's top left.
+    function ctx.pins()
+        local out = {}
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.parent == canvas and w.kind == "Button" and w:IsShown() then
+                local p = w.points[#w.points]
+                out[#out + 1] = ("%g,%g"):format(p[4], p[5])
+            end
+        end
+        table.sort(out)
+        return table.concat(out, " ")
+    end
+    -- Returns the first shown pin at canvas offset x, y.
+    function ctx.pinAt(x, y)
+        for _, w in ipairs(ctx.ui.widgets) do
+            local p = w.points[#w.points]
+            if w.parent == canvas and w.kind == "Button" and w:IsShown() and p[4] == x and p[5] == y then
+                return w
+            end
+        end
+    end
+    return ctx
+end
+
+-- Returns the browse row button of item id.
+local function rowButton(win, id)
+    for _, b in ipairs(win.box.buttons) do
+        if b.row and b.row.id == id then
+            return b
+        end
+    end
+end
+
+local function pointList(points)
+    local out = {}
+    for _, p in ipairs(points or {}) do
+        out[#out + 1] = ("%g,%g %s"):format(p[1], p[2], p[3])
+    end
+    return table.concat(out, "; ")
+end
+
+do
+    local ctx = loadMap()
+    local Points = ctx.addon.MapPins.Points
+    local byMap, first = Points(1)
+    check("map points: first map is the first source's", first, 1429)
+    check("map points: own then shipped, equal coords once", pointList(byMap[1429]),
+        "0.4,0.6 npc #448; 0.41,0.61 npc #448; 0.5,0.7 npc #448")
+    check("map points: a second source's map", pointList(byMap[1411]), "0.1,0.2 object #77")
+    byMap, first = Points(3)
+    check("map points: map 0 gives no point", next(byMap), nil)
+    check("map points: map 0 gives no first map", first, nil)
+    byMap, first = Points(12)
+    check("map points: a quest merged across maps starts on its lower map", first, 1411)
+    check("map points: the quest's lower map", pointList(byMap[1411]), "0.5,0.5 quest #100")
+    check("map points: the quest's other map", pointList(byMap[1429]), "0.3,0.3 quest #100")
+    byMap = Points(5)
+    check("map points: 50 points at most, first source first", #byMap[1429] .. "+" .. #byMap[1411], "30+20")
+    byMap, first = Points(999)
+    check("map points: an unknown item has none", tostring(next(byMap)) .. " " .. tostring(first), "nil nil")
+end
+
+do
+    local ctx = loadMap()
+    local m = ctx.map
+    check("map: nothing hooked before use", #m.hooks, 0)
+    check("map: no output when pins show", #ctx.run("map 1"), 0)
+    check("map: opens the first source's map", m.opened, 1429)
+    check("map: one pin per coord of the shown map", ctx.pins(), "400,-300 410,-305 500,-350")
+    check("map: hooks OnMapChanged", #m.hooks == 1 and m.hooks[1].t == m.frame and m.hooks[1].name, "OnMapChanged")
+    check("map: Blizzard's method is not replaced", m.frame.OnMapChanged, m.onMapChanged)
+    m.setMap(1411)
+    check("map: another map shows its own pins", ctx.pins(), "100,-100")
+    m.setMap(1)
+    check("map: a map without points shows none", ctx.pins(), "")
+    m.setMap(1429)
+    check("map: back on the first map", ctx.pins(), "400,-300 410,-305 500,-350")
+
+    local pin = ctx.pinAt(410, -305)
+    pin.scripts.OnEnter(pin)
+    check("map: pin tooltip owner", ctx.ui.tooltipOwner, pin)
+    check("map: pin tooltip label", ctx.env.GameTooltip.text, "npc #448")
+    check("map: pin tooltip hint", ctx.ui.tooltipLines[#ctx.ui.tooltipLines], "Click to set a waypoint")
+    local from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: click sets a waypoint", m.waypoint and ("%d %g %g"):format(m.waypoint.map, m.waypoint.x,
+        m.waypoint.y), "1429 0.41 0.61")
+    check("map: click super-tracks it", m.tracked, true)
+    check("map: click says so", ctx.since(from)[1], "Tandem: waypoint set to npc #448")
+
+    m.waypoint, m.tracked, m.refuse[1429] = nil, nil, true
+    from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: a refusing map gets no waypoint", m.waypoint, nil)
+    check("map: a refusing map says so", ctx.since(from)[1], "Tandem: this map does not take a waypoint")
+    m.refuse[1429] = nil
+
+    ctx.env.C_SuperTrack = nil
+    from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: no waypoint without the API", m.waypoint, nil)
+    check("map: missing waypoint API says so", ctx.since(from)[1],
+        "Tandem: waypoints are not available on this client; see /tandem check")
+
+    ctx.combat = true
+    from = #ctx.printed
+    pin.scripts.OnClick(pin)
+    check("map: a click in combat is refused", ctx.since(from)[1], "Tandem: not available in combat")
+    check("map: a click in combat sets nothing", m.waypoint, nil)
+    ctx.combat = false
+
+    ctx.run("map 12")
+    check("map: a new item replaces the pins", ctx.pins(), "500,-250")
+    check("map: a new item opens its map", m.opened, 1411)
+    check("map: hooked once", #m.hooks, 1)
+    check("map clear: says so", ctx.run("map clear")[1], "Tandem: map pins cleared")
+    check("map clear: hides every pin", ctx.pins(), "")
+    m.setMap(1429)
+    check("map clear: no pin on a later map change", ctx.pins(), "")
+
+    check("map: a shift-clicked link", #ctx.run("map " .. built(1, "a335ee", "Plate Chest")), 0)
+    check("map: the link's item", ctx.pins(), "400,-300 410,-305 500,-350")
+    check("map: map 0 only", ctx.run("map 3")[1], "Tandem: no known map position for item 3")
+    check("map: no coords keeps the pins", ctx.pins(), "400,-300 410,-305 500,-350")
+    check("map: unknown item", ctx.run("map 999")[1], "Tandem: item 999 is not known; scan or loot it first")
+    check("map: no argument", ctx.run("map")[1], "Tandem: usage /tandem map <item link|id> or /tandem map clear")
+    check("map: two words", ctx.run("map 1 2")[1], "Tandem: usage /tandem map <item link|id> or /tandem map clear")
+
+    ctx.combat = true
+    local opens = m.opens
+    local out = ctx.run("map 12")
+    check("map: refused in combat", out[1], "Tandem: not available in combat")
+    check("map: prints only the refusal in combat", #out, 1)
+    check("map: nothing opened in combat", m.opens, opens)
+    check("map clear: refused in combat", ctx.run("map clear")[1], "Tandem: not available in combat")
+    local ok, reason = ctx.addon.MapPins.Show(12)
+    check("map: Show in combat", tostring(ok) .. " " .. reason, "false combat")
+end
+
+do
+    local ctx = loadMap({ drop = { "WorldMapFrame" } })
+    local ok, out = pcall(ctx.run, "map 1")
+    check("map: no error without the map API", ok, true)
+    check("map: missing map API says so", ok and out[1],
+        "Tandem: map pins are not available on this client; see /tandem check")
+    check("map: Show without the map API", select(2, ctx.addon.MapPins.Show(1)), "noapi")
+    check("map: nothing hooked without the map API", #ctx.map.hooks, 0)
+end
+
+do
+    local ctx = loadMap({ drop = { "hooksecurefunc" } })
+    check("map: missing hooksecurefunc says so", ctx.run("map 1")[1],
+        "Tandem: map pins are not available on this client; see /tandem check")
+    check("map: nothing opened without hooksecurefunc", ctx.map.opened, nil)
+end
+
+do
+    local ctx = loadMap()
+    ctx.level = 45
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local map = win.pane.map
+    check("browse map: button label", map:GetText(), "Show on map")
+    check("browse map: button template", map.template, "UIPanelButtonTemplate")
+    check("browse map: disabled with nothing selected", map:IsEnabled(), false)
+    local b1 = rowButton(win, 1)
+    b1.scripts.OnClick(b1)
+    check("browse map: enabled once an item is selected", map:IsEnabled(), true)
+    check("browse map: no output when pins show", (function()
+        local from = #ctx.printed
+        map.scripts.OnClick(map)
+        return #ctx.since(from)
+    end)(), 0)
+    check("browse map: opens the source's map", ctx.map.opened, 1429)
+    check("browse map: pins the selected item", ctx.pins(), "400,-300 410,-305 500,-350")
+    b1.scripts.OnClick(b1)
+    check("browse map: selecting the same item keeps the pins", ctx.pins(), "400,-300 410,-305 500,-350")
+    local b3 = rowButton(win, 3)
+    b3.scripts.OnClick(b3)
+    check("browse map: a new selection clears the pins", ctx.pins(), "")
+    local from = #ctx.printed
+    map.scripts.OnClick(map)
+    check("browse map: an item without coords says so", ctx.since(from)[1],
+        "Tandem: no known map position for item 3")
+    ctx.combat = true
+    local opens = ctx.map.opens
+    from = #ctx.printed
+    b1.scripts.OnClick(b1)
+    map.scripts.OnClick(map)
+    check("browse map: refused in combat", ctx.since(from)[1], "Tandem: not available in combat")
+    check("browse map: nothing opened in combat", ctx.map.opens, opens)
+end
+
+do
+    local ctx = loadMap({ locale = "zhTW" })
+    check("zhTW map: no coords", ctx.run("map 3")[1], "Tandem：物品 3 沒有已知的地圖位置")
+    check("zhTW map: cleared", ctx.run("map clear")[1], "Tandem：已移除地圖標記")
 end
 
 if failures > 0 then

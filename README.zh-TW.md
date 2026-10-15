@@ -88,8 +88,10 @@ make install MODE=copy
 | `/tandem browse [<slot>]`             | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
 | `/tandem minimap [on\|off]`           | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
 | `/tandem check`                       | 逐項功能列出它需要的用戶端 API 是否存在                           |
+| `/tandem map <item link\|id>`         | 開啟世界地圖，並在物品的每個已知位置放上標記                      |
+| `/tandem map clear`                   | 移除地圖標記                                                      |
 
-戰鬥中執行 `gear`、`rank`、`export`、`browse` 與 `check` 時，只會印出 `Tandem: not available in combat`，不做任何事。
+戰鬥中執行 `gear`、`rank`、`export`、`browse`、`check` 與 `map` 時，只會印出 `Tandem: not available in combat`，不做任何事。
 `minimap` 在戰鬥中也能使用。
 
 ### `/tandem scan`
@@ -279,7 +281,8 @@ Ranked by item level, then quality; stats are not considered
 
 滑鼠移到一列上會顯示遊戲的物品提示框。點擊一列即可選取它：底部的窗格會顯示物品連結與最多 5 個取得來源，格式與
 順序都與 `rank` 相同；來源更多時，最後會顯示 `and <n> more sources`。沒有選取任何物品時，窗格顯示
-`Select an item to see where it drops`。
+`Select an item to see where it drops`。窗格右上角的 `Show on map` 按鈕會對選取的物品執行與 `/tandem map` 相同的事；
+沒有選取物品時按鈕為灰色，選取另一件物品時會移除前一件物品的標記。
 
 把物品放到視窗上即可查詢它：從背包或角色資訊視窗拿起物品，拖到清單或視窗背景上，或拿著它在那裡點擊。物品會離開
 游標並留在原處。下拉選單會切換到該物品的部位，選取該物品並捲動到它那一列，窗格顯示它的來源。你無法使用該物品時，
@@ -321,6 +324,28 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
 `Quest reward pick`、`Upgrade alert` 與 `Item stats`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+
+### `/tandem map`
+
+`/tandem map <item link|id>` 與 `rank` 一樣接受物品 ID 或 Shift 點擊的物品連結。它會依 `rank` 列出的來源順序，在第一個
+有已知位置的來源所在地圖上開啟世界地圖，並在物品出現過的每個位置放上標記：最多 50 個，相同位置只放一次。標記只在它
+所屬的地圖顯示時出現，切換地圖即可看到其他來源的標記。滑鼠移到標記上會顯示來源名稱；點擊標記會在該處設定遊戲的
+導航點並追蹤它，同時印出 `Tandem: waypoint set to <source>`。
+
+標記另一件物品會取代原有的標記；`/tandem map clear` 會移除標記並印出 `Tandem: map pins cleared`。標記不會投影到大陸
+或世界地圖上，並會隨地圖縮放而變大變小。
+
+無法標記時，會說明原因且不開啟地圖：
+
+- 缺少 `Map pins` 的 API 時：`Tandem: map pins are not available on this client; see /tandem check`。
+- 物品既沒有紀錄也沒有來源時：`Tandem: item <id> is not known; scan or loot it first`。
+- 沒有任何來源有位置時，例如只在未知地圖上看到：`Tandem: no known map position for item <id>`。
+
+點擊標記時，若地圖不接受導航點會印出 `Tandem: this map does not take a waypoint`；缺少 `Map waypoint` 的 API 時印出
+`Tandem: waypoints are not available on this client; see /tandem check`。戰鬥中執行指令、按下按鈕或點擊標記都只會
+印出 `Tandem: not available in combat`，不做任何事。
+
+`zhTW` 用戶端的這些訊息與按鈕文字會顯示為中文。
 
 ## 裝備建議
 
@@ -630,7 +655,7 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 
 ### 檢查用戶端 API
 
-物品提示框、任務與商人來源，以及接下來的地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
+物品提示框、任務與商人來源、地圖標記，以及接下來的任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
 1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與八行，分別是 `Item tooltip`、
@@ -642,9 +667,27 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 3. 開啟世界地圖，再執行一次 `/tandem check`：`Map pins` 這行不變。
 4. 開始戰鬥，在戰鬥中執行 `/tandem check`：只印出 `Tandem: not available in combat`。
 5. 若 `Item tooltip` 為 `ok`，請進行[檢查物品提示框](#檢查物品提示框)的步驟。若 `Quest sources` 或 `Vendor sources`
-   為 `ok`，請進行[檢查資料收集](#檢查資料收集)的步驟 8 與提示框檢查的步驟 4。
+   為 `ok`，請進行[檢查資料收集](#檢查資料收集)的步驟 8 與提示框檢查的步驟 4。若 `Map pins` 為 `ok`，請進行
+   [檢查地圖標記](#檢查地圖標記)。
 
 請回報步驟 1 與 2 印出的每一行，以及任何 Lua 錯誤。
+
+### 檢查地圖標記
+
+1. 在戰鬥外，對一件從怪物身上拾取的物品執行 `/tandem rank <物品連結>`，以得知它的來源與地圖。
+2. 用同一個連結執行 `/tandem map <物品連結>`。世界地圖會在第一個有已知位置的來源所在地圖上開啟，小小的 Tandem 圖示
+   標出物品出現過的位置。聊天視窗不會印出任何訊息。
+3. 滑鼠移到標記上：提示框顯示來源名稱與 `Click to set a waypoint`。點擊它：聊天視窗顯示
+   `Tandem: waypoint set to <source>`，導航點出現在地圖與小地圖上，並被追蹤。
+4. 把世界地圖切換到另一個區域再切回來：標記只在它所屬的地圖上顯示。若物品在其他地圖也有來源，開啟該地圖檢查標記。
+5. 開啟 `/tandem browse`，選取一件物品並按下 `Show on map`：地圖開啟並顯示該物品的標記。選取另一件物品：標記消失。
+6. 執行 `/tandem map clear`：聊天視窗顯示 `Tandem: map pins cleared`，標記消失。
+7. 對一件沒有已知位置的物品執行 `/tandem map`，例如只在地圖 0 看到的物品：聊天視窗顯示
+   `Tandem: no known map position for item <id>`，地圖不會開啟。
+8. 開始戰鬥，在戰鬥中執行 `/tandem map <物品連結>` 並點擊地圖上留下的標記：每次都只印出
+   `Tandem: not available in combat`，不會有其他動作。
+
+請回報標記是否落在正確位置、是否被其他地圖圖示蓋住、導航點是否設定成功、拒絕導航點的地圖 ID，以及任何 Lua 錯誤。
 
 ## Interface number
 
