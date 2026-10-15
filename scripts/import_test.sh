@@ -87,7 +87,7 @@ check "the out file and its directory are created" "$?" "0"
 check "data/loot.lua is no longer written" "$?" "0"
 contains "success line names the out file" "$tmp/out" "wrote $out (2 contributors, 2 items, 3 loot rows)"
 contains "contribution line counts every block" "$tmp/out" \
-	'(enUS: 2 loot entries, 2 npc names, 1 items, 3 kills, 2 looted corpses)'
+	'(enUS: 2 loot entries, 2 npc names, 0 quest names, 1 items, 3 kills, 2 looted corpses)'
 cp "$out" "$tmp/shipped1"
 cp "$data/contributions/aaaa.lua" "$tmp/aaaa1"
 
@@ -174,6 +174,80 @@ contains "the first record's flag survives a later unflagged record" "$dep/Loot.
 	't[53] = { 20, 15, 2, "INVTYPE_WAIST", 4, 1, 1 }'
 shipped "flagged records load back" "$dep/Loot.lua" '
 assert(S.items[50][7] == 1 and S.items[51][7] == 1 and S.items[52][7] == nil and #S.items[52] == 6)'
+
+# Quest rewards (q) and vendor items (v): counts are summed, factions ORed into S.factions, quest names merged per
+# locale into S.questNames; a bad q/v row drops only that row.
+sv qa.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 3,
+	quests = { [100] = "Wanted: Hogger", [101] = "Zeta" },
+	loot = {
+		{ item = 60, kind = "q", id = 100, map = 1429, count = 1, coords = { { 100, 200 } }, factions = 1 },
+		{ item = 61, kind = "v", id = 200, map = 12, count = 1, coords = {}, factions = 2 },
+		{ item = 62, kind = "c", id = 448, map = 1429, count = 2, coords = {} },
+		{ item = 63, kind = "q", id = 0, map = 1429, count = 1, coords = {}, factions = 1 },
+		{ item = 64, kind = "v", id = 201, map = 12, count = 1, coords = {}, factions = 4 },
+	},
+}
+EOF
+sv qb.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 3,
+	quests = { [100] = "通緝：霍格" },
+	loot = {
+		{ item = 60, kind = "q", id = 100, map = 1429, count = 1, coords = { { 300, 400 } }, factions = 2 },
+		{ item = 61, kind = "v", id = 200, map = 12, count = 1, coords = {}, factions = 2 },
+	},
+}
+EOF
+sv qc.lua <<'EOF'
+TandemDB = { schemaVersion = 3, quests = { [100] = "Another Name" } }
+EOF
+qv="$tmp/qv"
+import "$qv" "$qv/Loot.lua" enUS qa "$tmp/qa.lua" zhTW qb "$tmp/qb.lua" enUS qc "$tmp/qc.lua"
+check "quest and vendor rows import" "$?" "0"
+contains "bad q/v rows are reported" "$tmp/err" "qa.lua: 2 invalid entries ignored"
+contains "contribution line counts quest names" "$tmp/out" '(enUS: 3 loot entries, 0 npc names, 2 quest names,'
+contains "contribution keeps a q row's factions" "$qv/contributions/qa.lua" \
+	'{ item = 60, kind = "q", id = 100, map = 1429, count = 1, coords = { { 100, 200 } }, factions = 1 },'
+contains "contribution keeps quest names" "$qv/contributions/qa.lua" '[100] = "Wanted: Hogger",'
+contains "a drop row carries no factions" "$qv/contributions/qa.lua" \
+	'{ item = 62, kind = "c", id = 448, map = 1429, count = 2, coords = {} },'
+contains "q rows keep the loot row shape" "$qv/Loot.lua" 't[1] = { 60, "q", 100, 1429, 2, 100, 200, 300, 400 }'
+contains "factions are keyed by item:kind:id:map" "$qv/Loot.lua" 't["60:q:100:1429"] = 3'
+contains "quest names are grouped by locale" "$qv/Loot.lua" 'S.questNames["zhTW"] = {}'
+shipped "q/v rows, factions and quest names load back" "$qv/Loot.lua" '
+assert(S.contributors == 3 and #S.loot == 3, "only the bad rows are dropped")
+assert(S.loot[2][1] == 61 and S.loot[2][5] == 2 and S.loot[3][1] == 62 and S.loot[3][2] == "c")
+assert(S.loot[1][5] == 2 and #S.loot[1] == 9, "q counts are summed; one coord from each contributor")
+assert(S.factions["60:q:100:1429"] == 3, "factions are ORed")
+assert(S.factions["61:v:200:12"] == 2, "the same faction twice stays one bit")
+assert(S.factions["62:c:448:1429"] == nil, "drop rows have no factions")
+assert(S.factions["63:q:0:1429"] == nil and S.factions["64:v:201:12"] == nil)
+assert(S.questNames.enUS[100] == "Another Name" and S.questNames.enUS[101] == "Zeta", "lexically first name wins")
+assert(S.questNames.zhTW[100] == "通緝：霍格" and next(S.names.enUS) == nil)'
+import "$qv" "$qv/Loot.lua" zhTW qb "$tmp/qb.lua" enUS qa "$tmp/qa.lua" enUS qc "$tmp/qc.lua"
+cp "$qv/Loot.lua" "$tmp/qv1"
+import "$qv" "$qv/Loot.lua"
+cmp -s "$qv/Loot.lua" "$tmp/qv1"
+check "a q/v rebuild is byte-identical" "$?" "0"
+cat >"$qv/contributions/zz.lua" <<'EOF'
+return {
+    locale = "enUS",
+    loot = {
+        { item = 61, kind = "v", id = 200, map = 12, count = 1, coords = {}, factions = 1 },
+        { item = 65, kind = "v", id = 202, map = 12, count = 1, coords = {} },
+        { item = 66, kind = "q", id = 102, map = 12, count = 1, coords = {}, factions = 0 },
+    },
+    quests = { [102] = "", [103] = "Kept" },
+}
+EOF
+import "$qv" "$qv/Loot.lua"
+check "a contribution with bad q/v rows rebuilds" "$?" "0"
+contains "a contribution's bad q/v rows and names are reported" "$tmp/err" "zz.lua: 3 invalid entries ignored"
+shipped "a contribution's bad q/v rows drop only those rows" "$qv/Loot.lua" '
+assert(S.contributors == 4 and #S.loot == 3 and S.factions["61:v:200:12"] == 3 and S.loot[2][5] == 3)
+assert(S.questNames.enUS[103] == "Kept" and S.questNames.enUS[102] == nil)'
 
 # Contributions written before kills, corpses and items existed still import.
 old="$tmp/old"
