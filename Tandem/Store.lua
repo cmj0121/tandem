@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer.
-local Store = { unsaved = 0, readOnly = false }
+local Store = { unsaved = 0, readOnly = false, itemCount = 0 }
 ns.Store = Store
 
 local SCHEMA = 2
@@ -11,6 +11,12 @@ local KINDS = { c = true, o = true, ["?"] = true }
 local RUN_FIELDS = {
     "started", "from", "to", "rate", "processed", "skipped", "hits", "misses", "equippable", "deferred",
     "timeouts", "elapsed",
+}
+
+local MAX_OFFSET = 10000
+local ANCHORS = {
+    TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true, RIGHT = true, BOTTOMLEFT = true,
+    BOTTOM = true, BOTTOMRIGHT = true,
 }
 
 local floor = math.floor
@@ -72,6 +78,51 @@ local function copyLoot(v)
         end
     end
     return { item = v.item, kind = v.kind, id = v.id, map = v.map, count = v.count, coords = coords }
+end
+
+local function isAnchor(v)
+    return type(v) == "string" and ANCHORS[v] == true
+end
+
+-- Returns a clean copy of a saved window position { point, relativePoint, x, y }, or nil. A position saved
+-- without relativePoint uses point.
+local function copyWindow(v)
+    if type(v) == "table" and isAnchor(v.point) and (v.relativePoint == nil or isAnchor(v.relativePoint))
+        and isNum(v.x) and isNum(v.y) and math.abs(v.x) <= MAX_OFFSET and math.abs(v.y) <= MAX_OFFSET then
+        return { point = v.point, relativePoint = v.relativePoint or v.point, x = v.x, y = v.y }
+    end
+end
+
+local function isAngle(v)
+    return isNum(v) and v >= 0 and v < 360
+end
+
+-- Returns a clean copy of the saved ui table { window = position, minimap = angle, minimapHidden = true }, or nil
+-- when nothing in it is valid; drop is called once for each invalid key. minimapHidden is kept only as true: absent
+-- means the button is shown.
+local function copyUI(v, drop)
+    if type(v) ~= "table" then
+        drop()
+        return nil
+    end
+    local out = {}
+    if v.window ~= nil then
+        out.window = copyWindow(v.window)
+        if not out.window then
+            drop()
+        end
+    end
+    if isAngle(v.minimap) then
+        out.minimap = v.minimap
+    elseif v.minimap ~= nil then
+        drop()
+    end
+    if v.minimapHidden == true then
+        out.minimapHidden = true
+    elseif v.minimapHidden ~= nil then
+        drop()
+    end
+    return next(out) and out or nil
 end
 
 -- Copies every entry of raw that passes its type check into a fresh current-schema table.
@@ -162,6 +213,10 @@ local function migrate(raw, report)
             end
         end
     end
+
+    if raw.ui ~= nil then
+        db.ui = copyUI(raw.ui, drop)
+    end
     return db
 end
 
@@ -190,6 +245,7 @@ function Store.Load(raw)
         db = migrate(raw, report)
     end
     Store.db = db
+    Store.itemCount = count(db.items)
     return db, report
 end
 
@@ -203,6 +259,7 @@ function Store.AddItem(id, ilvl, reqLevel, quality, equipLoc, classID, subclassI
         return false
     end
     Store.db.items[id] = item
+    Store.itemCount = Store.itemCount + 1
     Store.unsaved = Store.unsaved + 1
     return true
 end
@@ -285,7 +342,7 @@ function Store.Counts()
     local db = Store.db
     local scan = type(db.scan) == "table" and db.scan or {}
     return {
-        items = count(db.items),
+        items = Store.itemCount,
         nonEquippable = scan.nonEquippable,
         cursor = scan.cursor,
         minFound = scan.minFound,
@@ -298,6 +355,87 @@ function Store.Counts()
         unsaved = Store.unsaved,
         readOnly = Store.readOnly,
     }
+end
+
+-- Returns the number of known items without walking them: counted on load, kept up by AddItem.
+function Store.ItemCount()
+    return Store.itemCount
+end
+
+-- Returns the next item ID to scan, or nil when the saved one is not a whole number (a newer db is kept raw).
+function Store.ScanCursor()
+    local scan = Store.db and Store.db.scan
+    local cursor = type(scan) == "table" and scan.cursor
+    if isInt(cursor, 1) then
+        return cursor
+    end
+end
+
+-- Returns the saved ui table, or nil when there is none or it is not a table (a newer db is kept raw).
+local function savedUI()
+    local ui = Store.db and Store.db.ui
+    if type(ui) == "table" then
+        return ui
+    end
+end
+
+-- Sets one key of TandemDB.ui, leaving the others alone.
+local function setUI(key, value)
+    Store.db.ui = Store.db.ui or {}
+    Store.db.ui[key] = value
+end
+
+-- Saves the browse window position; false when invalid or read-only. A position is not a record: unsaved is
+-- unchanged.
+function Store.SetUIPosition(point, relativePoint, x, y)
+    local window = not Store.readOnly and copyWindow({ point = point, relativePoint = relativePoint, x = x, y = y })
+    if not window then
+        return false
+    end
+    setUI("window", window)
+    return true
+end
+
+-- Returns the saved browse window position { point, relativePoint, x, y }, or nil; checked again since a newer
+-- db is kept raw.
+function Store.UIPosition()
+    local ui = savedUI()
+    if ui then
+        return copyWindow(ui.window)
+    end
+end
+
+-- Saves the minimap button's angle in degrees (0 <= angle < 360); false when invalid or read-only. Not a record.
+function Store.SetMinimapAngle(angle)
+    if Store.readOnly or not isAngle(angle) then
+        return false
+    end
+    setUI("minimap", angle)
+    return true
+end
+
+-- Saves whether the minimap button is hidden (true) or shown (false: the key is removed); false when not a
+-- boolean or read-only. Not a record.
+function Store.SetMinimapHidden(hidden)
+    if Store.readOnly or type(hidden) ~= "boolean" then
+        return false
+    end
+    setUI("minimapHidden", hidden or nil)
+    return true
+end
+
+-- Returns true when the minimap button was hidden; checked again since a newer db is kept raw.
+function Store.MinimapHidden()
+    local ui = savedUI()
+    return ui ~= nil and ui.minimapHidden == true
+end
+
+-- Returns the saved minimap button angle, or nil; checked again since a newer db is kept raw.
+function Store.MinimapAngle()
+    local ui = savedUI()
+    if ui and isAngle(ui.minimap) then
+        return ui.minimap
+    end
 end
 
 local GUID_KINDS = { Creature = "c", Vehicle = "c", GameObject = "o" }

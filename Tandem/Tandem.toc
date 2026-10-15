@@ -7,6 +7,9 @@
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\Tandem\Media\icon
 ## SavedVariables: TandemDB
+## AddonCompartmentFunc: Tandem_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: Tandem_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: Tandem_OnCompartmentLeave
 
 Locales\enUS.lua
 Locales\zhTW.lua
@@ -16,5 +19,8 @@ Scanner.lua
 Loot.lua
 Kills.lua
 Advisor.lua
+View.lua
 Commands.lua
+Browse.lua
+Launcher.lua
 Tandem.lua
