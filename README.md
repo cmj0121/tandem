@@ -85,6 +85,7 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 | `/tandem scan from <id>`              | Sets the scan cursor to `<id>`; does not start a scan            |
 | `/tandem scan stop`                   | Stops the running scan and prints its summary                    |
 | `/tandem gear [<slot>] [all]`         | Lists the best known gear you can use, per slot or in one slot   |
+| `/tandem gear <slot> [all] <words>`   | Lists a slot's gear whose tooltip has the words on one line      |
 | `/tandem rank <item link\|id>`        | Ranks an item in its slot and lists where to get it              |
 | `/tandem export`                      | Shows what `make import` would collect from this account         |
 | `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
@@ -182,6 +183,9 @@ in `/tandem gear all` or `/tandem gear chest all`, to include the other cached i
 item cache also holds items that cannot be obtained in game. Items flagged deprecated (see
 [Deprecated items](#deprecated-items)) are never listed, with or without `all`.
 
+Words after the slot, or after `all`, search the item tooltips instead: `/tandem gear chest +stamina` or
+`/tandem gear chest all +stamina`. See [Stat search](#stat-search).
+
 ### `/tandem rank`
 
 `/tandem rank` takes an item link, shift-clicked into chat, or an item ID. It prints the item's rank in its slot among
@@ -268,6 +272,7 @@ Below the boxes, a scan bar runs the same scan as [`/tandem scan`](#tandem-scan)
   or logout but never saved; after one, the boxes read `10/s` and `100` again.
 - `Start`, which scans from the cursor with those values. While a scan runs, whether started here or with
   `/tandem scan`, the button reads `Stop` and stops it as `/tandem scan stop` does.
+- A `Stat search` box at the end of the row; see [Stat search](#stat-search).
 - A status line. While a scan runs it reads `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>` and is updated
   every second while the window is open; otherwise it reads `<n> known items, next scan from ID <id>`.
 
@@ -349,8 +354,8 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
-`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert` and `Item stats`.
-A feature whose API is missing stays off instead of raising an error.
+`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats` and
+`Stat search`. A feature whose API is missing stays off instead of raising an error.
 
 ### `/tandem map`
 
@@ -515,6 +520,46 @@ off-hand item says nothing while you wield a two-hander. Stats are not considere
 - The alert only advises: Tandem never equips anything.
 - Nothing happens while the client does not tell your class or level, or when the `Upgrade alert` line of
   [`/tandem check`](#tandem-check) is `missing`.
+
+### Stat search
+
+Find gear by what its tooltip says, such as stamina or spell critical strike. Type words in the `Stat search` box of
+the browse window, or after the slot of `/tandem gear`:
+
+```text
+/tandem gear chest +stamina
+/tandem gear chest all +stamina
+```
+
+- An item matches when one line of its tooltip holds every word. Words are split on spaces, a leading `+` is dropped,
+  and case does not matter. `spell critical` matches `Equip: Improves your chance to get a critical strike with spells
+by 1%.`, but not a tooltip with `spell` on one line and `critical` on another.
+- Matching items are sorted by the first number on that line, highest first, then as usual (item level, then quality).
+  The number may be a decimal or a percentage: `1.5%` counts as `1.5`. A matching line with no number counts as 0.
+- The search reads the tooltip in the client's language, so type the client's own words. On a zhTW client stamina
+  reads `耐力` and spell critical strike reads `裝備：使你的法術造成致命一擊的機率提高1%。`, so search `耐力` or
+  `法術 致命一擊`. A few common words are translated for you on zhTW: `體力` searches `耐力`, `暴擊` searches
+  `致命一擊`, and `法術暴擊` searches `法術 致命一擊`. Other words must match the tooltip as written.
+- Only items that pass the other filters are searched: the slot and quality dropdowns, `Usable only` and
+  `Hide deprecated` in the window; the slot, usable items and, without `all`, items with a known source in the command.
+- The window lists the matches as you type and the count follows. An item the client has not loaded yet counts as not
+  matching and is asked for: the count reads `<n> items, <m> loading`, and the item joins the list when it arrives.
+  The command prints `<m> items are still loading; run the command again in a moment` instead.
+- Each item's tooltip is read once per session. Dropping an item on the window clears the search so the item shows.
+- `/tandem gear <slot> <words>` prints up to 10 matches, each with the matching line, and ends with
+  `Sorted by the number on the matching tooltip line, then item level and quality`. Words need a slot: `all` alone is
+  the flag of [`/tandem gear`](#tandem-gear), and `/tandem gear all <words>` is an unknown slot.
+
+```text
+Best Chest for level 40 Warrior matching "+stamina":
+1. [Leather Chest], ilvl 30, level 25 (upgrade): +15 Stamina
+2. [Plate Chest], ilvl 45, level 40 (upgrade): +10 Stamina
+Sorted by the number on the matching tooltip line, then item level and quality
+```
+
+The search reads `C_TooltipInfo.GetItemByID`. When the `Stat search` line of [`/tandem check`](#tandem-check) is
+`missing`, the box is greyed out and its label reads `Stat search: not on this client`, and the command prints
+`Tandem: stat search is not available on this client; see /tandem check`.
 
 ### Deprecated items
 
@@ -760,9 +805,9 @@ tooltip in step 5, and any Lua error.
 The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
 not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eight lines, one each for `Item tooltip`,
-   `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert` and
-   `Item stats`, each followed by `ok` or `missing` and its APIs.
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nine lines, one each for `Item tooltip`,
+   `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
+   `Item stats` and `Stat search`, each followed by `ok` or `missing` and its APIs.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -774,7 +819,8 @@ not verified on Forever. One pass of `/tandem check` tells which of them the cli
    `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
    check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins). If `Quest reward pick` is `ok` in step
    2, run [Check the quest reward pick](#check-the-quest-reward-pick). If `Upgrade alert` is `ok`, run
-   [Check the upgrade alert](#check-the-upgrade-alert).
+   [Check the upgrade alert](#check-the-upgrade-alert). If `Stat search` is `ok`, run
+   [Check the stat search](#check-the-stat-search).
 
 Report back every line of steps 1 and 2 as printed, and any Lua error.
 
@@ -829,6 +875,25 @@ on the button or hid part of it, and any Lua error.
 
 Report back each line as printed with the item level of what you wore, any upgrade that got no line or any line for an
 item that is not an upgrade, and any Lua error.
+
+### Check the stat search
+
+1. Out of combat, run `/tandem browse chest`, or another slot you have scanned. The scan row ends with a
+   `Stat search` box.
+2. Type `+stamina` (`耐力` on a zhTW client). The list shrinks to items with stamina, the one with the most stamina
+   first, and the count follows. Hover the top rows: each tooltip has a stamina line with a number no lower than the
+   rows below it.
+3. Type `spell critical` (`法術 致命一擊` on zhTW, or `+法術暴擊`): items whose tooltip has an equip line about spell
+   critical strike are listed, highest percentage first. Type `體力` on zhTW: the same list as `耐力`.
+4. If the count reads `<n> items, <m> loading`, wait a moment: rows join the list and the loading part goes away.
+5. Press Escape in the box: the focus leaves it and the window stays open. Clear the box: every item is listed again.
+6. Untick `Usable only` or pick a quality with words in the box: the search follows the filters.
+7. Run `/tandem gear chest +stamina` (`/tandem gear chest 耐力` on zhTW) and `/tandem gear chest all +stamina`: chat
+   lists the matches with their tooltip line, highest number first, and ends with the sorting note.
+8. Note how long the first search over `All slots` with `Usable only` unticked takes, and whether the game stalls.
+
+Report back the query, the first rows with the line their tooltip shows, any item that should match but does not (with
+the tooltip line as the client words it), the stall in step 8, and any Lua error.
 
 ## Interface number
 

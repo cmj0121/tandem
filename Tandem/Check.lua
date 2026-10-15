@@ -36,6 +36,9 @@ Check.FEATURES = {
     { name = "Item stats", needs = {
         { "C_Item.GetItemStats", "GetItemStats" },
     } },
+    { name = "Stat search", needs = {
+        { "C_TooltipInfo.GetItemByID" },
+    } },
 }
 
 -- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.

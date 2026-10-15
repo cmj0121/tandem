@@ -25,6 +25,7 @@ Check.lua
 MapPins.lua
 QuestPick.lua
 Upgrade.lua
+StatSearch.lua
 Commands.lua
 Browse.lua
 Launcher.lua

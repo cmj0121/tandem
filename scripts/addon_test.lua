@@ -527,14 +527,16 @@ do
     check("help prints usage", run(addon, printed, "help")[1], "Tandem commands:")
     check("unknown subcommand prints usage", run(addon, printed, "dance")[1], "Tandem commands:")
     check("usage lists gear", help[6], "  /tandem gear [<slot>] [all] - best known gear you can use")
-    check("usage lists rank", help[7], "  /tandem rank <item link|id> - rank an item in its slot")
-    check("usage lists export", help[8], "  /tandem export - show what make import would collect")
-    check("usage lists browse", help[9], "  /tandem browse [<slot>] - browse known gear in a window")
-    check("usage lists minimap", help[10], "  /tandem minimap [on|off] - show or hide the minimap button")
-    check("usage lists check", help[11], "  /tandem check - list the client APIs each feature needs")
-    check("usage lists map", help[12], "  /tandem map <item link|id> - pin where an item comes from on the world map")
-    check("usage lists map clear", help[13], "  /tandem map clear - remove the map pins")
-    check("usage line count", #help, 13)
+    check("usage lists rank", help[8], "  /tandem rank <item link|id> - rank an item in its slot")
+    check("usage lists export", help[9], "  /tandem export - show what make import would collect")
+    check("usage lists browse", help[10], "  /tandem browse [<slot>] - browse known gear in a window")
+    check("usage lists minimap", help[11], "  /tandem minimap [on|off] - show or hide the minimap button")
+    check("usage lists check", help[12], "  /tandem check - list the client APIs each feature needs")
+    check("usage lists map", help[13], "  /tandem map <item link|id> - pin where an item comes from on the world map")
+    check("usage lists map clear", help[14], "  /tandem map clear - remove the map pins")
+    check("usage lists gear search", help[7],
+        "  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line")
+    check("usage line count", #help, 14)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -2133,10 +2135,10 @@ local BLUE, GREEN = "0070dd", "1eff00"
 
 do
     local ctx = loadGear()
-    for _, msg in ipairs({ "gear head foo", "gear head all extra", "gear all all all", "export now" }) do
+    for _, msg in ipairs({ "export now" }) do
         check(("%q prints usage"):format(msg), ctx.run(msg)[1], "Tandem commands:")
     end
-    for _, msg in ipairs({ "gear shirt", "gear foo all", "gear all all" }) do
+    for _, msg in ipairs({ "gear shirt", "gear foo all", "gear all all", "gear all all all", "gear foo stamina" }) do
         check(("%q names an unknown slot"):format(msg), ctx.run(msg)[1]:match("^Tandem: unknown slot (%S+);"),
             (msg:match("^gear (%S+)")))
     end
@@ -2595,6 +2597,7 @@ function WIDGET.SetPushedTexture(w, t) w.pushed = t end
 function WIDGET.SetHighlightTexture(w, t) w.highlight = t end
 function WIDGET.SetEnabled(w, enabled) w.enabled = enabled end
 function WIDGET.IsEnabled(w) return w.enabled end
+function WIDGET.SetMaxLetters(w, n) w.maxLetters = n end
 
 local function newWidget(ui, kind, name, parent, template)
     local w = setmetatable({ ui = ui, kind = kind, name = name, parent = parent, template = template, shown = true,
@@ -3051,7 +3054,7 @@ end
 
 do
     local ctx = loadBrowse("zhTW")
-    check("zhTW usage lists browse", ctx.run("help")[9], "  /tandem browse [<部位>] - 在視窗中瀏覽已知裝備")
+    check("zhTW usage lists browse", ctx.run("help")[10], "  /tandem browse [<部位>] - 在視窗中瀏覽已知裝備")
     ctx.run("browse")
     local win = ctx.win()
     check("zhTW browse title", win.title, "Tandem 裝備")
@@ -3469,7 +3472,7 @@ end
 do
     local ctx = loadBrowse("zhTW", nil, nil, { env = { Minimap = fakeMinimap() } })
     ctx.fire("PLAYER_LOGIN")
-    check("zhTW usage lists minimap", ctx.run("help")[10], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW usage lists minimap", ctx.run("help")[11], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
     check("zhTW minimap hidden", ctx.run("minimap off")[1], "Tandem：已隱藏小地圖按鈕")
     check("zhTW minimap shown", ctx.run("minimap on")[1], "Tandem：已顯示小地圖按鈕")
     ctx.run("browse")
@@ -4846,6 +4849,7 @@ local function checkAPIs()
         C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn },
         GetInventoryItemLink = fn,
         C_Item = { GetItemStats = fn },
+        C_TooltipInfo = { GetItemByID = fn },
     }
 end
 
@@ -4864,7 +4868,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: eight features", #addon.Check.FEATURES, 8)
+    check("check: nine features", #addon.Check.FEATURES, 9)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -4872,7 +4876,7 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
-        "Quest reward pick", "Upgrade alert", "Item stats" }) do
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -4932,7 +4936,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#out - 1], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -5577,6 +5581,248 @@ do
     ctx.bagUpdate()
     check("zhTW upgrade alert line", ctx.loot(1)[1],
         ("Tandem：胸部的升級：%s（物品等級 45，高於 30）"):format(built(1, BLUE, "物品 #1")))
+end
+
+-- Stat search (stage 6, unit 6): tooltip lines that hold every term, sorted by their number.
+
+-- Loads the browse harness with C_TooltipInfo.GetItemByID over ctx.tips[id] (a list of left texts or {left, right});
+-- ctx.tip(id, lines) sets an item's lines and marks it loaded; ctx.tipCalls[id] counts the reads. opts.noAPI leaves
+-- the tooltip API out; opts.locale.
+local function loadSearch(opts)
+    opts = opts or {}
+    local tips, calls = {}, {}
+    local env = {}
+    if not opts.noAPI then
+        env.C_TooltipInfo = { GetItemByID = function(id)
+            calls[id] = (calls[id] or 0) + 1
+            if not tips[id] then
+                return nil
+            end
+            local lines = {}
+            for i, l in ipairs(tips[id]) do
+                lines[i] = type(l) == "table" and { leftText = l[1], rightText = l[2] } or { leftText = l }
+            end
+            return { lines = lines }
+        end }
+    end
+    local ctx = loadBrowse(opts.locale, nil, nil, { env = env })
+    ctx.tips, ctx.tipCalls = tips, calls
+    function ctx.tip(id, lines)
+        tips[id] = lines
+        ctx.cache[id] = ctx.cache[id] or { "Item " .. id }
+    end
+    return ctx
+end
+
+-- Chest items for a level 40 warrior: 1 (plate), 3, 4 (ilvl 30, blue), 2 (ilvl 30, green, not loaded), 12 (green).
+local function chestTips(ctx)
+    ctx.tip(1, { "Plate Chest", "|cffffffff+10 Stamina|r", "+5 Strength" })
+    ctx.tip(3, { "Leather Chest", "+15 Stamina" })
+    ctx.tip(4, { "Robe", { "+3 Stamina", "Cloth" }, "Equip: Improves your chance to get a critical strike with "
+        .. "spells by 1.5%." })
+    ctx.tip(12, { "Mail Chest", "+20 Strength" })
+    ctx.tips[2] = { "Mail Robe", "+12 Stamina" }
+end
+
+local function searchRow(i, id, hex, ilvl, level, line)
+    return ("%d. %s, ilvl %d, level %d (upgrade): %s"):format(i, built(id, hex), ilvl, level, line)
+end
+
+do
+    local ctx = loadSearch()
+    local Parse = ctx.addon.StatSearch.Parse
+    check("stat search: + dropped and lower-cased", table.concat(Parse("+Stamina"), ","), "stamina")
+    check("stat search: terms split on spaces", table.concat(Parse("  spell  +Critical "), ","), "spell,critical")
+    check("stat search: blank query", Parse("  "), nil)
+    check("stat search: a lone + is blank", Parse("+"), nil)
+    check("stat search: nil query", Parse(nil), nil)
+    check("stat search: no zhTW alias on enUS", table.concat(Parse("+體力"), ","), "體力")
+
+    chestTips(ctx)
+    local Match = ctx.addon.StatSearch.Match
+    local value, line = Match(1, Parse("+stamina"))
+    check("stat search: colour codes stripped, first number", tostring(value) .. "|" .. line, "10|+10 Stamina")
+    check("stat search: right text is part of the line", (select(2, Match(4, Parse("stamina cloth")))),
+        "+3 Stamina Cloth")
+    check("stat search: decimal percent", Match(4, Parse("spells critical")), 1.5)
+    check("stat search: every term on one line", Match(1, Parse("stamina strength")), nil)
+    local none, pending = Match(12, Parse("stamina"))
+    check("stat search: no match is not pending", tostring(none) .. " " .. tostring(pending), "nil false")
+    local wait, loading = Match(2, Parse("stamina"))
+    check("stat search: an unloaded item is pending", tostring(wait) .. " " .. tostring(loading), "nil true")
+    check("stat search: an unloaded item is asked for", ctx.requested[2], true)
+    check("stat search: an unloaded item's tooltip is not read", ctx.tipCalls[2], nil)
+    Match(1, Parse("strength"))
+    Match(1, Parse("plate"))
+    check("stat search: tooltip lines cached per item", ctx.tipCalls[1], 1)
+    ctx.tips[5] = {}
+    ctx.cache[5] = { "Shield" }
+    check("stat search: empty tooltip data is pending", select(2, Match(5, Parse("stamina"))), true)
+end
+
+do
+    local ctx = loadSearch()
+    ctx.env.C_TooltipInfo = { GetItemByID = function(id)
+        return { lines = {
+            { args = { { field = "leftText", stringVal = "Item " .. id } } },
+            { args = { { field = "leftText", stringVal = "+" .. id .. " Stamina" } } },
+        } }
+    end }
+    local surfaced = 0
+    ctx.env.TooltipUtil = { SurfaceArgs = function(line)
+        surfaced = surfaced + 1
+        for _, arg in ipairs(line.args) do
+            line[arg.field] = arg.stringVal
+        end
+    end }
+    ctx.cache[3] = { "Item 3" }
+    local value, line = ctx.addon.StatSearch.Match(3, { "stamina" })
+    check("stat search: args-only lines are surfaced", tostring(value) .. "|" .. tostring(line), "3|+3 Stamina")
+    check("stat search: SurfaceArgs once per line", surfaced, 2)
+    ctx.env.TooltipUtil = { SurfaceArgs = function()
+        error("bad line")
+    end }
+    ctx.cache[4] = { "Item 4" }
+    local ok, missing = pcall(ctx.addon.StatSearch.Match, 4, { "stamina" })
+    check("stat search: a failing SurfaceArgs is no error and no match", tostring(ok) .. " " .. tostring(missing),
+        "true nil")
+end
+
+do
+    local ctx = loadSearch({ locale = "zhTW" })
+    local Parse = ctx.addon.StatSearch.Parse
+    check("zhTW stat search: 體力 is 耐力", table.concat(Parse("+體力"), ","), "耐力")
+    check("zhTW stat search: 法術暴擊 is two terms", table.concat(Parse("+法術暴擊"), ","), "法術,致命一擊")
+    check("zhTW stat search: 暴擊 alias in a multi-term query", table.concat(Parse("法術 暴擊"), ","), "法術,致命一擊")
+    ctx.tip(1, { "+10 耐力" })
+    ctx.tip(3, { "+15 耐力" })
+    ctx.tip(4, { "裝備：使你的法術造成致命一擊的機率提高1%。" })
+    ctx.tip(12, { "裝備：使你的法術造成致命一擊的機率提高2%。" })
+    ctx.tip(2, { "+5 敏捷" })
+    local out = ctx.run("gear chest +體力")
+    check("zhTW gear search header", out[1], "最佳胸部（40 級Warrior，符合「+體力」）：")
+    check("zhTW gear search best first", out[2],
+        ("1. %s，物品等級 30，需求等級 25（升級）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
+    check("zhTW gear search second", out[3],
+        ("2. %s，物品等級 45，需求等級 40（升級）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
+    check("zhTW gear search footer", out[4], "依符合的提示行上的數字排序，再依物品等級與品質")
+    out = ctx.run("gear chest +法術暴擊")
+    check("zhTW gear search spell crit by value", out[2]:match("^1%. .-(%d)%%。$") .. out[3]:match("^2%. .-(%d)%%。$"),
+        "21")
+    check("zhTW gear search no match", ctx.run("gear chest 法術 耐力")[2], "沒有你能使用的已知胸部符合「法術 耐力」")
+end
+
+do
+    local ctx = loadSearch()
+    chestTips(ctx)
+    local out = ctx.run("gear chest +Stamina")
+    check("gear search header", out[1], 'Best Chest for level 40 Warrior matching "+stamina":')
+    check("gear search highest value first", out[2], searchRow(1, 3, BLUE, 30, 25, "+15 Stamina"))
+    check("gear search then lower values", out[3], searchRow(2, 1, BLUE, 45, 40, "+10 Stamina"))
+    check("gear search lowest value", out[4], searchRow(3, 4, BLUE, 30, 25, "+3 Stamina Cloth"))
+    check("gear search loading line", out[5], "1 items are still loading; run the command again in a moment")
+    check("gear search footer", out[6],
+        "Sorted by the number on the matching tooltip line, then item level and quality")
+    check("gear search line count", #out, 6)
+    ctx.cache[2] = { "Item 2" }
+    out = ctx.run("gear chest +stamina")
+    check("gear search a loaded item joins", out[3], searchRow(2, 2, GREEN, 30, 25, "+12 Stamina"))
+    check("gear search nothing loading", #out, 6)
+    ctx.tips[3] = { "+12 Stamina" }
+    check("gear search keeps the session's lines", ctx.run("gear chest +stamina")[2],
+        searchRow(1, 3, BLUE, 30, 25, "+15 Stamina"))
+    out = ctx.run("gear chest strength")
+    check("gear search other stat", out[2] .. out[3],
+        searchRow(1, 12, GREEN, 20, 10, "+20 Strength") .. searchRow(2, 1, BLUE, 45, 40, "+5 Strength"))
+    check("gear search without all skips sourceless items", #ctx.run("gear chest robe"), 4)
+    ctx.tip(11, { "GM Robe", "+99 Stamina" })
+    out = ctx.run("gear chest all +stamina")
+    check("gear search with all includes sourceless items", out[2],
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source): +99 Stamina")
+    out = ctx.run("gear chest all")
+    check("gear chest all alone still ranks", out[#out], "Ranked by item level, then quality; stats are not considered")
+    out = ctx.run("gear chest nothing")
+    check("gear search no match", out[2], 'No known Chest you can use matches "nothing"')
+    check("gear search no match line count", #out, 3)
+    ctx.combat = true
+    check("gear search refused in combat", ctx.run("gear chest stamina")[1], "Tandem: not available in combat")
+end
+
+do
+    local ctx = loadSearch()
+    for _, id in ipairs({ 12, 4, 3, 1 }) do
+        ctx.tip(id, { "+5 Stamina" })
+    end
+    local out = ctx.run("gear chest stamina")
+    check("gear search ties keep the usual order", table.concat({ out[2], out[3], out[4], out[5] }, "/"),
+        table.concat({ searchRow(1, 1, BLUE, 45, 40, "+5 Stamina"), searchRow(2, 3, BLUE, 30, 25, "+5 Stamina"),
+            searchRow(3, 4, BLUE, 30, 25, "+5 Stamina"), searchRow(4, 12, GREEN, 20, 10, "+5 Stamina") }, "/"))
+end
+
+do
+    local ctx = loadSearch({ noAPI = true })
+    local out = ctx.run("gear chest +stamina")
+    check("gear search without the API says so", out[1],
+        "Tandem: stat search is not available on this client; see /tandem check")
+    check("gear search without the API prints one line", #out, 1)
+    check("gear without a query works without the API", ctx.run("gear chest")[1], "Best Chest for level 40 Warrior:")
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("browse search box disabled without the API", win.search:IsEnabled(), false)
+    check("browse search label says why", win.searchLabel:GetText(), "Stat search: not on this client")
+    check("browse search box has no text handler without the API", win.search.scripts.OnTextChanged, nil)
+    win.search:SetText("stamina")
+    ctx.addon.Browse.Refresh()
+    check("browse ignores typed text without the API", rowIDs(win), "11,1,3,4,2,12")
+end
+
+do
+    local ctx = loadSearch()
+    chestTips(ctx)
+    ctx.tip(11, { "GM Robe", "+99 Stamina" })
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("browse search box enabled", win.search:IsEnabled() ~= false, true)
+    check("browse search label", win.searchLabel:GetText(), "Stat search")
+    check("browse search box takes a long query", win.search.maxLetters, 60)
+    check("browse before search", rowIDs(win), "11,1,3,4,2,12")
+    win.search:SetText("+stamina")
+    win.search.scripts.OnTextChanged(win.search, true)
+    check("browse search filters and sorts by value", rowIDs(win), "11,3,1,4")
+    check("browse search count says what is loading", win.count:GetText(), "4 items, 1 loading")
+    win.search:SetFocus()
+    win.search.scripts.OnEscapePressed(win.search)
+    check("browse search Escape drops the focus", win.search.focused, false)
+    ctx.cache[2] = { "Item 2" }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 2, true)
+    check("browse search waits for the redraw", rowIDs(win), "11,3,1,4")
+    ctx.tick()
+    check("browse search a late item appears", rowIDs(win), "11,3,2,1,4")
+    check("browse search count after the late item", win.count:GetText(), "5 items")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("browse search ignores other items", #ctx.ui.timers, 0)
+    ctx.level = 30
+    ctx.addon.Browse.Refresh()
+    check("browse search keeps the other filters", rowIDs(win), "11,3,2,4")
+    ctx.level = 40
+    win.search:SetText("strength")
+    win.search.scripts.OnTextChanged(win.search, true)
+    check("browse search another stat", rowIDs(win), "12,1")
+    check("browse search count", win.count:GetText(), "2 items")
+    win.search:SetText("")
+    win.search.scripts.OnTextChanged(win.search, true)
+    check("browse search cleared lists all", rowIDs(win), "11,1,3,4,2,12")
+    win.search:SetText("stamina")
+    ctx.cursor = { "item", 12 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse drop clears the search", win.search:GetText(), "")
+    check("browse drop shows the dropped item", rowIDs(win):find("12", 1, true) ~= nil, true)
+end
+
+do
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    local out = run(addon, printed, "check")
+    check("zhTW check: stat search line", out[#out], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
 end
 
 if failures > 0 then

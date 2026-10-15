@@ -17,6 +17,7 @@ local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ROW_HEIGHT = 20
 local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
+local SEARCH_LETTERS = 60
 local REDRAW_DELAY = 0.2
 local PROGRESS_INTERVAL = 1
 local DEFAULT_RATE_TEXT = ("%d/s"):format(ns.Commands.DEFAULT_RATE)
@@ -28,8 +29,10 @@ local QUALITY_NAMES = { [0] = "Poor", "Common", "Uncommon", "Rare", "Epic", "Leg
 local HANDS = "mainhand+offhand"
 
 local frame, progress
-local slot, onlyQuality, selected, unknown, pending, paneStale
+local slot, onlyQuality, selected, unknown, pending, paneStale, relist
 local rows, listed, worn = {}, {}, {}
+-- Items the stat search waits for: when one loads, the list is made again.
+local searching = {}
 -- Items whose cached name refresh has read: a name does not change, so each is read once per session.
 local peeked = {}
 
@@ -278,6 +281,21 @@ local function buildScanBar(f)
     f.scan:SetScript("OnClick", function()
         Browse.ToggleScan()
     end)
+    -- Stat search: the rest of the row; disabled with a note when the client lacks the tooltip data API.
+    f.searchLabel = label(f, L["Stat search"])
+    f.searchLabel:SetPoint("LEFT", f.scan, "RIGHT", 12, 0)
+    f.search = editBox(f, 120, "")
+    f.search:SetMaxLetters(SEARCH_LETTERS)
+    f.search:SetPoint("LEFT", f.searchLabel, "RIGHT", 8, 0)
+    f.search:SetPoint("RIGHT", f, "RIGHT", -14, 0)
+    if ns.StatSearch.Ready() then
+        f.search:SetScript("OnTextChanged", function()
+            Browse.Refresh()
+        end)
+    else
+        f.search:SetEnabled(false)
+        f.searchLabel:SetText(L["Stat search: not on this client"])
+    end
     f.status = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.status:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -12)
     f.status:SetPoint("RIGHT", f, "RIGHT", -14, 0)
@@ -465,8 +483,25 @@ local function refresh(class, level)
             listed[row.id] = true
         end
     end
+    searching = {}
+    local terms = ns.StatSearch.Ready() and ns.StatSearch.Parse(frame.search:GetText())
+    local loading = 0
+    if terms then
+        rows, searching = ns.StatSearch.Filter(rows, terms)
+        listed = {}
+        for _, row in ipairs(rows) do
+            listed[row.id] = true
+        end
+        for _ in pairs(searching) do
+            loading = loading + 1
+        end
+    end
     frame.box:SetDataProvider(CreateDataProvider(rows))
-    frame.count:SetText(L["%d items"]:format(#rows))
+    if loading > 0 then
+        frame.count:SetText(L["%d items, %d loading"]:format(#rows, loading))
+    else
+        frame.count:SetText(L["%d items"]:format(#rows))
+    end
     updateSources()
 end
 
@@ -521,26 +556,31 @@ end
 local function redraw()
     pending = false
     if frame:IsShown() then
-        frame.box:ForEachFrame(reinit)
-        if paneStale then
-            updateSources()
+        if relist then
+            Browse.Refresh()
+        else
+            frame.box:ForEachFrame(reinit)
+            if paneStale then
+                updateSources()
+            end
         end
     end
-    paneStale = false
+    paneStale, relist = false, false
 end
 
 -- Redraws the rows once shortly after the client loads an item they show, so a burst of loads costs one redraw;
--- the sources pane only when the selected item loaded.
+-- the sources pane only when the selected item loaded. An item the stat search waits for lists the items again.
 function Browse.OnItemInfo(id, success)
     if not frame or not frame:IsShown() then
         return
     end
     id = Safe(id)
-    if not id or not (listed[id] or id == selected) or Safe(success) == false then
+    if not id or not (listed[id] or id == selected or searching[id]) or Safe(success) == false then
         return
     end
     -- Checked before pending: the selected item may load inside a burst another item started.
     paneStale = paneStale or id == selected
+    relist = relist or searching[id] == true
     if pending then
         return
     end
@@ -658,6 +698,8 @@ local function lookup(id)
         return
     end
     View.NoteName(id, View.CachedName(id))
+    -- A search could hide the dropped item.
+    frame.search:SetText("")
     local r = ns.Advisor.Place(id, class, level)
     if r then
         selectItem(id)

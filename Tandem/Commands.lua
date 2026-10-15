@@ -26,6 +26,7 @@ local function printUsage()
     print(L["  /tandem scan from <id> - set the next item ID to scan"])
     print(L["  /tandem scan stop - stop the scan"])
     print(L["  /tandem gear [<slot>] [all] - best known gear you can use"])
+    print(L["  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line"])
     print(L["  /tandem rank <item link|id> - rank an item in its slot"])
     print(L["  /tandem export - show what make import would collect"])
     print(L["  /tandem browse [<slot>] - browse known gear in a window"])
@@ -229,21 +230,55 @@ local function unknownSlot(slot)
     print(L["Tandem: unknown slot %s; use one of: %s"]:format(slot, table.concat(ns.Advisor.SLOTS, " ")))
 end
 
--- gear [<slot>] [all]
+-- Lists the slot's usable items whose tooltip has every term on one line, by the number on that line.
+local function gearSearch(slot, all, terms, query, className, level, classFile)
+    if not ns.StatSearch.Ready() then
+        print(L["Tandem: stat search is not available on this client; see /tandem check"])
+        return
+    end
+    local list, pending = ns.StatSearch.Filter(ns.Advisor.Best(slot, classFile, level, { all = all }), terms)
+    print(L["Best %s for level %d %s matching \"%s\":"]:format(View.SlotLabel(slot), level, className, query))
+    local worn = View.Equipped(slot)
+    if #list == 0 then
+        print(L["No known %s you can use matches \"%s\""]:format(View.SlotLabel(slot), query))
+    end
+    for i = 1, math.min(#list, GEAR_ROWS) do
+        local e = list[i]
+        print(L["%d. %s, ilvl %d, level %d%s: %s"]:format(i, View.LinkOf(e.id), e.ilvl, e.reqLevel,
+            View.Marks(e, worn), View.Escape(e.line)))
+    end
+    local loading = 0
+    for _ in pairs(pending) do
+        loading = loading + 1
+    end
+    if loading > 0 then
+        print(L["%d items are still loading; run the command again in a moment"]:format(loading))
+    end
+    print(L["Sorted by the number on the matching tooltip line, then item level and quality"])
+end
+
+-- gear [<slot>] [all] [<words>]: "all" right after the slot (or alone) also lists sourceless items; the words after
+-- them search the tooltips and need a slot.
 local function gear(args)
-    local all = args[#args] == "all"
-    if all then
-        args[#args] = nil
+    local slot = table.remove(args, 1)
+    local all = false
+    if slot == "all" and #args == 0 then
+        slot, all = nil, true
+    elseif args[1] == "all" then
+        all = true
+        table.remove(args, 1)
     end
-    if #args > 1 then
-        return printUsage()
-    end
-    local slot = args[1]
     if slot and not View.SLOT_LABELS[slot] then
         return unknownSlot(slot)
     end
+    local query = table.concat(args, " ")
+    local terms = ns.StatSearch.Parse(query)
     local className, classFile, level = View.Player()
     if not className then
+        return
+    end
+    if terms then
+        gearSearch(slot, all, terms, query, className, level, classFile)
         return
     end
     if slot then

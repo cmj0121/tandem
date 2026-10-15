@@ -83,6 +83,7 @@ make install MODE=copy
 | `/tandem scan from <id>`              | 把掃描位置設為 `<id>`；不會開始掃描                               |
 | `/tandem scan stop`                   | 停止進行中的掃描並印出摘要                                        |
 | `/tandem gear [<slot>] [all]`         | 列出你能使用的最佳已知裝備，可列出所有部位或單一部位              |
+| `/tandem gear <slot> [all] <words>`   | 列出某部位中提示框同一行含有這些字詞的裝備                        |
 | `/tandem rank <item link\|id>`        | 列出物品在其部位中的排名，以及到哪裡取得                          |
 | `/tandem export`                      | 顯示 `make import` 會從這個帳號收集哪些資料                       |
 | `/tandem browse [<slot>]`             | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
@@ -175,6 +176,9 @@ ranged`。不論用戶端語言，參數一律使用英文；印出的部位名�
 `/tandem gear chest all`，就會一併列出其他快取中的物品，並標示 `(no known source)`。物品快取中也有遊戲裡取得不到的
 物品。標記為已棄用的物品（見[已棄用的物品](#已棄用的物品)）不論是否加上 `all` 都不會列出。
 
+部位或 `all` 後面再接字詞時，改為搜尋物品的提示框：`/tandem gear chest 耐力` 或 `/tandem gear chest all 耐力`。
+見[屬性搜尋](#屬性搜尋)。
+
 ### `/tandem rank`
 
 `/tandem rank` 接受物品連結（在聊天輸入框中 Shift 點擊物品）或物品 ID。它會印出物品在其部位中、於你能使用且有已知來源的
@@ -252,6 +256,7 @@ Ranked by item level, then quality; stats are not considered
   不會關閉視窗。輸入的內容會保留到 `/reload` 或登出為止，但不會存檔；之後輸入框會再次顯示 `10/s` 與 `100`。
 - `Start`：以這些數值從掃描位置開始掃描。掃描進行中時，不論是從這裡還是以 `/tandem scan` 開始，按鈕都會顯示
   `Stop`，點擊後會像 `/tandem scan stop` 一樣停止掃描。
+- 該列最後的 `Stat search`（屬性搜尋）輸入框；見[屬性搜尋](#屬性搜尋)。
 - 狀態列。掃描進行中顯示 `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>`，視窗開啟期間每秒更新；
   其他時候顯示 `<n> known items, next scan from ID <id>`。
 
@@ -323,7 +328,7 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
-`Quest reward pick`、`Upgrade alert` 與 `Item stats`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Quest reward pick`、`Upgrade alert`、`Item stats` 與 `Stat search`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 
 ### `/tandem map`
 
@@ -473,6 +478,45 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 - 提醒只是建議：Tandem 絕不會替你裝備任何東西。
 - 用戶端沒有提供你的職業或等級時，或 [`/tandem check`](#tandem-check) 的 `Upgrade alert` 這行為 `missing` 時，不會有
   任何動作。
+
+### 屬性搜尋
+
+依提示框上的文字找裝備，例如耐力或法術致命一擊。在瀏覽視窗的 `Stat search` 輸入框中輸入字詞，或接在
+`/tandem gear` 的部位後面：
+
+```text
+/tandem gear chest 耐力
+/tandem gear chest 法術 致命一擊
+```
+
+- 提示框的某一行包含所有字詞時，物品就符合。字詞以空格分隔，開頭的 `+` 會被去掉，不分大小寫。`法術 致命一擊` 符合
+  `裝備：使你的法術造成致命一擊的機率提高1%。`，但不符合 `法術` 與 `致命一擊` 分在兩行的提示框。
+- 符合的物品依該行的第一個數字排序，數字大的在前，相同時照平常的順序（物品等級，再來是品質）。數字可以是小數或百分比：
+  `1.5%` 視為 `1.5`。符合的行沒有數字時視為 0。
+- 搜尋讀取的是用戶端語言的提示框，所以要輸入用戶端本身的用語。在 zhTW 用戶端上，耐力寫作 `耐力`，法術致命一擊寫作
+  `裝備：使你的法術造成致命一擊的機率提高1%。`，因此要搜尋 `耐力` 或 `法術 致命一擊`。zhTW 上有幾個常用字詞會自動換成
+  提示框的寫法：`體力` 搜尋 `耐力`，`暴擊` 搜尋 `致命一擊`，`法術暴擊` 搜尋 `法術 致命一擊`，所以 `+體力` 與
+  `+法術暴擊` 也可以用。其他字詞必須與提示框的寫法相同。
+- 只搜尋通過其他篩選的物品：視窗中是部位與品質下拉選單、`Usable only` 與 `Hide deprecated`；指令中是部位、可使用的物品，
+  以及沒有 `all` 時只限有已知來源的物品。
+- 視窗會隨著輸入列出符合的物品，數量也跟著更新。用戶端尚未載入的物品視為不符合，並會向用戶端要求資料：數量顯示
+  `<n> items, <m> loading`，物品送達時就會加入清單。指令則改為印出
+  `<m> items are still loading; run the command again in a moment`。
+- 每件物品的提示框每次登入只讀取一次。把物品拖到視窗上會清空搜尋，讓該物品顯示出來。
+- `/tandem gear <slot> <words>` 印出最多 10 件符合的物品，每件附上符合的那一行，最後印出
+  `Sorted by the number on the matching tooltip line, then item level and quality`。字詞需要接在部位後面：單獨的 `all`
+  是 [`/tandem gear`](#tandem-gear) 的參數，`/tandem gear all <words>` 會被當作未知的部位。
+
+```text
+最佳胸部（40 級戰士，符合「耐力」）：
+1. [Leather Chest]，物品等級 30，需求等級 25（升級）：+15 耐力
+2. [Plate Chest]，物品等級 45，需求等級 40（升級）：+10 耐力
+依符合的提示行上的數字排序，再依物品等級與品質
+```
+
+搜尋使用 `C_TooltipInfo.GetItemByID`。[`/tandem check`](#tandem-check) 的 `Stat search` 這行為 `missing` 時，輸入框會
+變灰，標籤顯示 `Stat search: not on this client`（zhTW 為 `屬性搜尋：此用戶端不支援`），指令則印出
+`Tandem: stat search is not available on this client; see /tandem check`。
 
 ### 已棄用的物品
 
@@ -691,9 +735,9 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 物品提示框、任務與商人來源、地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與八行，分別是 `Item tooltip`、
-   `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert` 與
-   `Item stats`，每行後面接著 `ok` 或 `missing` 以及它的 API。
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與九行，分別是 `Item tooltip`、
+   `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert`、
+   `Item stats` 與 `Stat search`，每行後面接著 `ok` 或 `missing` 以及它的 API。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -702,7 +746,8 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 5. 若 `Item tooltip` 為 `ok`，請進行[檢查物品提示框](#檢查物品提示框)的步驟。若 `Quest sources` 或 `Vendor sources`
    為 `ok`，請進行[檢查資料收集](#檢查資料收集)的步驟 8 與提示框檢查的步驟 4。若 `Map pins` 為 `ok`，請進行
    [檢查地圖標記](#檢查地圖標記)。若步驟 2 中 `Quest reward pick` 為 `ok`，請進行[檢查任務獎勵建議](#檢查任務獎勵建議)。
-   若 `Upgrade alert` 為 `ok`，請進行[檢查升級提醒](#檢查升級提醒)。
+   若 `Upgrade alert` 為 `ok`，請進行[檢查升級提醒](#檢查升級提醒)。若 `Stat search` 為 `ok`，請進行
+   [檢查屬性搜尋](#檢查屬性搜尋)。
 
 請回報步驟 1 與 2 印出的每一行，以及任何 Lua 錯誤。
 
@@ -747,6 +792,23 @@ Lua 錯誤。
 6. 若可以，拾取一件用戶端從未顯示過的升級（新的掉落）：那一行可能在物品載入後稍晚才出現。
 
 請回報印出的每一行與當時身上裝備的物品等級、沒有提醒的升級或提醒了不是升級的物品，以及任何 Lua 錯誤。
+
+### 檢查屬性搜尋
+
+1. 在戰鬥外執行 `/tandem browse chest`，或其他你掃描過的部位。掃描列最後有一個 `Stat search` 輸入框。
+2. 輸入 `耐力`（英文用戶端輸入 `+stamina`）。清單縮小為有耐力的物品，耐力最高的在最前面，數量也跟著更新。滑鼠移到
+   前幾列：每個提示框都有一行耐力，數字不低於下面的列。
+3. 輸入 `法術 致命一擊` 或 `+法術暴擊`（英文用戶端輸入 `spell critical`）：列出提示框有法術致命一擊裝備效果的物品，
+   百分比最高的在前。輸入 `體力`：清單與 `耐力` 相同。
+4. 若數量顯示 `<n> items, <m> loading`，稍等一下：物品會加入清單，載入中的部分會消失。
+5. 在輸入框中按 Escape：游標離開輸入框，視窗仍開著。清空輸入框：所有物品再次列出。
+6. 輸入框中有字詞時取消勾選 `Usable only` 或選擇一種品質：搜尋會跟著篩選。
+7. 執行 `/tandem gear chest 耐力` 與 `/tandem gear chest all 耐力`：聊天視窗列出符合的物品與其提示框那一行，數字最高的
+   在前，最後印出排序說明。
+8. 記下在 `All slots` 且取消勾選 `Usable only` 時第一次搜尋花了多久，以及遊戲是否卡住。
+
+請回報搜尋字詞、前幾列與其提示框顯示的那一行、應該符合卻沒有符合的物品（附上用戶端寫的那一行）、步驟 8 的卡頓情形，
+以及任何 Lua 錯誤。
 
 ## Interface number
 

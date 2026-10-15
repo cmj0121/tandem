@@ -78,6 +78,19 @@ L["Map waypoint"] = "地圖導航點"
 L["Quest reward pick"] = "任務獎勵建議"
 L["Upgrade alert"] = "升級提醒"
 L["Item stats"] = "物品屬性"
+L["Stat search"] = "屬性搜尋"
+L["Stat search: not on this client"] = "屬性搜尋：此用戶端不支援"
+L["%d items, %d loading"] = "%d 件物品，%d 件載入中"
+L["  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line"] =
+    "  /tandem gear <部位> [all] <字詞> - 滑鼠提示同一行含有這些字詞的裝備"
+L["Tandem: stat search is not available on this client; see /tandem check"] =
+    "Tandem：此用戶端無法使用屬性搜尋；請見 /tandem check"
+L["Best %s for level %d %s matching \"%s\":"] = "最佳%s（%d 級%s，符合「%s」）："
+L["No known %s you can use matches \"%s\""] = "沒有你能使用的已知%s符合「%s」"
+L["%d. %s, ilvl %d, level %d%s: %s"] = "%d. %s，物品等級 %d，需求等級 %d%s：%s"
+L["%d items are still loading; run the command again in a moment"] = "還有 %d 件物品載入中；請稍後再執行一次指令"
+L["Sorted by the number on the matching tooltip line, then item level and quality"] =
+    "依符合的提示行上的數字排序，再依物品等級與品質"
 L["Tandem: upgrade for %s: %s (item level %d over %d)"] = "Tandem：%s的升級：%s（物品等級 %d，高於 %d）"
 L["  /tandem map <item link|id> - pin where an item comes from on the world map"] =
     "  /tandem map <物品連結|id> - 在世界地圖上標記物品的來源位置"
@@ -179,3 +192,10 @@ L["Main hand"] = "主手"
 L["Off hand"] = "副手"
 L["Two-hand"] = "雙手"
 L["Ranged"] = "遠程"
+
+-- Stat search aliases: a word players type that the zhTW tooltip spells otherwise; the value may be several terms.
+ns.StatAliases = {
+    ["體力"] = "耐力",
+    ["暴擊"] = "致命一擊",
+    ["法術暴擊"] = "法術 致命一擊",
+}
