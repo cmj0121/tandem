@@ -4734,6 +4734,16 @@ do
         "v201:2:1:nil:nil q101:1:nil:運送任務:nil q102:1:nil:nil:nil q100:3:2:nil:Horde")
     A = loadAdvisor(nil, { loot = { { 4, "v", 201, 1429, 2 } } })
     check("q/v sources: shipped data without factions", sourceRows(A.Sources(4, 2)), "v201:2:nil:nil:nil")
+
+    local own = { schemaVersion = 3, loot = {
+        ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, coords = { { 1, 1 } },
+                             factions = 1 },
+    } }
+    A = loadAdvisor(own, { loot = { { 4, "q", 100, 12, 2, 500, 600 } }, factions = { ["4:q:100:12"] = 2 } })
+    rows = A.Sources(4, 1)
+    check("q/v sources: one row per quest across maps", #rows, 1)
+    check("q/v sources: the lower map with its coords, max count, OR-ed factions",
+        ("%d %d %d %d"):format(rows[1].map, rows[1].coords[1][1], rows[1].count, rows[1].factions), "12 500 2 3")
 end
 
 for locale, want in pairs({

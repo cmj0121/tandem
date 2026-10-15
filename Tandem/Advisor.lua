@@ -413,25 +413,32 @@ end
 
 -- Returns where an item comes from: { kind, id, map, count, coords, name, mapName, rate, rateBasis, factions,
 -- otherFaction }. Own and shipped rows merge by max count (decision 13); rates follow decision 16 and only drops
--- have one. Quest (q) and vendor (v) rows carry factions, own and shipped OR-ed; for a player of faction (a
+-- have one. Quest (q) and vendor (v) rows are one per kind and id whatever the map: they keep the lower map with its
+-- coords and carry factions, own and shipped OR-ed; for a player of faction (a
 -- Store.FACTIONS bit, or nil when unknown) the rows of that faction come first, then drops, then those of the other
 -- faction only, whose otherFaction names it ("Alliance" | "Horde"). Within each, by count desc, then kind, id, map.
 function Advisor.Sources(id, faction)
     local rows, byKey = {}, {}
     local function add(dataset, kind, srcID, map, count, coords, factions)
-        local key = kind .. ":" .. srcID .. ":" .. map
+        local once = SET_ONCE[kind]
+        local key = once and kind .. ":" .. srcID or kind .. ":" .. srcID .. ":" .. map
         local row = byKey[key]
         if not row then
-            row = { kind = kind, id = srcID, map = map, count = 0, coords = {}, by = {} }
+            row = { kind = kind, id = srcID, map = map, count = 0, coords = once and coords or {}, by = {} }
             byKey[key] = row
             rows[#rows + 1] = row
         end
         row.by[dataset] = count
-        if count > row.count or (count == row.count and dataset == "shipped") then
+        if once then
+            if map < row.map then
+                row.map, row.coords = map, coords
+            end
+            row.count = math.max(row.count, count)
+            if Store.IsFactions(factions) then
+                row.factions = row.factions and Store.OrFactions(row.factions, factions) or factions
+            end
+        elseif count > row.count or (count == row.count and dataset == "shipped") then
             row.count, row.coords = count, coords
-        end
-        if SET_ONCE[kind] and Store.IsFactions(factions) then
-            row.factions = row.factions and Store.OrFactions(row.factions, factions) or factions
         end
     end
     for _, v in pairs(own("loot")) do
