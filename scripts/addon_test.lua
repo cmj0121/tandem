@@ -27,7 +27,8 @@ end
 -- and the event frame. opts.env sets globals before any file runs; opts.blockCLEU makes registering the combat log
 -- raise, as a client that forbids it would. opts.shipped, a table, stands in for the generated Data/Loot.lua;
 -- otherwise that file is skipped so tests never depend on committed data. opts.toc replaces the toc's file list;
--- its missing files are skipped, as WoW does. A missing file the real toc lists fails the load.
+-- its missing files are skipped, as WoW does. A missing file the real toc lists fails the load. opts.widgets, a
+-- function(kind, name, parent, template), makes every other CreateFrame call than the event frame's.
 local function loadAddon(locale, opts)
     opts = opts or {}
     local printed = {}
@@ -47,7 +48,10 @@ local function loadAddon(locale, opts)
         handler = fn
     end
     local env = setmetatable({
-        CreateFrame = function()
+        CreateFrame = function(kind, name, parent, template)
+            if opts.widgets and (kind ~= "Frame" or name or parent or template) then
+                return opts.widgets(kind, name, parent, template)
+            end
             return frame
         end,
         GetLocale = function()
@@ -364,7 +368,8 @@ do
     check("usage lists gear", help[6], "  /tandem gear [<slot>] [all] - best known gear you can use")
     check("usage lists rank", help[7], "  /tandem rank <item link|id> - rank an item in its slot")
     check("usage lists export", help[8], "  /tandem export - show what make import would collect")
-    check("usage line count", #help, 8)
+    check("usage lists browse", help[9], "  /tandem browse [<slot>] - browse known gear in a window")
+    check("usage line count", #help, 9)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -1626,13 +1631,14 @@ end
 
 -- Loads gearData() (or db, shipped) with a stubbed player: ctx.class/className/level for UnitClass/UnitLevel,
 -- ctx.equipped[invSlot] = link, ctx.cache[id] = { name, link, quality, ilvl } for C_Item.GetItemInfo, ctx.combat,
--- ctx.secret values hidden by issecretvalue. Returns ctx with addon, printed, env and a run(msg) function.
+-- ctx.secret values hidden by issecretvalue, ctx.instant[id] / ctx.icons[id] for C_Item.GetItemInfoInstant.
+-- opts.env adds globals, opts.widgets goes to loadAddon. Returns ctx with addon, printed, env, fire, frame, run(msg).
 local function loadGear(locale, db, shipped, opts)
     if not db then
         db, shipped = gearData()
     end
     local ctx = { class = "WARRIOR", className = "Warrior", level = 40, equipped = {}, cache = {}, combat = false,
-                  requested = {}, instant = {} }
+                  requested = {}, instant = {}, icons = {} }
     local env = {
         UnitClass = function(unit)
             assert(unit == "player")
@@ -1659,7 +1665,7 @@ local function loadGear(locale, db, shipped, opts)
                 ctx.requested[id] = true
             end,
             GetItemInfoInstant = function(id)
-                return id, nil, nil, ctx.instant[id]
+                return id, nil, nil, ctx.instant[id], ctx.icons[id]
             end,
         },
         C_Map = { GetMapInfo = function(map)
@@ -1675,8 +1681,9 @@ local function loadGear(locale, db, shipped, opts)
     for k, v in pairs(opts and opts.env or {}) do
         env[k] = v
     end
-    local loadOpts = { shipped = shipped, env = env, blockCLEU = opts and opts.blockCLEU }
-    ctx.addon, ctx.printed, ctx.env = loadWithDB(db, locale or "enUS", loadOpts)
+    local loadOpts = { shipped = shipped, env = env, blockCLEU = opts and opts.blockCLEU,
+                       widgets = opts and opts.widgets }
+    ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = loadWithDB(db, locale or "enUS", loadOpts)
     function ctx.run(msg)
         return run(ctx.addon, ctx.printed, msg)
     end
@@ -2006,6 +2013,503 @@ for locale, want in pairs({
     local out = loadGear(locale, db, shipped).run("rank 2")
     check(locale .. " rank fishing source", out[2], want[1])
     check(locale .. " rank keeps the npc source", out[3], want[2])
+end
+
+-- Store: browse window position (decision 8).
+
+do
+    local ui = { point = "TOPLEFT", x = 120.5, y = -40 }
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
+    check("ui: a valid position is kept", env.TandemDB.ui.point .. " " .. env.TandemDB.ui.x .. " " .. env.TandemDB.ui.y,
+        "TOPLEFT 120.5 -40")
+    check("ui: a valid position prints only the load line", #printed, 1)
+    check("ui: UIPosition returns it", addon.Store.UIPosition().x, 120.5)
+    check("ui: a position saved without relativePoint uses point", addon.Store.UIPosition().relativePoint,
+        "TOPLEFT")
+    check("ui: SetUIPosition saves", addon.Store.SetUIPosition("BOTTOMRIGHT", "TOPLEFT", -3, 4), true)
+    check("ui: SetUIPosition writes TandemDB", env.TandemDB.ui.point .. " " .. env.TandemDB.ui.relativePoint .. " "
+        .. env.TandemDB.ui.x .. " " .. env.TandemDB.ui.y, "BOTTOMRIGHT TOPLEFT -3 4")
+    check("ui: SetUIPosition is not a record", addon.Store.unsaved, 0)
+    check("ui: SetUIPosition without relativePoint uses point", addon.Store.SetUIPosition("TOP", nil, 1, 2)
+        and env.TandemDB.ui.relativePoint, "TOP")
+    addon.Store.SetUIPosition("BOTTOMRIGHT", "TOPLEFT", -3, 4)
+    for name, args in pairs({
+        ["unknown point"] = { "MIDDLE", "TOP", 1, 1 }, ["nil point"] = { nil, "TOP", 1, 1 },
+        ["unknown relativePoint"] = { "TOP", "MIDDLE", 1, 1 }, ["number relativePoint"] = { "TOP", 5, 1, 1 },
+        ["NaN x"] = { "TOP", "TOP", 0 / 0, 1 }, ["huge y"] = { "TOP", "TOP", 1, math.huge },
+        ["far x"] = { "TOP", "TOP", 10001, 1 }, ["string y"] = { "TOP", "TOP", 1, "2" },
+    }) do
+        check("ui: SetUIPosition rejects " .. name,
+            addon.Store.SetUIPosition(args[1], args[2], args[3], args[4]), false)
+    end
+    check("ui: a rejected position keeps the old one", env.TandemDB.ui.point, "BOTTOMRIGHT")
+end
+
+do
+    local _, _, env = loadWithDB({ schemaVersion = 2 })
+    check("ui: a fresh db has no position", env.TandemDB.ui, nil)
+    check("ui: a db without ui is current", isCurrent(env.TandemDB), true)
+end
+
+for name, ui in pairs({
+    ["not a table"] = "left", ["unknown point"] = { point = "MIDDLE", x = 0, y = 0 },
+    ["far x"] = { point = "TOP", x = -10001, y = 0 }, ["NaN y"] = { point = "TOP", x = 0, y = 0 / 0 },
+    ["missing y"] = { point = "TOP", x = 0 },
+    ["unknown relativePoint"] = { point = "TOP", relativePoint = "UP", x = 0, y = 0 },
+}) do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
+    check("ui: drops a position with " .. name, env.TandemDB.ui, nil)
+    check("ui: counts a position with " .. name .. " as dropped", printed[2], "Tandem: dropped 1 invalid saved entries")
+    check("ui: UIPosition after dropping " .. name, addon.Store.UIPosition(), nil)
+end
+
+do
+    local addon = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = 5, y = 6 } })
+    check("ui: a newer db still gives a valid position", addon.Store.UIPosition().y, 6)
+    check("ui: a newer db is not written", addon.Store.SetUIPosition("TOP", "TOP", 1, 1), false)
+    check("ui: a newer db keeps its position", addon.Store.db.ui.x, 5)
+    addon = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = "5", y = 6 } })
+    check("ui: a newer db with a bad position gives none", addon.Store.UIPosition(), nil)
+end
+
+-- Browse window (unit 5) under fake widgets.
+
+-- A fake region or frame. Methods (capitalised keys) that are not stubbed are no-ops; lower-case fields stay nil,
+-- so the addon's own fields on a widget behave as on a real frame.
+local function noop() end
+local WIDGET = {}
+WIDGET.__index = function(_, key)
+    if WIDGET[key] then
+        return WIDGET[key]
+    end
+    if type(key) == "string" and key:match("^%u") then
+        return noop
+    end
+end
+function WIDGET.Show(w) w.shown = true end
+function WIDGET.Hide(w) w.shown = false end
+function WIDGET.IsShown(w) return w.shown end
+function WIDGET.SetScript(w, name, fn) w.scripts[name] = fn end
+function WIDGET.GetScript(w, name) return w.scripts[name] end
+function WIDGET.SetText(w, text) w.text = text end
+function WIDGET.GetText(w) return w.text end
+function WIDGET.SetTexture(w, texture) w.texture = texture end
+function WIDGET.SetChecked(w, checked) w.checked = checked end
+function WIDGET.GetChecked(w) return w.checked end
+function WIDGET.SetAlpha(w, alpha) w.alpha = alpha end
+function WIDGET.SetTitle(w, title) w.title = title end
+function WIDGET.ClearAllPoints(w) w.points = {} end
+function WIDGET.SetPoint(w, ...) w.points[#w.points + 1] = { ... } end
+function WIDGET.GetPoint(w)
+    local p = w.points[1] or {}
+    return p[1], p[2], p[3], p[4], p[5]
+end
+function WIDGET.SetupMenu(w, generator) w.generator = generator end
+function WIDGET.SetDontSavePosition(w, v) w.dontSave = v end
+function WIDGET.SetUserPlaced(w, v) w.userPlaced = v end
+function WIDGET.StopMovingOrSizing(w) w.userPlaced = true end
+
+local function newWidget(ui, kind, name, parent, template)
+    local w = setmetatable({ ui = ui, kind = kind, name = name, parent = parent, template = template, shown = true,
+                             scripts = {}, points = {}, buttons = {} }, WIDGET)
+    ui.widgets[#ui.widgets + 1] = w
+    return w
+end
+
+function WIDGET.CreateFontString(w) return newWidget(w.ui, "FontString", nil, w) end
+function WIDGET.CreateTexture(w) return newWidget(w.ui, "Texture", nil, w) end
+function WIDGET.SetDataProvider(w, provider)
+    w.provider = provider
+    for i, row in ipairs(provider.rows) do
+        local b = w.buttons[i] or newWidget(w.ui, "Button", nil, w)
+        w.buttons[i] = b
+        w.view.initializer(b, row)
+    end
+end
+function WIDGET.ForEachFrame(w, fn)
+    for i, row in ipairs(w.provider.rows) do
+        fn(w.buttons[i], row)
+    end
+end
+
+-- Runs a dropdown's menu generator; returns its radios { text, isSelected, setSelected, data }.
+local function radios(dropdown)
+    local out = {}
+    dropdown.generator(dropdown, { CreateRadio = function(_, text, isSelected, setSelected, data)
+        out[#out + 1] = { text = text, isSelected = isSelected, setSelected = setSelected, data = data }
+    end })
+    return out
+end
+
+-- Loads gearData() (or db, shipped) with fake widgets. opts.failBars lists scroll bar templates that fail to build;
+-- opts.noInitList removes ScrollUtil.InitScrollBoxList, opts.noDontSave hides SetDontSavePosition. Returns the
+-- loadGear ctx; ctx.ui records widgets, timers, the tooltip item and the scroll bar, and ctx.win() returns the
+-- window once built.
+local function loadBrowse(locale, db, shipped, opts)
+    opts = opts or {}
+    local ui = { widgets = {}, timers = {} }
+    local failBars = {}
+    for _, t in ipairs(opts.failBars or {}) do
+        failBars[t] = true
+    end
+    local function widgets(kind, name, parent, template)
+        if failBars[template] then
+            error("no template " .. template)
+        end
+        local w = newWidget(ui, kind, name, parent, template)
+        if opts.noDontSave then
+            w.SetDontSavePosition = false
+        end
+        return w
+    end
+    local tooltip = newWidget({ widgets = {} }, "GameTooltip")
+    function tooltip.SetOwner(_, owner, anchor)
+        ui.tooltipOwner, ui.tooltipAnchor = owner, anchor
+    end
+    function tooltip.SetItemByID(_, id)
+        ui.tooltip = id
+    end
+    local env = {
+        UIParent = { name = "UIParent" },
+        UISpecialFrames = {},
+        GameTooltip = tooltip,
+        ButtonFrameTemplate_HideButtonBar = function(f)
+            f.buttonBarHidden = true
+        end,
+        CreateDataProvider = function(rows)
+            return { rows = rows }
+        end,
+        CreateScrollBoxListLinearView = function()
+            return { SetElementExtent = noop, SetElementInitializer = function(self, kind, init)
+                self.kind, self.initializer = kind, init
+            end }
+        end,
+        ScrollUtil = {
+            InitScrollBoxListWithScrollBar = function(box, bar, view)
+                box.view, ui.bar = view, bar
+            end,
+        },
+        C_Timer = { After = function(delay, fn)
+            ui.timers[#ui.timers + 1] = { delay = delay, fn = fn }
+        end },
+    }
+    if not opts.noInitList then
+        env.ScrollUtil.InitScrollBoxList = function(box, view)
+            box.view, ui.initList = view, true
+        end
+    end
+    local ctx = loadGear(locale, db, shipped, { env = env, widgets = widgets })
+    ctx.ui = ui
+    function ctx.win()
+        for _, w in ipairs(ui.widgets) do
+            if w.name == "TandemBrowseFrame" then
+                return w
+            end
+        end
+    end
+    -- Runs the queued timers.
+    function ctx.tick()
+        local timers = ui.timers
+        ui.timers = {}
+        for _, t in ipairs(timers) do
+            t.fn()
+        end
+    end
+    return ctx
+end
+
+local GREY = "|cff808080"
+
+local function rowIDs(win)
+    local out = {}
+    for _, row in ipairs(win.box.provider.rows) do
+        out[#out + 1] = tostring(row.id)
+    end
+    return table.concat(out, ",")
+end
+
+local function paneText(win)
+    local out = { win.pane.header:GetText() }
+    for _, fs in ipairs(win.pane.lines) do
+        out[#out + 1] = fs:GetText()
+    end
+    return out
+end
+
+do
+    local ctx = loadBrowse()
+    check("browse: nothing is built before use", ctx.win(), nil)
+    check("browse: no output on open", #ctx.run("browse"), 0)
+    local win = ctx.win()
+    check("browse: opens the window", win and win:IsShown(), true)
+    check("browse: window template", win.template, "ButtonFrameTemplate")
+    check("browse: window parent", win.parent, ctx.env.UIParent)
+    check("browse: window title", win.title, "Tandem gear")
+    check("browse: button bar hidden", win.buttonBarHidden, true)
+    check("browse: position not saved by the client", win.dontSave, true)
+    check("browse: escape closes it", ctx.env.UISpecialFrames[1], "TandemBrowseFrame")
+    check("browse: centred without a saved position", win.points[1][1], "CENTER")
+    check("browse: list view uses buttons", win.box.view.kind, "Button")
+    check("browse: minimal scroll bar", ctx.ui.bar.template, "MinimalScrollBar")
+    check("browse: all slots by default", rowIDs(win), "11,13,1,3,4,2,15,7,14,5,12")
+    check("browse: count", win.count:GetText(), "11 items")
+    check("browse: usable only by default", win.usable:GetChecked(), true)
+    check("browse: no selection", paneText(win)[1], "Select an item to see where it drops")
+    check("browse: no source lines without a selection", paneText(win)[2], "")
+    ctx.run("browse")
+    check("browse: toggles closed", win:IsShown(), false)
+    ctx.run("browse")
+    check("browse: toggles open again", win:IsShown(), true)
+    check("browse: built once", ctx.win(), win)
+    check("browse: escape registered once", #ctx.env.UISpecialFrames, 1)
+
+    local menu = radios(win.dropdown)
+    check("browse: dropdown template", win.dropdown.template, "WowStyle1DropdownTemplate")
+    check("browse: dropdown has all slots and each slot", #menu, 17)
+    check("browse: first radio is all slots", menu[1].text .. " " .. tostring(menu[1].data), "All slots nil")
+    check("browse: second radio is head", menu[2].text .. " " .. menu[2].data, "Head head")
+    check("browse: all slots is selected", menu[1].isSelected(menu[1].data), true)
+    menu[6].setSelected(menu[6].data)
+    check("browse: picking chest filters the rows", rowIDs(win), "11,1,3,4,2,12")
+    check("browse: chest is selected", menu[6].isSelected(menu[6].data) and not menu[1].isSelected(menu[1].data),
+        true)
+    check("browse: count follows the filter", win.count:GetText(), "6 items")
+
+    ctx.run("browse twohand")
+    check("browse <slot> filters", rowIDs(win), "15")
+    check("browse <slot> keeps it open", win:IsShown(), true)
+    ctx.run("browse twohand")
+    check("browse <slot> does not toggle", win:IsShown(), true)
+
+    ctx.level = 30
+    ctx.run("browse chest")
+    check("browse: usable only drops items above the level", rowIDs(win), "11,3,4,2,12")
+    win.usable:SetChecked(false)
+    win.usable:GetScript("OnClick")(win.usable)
+    check("browse: unchecking lists unusable items", rowIDs(win), "11,1,3,4,2,12")
+    check("browse: unchecked count", win.count:GetText(), "6 items")
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.equipped[5] = "|Hitem:3:|h"
+    ctx.icons[11] = 135000
+    ctx.level = 30
+    ctx.run("browse chest")
+    local win = ctx.win()
+    win.usable:SetChecked(false)
+    win.usable:GetScript("OnClick")(win.usable)
+    local b = win.box.buttons
+    check("browse row: icon from the client", b[1].icon.texture, 135000)
+    check("browse row: icon fallback", b[2].icon.texture, "Interface\\Icons\\INV_Misc_QuestionMark")
+    check("browse row: name before the item loads", b[1].name:GetText(),
+        "|cffff8000item #11|r" .. GREY .. " (upgrade) (no known source)|r")
+    check("browse row: asks the client to load the item", ctx.requested[11], true)
+    check("browse row: ilvl", b[1].ilvl:GetText(), "99")
+    check("browse row: level", b[1].level:GetText(), "1")
+    check("browse row: usable is opaque", b[1].alpha, 1)
+    check("browse row: unusable item has no upgrade mark", b[2].name:GetText(), "|cff0070dditem #1|r")
+    check("browse row: unusable item is faded", b[2].alpha, 0.5)
+    check("browse row: needed level in red", b[2].level:GetText(), "|cffff202040|r")
+    check("browse row: equipped mark", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped)|r")
+    check("browse row: no marks", b[4].name:GetText(), "|cff0070dditem #4|r")
+
+    b[1].scripts.OnEnter(b[1])
+    check("browse row: tooltip item", ctx.ui.tooltip, 11)
+    check("browse row: tooltip owner", ctx.ui.tooltipOwner == b[1] and ctx.ui.tooltipAnchor, "ANCHOR_RIGHT")
+    check("browse row: tooltip shown", ctx.env.GameTooltip:IsShown(), true)
+    b[1].scripts.OnLeave(b[1])
+    check("browse row: tooltip hidden on leave", ctx.env.GameTooltip:IsShown(), false)
+
+    ctx.cache[11] = { "GM Robe", "|cffff8000|Hitem:11::::|h[GM Robe]|h|r", 5, 99 }
+    ctx.cache[3] = { "Leather Vest", "|cff0070dd|Hitem:3::::|h[Leather Vest]|h|r", 3, 30 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 11, true)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 3, true)
+    check("browse refresh: one timer for a burst", #ctx.ui.timers, 1)
+    check("browse refresh: short delay", ctx.ui.timers[1].delay, 0.2)
+    check("browse refresh: nothing redrawn before the timer", b[1].name:GetText():find("GM Robe", 1, true), nil)
+    local provider = win.box.provider
+    ctx.tick()
+    check("browse refresh: name after the item loads", b[1].name:GetText(),
+        "|cffff8000GM Robe|r" .. GREY .. " (upgrade) (no known source)|r")
+    check("browse refresh: second item too", b[3].name:GetText(), "|cff0070ddLeather Vest|r" .. GREY .. " (equipped)|r")
+    check("browse refresh: rows are not listed again", win.box.provider, provider)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 999, true)
+    check("browse refresh: an item not in the rows is ignored", #ctx.ui.timers, 0)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 4, false)
+    check("browse refresh: a failed load schedules nothing", #ctx.ui.timers, 0)
+    local asked = 0
+    ctx.env.C_Item.RequestLoadItemDataByID = function()
+        asked = asked + 1
+    end
+    win.box:ForEachFrame(function(button, row)
+        button.scripts.OnClick(button)
+        return row
+    end)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 3, true)
+    ctx.tick()
+    ctx.run("browse")
+    ctx.run("browse chest")
+    check("browse refresh: redraws do not ask for an item again", asked, 0)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 4, true)
+    check("browse refresh: a later load schedules again", #ctx.ui.timers, 1)
+    ctx.tick()
+    ctx.run("browse")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 4, true)
+    check("browse refresh: nothing while hidden", #ctx.ui.timers, 0)
+end
+
+do
+    local db, shipped = gearData()
+    db.npcs = { [448] = "Hogger" }
+    for npc = 600, 606 do
+        shipped.loot[#shipped.loot + 1] = { 4, "c", npc, 1429, 1 }
+    end
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local b = win.box.buttons
+    b[2].scripts.OnClick(b[2])
+    local pane = paneText(win)
+    check("browse click: header is the item link", pane[1], built(1, BLUE))
+    check("browse click: source line", pane[2], "  Hogger, Elwynn Forest - drops: 1")
+    check("browse click: blank lines after the sources", pane[3], "")
+    check("browse click: selected row highlighted", b[2].selected:IsShown(), true)
+    check("browse click: other rows not highlighted", b[1].selected:IsShown(), false)
+    b[4].scripts.OnClick(b[4])
+    pane = paneText(win)
+    check("browse click: many sources", pane[2], "  npc #500, Elwynn Forest - drops: 1")
+    check("browse click: and more sources", pane[7], "  and 3 more sources")
+    check("browse click: highlight moves", b[2].selected:IsShown() == false and b[4].selected:IsShown(), true)
+    b[1].scripts.OnClick(b[1])
+    check("browse click: sourceless item", paneText(win)[2], "  no known source")
+    ctx.cache[11] = { "GM Robe", "|cffff8000|Hitem:11::::|h[GM Robe]|h|r", 5, 99 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 11, true)
+    ctx.tick()
+    check("browse click: header link refreshes after the item loads", paneText(win)[1], ctx.cache[11][2])
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.combat = true
+    local out = ctx.run("browse")
+    check("browse in combat: refused", out[1], "Tandem: not available in combat")
+    check("browse in combat: one line", #out, 1)
+    check("browse in combat: nothing built", ctx.win(), nil)
+    check("browse <slot> in combat: refused", ctx.run("browse chest")[1], "Tandem: not available in combat")
+    check("browse <bad slot> in combat: refused first", ctx.run("browse foo")[1], "Tandem: not available in combat")
+    local extra = ctx.run("browse a b")
+    check("browse with extra args in combat: refused first", extra[1] .. "|" .. #extra,
+        "Tandem: not available in combat|1")
+    ctx.combat = false
+    ctx.run("browse")
+    check("browse: listens for combat", ctx.frame.registered.PLAYER_REGEN_DISABLED, true)
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("browse: hidden when combat starts", ctx.win():IsShown(), false)
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("browse: hiding twice is harmless", ctx.win():IsShown(), false)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 1, true)
+    check("browse: events before the window is built are harmless", ctx.win(), nil)
+    ctx.class = nil
+    local out = ctx.run("browse")
+    check("browse with an unknown class explains", out[1],
+        "Tandem: your class or level is not known yet; try again in a moment")
+    check("browse with an unknown class builds nothing", ctx.win(), nil)
+    check("browse unknown slot", ctx.run("browse shirt")[1]:match("^Tandem: unknown slot shirt;"),
+        "Tandem: unknown slot shirt;")
+    check("browse two arguments print usage", ctx.run("browse chest all")[1], "Tandem commands:")
+end
+
+do
+    local db, shipped = gearData()
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.run("browse")
+    local win = ctx.win()
+    win.points = { { "TOPLEFT", ctx.env.UIParent, "BOTTOMLEFT", 200, 650 } }
+    win.scripts.OnDragStop(win)
+    local ui = ctx.env.TandemDB.ui
+    check("browse drag: saves the position", ui.point .. " " .. ui.relativePoint .. " " .. ui.x .. " " .. ui.y,
+        "TOPLEFT BOTTOMLEFT 200 650")
+    check("browse drag: user-placed left alone with SetDontSavePosition", win.userPlaced, true)
+    check("browse drag: is not an unsaved record", ctx.addon.Store.unsaved, 0)
+    check("browse drag: drag starts on the left button", type(win.scripts.OnDragStart), "function")
+
+    db.ui = { point = "TOPLEFT", relativePoint = "BOTTOMLEFT", x = 200, y = 650 }
+    local again = loadBrowse("enUS", db, shipped)
+    again.run("browse")
+    local p = again.win().points[1]
+    check("browse: restores the saved position", p[1] .. " " .. p[3] .. " " .. p[4] .. " " .. p[5],
+        "TOPLEFT BOTTOMLEFT 200 650")
+    check("browse: restores relative to UIParent", p[2], again.env.UIParent)
+
+    db.ui = { point = "TOPLEFT", x = 200, y = -150 }
+    local old = loadBrowse("enUS", db, shipped)
+    old.run("browse")
+    p = old.win().points[1]
+    check("browse: an old position without relativePoint uses point",
+        p[1] .. " " .. p[3] .. " " .. p[4] .. " " .. p[5], "TOPLEFT TOPLEFT 200 -150")
+
+    local noSave = loadBrowse("enUS", nil, nil, { noDontSave = true })
+    noSave.run("browse")
+    local nw = noSave.win()
+    nw.scripts.OnDragStop(nw)
+    check("browse drag: not user-placed without SetDontSavePosition", nw.userPlaced, false)
+
+    db.ui = { point = "NOWHERE", x = 200, y = -150 }
+    local bad = loadBrowse("enUS", db, shipped)
+    bad.run("browse")
+    check("browse: a bad saved position is centred", bad.win().points[1][1], "CENTER")
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { failBars = { "MinimalScrollBar" } })
+    ctx.run("browse")
+    check("browse: falls back to the trim scroll bar", ctx.ui.bar.template, "WowTrimScrollBar")
+    check("browse: the fallback bar still lists rows", #ctx.win().box.buttons, 11)
+
+    ctx = loadBrowse("enUS", nil, nil, { failBars = { "MinimalScrollBar", "WowTrimScrollBar" } })
+    ctx.run("browse")
+    check("browse: no scroll bar when neither builds", ctx.ui.bar, nil)
+    check("browse: list without a bar", ctx.ui.initList, true)
+    check("browse: rows without a bar", #ctx.win().box.buttons, 11)
+
+    ctx = loadBrowse("enUS", nil, nil, { failBars = { "MinimalScrollBar", "WowTrimScrollBar" }, noInitList = true })
+    local inited
+    local real = WIDGET.Init
+    WIDGET.Init = function(box, view)
+        box.view, inited = view, true
+    end
+    ctx.run("browse")
+    WIDGET.Init = real
+    check("browse: list initialised on the box without ScrollUtil.InitScrollBoxList", inited, true)
+    check("browse: rows on the plain box", #ctx.win().box.buttons, 11)
+end
+
+do
+    local ctx = loadBrowse("zhTW")
+    check("zhTW usage lists browse", ctx.run("help")[9], "  /tandem browse [<部位>] - 在視窗中瀏覽已知裝備")
+    ctx.run("browse")
+    local win = ctx.win()
+    check("zhTW browse title", win.title, "Tandem 裝備")
+    check("zhTW browse all slots", radios(win.dropdown)[1].text, "所有部位")
+    check("zhTW browse slot label", radios(win.dropdown)[2].text, "頭部")
+    check("zhTW browse count", win.count:GetText(), "11 件物品")
+    check("zhTW browse no selection", paneText(win)[1], "選擇一件物品以查看掉落來源")
+    local usableText
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.kind == "FontString" and w.text == "僅限可用" then
+            usableText = w.text
+        end
+    end
+    check("zhTW browse usable only", usableText, "僅限可用")
+    ctx.combat = true
+    ctx.run("browse")
+    check("zhTW browse in combat", ctx.run("browse")[1], "Tandem：戰鬥中無法使用")
 end
 
 if failures > 0 then

@@ -16,5 +16,7 @@ Scanner.lua
 Loot.lua
 Kills.lua
 Advisor.lua
+View.lua
 Commands.lua
+Browse.lua
 Tandem.lua

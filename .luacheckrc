@@ -13,11 +13,16 @@ globals = {
 
 -- WoW API used by the addon; add new ones here as the addon grows.
 read_globals = {
+    "ButtonFrameTemplate_HideButtonBar",
+    "ButtonFrameTemplate_HidePortrait",
     "C_Item",
     "C_Map",
     "C_Timer",
     "CombatLogGetCurrentEventInfo",
+    "CreateDataProvider",
     "CreateFrame",
+    "CreateScrollBoxListLinearView",
+    "GameTooltip",
     "GetInventoryItemLink",
     "GetLocale",
     "GetLootSlotLink",
@@ -26,7 +31,10 @@ read_globals = {
     "GetTime",
     "InCombatLockdown",
     "issecretvalue",
+    "ScrollUtil",
     "time",
+    "UIParent",
+    "UISpecialFrames",
     "UnitClass",
     "UnitGUID",
     "UnitLevel",

@@ -13,6 +13,12 @@ local RUN_FIELDS = {
     "timeouts", "elapsed",
 }
 
+local MAX_OFFSET = 10000
+local ANCHORS = {
+    TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true, RIGHT = true, BOTTOMLEFT = true,
+    BOTTOM = true, BOTTOMRIGHT = true,
+}
+
 local floor = math.floor
 
 local function isNum(v)
@@ -72,6 +78,19 @@ local function copyLoot(v)
         end
     end
     return { item = v.item, kind = v.kind, id = v.id, map = v.map, count = v.count, coords = coords }
+end
+
+local function isAnchor(v)
+    return type(v) == "string" and ANCHORS[v] == true
+end
+
+-- Returns a clean copy of a saved window position { point, relativePoint, x, y }, or nil. A position saved
+-- without relativePoint uses point.
+local function copyUI(v)
+    if type(v) == "table" and isAnchor(v.point) and (v.relativePoint == nil or isAnchor(v.relativePoint))
+        and isNum(v.x) and isNum(v.y) and math.abs(v.x) <= MAX_OFFSET and math.abs(v.y) <= MAX_OFFSET then
+        return { point = v.point, relativePoint = v.relativePoint or v.point, x = v.x, y = v.y }
+    end
 end
 
 -- Copies every entry of raw that passes its type check into a fresh current-schema table.
@@ -160,6 +179,13 @@ local function migrate(raw, report)
             else
                 drop()
             end
+        end
+    end
+
+    if raw.ui ~= nil then
+        db.ui = copyUI(raw.ui)
+        if not db.ui then
+            drop()
         end
     end
     return db
@@ -298,6 +324,23 @@ function Store.Counts()
         unsaved = Store.unsaved,
         readOnly = Store.readOnly,
     }
+end
+
+-- Saves the browse window position; false when invalid or read-only. A position is not a record: unsaved is
+-- unchanged.
+function Store.SetUIPosition(point, relativePoint, x, y)
+    local ui = not Store.readOnly and copyUI({ point = point, relativePoint = relativePoint, x = x, y = y })
+    if not ui then
+        return false
+    end
+    Store.db.ui = ui
+    return true
+end
+
+-- Returns the saved browse window position { point, relativePoint, x, y }, or nil; checked again since a newer
+-- db is kept raw.
+function Store.UIPosition()
+    return copyUI(Store.db and Store.db.ui)
 end
 
 local GUID_KINDS = { Creature = "c", Vehicle = "c", GameObject = "o" }
