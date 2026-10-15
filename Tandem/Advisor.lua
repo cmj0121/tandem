@@ -81,6 +81,10 @@ local function isRecord(r)
         and type(r[4]) == "string" and type(r[5]) == "number" and type(r[6]) == "number"
 end
 
+local function isDeprecated(r)
+    return r[7] == 1
+end
+
 local function dualWields(class, level)
     local dual = Advisor.PROFICIENCY[class] and Advisor.PROFICIENCY[class].dualWield
     return dual ~= nil and level >= dual
@@ -117,7 +121,8 @@ function Advisor.Usable(item, class, level)
     return true
 end
 
--- Returns an item record { ilvl, reqLevel, quality, equipLoc, classID, subclassID } or nil; own data wins.
+-- Returns an item record { ilvl, reqLevel, quality, equipLoc, classID, subclassID [, 1 = deprecated] } or nil; own
+-- data wins.
 function Advisor.Item(id)
     local r = own("items")[id]
     if isRecord(r) then
@@ -127,6 +132,18 @@ function Advisor.Item(id)
     if isRecord(r) then
         return r
     end
+end
+
+-- Returns true when the item's record is flagged deprecated.
+function Advisor.IsDeprecated(id)
+    local r = Advisor.Item(id)
+    return r ~= nil and isDeprecated(r)
+end
+
+-- Returns true when a row for an equipLoc in All slots also fills the off hand: a one-hand weapon once the class
+-- dual-wields.
+local function alsoOffhand(equipLoc, class, level)
+    return equipLoc == "INVTYPE_WEAPON" and dualWields(class, level)
 end
 
 local lootIndex, indexedFrom
@@ -183,16 +200,18 @@ local function before(a, b)
 end
 
 -- Walks own and shipped items once (own records win) and returns the rows for slot (nil: every ranked slot, each
--- item once under its first slot), sorted best first. sourcedOnly drops sourceless items before a row is built.
-local function list(slot, class, level, usableOnly, sourcedOnly, index)
+-- item once under its first slot), sorted best first. f.sourcedOnly, f.hideDeprecated and f.quality drop items
+-- before a row is built, f.usableOnly after; f.index is the SourceIndex to use.
+local function list(slot, class, level, f)
     local out, done = {}, {}
+    local index = f.index
     local function consider(id)
         if done[id] or type(id) ~= "number" then
             return
         end
         done[id] = true
         local r = Advisor.Item(id)
-        if not r then
+        if not r or (f.hideDeprecated and isDeprecated(r)) or (f.quality and r[3] ~= f.quality) then
             return
         end
         -- The first slot an item fills is SLOT_OF[equipLoc] (a one-hander is listed under main hand).
@@ -201,13 +220,15 @@ local function list(slot, class, level, usableOnly, sourcedOnly, index)
             return
         end
         local sourced = isSourced(id, index)
-        if sourcedOnly and not sourced then
+        if f.sourcedOnly and not sourced then
             return
         end
         local usable, reason, needLevel = Advisor.Usable(r, class, level)
-        if usable or not usableOnly then
+        if usable or not f.usableOnly then
             out[#out + 1] = { id = id, slot = rowSlot, ilvl = r[1], quality = r[3], reqLevel = r[2], usable = usable,
-                              reason = reason, needLevel = needLevel, sourced = sourced }
+                              reason = reason, needLevel = needLevel, sourced = sourced,
+                              deprecated = isDeprecated(r) or nil,
+                              offhand = (not slot and alsoOffhand(r[4], class, level)) or nil }
         end
     end
     for id in pairs(own("items")) do
@@ -220,18 +241,23 @@ local function list(slot, class, level, usableOnly, sourcedOnly, index)
     return out
 end
 
+-- Deprecated items are never the best.
 local function best(slot, class, level, all, index)
-    return list(slot, class, level, true, not all, index)
+    return list(slot, class, level, { usableOnly = true, sourcedOnly = not all, hideDeprecated = true, index = index })
 end
 
 -- Returns every known item for slot, or for all ranked slots when slot is nil, sorted best first:
--- { id, slot, ilvl, quality, reqLevel, usable, reason, needLevel, sourced }. opts.usableOnly drops rows the class or
--- level cannot use. nil for an unknown slot.
+-- { id, slot, ilvl, quality, reqLevel, usable, reason, needLevel, sourced, deprecated, offhand }; offhand is true in
+-- All slots for a one-hander the class can also wield in the off hand. opts.usableOnly drops rows the class or level
+-- cannot use, opts.hideDeprecated flagged items, opts.quality (a number) items of any other quality. nil for an
+-- unknown slot.
 function Advisor.List(slot, class, level, opts)
     if slot ~= nil and not IS_SLOT[slot] then
         return nil
     end
-    return list(slot, class, level, opts and opts.usableOnly, false, Advisor.SourceIndex())
+    opts = opts or EMPTY
+    return list(slot, class, level, { usableOnly = opts.usableOnly, hideDeprecated = opts.hideDeprecated,
+                                      quality = opts.quality, index = Advisor.SourceIndex() })
 end
 
 -- Returns the usable items for slot sorted best first (List rows); sourceless items only with opts.all. opts.index
@@ -244,31 +270,51 @@ function Advisor.Best(slot, class, level, opts)
 end
 
 -- Returns where an item goes for a class at a level without walking the other items: nil for an unknown item, else
--- { slot, usable, reason, needLevel }; slot is nil when the item has no ranked slot.
+-- { slot, usable, reason, needLevel, deprecated, offhand }; slot is nil when the item has no ranked slot, offhand is
+-- true for a one-hander the class can also wield in the off hand.
 function Advisor.Place(id, class, level)
     local r = Advisor.Item(id)
     if not r then
         return nil
     end
     local usable, reason, needLevel = Advisor.Usable(r, class, level)
-    return { slot = SLOT_OF[r[4]], usable = usable, reason = reason, needLevel = needLevel }
+    return { slot = SLOT_OF[r[4]], usable = usable, reason = reason, needLevel = needLevel,
+             deprecated = isDeprecated(r) or nil, offhand = alsoOffhand(r[4], class, level) or nil }
 end
 
--- Returns nil for an unknown item, else { rank, total, slot, usable, reason, needLevel, sourced }; rank and total are
--- nil when the item has no ranked slot.
+-- Rank's memo: the source index and the ranked list per slot, for one class:level:Store.revision over one own db
+-- and one shipped table. Any record change bumps the revision; a level-up changes the key.
+local memo = {}
+
+local function memoFor(class, level)
+    local key = class .. ":" .. level .. ":" .. ns.Store.revision
+    if memo.key ~= key or memo.db ~= ns.Store.db or memo.shipped ~= ns.Shipped then
+        memo = { key = key, db = ns.Store.db, shipped = ns.Shipped, index = Advisor.SourceIndex(), ranked = {} }
+    end
+    return memo
+end
+
+local function rankedFor(m, slot, class, level)
+    m.ranked[slot] = m.ranked[slot] or best(slot, class, level, false, m.index)
+    return m.ranked[slot]
+end
+
+-- Returns nil for an unknown item, else { rank, total, slot, usable, reason, needLevel, sourced, deprecated,
+-- offhand }; rank and total are nil when the item has no ranked slot. Repeated calls reuse one walk per slot until a
+-- record changes.
 function Advisor.Rank(id, class, level)
     local result = Advisor.Place(id, class, level)
     if not result then
         return nil
     end
-    local index = Advisor.SourceIndex()
-    result.sourced = isSourced(id, index)
+    local m = memoFor(class, level)
+    result.sourced = isSourced(id, m.index)
     if not result.slot then
         return result
     end
     local r = Advisor.Item(id)
     local me = { id = id, ilvl = r[1], quality = r[3] }
-    local ranked = best(result.slot, class, level, false, index)
+    local ranked = rankedFor(m, result.slot, class, level)
     local rank, listed = 1, false
     for _, e in ipairs(ranked) do
         if e.id == id then

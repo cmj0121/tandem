@@ -1,7 +1,8 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer.
-local Store = { unsaved = 0, readOnly = false, itemCount = 0 }
+-- revision goes up with every record change, as unsaved does, and Advisor keys its caches on it.
+local Store = { unsaved = 0, revision = 0, readOnly = false, itemCount = 0 }
 ns.Store = Store
 
 local SCHEMA = 2
@@ -55,11 +56,12 @@ local function newDB()
     }
 end
 
--- Returns a clean copy of an item record, or nil.
+-- Returns a clean copy of an item record, or nil. The optional 7th field is kept only as 1 (deprecated); any
+-- other 7th value is stripped, as are fields after it.
 local function copyItem(v)
     if type(v) == "table" and isNum(v[1]) and isNum(v[2]) and isNum(v[3]) and type(v[4]) == "string"
         and v[4] ~= "" and isNum(v[5]) and isNum(v[6]) then
-        return { v[1], v[2], v[3], v[4], v[5], v[6] }
+        return { v[1], v[2], v[3], v[4], v[5], v[6], v[7] == 1 and 1 or nil }
     end
 end
 
@@ -84,12 +86,21 @@ local function isAnchor(v)
     return type(v) == "string" and ANCHORS[v] == true
 end
 
--- Returns a clean copy of a saved window position { point, relativePoint, x, y }, or nil. A position saved
--- without relativePoint uses point.
+local function isSize(v)
+    return isNum(v) and v >= 1 and v <= MAX_OFFSET
+end
+
+-- Returns a clean copy of a saved window { point, relativePoint, x, y [, width, height] }, or nil, then true when
+-- a size was there but invalid (stripped, the position kept). A position saved without relativePoint uses point;
+-- a size is both width and height or neither.
 local function copyWindow(v)
     if type(v) == "table" and isAnchor(v.point) and (v.relativePoint == nil or isAnchor(v.relativePoint))
         and isNum(v.x) and isNum(v.y) and math.abs(v.x) <= MAX_OFFSET and math.abs(v.y) <= MAX_OFFSET then
-        return { point = v.point, relativePoint = v.relativePoint or v.point, x = v.x, y = v.y }
+        local out = { point = v.point, relativePoint = v.relativePoint or v.point, x = v.x, y = v.y }
+        if isSize(v.width) and isSize(v.height) then
+            out.width, out.height = v.width, v.height
+        end
+        return out, out.width == nil and (v.width ~= nil or v.height ~= nil)
     end
 end
 
@@ -107,8 +118,9 @@ local function copyUI(v, drop)
     end
     local out = {}
     if v.window ~= nil then
-        out.window = copyWindow(v.window)
-        if not out.window then
+        local badSize
+        out.window, badSize = copyWindow(v.window)
+        if not out.window or badSize then
             drop()
         end
     end
@@ -225,6 +237,7 @@ end
 function Store.Load(raw)
     local report = { dropped = 0 }
     Store.unsaved = 0
+    Store.revision = 0
     Store.readOnly = false
 
     local db
@@ -249,18 +262,56 @@ function Store.Load(raw)
     return db, report
 end
 
--- Stores an equippable item's core fields; false when already cached, invalid or read-only.
-function Store.AddItem(id, ilvl, reqLevel, quality, equipLoc, classID, subclassID)
+-- Counts one record change.
+local function changed()
+    Store.unsaved = Store.unsaved + 1
+    Store.revision = Store.revision + 1
+end
+
+-- Returns true for an item name the client marks as deprecated: it starts with "deprecated" in any case, after any
+-- leading spaces.
+function Store.IsDeprecatedName(name)
+    return type(name) == "string" and name:lower():match("^%s*deprecated") ~= nil
+end
+
+-- Stores an equippable item's core fields, flagged when deprecated is true; false when already cached, invalid or
+-- read-only.
+function Store.AddItem(id, ilvl, reqLevel, quality, equipLoc, classID, subclassID, deprecated)
     if Store.readOnly or not isInt(id, 1) or Store.db.items[id] then
         return false
     end
-    local item = copyItem({ ilvl, reqLevel, quality, equipLoc, classID, subclassID })
+    local item = copyItem({ ilvl, reqLevel, quality, equipLoc, classID, subclassID, deprecated == true and 1 or nil })
     if not item then
         return false
     end
     Store.db.items[id] = item
     Store.itemCount = Store.itemCount + 1
-    Store.unsaved = Store.unsaved + 1
+    changed()
+    return true
+end
+
+-- Flags an item as deprecated: its own record, else a flagged copy of record (the shipped one) so the next import
+-- ships the flag. True when changed; false when already flagged, invalid or read-only.
+function Store.MarkDeprecated(id, record)
+    if Store.readOnly or not isInt(id, 1) then
+        return false
+    end
+    local item = Store.db.items[id]
+    if item then
+        if item[7] == 1 then
+            return false
+        end
+        item[7] = 1
+    else
+        item = copyItem(record)
+        if not item then
+            return false
+        end
+        item[7] = 1
+        Store.db.items[id] = item
+        Store.itemCount = Store.itemCount + 1
+    end
+    changed()
     return true
 end
 
@@ -277,6 +328,7 @@ function Store.AddLoot(item, kind, id, map, x, y)
         Store.db.loot[key] = entry
     end
     entry.count = entry.count + 1
+    changed()
 
     if isNum(x) and isNum(y) and x >= 0 and y >= 0 and #entry.coords < MAX_COORDS then
         local cx, cy = floor(x * 1000), floor(y * 1000)
@@ -291,7 +343,6 @@ function Store.AddLoot(item, kind, id, map, x, y)
             entry.coords[#entry.coords + 1] = { cx, cy }
         end
     end
-    Store.unsaved = Store.unsaved + 1
     return true
 end
 
@@ -302,7 +353,7 @@ function Store.SetNpcName(npcID, name)
         return false
     end
     Store.db.npcs[npcID] = name
-    Store.unsaved = Store.unsaved + 1
+    changed()
     return true
 end
 
@@ -312,7 +363,7 @@ local function addCount(field, npcID)
     end
     local t = Store.db[field]
     t[npcID] = (t[npcID] or 0) + 1
-    Store.unsaved = Store.unsaved + 1
+    changed()
     return true
 end
 
@@ -385,23 +436,56 @@ local function setUI(key, value)
     Store.db.ui[key] = value
 end
 
--- Saves the browse window position; false when invalid or read-only. A position is not a record: unsaved is
--- unchanged.
+-- Returns the saved browse window { point, relativePoint, x, y [, width, height] }, or nil; checked again since a
+-- newer db is kept raw.
+local function savedWindow()
+    local ui = savedUI()
+    if ui then
+        return (copyWindow(ui.window))
+    end
+end
+
+-- Saves the browse window position, keeping a saved size; false when invalid or read-only. A position is not a
+-- record: unsaved is unchanged.
 function Store.SetUIPosition(point, relativePoint, x, y)
     local window = not Store.readOnly and copyWindow({ point = point, relativePoint = relativePoint, x = x, y = y })
     if not window then
         return false
     end
+    local old = savedWindow()
+    if old then
+        window.width, window.height = old.width, old.height
+    end
     setUI("window", window)
     return true
 end
 
--- Returns the saved browse window position { point, relativePoint, x, y }, or nil; checked again since a newer
--- db is kept raw.
+-- Returns the saved browse window position { point, relativePoint, x, y }, or nil.
 function Store.UIPosition()
-    local ui = savedUI()
-    if ui then
-        return copyWindow(ui.window)
+    local window = savedWindow()
+    if window then
+        window.width, window.height = nil, nil
+    end
+    return window
+end
+
+-- Saves the browse window size next to its position; false without a saved position, when invalid or read-only.
+-- Not a record.
+function Store.SetUISize(width, height)
+    local window = not Store.readOnly and savedWindow()
+    if not window or not isSize(width) or not isSize(height) then
+        return false
+    end
+    window.width, window.height = width, height
+    setUI("window", window)
+    return true
+end
+
+-- Returns the saved browse window width, height, or nil.
+function Store.UISize()
+    local window = savedWindow()
+    if window and window.width then
+        return window.width, window.height
     end
 end
 

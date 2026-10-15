@@ -23,4 +23,5 @@ View.lua
 Commands.lua
 Browse.lua
 Launcher.lua
+Tooltip.lua
 Tandem.lua

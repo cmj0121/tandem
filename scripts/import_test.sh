@@ -140,6 +140,41 @@ check "re-import succeeds" "$?" "0"
 shipped "re-import replaces the snapshot instead of adding" "$out" '
 assert(S.contributors == 2 and S.loot[2][5] == 13 and S.kills[448] == 34)'
 
+# Deprecated items: the flag is a 7th field, kept only as 1, and set on the merged record when any contributor has it.
+sv dep-a.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 2,
+	items = {
+		[50] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 },
+		[51] = { 12, 5, 2, "INVTYPE_FEET", 4, 1, 1 },
+		[52] = { 1, 1, 1, "INVTYPE_HAND", 4, 1, 7 },
+		[53] = { 20, 15, 2, "INVTYPE_WAIST", 4, 1, 1 },
+	},
+}
+EOF
+sv dep-b.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 2,
+	items = { [50] = { 99, 60, 4, "INVTYPE_HEAD", 4, 1, 1 }, [53] = { 30, 25, 3, "INVTYPE_WAIST", 4, 1 } },
+}
+EOF
+dep="$tmp/dep"
+import "$dep" "$dep/Loot.lua" enUS aaaa "$tmp/dep-a.lua" enUS bbbb "$tmp/dep-b.lua"
+check "deprecated items import" "$?" "0"
+check "a 7th field other than 1 is not an invalid entry" "$(cat "$tmp/err")" ""
+contains "a flagged record is written with 7 fields" "$dep/contributions/aaaa.lua" \
+	'[51] = { 12, 5, 2, "INVTYPE_FEET", 4, 1, 1 },'
+contains "an unflagged record is written with 6 fields" "$dep/contributions/aaaa.lua" \
+	'[50] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 },'
+contains "a 7th field other than 1 is stripped" "$dep/contributions/aaaa.lua" '[52] = { 1, 1, 1, "INVTYPE_HAND", 4, 1 },'
+contains "a flagged record is shipped with 7 fields" "$dep/Loot.lua" 't[51] = { 12, 5, 2, "INVTYPE_FEET", 4, 1, 1 }'
+contains "the first record wins and a later contributor's flag is ORed in" "$dep/Loot.lua" \
+	't[50] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1 }'
+contains "the first record's flag survives a later unflagged record" "$dep/Loot.lua" \
+	't[53] = { 20, 15, 2, "INVTYPE_WAIST", 4, 1, 1 }'
+shipped "flagged records load back" "$dep/Loot.lua" '
+assert(S.items[50][7] == 1 and S.items[51][7] == 1 and S.items[52][7] == nil and #S.items[52] == 6)'
+
 # Contributions written before kills, corpses and items existed still import.
 old="$tmp/old"
 mkdir -p "$old/contributions"

@@ -48,11 +48,13 @@ end
 -- Stores the item's core fields when the client has them; returns false when it does not yet.
 local function cache(id, equipLoc, classID, subclassID)
     local name, _, quality, ilvl, reqLevel = C_Item.GetItemInfo(id)
-    if not Safe(name) then
+    name = Safe(name)
+    if not name then
         return false
     end
     found(id)
-    if ns.Store.AddItem(id, Safe(ilvl), Safe(reqLevel), Safe(quality), equipLoc, classID, subclassID) then
+    if ns.Store.AddItem(id, Safe(ilvl), Safe(reqLevel), Safe(quality), equipLoc, classID, subclassID,
+        ns.Store.IsDeprecatedName(name)) then
         local run = scanDB().lastRun
         run.equippable = run.equippable + 1
     end

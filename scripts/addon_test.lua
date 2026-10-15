@@ -1678,13 +1678,14 @@ end
 -- Loads gearData() (or db, shipped) with a stubbed player: ctx.class/className/level for UnitClass/UnitLevel,
 -- ctx.equipped[invSlot] = link, ctx.cache[id] = { name, link, quality, ilvl } for C_Item.GetItemInfo, ctx.combat,
 -- ctx.secret values hidden by issecretvalue, ctx.instant[id] / ctx.icons[id] for C_Item.GetItemInfoInstant.
+-- C_Item.IsItemDataCachedByID is true for ids in ctx.cache; ctx.infoCalls[id] counts GetItemInfo calls.
 -- opts.env adds globals, opts.widgets goes to loadAddon. Returns ctx with addon, printed, env, fire, frame, run(msg).
 local function loadGear(locale, db, shipped, opts)
     if not db then
         db, shipped = gearData()
     end
     local ctx = { class = "WARRIOR", className = "Warrior", level = 40, equipped = {}, cache = {}, combat = false,
-                  requested = {}, instant = {}, icons = {} }
+                  requested = {}, instant = {}, icons = {}, infoCalls = {} }
     local env = {
         UnitClass = function(unit)
             assert(unit == "player")
@@ -1701,7 +1702,11 @@ local function loadGear(locale, db, shipped, opts)
             return ctx.equipped[slot]
         end,
         C_Item = {
+            IsItemDataCachedByID = function(id)
+                return ctx.cache[id] ~= nil
+            end,
             GetItemInfo = function(id)
+                ctx.infoCalls[id] = (ctx.infoCalls[id] or 0) + 1
                 local c = ctx.cache[id]
                 if c then
                     return c[1], c[2], c[3], c[4]
@@ -2192,7 +2197,17 @@ end
 function WIDGET.SetupMenu(w, generator) w.generator = generator end
 function WIDGET.SetDontSavePosition(w, v) w.dontSave = v end
 function WIDGET.SetUserPlaced(w, v) w.userPlaced = v end
-function WIDGET.StopMovingOrSizing(w) w.userPlaced = true end
+function WIDGET.StopMovingOrSizing(w) w.userPlaced, w.sizing = true, nil end
+function WIDGET.SetSize(w, width, height) w.width, w.height = width, height end
+function WIDGET.GetSize(w) return w.width, w.height end
+function WIDGET.SetResizable(w, v) w.resizable = v end
+function WIDGET.SetResizeBounds(w, ...) w.bounds = { ... } end
+function WIDGET.SetMinResize(w, ...) w.minResize = { ... } end
+function WIDGET.SetMaxResize(w, ...) w.maxResize = { ... } end
+function WIDGET.StartSizing(w, corner) w.sizing = corner end
+function WIDGET.SetNormalTexture(w, t) w.normal = t end
+function WIDGET.SetPushedTexture(w, t) w.pushed = t end
+function WIDGET.SetHighlightTexture(w, t) w.highlight = t end
 
 local function newWidget(ui, kind, name, parent, template)
     local w = setmetatable({ ui = ui, kind = kind, name = name, parent = parent, template = template, shown = true,
@@ -2227,9 +2242,10 @@ local function radios(dropdown)
 end
 
 -- Loads gearData() (or db, shipped) with fake widgets. opts.failBars lists templates that fail to build;
--- opts.noInitList removes ScrollUtil.InitScrollBoxList, opts.noDontSave hides SetDontSavePosition, opts.env adds or
--- replaces globals. Returns the loadGear ctx; ctx.ui records widgets, timers (C_Timer.After), tickers
--- (C_Timer.NewTicker), the tooltip item, owner and lines and the scroll bar; ctx.win() returns the window once built.
+-- opts.noInitList removes ScrollUtil.InitScrollBoxList, opts.noDontSave hides SetDontSavePosition, opts.noResize
+-- hides SetResizable, opts.noResizeBounds hides SetResizeBounds, opts.env adds or replaces globals. Returns the
+-- loadGear ctx; ctx.ui records widgets, timers (C_Timer.After), tickers (C_Timer.NewTicker), the tooltip item, owner
+-- and lines and the scroll bar; ctx.win() returns the window once built.
 -- ctx.cursor = { kind, id } is what GetCursorInfo returns; ClearCursor empties it and sets ctx.cleared.
 local function loadBrowse(locale, db, shipped, opts)
     opts = opts or {}
@@ -2245,6 +2261,12 @@ local function loadBrowse(locale, db, shipped, opts)
         local w = newWidget(ui, kind, name, parent, template)
         if opts.noDontSave then
             w.SetDontSavePosition = false
+        end
+        if opts.noResize then
+            w.SetResizable = false
+        end
+        if opts.noResizeBounds then
+            w.SetResizeBounds = false
         end
         return w
     end
@@ -3404,6 +3426,872 @@ do
     ctx.cursor = { "item", 999 }
     ctx.win().scripts.OnReceiveDrag(ctx.win())
     check("zhTW drop unknown item", paneText(ctx.win())[1], "Tandem：未知的物品 999；請先掃描或拾取")
+end
+
+-- Deprecated flag: the optional 7th item field (stage 4, unit 4).
+
+do
+    local items = {
+        [1] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1 }, [2] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, "1" },
+        [3] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, true }, [4] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 2 },
+        [5] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1, "extra" },
+    }
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, items = items })
+    local db = env.TandemDB
+    check("deprecated: a 7th field of 1 is kept", db.items[1][7], 1)
+    check("deprecated: a string 7th field is stripped", #db.items[2], 6)
+    check("deprecated: a boolean 7th field is stripped", #db.items[3], 6)
+    check("deprecated: another number is stripped", #db.items[4], 6)
+    check("deprecated: fields after the flag are stripped", #db.items[5] .. " " .. db.items[5][7], "7 1")
+    check("deprecated: a stripped flag is not a drop", #printed, 1)
+    check("deprecated: the schema stays 2", db.schemaVersion, 2)
+    check("deprecated: Advisor reads a flagged record", addon.Advisor.Item(1) ~= nil, true)
+    check("deprecated: IsDeprecated of a flagged record", addon.Advisor.IsDeprecated(1), true)
+    check("deprecated: IsDeprecated of a stripped record", addon.Advisor.IsDeprecated(2), false)
+    check("deprecated: IsDeprecated of an unknown item", addon.Advisor.IsDeprecated(99), false)
+end
+
+do
+    local Store = loadWithDB(nil).Store
+    for name, case in pairs({
+        plain = { "Deprecated Sword", true }, lower = { "deprecated sword", true }, upper = { "DEPRECATED", true },
+        ["leading spaces"] = { "  Deprecated Sword", true }, ["later word"] = { "Sword (Deprecated)", false },
+        empty = { "", false }, ["nil"] = { nil, false }, number = { 5, false }, ["plain name"] = { "Sword", false },
+    }) do
+        check("deprecated: IsDeprecatedName " .. name, Store.IsDeprecatedName(case[1]), case[2])
+    end
+end
+
+do
+    local addon, _, env = loadWithDB({ schemaVersion = 2 })
+    local Store = addon.Store
+    check("revision: a fresh load starts at 0", Store.revision, 0)
+    Store.AddItem(1, 10, 5, 2, "INVTYPE_HEAD", 4, 1, true)
+    check("revision: AddItem bumps it", Store.revision, 1)
+    check("deprecated: AddItem flags with true", env.TandemDB.items[1][7], 1)
+    Store.AddItem(2, 10, 5, 2, "INVTYPE_HEAD", 4, 1, false)
+    Store.AddItem(3, 10, 5, 2, "INVTYPE_HEAD", 4, 1, "yes")
+    Store.AddItem(4, 10, 5, 2, "INVTYPE_HEAD", 4, 1)
+    check("deprecated: AddItem without true has no flag",
+        #env.TandemDB.items[2] .. #env.TandemDB.items[3] .. #env.TandemDB.items[4], "666")
+    local rev = Store.revision
+    Store.AddItem(1, 10, 5, 2, "INVTYPE_HEAD", 4, 1)
+    Store.AddLoot(0, "c", 1, 1)
+    Store.SetNpcName(1, "")
+    Store.AddKill(-1)
+    check("revision: a refused change leaves it", Store.revision, rev)
+    Store.AddLoot(1, "c", 448, 1429)
+    Store.SetNpcName(448, "Hogger")
+    Store.AddKill(448)
+    Store.AddCorpse(448)
+    check("revision: loot, names, kills and corpses bump it", Store.revision, rev + 4)
+    Store.SetUIPosition("TOP", "TOP", 1, 2)
+    Store.SetMinimapAngle(10)
+    check("revision: ui settings are not records", Store.revision, rev + 4)
+    Store.Load({ schemaVersion = 2 })
+    check("revision: Load resets it", Store.revision, 0)
+end
+
+do
+    local db, shipped = gearData()
+    local addon, _, env = loadWithDB(db, "enUS", { shipped = shipped })
+    local Store = addon.Store
+    local count, unsaved, rev = Store.ItemCount(), Store.unsaved, Store.revision
+    check("MarkDeprecated: an own record", Store.MarkDeprecated(1, addon.Advisor.Item(1)), true)
+    check("MarkDeprecated: flags the own record", env.TandemDB.items[1][7], 1)
+    check("MarkDeprecated: an own record adds no item", Store.ItemCount(), count)
+    check("MarkDeprecated: is a record change", Store.unsaved .. " " .. Store.revision,
+        (unsaved + 1) .. " " .. (rev + 1))
+    check("MarkDeprecated: already flagged", Store.MarkDeprecated(1, addon.Advisor.Item(1)), false)
+    check("MarkDeprecated: already flagged changes nothing", Store.revision, rev + 1)
+    check("MarkDeprecated: a shipped record", Store.MarkDeprecated(2, addon.Advisor.Item(2)), true)
+    local copy = env.TandemDB.items[2]
+    check("MarkDeprecated: copies the shipped record into own items", copy and table.concat(copy, ","),
+        "30,25,2,INVTYPE_ROBE,4,3,1")
+    check("MarkDeprecated: the shipped table is left alone", #shipped.items[2], 6)
+    check("MarkDeprecated: a copied record counts as known", Store.ItemCount(), count + 1)
+    check("MarkDeprecated: Advisor sees the copy", addon.Advisor.IsDeprecated(2), true)
+    check("MarkDeprecated: an unknown item without a record", Store.MarkDeprecated(999), false)
+    check("MarkDeprecated: an invalid record", Store.MarkDeprecated(999, { 1, 2 }), false)
+    check("MarkDeprecated: an invalid id", Store.MarkDeprecated(0, addon.Advisor.Item(4)), false)
+    check("MarkDeprecated: nothing stored for refusals", env.TandemDB.items[999], nil)
+
+    local newer = loadWithDB({ schemaVersion = 3, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
+    check("MarkDeprecated: a newer db is not written", newer.MarkDeprecated(1, { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }),
+        false)
+    check("MarkDeprecated: a newer db keeps its record", newer.db.items[1][7], nil)
+end
+
+do
+    local ctx = loadScanner({ [1] = equip, [2] = equip, [3] = equip, [4] = equip })
+    local info = ctx.env.C_Item.GetItemInfo
+    local names = { [2] = "Deprecated Helm", [3] = "  deprecated cap" }
+    ctx.env.C_Item.GetItemInfo = function(id)
+        if names[id] then
+            return names[id], select(2, info(id))
+        end
+        return info(id)
+    end
+    ctx.Scanner.Start({ rate = 10, cap = 4 })
+    ctx.tick(4)
+    local items = ctx.env.TandemDB.items
+    check("scan: a plain name is not flagged", #items[1], 6)
+    check("scan: a deprecated name is flagged at cache time", items[2][7], 1)
+    check("scan: a lower-case deprecated name with spaces is flagged", items[3][7], 1)
+    check("scan: other fields are kept on a flagged item", items[2][4], "INVTYPE_HEAD")
+end
+
+-- Advisor: deprecated items, quality filter, off-hand flag and Rank's memo.
+
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local A = loadAdvisor(db, shipped)
+    check("advisor: List keeps a deprecated item by default", ids(A.List("chest", "WARRIOR", 40)), "11,1,3,4,2,12")
+    check("advisor: List marks a deprecated row", A.List("chest", "WARRIOR", 40)[3].deprecated, true)
+    check("advisor: List leaves other rows unmarked", A.List("chest", "WARRIOR", 40)[2].deprecated, nil)
+    check("advisor: List hideDeprecated", ids(A.List("chest", "WARRIOR", 40, { hideDeprecated = true })),
+        "11,1,4,2,12")
+    check("advisor: List hideDeprecated in all slots",
+        ids(A.List(nil, "WARRIOR", 40, { hideDeprecated = true, usableOnly = true })), "11,13,1,4,2,15,7,14,5,12")
+    check("advisor: Best skips a deprecated item", ids(A.Best("chest", "WARRIOR", 40)), "1,4,2,12")
+    check("advisor: Best all skips a deprecated item", ids(A.Best("chest", "WARRIOR", 40, { all = true })),
+        "11,1,4,2,12")
+    local r = A.Rank(3, "WARRIOR", 40)
+    check("advisor: Rank of a deprecated item", r.rank .. "/" .. r.total .. " " .. tostring(r.deprecated), "2/5 true")
+    r = A.Rank(4, "WARRIOR", 40)
+    check("advisor: Rank skips deprecated items", r.rank .. "/" .. r.total .. " " .. tostring(r.deprecated),
+        "2/4 nil")
+    check("advisor: Place of a deprecated item", A.Place(3, "WARRIOR", 40).deprecated, true)
+
+    check("advisor: List quality", ids(A.List("chest", "WARRIOR", 40, { quality = 3 })), "1,3,4")
+    check("advisor: List quality 0 keeps only poor items", ids(A.List("chest", "WARRIOR", 40, { quality = 0 })), "")
+    check("advisor: List quality 2 excludes better items", ids(A.List("chest", "WARRIOR", 40, { quality = 2 })), "2,12")
+    check("advisor: List quality legendary", ids(A.List(nil, "WARRIOR", 40, { quality = 5 })), "11")
+    check("advisor: List quality with the other filters", ids(A.List("chest", "WARRIOR", 30,
+        { quality = 3, usableOnly = true, hideDeprecated = true })), "4")
+end
+
+do
+    local A = loadAdvisor(gearData())
+    local function offhandOf(list, id)
+        for _, row in ipairs(list) do
+            if row.id == id then
+                return tostring(row.offhand)
+            end
+        end
+    end
+    check("advisor: an all-slots one-hander of a dual-wielder fills the off hand",
+        offhandOf(A.List(nil, "WARRIOR", 40), 7), "true")
+    check("advisor: an off-hand weapon is not flagged", offhandOf(A.List(nil, "WARRIOR", 40), 14), "nil")
+    check("advisor: no off-hand flag before dual wield", offhandOf(A.List(nil, "WARRIOR", 19), 7), "nil")
+    check("advisor: no off-hand flag for a non-dual-wielder", offhandOf(A.List(nil, "PALADIN", 40), 7), "nil")
+    check("advisor: no off-hand flag in the main hand view", offhandOf(A.List("mainhand", "WARRIOR", 40), 7), "nil")
+    check("advisor: no off-hand flag in the off hand view", offhandOf(A.List("offhand", "WARRIOR", 40), 7), "nil")
+    check("advisor: Place of a dual-wield one-hander", A.Place(7, "WARRIOR", 40).offhand, true)
+    check("advisor: Place of a one-hander before dual wield", A.Place(7, "WARRIOR", 19).offhand, nil)
+    check("advisor: Rank carries the off-hand flag", A.Rank(7, "ROGUE", 20).offhand, true)
+end
+
+do
+    local db, shipped = gearData()
+    local addon = loadWithDB(db, "enUS", { shipped = shipped })
+    local A, Store = addon.Advisor, addon.Store
+    local item, calls = A.Item, 0
+    A.Item = function(id)
+        calls = calls + 1
+        return item(id)
+    end
+    local function rank(id, level)
+        calls = 0
+        local r = A.Rank(id, "WARRIOR", level or 40)
+        return r.rank .. "/" .. r.total
+    end
+    check("rank memo: first rank", rank(2), "4/5")
+    check("rank memo: the first rank walks the items", calls > 2, true)
+    check("rank memo: a second rank in the slot", rank(4), "3/5")
+    check("rank memo: a second rank reuses the walk", calls, 2)
+    Store.AddItem(30, 50, 30, 2, "INVTYPE_CHEST", 4, 1)
+    check("rank memo: AddItem walks again", rank(2) .. " " .. tostring(calls > 2), "4/5 true")
+    Store.AddLoot(30, "c", 448, 1429)
+    check("rank memo: AddLoot walks again and sees the new source", rank(2) .. " " .. tostring(calls > 2), "5/6 true")
+    check("rank memo: hit after AddLoot", rank(2) .. " " .. calls, "5/6 2")
+    check("rank memo: a level change walks again", rank(2, 39) .. " " .. tostring(calls > 2), "4/5 true")
+    check("rank memo: back to the old level walks again", rank(2) .. " " .. tostring(calls > 2), "5/6 true")
+    Store.MarkDeprecated(30, A.Item(30))
+    check("rank memo: MarkDeprecated walks again", rank(2) .. " " .. tostring(calls > 2), "4/5 true")
+    rank(2)
+    check("rank memo: other classes have their own walk", (function()
+        calls = 0
+        A.Rank(2, "PALADIN", 40)
+        return calls > 2
+    end)(), true)
+    Store.Load({ schemaVersion = 2 })
+    check("rank memo: a new db walks again", A.Rank(2, "WARRIOR", 40).total, 3)
+end
+
+-- Commands: deprecated items in /tandem rank and /tandem gear.
+
+for locale, want in pairs({
+    enUS = { built(3, BLUE) .. " (upgrade): rank 2 of 5 for Chest", "  this item is deprecated" },
+    zhTW = { built(3, BLUE, "物品 #3") .. "（升級）：排名第 2／5（胸部）", "  此物品已棄用" },
+}) do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local ctx = loadGear(locale, db, shipped)
+    local out = ctx.run("rank 3")
+    check(locale .. " rank deprecated item", out[1], want[1])
+    check(locale .. " rank says the item is deprecated", out[2], want[2])
+end
+
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    db.items[9] = { 1, 1, 1, "INVTYPE_BODY", 4, 0, 1 }
+    local ctx = loadGear("enUS", db, shipped)
+    local out = ctx.run("gear chest")
+    check("gear chest skips a deprecated item", out[3] .. " / " .. out[4],
+        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade) / 2. " .. built(4, BLUE)
+            .. ", ilvl 30, level 25 (upgrade)")
+    check("gear chest without the deprecated item", #out, 7)
+    check("rank of an unranked deprecated item says so", ctx.run("rank 9")[2], "  this item is deprecated")
+    check("rank of a plain item says nothing more", ctx.run("rank 1")[2]:find("deprecated", 1, true), nil)
+end
+
+-- Store: browse window size in TandemDB.ui.window (unit 6).
+
+do
+    local ui = { window = { point = "TOP", x = 1, y = 2, width = 700, height = 600.5 } }
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = ui })
+    local Store = addon.Store
+    check("ui size: a valid size is kept", env.TandemDB.ui.window.width .. "x" .. env.TandemDB.ui.window.height,
+        "700x600.5")
+    check("ui size: a valid size is not a drop", #printed, 1)
+    check("ui size: UISize returns it", table.concat({ Store.UISize() }, "x"), "700x600.5")
+    check("ui size: UIPosition has no size", Store.UIPosition().width, nil)
+    check("ui size: SetUISize saves", Store.SetUISize(800, 650), true)
+    check("ui size: SetUISize writes the window", env.TandemDB.ui.window.width .. " " .. env.TandemDB.ui.window.point,
+        "800 TOP")
+    check("ui size: SetUISize is not a record", Store.unsaved .. " " .. Store.revision, "0 0")
+    Store.SetUIPosition("LEFT", "LEFT", 5, 6)
+    check("ui size: SetUIPosition keeps the size", table.concat({ Store.UISize() }, "x") .. " "
+        .. env.TandemDB.ui.window.point, "800x650 LEFT")
+    for name, size in pairs({
+        zero = { 0, 600 }, ["too big"] = { 800, 10001 }, ["nil height"] = { 800 }, ["string width"] = { "800", 600 },
+        NaN = { 0 / 0, 600 }, huge = { math.huge, 600 },
+    }) do
+        check("ui size: SetUISize rejects " .. name, Store.SetUISize(size[1], size[2]), false)
+    end
+    check("ui size: a rejected size keeps the old one", table.concat({ Store.UISize() }, "x"), "800x650")
+end
+
+do
+    local Store = loadWithDB({ schemaVersion = 2 }).Store
+    check("ui size: SetUISize without a position", Store.SetUISize(800, 600), false)
+    check("ui size: nothing saved without a position", Store.UISize(), nil)
+    Store.SetUIPosition("TOP", "TOP", 0, 0)
+    check("ui size: no size until one is saved", Store.UISize(), nil)
+    local newer = loadWithDB({ schemaVersion = 3, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
+                                                                    height = 700 } } }).Store
+    check("ui size: a newer db still gives a valid size", table.concat({ newer.UISize() }, "x"), "900x700")
+    check("ui size: a newer db is not written", newer.SetUISize(800, 600), false)
+end
+
+for name, window in pairs({
+    ["width only"] = { point = "TOP", x = 1, y = 2, width = 700 },
+    ["height only"] = { point = "TOP", x = 1, y = 2, height = 700 },
+    ["zero width"] = { point = "TOP", x = 1, y = 2, width = 0, height = 700 },
+    ["string height"] = { point = "TOP", x = 1, y = 2, width = 700, height = "700" },
+    ["far width"] = { point = "TOP", x = 1, y = 2, width = 10001, height = 700 },
+}) do
+    local addon, printed, env = loadWithDB({ schemaVersion = 2, ui = { window = window } })
+    local w = env.TandemDB.ui and env.TandemDB.ui.window
+    check("ui size: " .. name .. " keeps the position", w and w.point .. " " .. w.x .. " " .. w.y, "TOP 1 2")
+    check("ui size: " .. name .. " is stripped", tostring(w and w.width) .. " " .. tostring(w and w.height), "nil nil")
+    check("ui size: " .. name .. " counts one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
+    check("ui size: " .. name .. " gives no size", addon.Store.UISize(), nil)
+end
+
+-- Browse: off-hand marks in All slots (unit 3).
+
+local function buttonFor(win, id)
+    for _, b in ipairs(win.box.buttons) do
+        if b.row and b.row.id == id and b.row.slot == "mainhand" then
+            return b
+        end
+    end
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.cache[781] = { "Axe", "|Hitem:781:|h", 2, 30 }
+    ctx.equipped[16] = "|Hitem:781:|h"
+    ctx.equipped[17] = "|Hitem:14:|h"
+    ctx.run("browse")
+    local win = ctx.win()
+    local sword = "|cff1eff00item #7|r"
+    check("hands: beats the weaker hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade)|r")
+    ctx.run("browse mainhand")
+    check("hands: the main hand view compares with the main hand only", buttonFor(win, 7).name:GetText(), sword)
+    ctx.run("browse")
+    ctx.run("browse")
+
+    ctx.equipped[17] = "|Hitem:7:|h"
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 17, false)
+    check("hands: equipped in the off hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (equipped)|r")
+
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:15:|h", nil
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
+    check("hands: the off hand behind a two-hander is ignored", buttonFor(win, 7).name:GetText(), sword)
+
+    ctx.equipped[16] = "|Hitem:781:|h"
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
+    check("hands: an empty off hand is beaten", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade)|r")
+
+    ctx.equipped[16] = secret()
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
+    check("hands: no hand ilvl known gives no upgrade", buttonFor(win, 7).name:GetText(), sword)
+
+    ctx.equipped[16] = "|Hitem:781:|h"
+    ctx.class, ctx.className = "PALADIN", "Paladin"
+    ctx.run("browse")
+    ctx.run("browse")
+    check("hands: a non-dual-wielder compares with the main hand only", buttonFor(win, 7).name:GetText(), sword)
+
+    local hands = ctx.addon.View.EquippedHands()
+    local worn = {}
+    for id in pairs(hands.ids) do
+        worn[#worn + 1] = id
+    end
+    check("hands: EquippedHands merges both hands", #worn .. " " .. #hands.list .. " " .. hands.ilvl, "1 2 0")
+end
+
+-- Browse: Hide deprecated (unit 4).
+
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.equipped[5] = "|Hitem:1:|h"
+    ctx.cache[4] = { "Deprecated Robe", "|cff0070dd|Hitem:4::::|h[Deprecated Robe]|h|r", 3, 30 }
+    local count = ctx.addon.Store.ItemCount()
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("browse deprecated: hidden by default", win.deprecated:GetChecked(), true)
+    check("browse deprecated: a flagged item and a cached deprecated name are hidden", rowIDs(win), "11,1,2,12")
+    check("browse deprecated: the count follows", win.count:GetText(), "4 items")
+    check("browse deprecated: the peek flags the shipped item", ctx.env.TandemDB.items[4][7], 1)
+    check("browse deprecated: the flagged copy is a known item", ctx.addon.Store.ItemCount(), count + 1)
+    check("browse deprecated: the peek asks the client for nothing", ctx.requested[4], nil)
+
+    win.deprecated:SetChecked(false)
+    win.deprecated:GetScript("OnClick")(win.deprecated)
+    check("browse deprecated: unticking lists them", rowIDs(win), "11,1,3,4,2,12")
+    local b = win.box.buttons
+    check("browse deprecated: a flagged row is marked", b[3].name:GetText(),
+        "|cff0070dditem #3|r" .. GREY .. " (deprecated)|r")
+    check("browse deprecated: a named flagged row is marked", b[4].name:GetText(),
+        "|cff0070ddDeprecated Robe|r" .. GREY .. " (deprecated)|r")
+
+    win.deprecated:SetChecked(true)
+    win.deprecated:GetScript("OnClick")(win.deprecated)
+    ctx.cache[2] = { "Deprecated Mail", "|cff1eff00|Hitem:2::::|h[Deprecated Mail]|h|r", 2, 30 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 2, true)
+    ctx.tick()
+    check("browse deprecated: a name loaded while shown flags the item", ctx.env.TandemDB.items[2][7], 1)
+    check("browse deprecated: the row stays until the next listing", rowIDs(win), "11,1,2,12")
+    check("browse deprecated: the row is marked", win.box.buttons[3].name:GetText(),
+        "|cff1eff00Deprecated Mail|r" .. GREY .. " (deprecated)|r")
+    ctx.run("browse chest")
+    check("browse deprecated: the next listing hides it", rowIDs(win), "11,1,12")
+
+    ctx.cursor = { "item", 3 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse deprecated: dropping a deprecated item unticks the box", win.deprecated:GetChecked(), false)
+    check("browse deprecated: the dropped item is listed", rowIDs(win), "11,1,3,4,2,12")
+    win.deprecated:SetChecked(true)
+    ctx.cache[13] = { "Deprecated Legs", "|cff0070dd|Hitem:13::::|h[Deprecated Legs]|h|r", 3, 50 }
+    ctx.cursor = { "item", 13 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse deprecated: dropping an item with a cached deprecated name unticks the box",
+        win.deprecated:GetChecked(), false)
+    check("browse deprecated: and flags it", ctx.env.TandemDB.items[13][7], 1)
+    win.deprecated:SetChecked(true)
+    ctx.cursor = { "item", 1 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse deprecated: dropping a plain item keeps the box", win.deprecated:GetChecked(), true)
+end
+
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local ctx = loadBrowse("enUS", db, shipped)
+    ctx.addon.Store.readOnly = true
+    ctx.cache[4] = { "Deprecated Robe", "|cff0070dd|Hitem:4::::|h[Deprecated Robe]|h|r", 3, 30 }
+    ctx.run("browse chest")
+    check("browse deprecated: a read-only db cannot flag, so the item stays", rowIDs(ctx.win()), "11,1,4,2,12")
+end
+
+-- Browse: quality filter (unit 5).
+
+do
+    local ctx = loadBrowse()
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local menu = radios(win.quality)
+    check("browse quality: dropdown template", win.quality.template, "WowStyle1DropdownTemplate")
+    check("browse quality: all qualities and six qualities", #menu, 7)
+    check("browse quality: first radio", menu[1].text .. " " .. tostring(menu[1].data), "All qualities nil")
+    check("browse quality: all qualities by default", menu[1].isSelected(menu[1].data), true)
+    check("browse quality: poor in its colour", menu[2].text .. " " .. menu[2].data, "|cff9d9d9dPoor|r 0")
+    check("browse quality: rare in its colour", menu[5].text .. " " .. menu[5].data, "|cff0070ddRare|r 3")
+    check("browse quality: legendary last", menu[7].text .. " " .. menu[7].data, "|cffff8000Legendary|r 5")
+    menu[5].setSelected(menu[5].data)
+    check("browse quality: only rare", rowIDs(win), "1,3,4")
+    check("browse quality: rare is selected", menu[5].isSelected(3) and not menu[1].isSelected(nil), true)
+    check("browse quality: the count follows", win.count:GetText(), "3 items")
+    ctx.run("browse twohand")
+    check("browse quality: kept across slots", rowIDs(win), "")
+    ctx.run("browse chest")
+
+    ctx.cursor = { "item", 1 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse quality: dropping an item of that quality keeps it", menu[5].isSelected(3), true)
+    ctx.cursor = { "item", 11 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse quality: dropping a better item resets it too", menu[1].isSelected(nil), true)
+    menu[5].setSelected(menu[5].data)
+    ctx.cursor = { "item", 12 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse quality: dropping an item of another quality resets it", menu[1].isSelected(nil), true)
+    check("browse quality: the dropped item is listed", rowIDs(win), "11,1,3,4,2,12")
+    menu[7].setSelected(menu[7].data)
+    ctx.cursor = { "item", 9 }
+    win.scripts.OnReceiveDrag(win)
+    check("browse quality: an item without a ranked slot keeps it", menu[7].isSelected(5), true)
+    menu[1].setSelected(menu[1].data)
+    check("browse quality: all again", rowIDs(win), "11,13,1,3,4,2,15,7,14,5,12")
+end
+
+-- Browse: wider, resizable window (unit 6).
+
+local function point(w, i)
+    local p = w.points[i or 1]
+    local rel = p[2]
+    rel = type(rel) == "table" and (rel.name or rel.kind) or tostring(rel)
+    return ("%s %s %s %s %s"):format(p[1], rel, tostring(p[3]), tostring(p[4]), tostring(p[5]))
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.run("browse")
+    local win = ctx.win()
+    check("browse size: wider default", win.width .. "x" .. win.height, "640x620")
+    check("browse size: resizable", win.resizable, true)
+    check("browse size: bounds", table.concat(win.bounds, ","), "520,480,1200,1000")
+    local grip = win.grip
+    check("browse size: a grip", grip and grip.kind .. " " .. grip.width .. "x" .. grip.height, "Button 16x16")
+    check("browse size: the grip sits at the bottom-right corner", point(grip),
+        "BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -4 4")
+    check("browse size: grip textures", grip.normal .. " " .. grip.pushed .. " " .. grip.highlight,
+        "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down "
+            .. "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip.scripts.OnMouseDown(grip)
+    check("browse size: the grip sizes from the corner", win.sizing, "BOTTOMRIGHT")
+    win.width, win.height = 800, 700
+    win.points = { { "TOPLEFT", ctx.env.UIParent, "BOTTOMLEFT", 100, 750 } }
+    grip.scripts.OnMouseUp(grip)
+    check("browse size: sizing stops", win.sizing, nil)
+    local saved = ctx.env.TandemDB.ui.window
+    check("browse size: the size is saved with the position", ("%s %s %d %d %dx%d"):format(saved.point,
+        saved.relativePoint, saved.x, saved.y, saved.width, saved.height), "TOPLEFT BOTTOMLEFT 100 750 800x700")
+    check("browse size: saving is not a record", ctx.addon.Store.unsaved, 0)
+    win.points = { { "TOP", ctx.env.UIParent, "TOP", 0, -20 } }
+    win.scripts.OnDragStop(win)
+    saved = ctx.env.TandemDB.ui.window
+    check("browse size: moving keeps the size", saved.point .. " " .. saved.width .. "x" .. saved.height, "TOP 800x700")
+
+    check("browse layout: slot dropdown", point(win.dropdown), "TOPLEFT TandemBrowseFrame TOPLEFT 12 -30")
+    check("browse layout: quality dropdown beside it", point(win.quality) .. " " .. tostring(win.quality.points[1][2]
+        == win.dropdown), "LEFT DropdownButton RIGHT 12 0 true")
+    check("browse layout: count at the top right", point(win.count), "TOPRIGHT TandemBrowseFrame TOPRIGHT -14 -36")
+    check("browse layout: usable only starts the second row", point(win.usable),
+        "TOPLEFT TandemBrowseFrame TOPLEFT 12 -58")
+    check("browse layout: hide deprecated follows the usable label",
+        win.deprecated.points[1][2].text .. " " .. win.deprecated.points[1][1], "Usable only LEFT")
+    check("browse layout: the minimap box follows the deprecated label",
+        win.minimap.points[1][2].text .. " " .. win.minimap.points[1][1], "Hide deprecated LEFT")
+    check("browse layout: the list stretches with the window", point(win.box) .. " / " .. point(win.box, 2),
+        "TOPLEFT TandemBrowseFrame TOPLEFT 12 -138 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
+
+    local again = loadBrowse("enUS", { schemaVersion = 2, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
+    again.run("browse")
+    check("browse size: restores the saved size", again.win().width .. "x" .. again.win().height, "800x700")
+end
+
+for name, case in pairs({
+    ["too large"] = { 2000, 1500, nil, "1200x1000" },
+    ["too small"] = { 100, 50, nil, "520x480" },
+    ["larger than the screen"] = { 1100, 900, { 1000, 700 }, "1000x700" },
+    ["a screen below the minimum"] = { 600, 500, { 400, 300 }, "520x480" },
+}) do
+    local db, shipped = gearData()
+    db.ui = { window = { point = "TOP", x = 0, y = 0, width = case[1], height = case[2] } }
+    local env
+    if case[3] then
+        env = { UIParent = { name = "UIParent", GetSize = function()
+            return case[3][1], case[3][2]
+        end } }
+    end
+    local ctx = loadBrowse("enUS", db, shipped, { env = env })
+    ctx.run("browse")
+    check("browse size: a saved size " .. name .. " is clamped", ctx.win().width .. "x" .. ctx.win().height, case[4])
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { noResizeBounds = true })
+    ctx.run("browse")
+    local win = ctx.win()
+    check("browse size: min and max without SetResizeBounds",
+        table.concat(win.minResize, ",") .. " " .. table.concat(win.maxResize, ","), "520,480 1200,1000")
+
+    local db, shipped = gearData()
+    db.ui = { window = { point = "TOP", x = 0, y = 0, width = 900, height = 700 } }
+    ctx = loadBrowse("enUS", db, shipped, { noResize = true })
+    ctx.run("browse")
+    win = ctx.win()
+    check("browse size: no resize API, no grip", win.grip, nil)
+    check("browse size: no resize API, fixed default size", win.width .. "x" .. win.height, "640x620")
+    win.width, win.height = 300, 300
+    win.scripts.OnDragStop(win)
+    check("browse size: no resize API, moving leaves the saved size", ctx.env.TandemDB.ui.window.width, 900)
+end
+
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local ctx = loadBrowse("zhTW", db, shipped)
+    ctx.equipped[5] = "|Hitem:1:|h"
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local menu = radios(win.quality)
+    check("zhTW browse all qualities", menu[1].text, "所有品質")
+    local names = {}
+    for i = 2, 7 do
+        names[#names + 1] = menu[i].text:match("^|cff%x+(.-)|r$")
+    end
+    check("zhTW browse quality names", table.concat(names, ","), "粗糙,普通,優秀,精良,史詩,傳說")
+    check("zhTW browse hide deprecated", win.minimap.points[1][2].text, "隱藏已棄用")
+    win.deprecated:SetChecked(false)
+    win.deprecated:GetScript("OnClick")(win.deprecated)
+    check("zhTW browse deprecated mark", win.box.buttons[3].name:GetText(),
+        "|cff0070dd物品 #3|r" .. GREY .. "（已棄用）|r")
+end
+
+-- Cached-name peeks never ask the server: only ids IsItemDataCachedByID knows, each once per session.
+
+do
+    local ctx = loadGear()
+    local View = ctx.addon.View
+    check("CachedName: an uncached item", View.CachedName(1), nil)
+    check("CachedName: an uncached item is not passed to GetItemInfo", ctx.infoCalls[1], nil)
+    ctx.cache[1] = { "Plate Chest", "|Hitem:1:|h", 4, 45 }
+    check("CachedName: a cached item", View.CachedName(1), "Plate Chest")
+    check("CachedName: a cached item is read", ctx.infoCalls[1], 1)
+    ctx.env.C_Item.IsItemDataCachedByID = function()
+        return secret()
+    end
+    check("CachedName: a secret answer is no", View.CachedName(1), nil)
+    ctx.env.C_Item.IsItemDataCachedByID = nil
+    check("CachedName: without IsItemDataCachedByID", View.CachedName(1), nil)
+    check("CachedName: without IsItemDataCachedByID nothing is read", ctx.infoCalls[1], 1)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.cache[4] = { "Cloth Robe", "|cff0070dd|Hitem:4::::|h[Cloth Robe]|h|r", 3, 30 }
+    ctx.run("browse chest")
+    check("browse peek: an uncached row is read only to draw it", ctx.infoCalls[2], 1)
+    check("browse peek: a cached row is peeked, then drawn", ctx.infoCalls[4], 2)
+    ctx.run("browse chest")
+    check("browse peek: an uncached row is not peeked on the next refresh", ctx.infoCalls[2], 2)
+    check("browse peek: a cached row is peeked once per session", ctx.infoCalls[4], 3)
+    ctx.cursor = { "item", 15 }
+    ctx.win().scripts.OnReceiveDrag(ctx.win())
+    -- One read for its row, one for the sources pane's link; none to peek.
+    check("browse peek: dropping an uncached item reads it only to draw it", ctx.infoCalls[15], 2)
+end
+
+do
+    local ctx = loadBrowse()
+    ctx.env.C_Item.IsItemDataCachedByID = nil
+    ctx.cache[4] = { "Deprecated Robe", "|cff0070dd|Hitem:4::::|h[Deprecated Robe]|h|r", 3, 30 }
+    ctx.equipped[5] = "|Hitem:1:|h"
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("browse peek: without IsItemDataCachedByID a deprecated name is not peeked", rowIDs(win), "11,1,3,4,2,12")
+    check("browse peek: drawing the row still flags and marks it", win.box.buttons[4].name:GetText(),
+        "|cff0070ddDeprecated Robe|r" .. GREY .. " (deprecated)|r")
+    ctx.run("browse chest")
+    check("browse peek: the next listing hides it", rowIDs(win), "11,1,3,2,12")
+end
+
+do
+    local db, shipped = gearData()
+    local addon = loadWithDB(db, "enUS", { shipped = shipped })
+    check("rank memo: total before the shipped data changes", addon.Advisor.Rank(2, "WARRIOR", 40).total, 5)
+    local more = { items = {}, loot = {} }
+    for id, r in pairs(shipped.items) do
+        more.items[id] = r
+    end
+    for i, r in ipairs(shipped.loot) do
+        more.loot[i] = r
+    end
+    more.items[40] = { 35, 30, 2, "INVTYPE_CHEST", 4, 1 }
+    more.loot[#more.loot + 1] = { 40, "c", 500, 1429, 1 }
+    addon.Shipped = more
+    local r = addon.Advisor.Rank(2, "WARRIOR", 40)
+    check("rank memo: replacing ns.Shipped walks again", r.rank .. "/" .. r.total, "5/6")
+end
+
+-- Tooltip (stage 4 unit 2): the Tandem lines on item tooltips.
+
+-- A fake tooltip: AddLine records { text, r, g, b, wrap }; forbidden makes IsForbidden true.
+local function fakeTooltip()
+    local t = { lines = {}, forbidden = false }
+    function t.AddLine(self, text, r, g, b, wrap)
+        self.lines[#self.lines + 1] = { text = text, r = r, g = g, b = b, wrap = wrap }
+    end
+    function t.IsForbidden(self)
+        return self.forbidden
+    end
+    return t
+end
+
+local function texts(tooltip)
+    local out = {}
+    for _, l in ipairs(tooltip.lines) do
+        out[#out + 1] = l.text
+    end
+    return table.concat(out, " / ")
+end
+
+local function colour(line)
+    return line and (line.r .. "," .. line.g .. "," .. line.b) or "nil"
+end
+
+-- Loads gearData() plus named sources with the tooltip API stubbed; ctx.hover(id [, tooltip]) clears the tooltip,
+-- runs the captured post-call with { id = id } and returns the tooltip.
+local function loadTooltip(locale, db, shipped, opts)
+    opts = opts or {}
+    if not db then
+        db, shipped = gearData()
+        db.npcs = { [448] = "Hogger" }
+        db.kills = { [448] = 4 }
+        db.corpses = { [449] = 2 }
+        db.loot["3:c:449:1429"] = { item = 3, kind = "c", id = 449, map = 1429, count = 1 }
+        db.loot["9:c:448:1429"] = { item = 9, kind = "c", id = 448, map = 1429, count = 1 }
+        -- Item 50 has a source but no record until a test adds one.
+        shipped.loot[#shipped.loot + 1] = { 50, "c", 500, 1429, 1 }
+    end
+    local hooks = {}
+    local env = {
+        GameTooltip = fakeTooltip(),
+        ItemRefTooltip = fakeTooltip(),
+        Enum = { TooltipDataType = { Item = 0 } },
+        TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn)
+            hooks[#hooks + 1] = { kind = kind, fn = fn }
+        end },
+    }
+    if opts.noAPI then
+        env.TooltipDataProcessor = nil
+    end
+    local ctx = loadGear(locale or "enUS", db, shipped, { env = env })
+    ctx.hooks = hooks
+    function ctx.hover(data, tooltip)
+        tooltip = tooltip or ctx.env.GameTooltip
+        tooltip.lines = {}
+        hooks[1].fn(tooltip, data)
+        return tooltip
+    end
+    function ctx.text(id, tooltip)
+        return texts(ctx.hover({ id = id }, tooltip))
+    end
+    return ctx
+end
+
+do
+    local ctx = loadTooltip()
+    check("tooltip: one post-call registered", #ctx.hooks, 1)
+    check("tooltip: registered for item tooltips", ctx.hooks[1].kind, 0)
+    check("tooltip: the post-call is Tooltip.OnItem", ctx.hooks[1].fn, ctx.addon.Tooltip.OnItem)
+    local before = #ctx.printed
+
+    local t = ctx.hover({ id = 1 })
+    check("tooltip: rank, upgrade and kill-rate source", texts(t),
+        "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    check("tooltip: rank line is blue", colour(t.lines[1]), "0.4,0.8,1")
+    check("tooltip: source line is grey-white", colour(t.lines[2]), "0.8,0.8,0.8")
+    check("tooltip: lines do not wrap", t.lines[1].wrap, false)
+
+    check("tooltip: corpse-rate source with more", ctx.text(3),
+        "Tandem: rank 2 of 5 for Chest (upgrade) / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
+    check("tooltip: source without a rate", ctx.text(2),
+        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+    check("tooltip: unsourced item has only the rank line", ctx.text(11),
+        "Tandem: rank 1 of 6 for Chest (upgrade) (no known source)")
+    check("tooltip: no ranked slot shows only the source", ctx.text(9),
+        "Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    check("tooltip: ItemRefTooltip gets the lines too", ctx.text(2, ctx.env.ItemRefTooltip),
+        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+
+    ctx.equipped[5] = "|Hitem:1:|h"
+    check("tooltip: equipped mark", ctx.text(1),
+        "Tandem: rank 1 of 5 for Chest (equipped) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    ctx.equipped[5] = nil
+
+    ctx.level = 30
+    t = ctx.hover({ id = 1 })
+    check("tooltip: too low a level gives no upgrade and a red line", texts(t),
+        "Tandem: rank 1 of 5 for Chest / Tandem: you cannot use it: level 40 required"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+    check("tooltip: unusable line is red", colour(t.lines[2]), "1,0.25,0.25")
+    ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
+    t = ctx.hover({ id = 1 })
+    check("tooltip: class cannot use it", t.lines[2] and t.lines[2].text, "Tandem: your class cannot use it")
+    check("tooltip: class line is red", colour(t.lines[2]), "1,0.25,0.25")
+    ctx.class, ctx.className, ctx.level = "WARRIOR", "Warrior", 40
+
+    -- Nothing at all.
+    ctx.combat = true
+    check("tooltip: nothing in combat", ctx.text(1), "")
+    ctx.combat = false
+    ctx.env.GameTooltip.forbidden = true
+    check("tooltip: nothing on a forbidden tooltip", ctx.text(1), "")
+    ctx.env.GameTooltip.forbidden = false
+    check("tooltip: nothing on a shopping tooltip", ctx.text(1, fakeTooltip()), "")
+    check("tooltip: nothing for an unknown item", ctx.text(999), "")
+    check("tooltip: nothing for a secret id", ctx.text(secret()), "")
+    check("tooltip: nothing for secret data", texts(ctx.hover(secret())), "")
+    check("tooltip: nothing without data", texts(ctx.hover(nil)), "")
+    for _, bad in ipairs({ 0, -1, 1.5, "1" }) do
+        check("tooltip: nothing for id " .. tostring(bad), ctx.text(bad), "")
+    end
+    ctx.class = nil
+    check("tooltip: nothing while the class is unknown", ctx.text(1), "")
+    ctx.class = "WARRIOR"
+    check("tooltip: hovering never prints", #ctx.printed, before)
+    check("tooltip: /tandem rank still prints when the class is unknown", (function()
+        ctx.class = nil
+        local out = ctx.run("rank 1")
+        ctx.class = "WARRIOR"
+        return out[1]
+    end)(), "Tandem: your class or level is not known yet; try again in a moment")
+end
+
+do
+    local ctx = loadTooltip(nil, nil, nil, { noAPI = true })
+    check("tooltip: no post-call without the API", #ctx.hooks, 0)
+    check("tooltip: the module still loads", type(ctx.addon.Tooltip.OnItem), "function")
+    local db, shipped = gearData()
+    local addon = loadWithDB(db, "enUS", { shipped = shipped, env = { Enum = {}, TooltipDataProcessor = {} } })
+    check("tooltip: an API without AddTooltipPostCall is ignored", type(addon.Tooltip), "table")
+end
+
+-- Deprecated items: one grey line, from the record or from the client's name.
+do
+    local db, shipped = gearData()
+    db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
+    local ctx = loadTooltip("enUS", db, shipped)
+    local t = ctx.hover({ id = 3 })
+    check("tooltip: a deprecated record shows one line", texts(t), "Tandem: deprecated item")
+    check("tooltip: the deprecated line is grey", colour(t.lines[1]), "0.5,0.5,0.5")
+    ctx.cache[1] = { "Deprecated Plate", "|Hitem:1:|h", 3, 45 }
+    check("tooltip: a deprecated client name flags the item", ctx.text(1), "Tandem: deprecated item")
+    check("tooltip: the flag is stored", ctx.addon.Advisor.IsDeprecated(1), true)
+end
+
+-- One-handers of a dual-wielder compare against both hands.
+do
+    local ctx = loadTooltip()
+    ctx.cache[778] = { "Main", "|Hitem:778:|h", 2, 30 }
+    ctx.cache[779] = { "Off", "|Hitem:779:|h", 2, 20 }
+    ctx.equipped[16] = "|Hitem:778:|h"
+    ctx.equipped[17] = "|Hitem:779:|h"
+    local line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%)$") ~= nil, true)
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:779:|h", "|Hitem:7:|h"
+    line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: equipped in the off hand", line:match("%(equipped%)$") ~= nil, true)
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:778:|h", "|Hitem:779:|h"
+    ctx.class, ctx.className = "PALADIN", "Paladin"
+    line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: a non-dual-wielder compares with the main hand only", line:match("%(upgrade%)") == nil, true)
+    ctx.class, ctx.className = "WARRIOR", "Warrior"
+    ctx.cache[777] = { "Great", "|Hitem:777:|h", 2, 30 }
+    ctx.instant[777] = "INVTYPE_2HWEAPON"
+    ctx.equipped[16], ctx.equipped[17] = "|Hitem:777:|h", nil
+    line = ctx.hover({ id = 7 }).lines[1].text
+    check("tooltip hands: an off hand behind a two-hander is ignored", line:match("%(upgrade%)") == nil, true)
+end
+
+-- The per-item memo: one Rank and one Sources per item until a record changes or the level does.
+do
+    local ctx = loadTooltip()
+    local A = ctx.addon.Advisor
+    local calls = { rank = 0, sources = 0 }
+    local rank, sources = A.Rank, A.Sources
+    A.Rank = function(...)
+        calls.rank = calls.rank + 1
+        return rank(...)
+    end
+    A.Sources = function(...)
+        calls.sources = calls.sources + 1
+        return sources(...)
+    end
+    local function counts()
+        return calls.rank .. "/" .. calls.sources
+    end
+    ctx.hover({ id = 2 })
+    ctx.hover({ id = 2 })
+    check("tooltip memo: a second hover reuses the first", counts(), "1/1")
+    ctx.equipped[5] = "|Hitem:2:|h"
+    check("tooltip memo: worn marks are not memoised", ctx.text(2):find("(equipped)", 1, true) ~= nil, true)
+    check("tooltip memo: still one walk", counts(), "1/1")
+    ctx.addon.Store.AddItem(50, 60, 30, 4, "INVTYPE_CHEST", 4, 4)
+    check("tooltip memo: AddItem invalidates it", ctx.text(2),
+        "Tandem: rank 5 of 6 for Chest (equipped) / Tandem: drops from npc #500, Elwynn Forest")
+    check("tooltip memo: AddItem walks again", counts(), "2/2")
+    ctx.addon.Store.AddLoot(2, "c", 448, 1429)
+    check("tooltip memo: AddLoot invalidates it", ctx.text(2),
+        "Tandem: rank 5 of 6 for Chest (equipped)"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill) (+1 more)")
+    check("tooltip memo: AddLoot walks again", counts(), "3/3")
+    ctx.level = 41
+    ctx.hover({ id = 2 })
+    check("tooltip memo: a level-up walks again", counts(), "4/4")
+    ctx.hover({ id = 1 })
+    check("tooltip memo: another item has its own entry", counts(), "5/5")
+end
+
+for locale, want in pairs({
+    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
+             "Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)",
+             "Tandem: you cannot use it: level 40 required", "Tandem: your class cannot use it",
+             "Tandem: deprecated item" },
+    zhTW = { "Tandem：排名第 1／5（胸部）（升級） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
+             "Tandem：掉落自 NPC #449，Elwynn Forest（最高 50.0%）（另有 1 個來源）",
+             "Tandem：你無法使用：需要等級 40", "Tandem：你的職業無法使用", "Tandem：已棄用的物品" },
+}) do
+    local ctx = loadTooltip(locale)
+    check(locale .. " tooltip rank and source", ctx.text(1), want[1])
+    check(locale .. " tooltip corpse source", ctx.hover({ id = 3 }).lines[2].text, want[2])
+    ctx.level = 30
+    check(locale .. " tooltip level line", ctx.hover({ id = 1 }).lines[2].text, want[3])
+    ctx.class, ctx.level = "MAGE", 60
+    check(locale .. " tooltip class line", ctx.hover({ id = 1 }).lines[2].text, want[4])
+    ctx.addon.Store.MarkDeprecated(4, ctx.addon.Advisor.Item(4))
+    check(locale .. " tooltip deprecated line", ctx.text(4), want[5])
 end
 
 if failures > 0 then

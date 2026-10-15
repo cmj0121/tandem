@@ -10,7 +10,10 @@ local View = ns.View
 local Safe = ns.Store.Safe
 
 local NAME = "TandemBrowseFrame"
-local WIDTH, HEIGHT = 440, 594
+local WIDTH, HEIGHT = 640, 620
+local MIN_WIDTH, MIN_HEIGHT = 520, 480
+local MAX_WIDTH, MAX_HEIGHT = 1200, 1000
+local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ROW_HEIGHT = 20
 local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
@@ -20,17 +23,26 @@ local DEFAULT_RATE_TEXT = ("%d/s"):format(ns.Commands.DEFAULT_RATE)
 local DEFAULT_CAP_TEXT = tostring(ns.Commands.DEFAULT_CAP)
 local GREY, RED = "|cff808080", "|cffff2020"
 local NO_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local QUALITY_NAMES = { [0] = "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary" }
+-- The worn key for a one-hander that fills either hand; slot tokens never contain "+".
+local HANDS = "mainhand+offhand"
 
 local frame, progress
-local slot, selected, unknown, pending, paneStale
+local slot, onlyQuality, selected, unknown, pending, paneStale
 local rows, listed, worn = {}, {}, {}
+-- Items whose cached name refresh has read: a name does not change, so each is read once per session.
+local peeked = {}
 
 local updateScan, startProgress, stopProgress
 
--- What the player wears per slot, read once per listing (refresh clears it).
-local function wornFor(rowSlot)
-    worn[rowSlot] = worn[rowSlot] or View.Equipped(rowSlot)
-    return worn[rowSlot]
+-- What the player wears for a row, read once per listing (refresh clears it): both hands for a one-hander that
+-- also fills the off hand, else the row's slot.
+local function wornFor(row)
+    local key = row.offhand and HANDS or row.slot
+    if not worn[key] then
+        worn[key] = row.offhand and View.EquippedHands() or View.Equipped(row.slot)
+    end
+    return worn[key]
 end
 
 local function iconOf(id)
@@ -115,9 +127,14 @@ local function initRow(button, row)
         buildRow(button)
     end
     button.row = row
-    local marks = View.Marks(row, wornFor(row.slot))
+    -- ItemName first: a loaded name may flag the item deprecated, which then shows until the next listing.
+    local name = View.ItemName(row.id, row.quality)
+    local marks = View.Marks(row, wornFor(row))
+    if row.deprecated or ns.Advisor.IsDeprecated(row.id) then
+        marks = marks .. L[" (deprecated)"]
+    end
     button.icon:SetTexture(iconOf(row.id))
-    button.name:SetText(View.ItemName(row.id, row.quality) .. (marks ~= "" and GREY .. marks .. "|r" or ""))
+    button.name:SetText(name .. (marks ~= "" and GREY .. marks .. "|r" or ""))
     button.ilvl:SetText(tostring(row.ilvl))
     if row.needLevel then
         button.level:SetText(RED .. row.needLevel .. "|r")
@@ -163,10 +180,72 @@ local function label(parent, text)
     return fs
 end
 
+-- A check box with its label on the right; returns the box and the label, for the next control to anchor to.
+local function checkbox(parent, text, checked, onToggle)
+    local box = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    box:SetSize(24, 24)
+    box:SetChecked(checked)
+    box:SetScript("OnClick", onToggle)
+    local fs = label(parent, text)
+    fs:SetPoint("LEFT", box, "RIGHT", 2, 0)
+    return box, fs
+end
+
+local function clamp(v, low, high)
+    return math.max(low, math.min(high, v))
+end
+
+-- Returns the largest size the window may take: MAX_WIDTH x MAX_HEIGHT, or less on a smaller screen, never below
+-- the minimum.
+local function maxSize()
+    local w, h = MAX_WIDTH, MAX_HEIGHT
+    if UIParent and UIParent.GetSize then
+        local sw, sh = UIParent:GetSize()
+        if type(sw) == "number" and sw > 0 and type(sh) == "number" and sh > 0 then
+            w, h = math.min(w, sw), math.min(h, sh)
+        end
+    end
+    return math.max(w, MIN_WIDTH), math.max(h, MIN_HEIGHT)
+end
+
+-- Makes f resizable from a grip at its bottom-right corner when the client can size frames; onSized runs when a
+-- resize ends. Returns true when f is resizable.
+local function makeResizable(f, maxW, maxH, onSized)
+    if not (f.SetResizable and f.StartSizing) then
+        return false
+    end
+    f:SetResizable(true)
+    if f.SetResizeBounds then
+        f:SetResizeBounds(MIN_WIDTH, MIN_HEIGHT, maxW, maxH)
+    else
+        if f.SetMinResize then
+            f:SetMinResize(MIN_WIDTH, MIN_HEIGHT)
+        end
+        if f.SetMaxResize then
+            f:SetMaxResize(maxW, maxH)
+        end
+    end
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
+    grip:SetNormalTexture(GRIP .. "Up")
+    grip:SetPushedTexture(GRIP .. "Down")
+    grip:SetHighlightTexture(GRIP .. "Highlight")
+    grip:SetScript("OnMouseDown", function()
+        f:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function()
+        f:StopMovingOrSizing()
+        onSized(f)
+    end)
+    f.grip = grip
+    return true
+end
+
 -- The scan bar: rate, cap, Start/Stop and a status line under them.
 local function buildScanBar(f)
     local rateLabel = label(f, L["Rate"])
-    rateLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -70)
+    rateLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -94)
     f.rate = editBox(f, 60, DEFAULT_RATE_TEXT)
     f.rate:SetPoint("LEFT", rateLabel, "RIGHT", 8, 0)
     local capLabel = label(f, L["Cap"])
@@ -193,7 +272,6 @@ end
 local function build()
     local f = CreateFrame("Frame", NAME, UIParent, "ButtonFrameTemplate")
     f:Hide()
-    f:SetSize(WIDTH, HEIGHT)
     if ButtonFrameTemplate_HidePortrait then
         ButtonFrameTemplate_HidePortrait(f)
     end
@@ -212,15 +290,31 @@ local function build()
     if dontSave then
         f:SetDontSavePosition(true)
     end
-    f:SetScript("OnDragStart", f.StartMoving)
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
+    local resizable
+    -- Moving or sizing may re-anchor the window, so both save the position; sizing saves the size too.
+    local function savePlace(self)
         if not dontSave then
             self:SetUserPlaced(false)
         end
         local point, _, relativePoint, x, y = self:GetPoint()
         ns.Store.SetUIPosition(point, relativePoint, x, y)
+        if resizable then
+            ns.Store.SetUISize(self:GetSize())
+        end
+    end
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        savePlace(self)
     end)
+    local maxW, maxH = maxSize()
+    resizable = makeResizable(f, maxW, maxH, savePlace)
+    local width, height = WIDTH, HEIGHT
+    if resizable then
+        local savedW, savedH = ns.Store.UISize()
+        width, height = clamp(savedW or WIDTH, MIN_WIDTH, maxW), clamp(savedH or HEIGHT, MIN_HEIGHT, maxH)
+    end
+    f:SetSize(width, height)
     local pos = ns.Store.UIPosition()
     f:ClearAllPoints()
     if pos then
@@ -250,31 +344,40 @@ local function build()
     end)
     f.dropdown = dropdown
 
-    local usable = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-    usable:SetPoint("LEFT", dropdown, "RIGHT", 12, 0)
-    usable:SetSize(24, 24)
-    usable:SetChecked(true)
-    usable:SetScript("OnClick", function()
+    -- Quality filter: only items of the chosen quality.
+    local quality = CreateFrame("DropdownButton", nil, f, "WowStyle1DropdownTemplate")
+    quality:SetPoint("LEFT", dropdown, "RIGHT", 12, 0)
+    quality:SetWidth(130)
+    local function isQuality(q)
+        return onlyQuality == q
+    end
+    local function setQuality(q)
+        onlyQuality = q
         Browse.Refresh()
+    end
+    quality:SetupMenu(function(_, root)
+        root:CreateRadio(L["All qualities"], isQuality, setQuality, nil)
+        for q = 0, #QUALITY_NAMES do
+            root:CreateRadio(("|cff%s%s|r"):format(View.QUALITY_HEX[q], L[QUALITY_NAMES[q]]), isQuality, setQuality, q)
+        end
     end)
-    label(f, L["Usable only"]):SetPoint("LEFT", usable, "RIGHT", 2, 0)
-    f.usable = usable
+    f.quality = quality
 
     f.count = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.count:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -36)
 
-    buildScanBar(f)
-
-    -- Under the scan bar: the minimap button's visibility, the same setting as /tandem minimap.
-    local minimap = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-    minimap:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -110)
-    minimap:SetSize(24, 24)
-    minimap:SetChecked(ns.Launcher.IsButtonShown())
-    minimap:SetScript("OnClick", function(self)
+    -- Second row: the list filters, then the minimap button's visibility (the same setting as /tandem minimap).
+    local usableLabel, deprecatedLabel
+    f.usable, usableLabel = checkbox(f, L["Usable only"], true, Browse.Refresh)
+    f.usable:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -58)
+    f.deprecated, deprecatedLabel = checkbox(f, L["Hide deprecated"], true, Browse.Refresh)
+    f.deprecated:SetPoint("LEFT", usableLabel, "RIGHT", 12, 0)
+    f.minimap = checkbox(f, L["Show minimap button"], ns.Launcher.IsButtonShown(), function(self)
         ns.Launcher.SetButtonShown(self:GetChecked() and true or false)
     end)
-    label(f, L["Show minimap button"]):SetPoint("LEFT", minimap, "RIGHT", 2, 0)
-    f.minimap = minimap
+    f.minimap:SetPoint("LEFT", deprecatedLabel, "RIGHT", 12, 0)
+
+    buildScanBar(f)
 
     local box = CreateFrame("Frame", nil, f, "WowScrollBoxList")
     box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -138)
@@ -325,10 +428,23 @@ local function build()
 end
 
 local function refresh(class, level)
-    rows = ns.Advisor.List(slot, class, level, { usableOnly = frame.usable:GetChecked() and true or false }) or {}
-    listed, worn = {}, {}
-    for _, row in ipairs(rows) do
-        listed[row.id] = true
+    local hide = frame.deprecated:GetChecked() and true or false
+    local found = ns.Advisor.List(slot, class, level, { usableOnly = frame.usable:GetChecked() and true or false,
+                                                        hideDeprecated = hide, quality = onlyQuality }) or {}
+    rows, listed, worn = {}, {}, {}
+    for _, row in ipairs(found) do
+        -- A name the client already holds flags a deprecated item before it is shown, so it never flashes in.
+        if not row.deprecated and not peeked[row.id] then
+            local name = View.CachedName(row.id)
+            if name then
+                peeked[row.id] = true
+                row.deprecated = View.NoteName(row.id, name) or nil
+            end
+        end
+        if not (hide and row.deprecated) then
+            rows[#rows + 1] = row
+            listed[row.id] = true
+        end
     end
     frame.box:SetDataProvider(CreateDataProvider(rows))
     frame.count:SetText(L["%d items"]:format(#rows))
@@ -514,19 +630,28 @@ local function lookup(id)
     if not class then
         return
     end
+    View.NoteName(id, View.CachedName(id))
     local r = ns.Advisor.Place(id, class, level)
     if r then
         selected, unknown = id, nil
         slot = r.slot
-        -- An item with no ranked slot is never listed, so the filter stays as it is.
+        -- An item with no ranked slot is never listed, so the filters stay as they are.
         if r.slot and not r.usable then
             frame.usable:SetChecked(false)
+        end
+        if r.slot and r.deprecated then
+            frame.deprecated:SetChecked(false)
+        end
+        if r.slot and onlyQuality and ns.Advisor.Item(id)[3] ~= onlyQuality then
+            onlyQuality = nil
         end
     else
         selected, unknown = nil, id
     end
-    if frame.dropdown.GenerateMenu then
-        frame.dropdown:GenerateMenu()
+    for _, menu in ipairs({ frame.dropdown, frame.quality }) do
+        if menu.GenerateMenu then
+            menu:GenerateMenu()
+        end
     end
     refresh(class, level)
     for _, row in ipairs(rows) do

@@ -245,10 +245,13 @@ local function rebuild(dataDir, outFile)
                     localeNames[npc] = n
                 end
             end
-            -- Files are read sorted, so on a conflict the lexically first contribution's record stays.
+            -- Files are read sorted, so on a conflict the lexically first contribution's record stays; it is flagged
+            -- deprecated when any contribution flags it.
             for id, record in pairs(db.items) do
                 if not items[id] then
                     items[id] = record
+                elseif record[7] == 1 then
+                    items[id][7] = 1
                 end
             end
             sumInto(kills, db.kills)

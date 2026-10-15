@@ -6,7 +6,8 @@ local View = {}
 ns.View = View
 
 local L = ns.L
-local Safe = ns.Store.Safe
+local Store = ns.Store
+local Safe = Store.Safe
 
 View.SLOT_LABELS = {
     head = "Head", neck = "Neck", shoulder = "Shoulder", back = "Back", chest = "Chest", wrist = "Wrist",
@@ -37,8 +38,9 @@ function View.InCombat()
     return false
 end
 
--- Returns the player's localised class name, class file and level, or nil when the client hides any of them.
-function View.Player()
+-- Returns the player's localised class name, class file and level, or nil when the client hides any of them; says
+-- so unless quiet.
+function View.Player(quiet)
     local name, classFile, level
     if UnitClass then
         name, classFile = UnitClass("player")
@@ -48,7 +50,9 @@ function View.Player()
         level = Safe(UnitLevel("player"))
     end
     if type(classFile) ~= "string" or type(level) ~= "number" or level < 1 then
-        print(L["Tandem: your class or level is not known yet; try again in a moment"])
+        if not quiet then
+            print(L["Tandem: your class or level is not known yet; try again in a moment"])
+        end
         return nil
     end
     return type(name) == "string" and name or classFile, classFile, level
@@ -95,15 +99,36 @@ function View.LinkOf(id)
     return View.ItemLink(id, r and r[3])
 end
 
--- Returns the item's name in its quality colour once the client has it; else "item #id" in quality's colour, and
--- asks the client to load it.
+-- Flags a known item as deprecated when its client name says so; true when it was flagged now.
+function View.NoteName(id, name)
+    local Advisor = ns.Advisor
+    if not Store.IsDeprecatedName(name) or Advisor.IsDeprecated(id) then
+        return false
+    end
+    return Store.MarkDeprecated(id, Advisor.Item(id))
+end
+
+-- Returns the item's name when the client has it cached, else nil. GetItemInfo asks the server for an uncached
+-- item, so it is only called once IsItemDataCachedByID says yes; without that API, nil.
+function View.CachedName(id)
+    if C_Item and C_Item.IsItemDataCachedByID and C_Item.GetItemInfo
+        and Safe(C_Item.IsItemDataCachedByID(id)) == true then
+        local name = Safe((C_Item.GetItemInfo(id)))
+        return type(name) == "string" and name or nil
+    end
+end
+
+-- Returns the item's name in its quality colour once the client has it (and notes it, see NoteName); else "item #id"
+-- in quality's colour, and asks the client to load it.
 function View.ItemName(id, quality)
     local name, clientQuality
     if C_Item and C_Item.GetItemInfo then
         local n, _, q = C_Item.GetItemInfo(id)
         name, clientQuality = Safe(n), Safe(q)
     end
-    if type(name) ~= "string" then
+    if type(name) == "string" then
+        View.NoteName(id, name)
+    else
         View.RequestItem(id)
         name, clientQuality = placeholder(id), nil
     end
@@ -192,6 +217,25 @@ function View.Equipped(slot)
     return out
 end
 
+-- Returns what the player wears in both hands, for a one-hander that fills either: ids of both, list of both, and
+-- ilvl the lower of the hands whose item level is known (nil when neither is).
+function View.EquippedHands()
+    local main, off = View.Equipped("mainhand"), View.Equipped("offhand")
+    local out = { ids = {}, list = {} }
+    for _, worn in ipairs({ main, off }) do
+        for id in pairs(worn.ids) do
+            out.ids[id] = true
+        end
+        for _, e in ipairs(worn.list) do
+            out.list[#out.list + 1] = e
+        end
+        if worn.ilvl and (not out.ilvl or worn.ilvl < out.ilvl) then
+            out.ilvl = worn.ilvl
+        end
+    end
+    return out
+end
+
 -- Returns the marks after an item row { id, ilvl, sourced, usable } against what is worn in its slot: an item the
 -- player cannot use is never an upgrade.
 function View.Marks(row, worn)
@@ -213,6 +257,20 @@ function View.Escape(text)
 end
 local escape = View.Escape
 
+-- Returns a source row's name, escaped, or what stands in for an unnamed one.
+function View.SourceName(s)
+    if s.name then
+        return escape(s.name)
+    end
+    return s.kind == "c" and L["npc #%d"]:format(s.id) or s.kind == "o" and L["object #%d"]:format(s.id)
+        or L["unknown source"]
+end
+
+-- Returns a source row's map name, escaped, or "unknown map".
+function View.MapLabel(s)
+    return s.mapName and escape(s.mapName) or L["unknown map"]
+end
+
 -- Returns the lines describing where an item drops: up to max sources, then how many more there are.
 function View.SourceLines(id, max)
     local rows = ns.Advisor.Sources(id)
@@ -222,12 +280,7 @@ function View.SourceLines(id, max)
     local lines = {}
     for i = 1, math.min(#rows, max) do
         local s = rows[i]
-        local name = s.name and escape(s.name)
-        if not name then
-            name = s.kind == "c" and L["npc #%d"]:format(s.id) or s.kind == "o" and L["object #%d"]:format(s.id)
-                or L["unknown source"]
-        end
-        local map = s.mapName and escape(s.mapName) or L["unknown map"]
+        local name, map = View.SourceName(s), View.MapLabel(s)
         if s.rateBasis == "kill" then
             lines[#lines + 1] = L["  %s, %s - drops: %d, %.1f%% per kill"]:format(name, map, s.count, s.rate * 100)
         elseif s.rateBasis == "corpse" then
