@@ -52,6 +52,7 @@ read_globals = {
     "ItemRefTooltip",
     "Minimap",
     "OpenWorldMap",
+    "QuestInfoRewardsFrame",
     "ScrollUtil",
     "time",
     "TooltipDataProcessor",

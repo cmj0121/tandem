@@ -477,6 +477,23 @@ faction mark are in Chinese, such as `（僅限部落）`.
 A quest or vendor source means the item is known to come from there, not that you can get it now: a vendor may have
 limited stock or ask for reputation, and a quest may follow a chain, be one-off, or need a class or level.
 
+### Quest reward pick
+
+When you hand in a quest that lets you choose one of two or more rewards (`QUEST_COMPLETE`), Tandem puts a small Tandem
+icon on the top right of the best choice's button. The best choice is the one your class and level can use that beats
+every other usable choice by item level, then by quality, as in [How gear is ranked](#how-gear-is-ranked). It is not
+compared with what you wear: hover the choice to see its rank and `(upgrade)` mark in the
+[item tooltip](#item-tooltip).
+
+- No icon when two usable choices share the best item level and quality, when no choice is usable, or when the quest
+  offers a single choice.
+- A choice the client has not loaded yet is asked for; the icon shows once every choice has arrived, while the reward
+  window is still open.
+- The icon only advises: Tandem never selects a reward, and you still click the one you want.
+- The icon goes when the reward window closes (`QUEST_FINISHED`).
+- Nothing happens in combat, while the client does not tell your class or level, or when the `Quest reward pick` line of
+  [`/tandem check`](#tandem-check) is `missing`. Nothing is printed.
+
 ### Deprecated items
 
 Items whose name starts with `Deprecated`, in any case and after any leading spaces, are flagged deprecated. The item
@@ -718,7 +735,7 @@ tooltip in step 5, and any Lua error.
 
 ### Check the client APIs
 
-The tooltip, the quest and vendor sources and the map pins, and the quest reward pick and upgrade alert still to come,
+The tooltip, the quest and vendor sources, the map pins and the quest reward pick, and the upgrade alert still to come,
 use APIs that are not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
 1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eight lines, one each for `Item tooltip`,
@@ -733,7 +750,8 @@ use APIs that are not verified on Forever. One pass of `/tandem check` tells whi
    else.
 5. If `Item tooltip` is `ok`, run the steps of [Check the item tooltip](#check-the-item-tooltip). If `Quest sources` or
    `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
-   check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins).
+   check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins). If `Quest reward pick` is `ok` in step
+   2, run [Check the quest reward pick](#check-the-quest-reward-pick).
 
 Report back every line of steps 1 and 2 as printed, and any Lua error.
 
@@ -756,6 +774,22 @@ Report back every line of steps 1 and 2 as printed, and any Lua error.
 
 Report back whether the pins sit on the right spots, whether they hide behind other map icons, whether the waypoint
 was set, the map ID of any map that refused it, and any Lua error.
+
+### Check the quest reward pick
+
+1. Out of combat, hand in a quest that offers a choice of two or more rewards, at least one of which your class can
+   use. In the reward window, a small Tandem icon sits on the top right of one choice's button. Nothing is printed and
+   no reward is selected.
+2. Hover each choice: the marked one has the highest item level among the choices you can use, or the same item level
+   and a better quality. Note the item level and quality of each choice.
+3. Close the reward window without choosing, then talk to the quest giver again: the icon shows again on the same
+   choice.
+4. For a quest whose usable choices share item level and quality, or that offers nothing your class can use, no icon
+   shows.
+5. If you can, open a reward window in combat: no icon shows and nothing is printed.
+
+Report back the quest, the choices with their item level and quality, which one was marked, whether the icon sat well
+on the button or hid part of it, and any Lua error.
 
 ## Interface number
 

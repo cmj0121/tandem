@@ -5221,6 +5221,192 @@ do
     check("zhTW map: cleared", ctx.run("map clear")[1], "Tandem：已移除地圖標記")
 end
 
+-- Quest reward pick (stage 6, unit 4): an icon on the best choice's button at turn-in.
+
+-- Loads gearData() with a reward window offering choices (item ids) through the API the client has: opts.style is
+-- "list" (QuestInfoRewardsFrame.RewardButtons, choices typed and numbered), "named"
+-- (QuestInfoRewardsFrameQuestInfoItem<i>), "old" (QuestRewardItem<i>) or "none". Every quest selection API is a
+-- stub that counts its calls in ctx.selected. ctx.quest.choices can change before firing again.
+local function loadQuest(choices, opts)
+    opts = opts or {}
+    local q = { choices = choices, buttons = {} }
+    local ui = { widgets = {} }
+    local style = opts.style or "list"
+    local env = {
+        GetNumQuestChoices = function()
+            return #q.choices
+        end,
+        GetQuestItemLink = function(list, i)
+            local id = list == "choice" and q.choices[i]
+            return id and built(id, "ffffff")
+        end,
+    }
+    local list = {}
+    for i = 1, 6 do
+        local b = newWidget(ui, "Button", style == "named" and ("QuestInfoRewardsFrameQuestInfoItem" .. i)
+            or ("QuestRewardItem" .. i))
+        q.buttons[i] = b
+        if style == "list" then
+            b.type = "choice"
+            function b.GetID()
+                return i
+            end
+            list[#list + 1] = b
+        elseif style == "named" then
+            env["QuestInfoRewardsFrameQuestInfoItem" .. i] = b
+        elseif style == "old" then
+            env["QuestRewardItem" .. i] = b
+        end
+    end
+    if style == "list" then
+        local reward = newWidget(ui, "Button")
+        reward.type = "reward"
+        function reward.GetID()
+            return 1
+        end
+        table.insert(list, 1, reward)
+        q.reward = reward
+        env.QuestInfoRewardsFrame = { RewardButtons = list }
+    end
+    local selected = {}
+    for _, name in ipairs({ "GetQuestReward", "SelectQuestReward", "QuestInfoItem_OnClick", "CompleteQuest" }) do
+        env[name] = function()
+            selected[#selected + 1] = name
+        end
+    end
+    local ctx = loadGear("enUS", nil, nil, { env = env })
+    ctx.quest, ctx.selected = q, selected
+    -- Returns the indexes of the buttons with a shown Tandem mark, as "1,3".
+    function ctx.marked()
+        local out = {}
+        for i, b in ipairs(q.buttons) do
+            for _, w in ipairs(ui.widgets) do
+                if w.parent == b and w.kind == "Texture" and w:IsShown() then
+                    out[#out + 1] = tostring(i)
+                end
+            end
+        end
+        return table.concat(out, ",")
+    end
+    -- Returns the mark texture on button i, shown or not.
+    function ctx.mark(i)
+        for _, w in ipairs(ui.widgets) do
+            if w.parent == q.buttons[i] and w.kind == "Texture" then
+                return w
+            end
+        end
+    end
+    function ctx.complete()
+        ctx.fire("QUEST_COMPLETE")
+    end
+    return ctx
+end
+
+do
+    local ctx = loadQuest({ 3, 1, 12 })
+    local from = #ctx.printed
+    ctx.complete()
+    check("quest pick: marks the highest item level", ctx.marked(), "2")
+    check("quest pick: nothing on the fixed reward", ctx.quest.reward.texture, nil)
+    check("quest pick: the mark is the Tandem icon", ctx.mark(2).texture, "Interface\\AddOns\\Tandem\\Media\\icon")
+    check("quest pick: the mark sits on the button's top right", ctx.mark(2).points[1][1], "TOPRIGHT")
+    check("quest pick: never selects", #ctx.selected, 0)
+    check("quest pick: prints nothing", #ctx.since(from), 0)
+    ctx.fire("QUEST_FINISHED")
+    check("quest pick: QUEST_FINISHED hides the mark", ctx.marked(), "")
+    ctx.quest.choices = { 2, 3 }
+    ctx.complete()
+    check("quest pick: same item level, higher quality wins", ctx.marked(), "2")
+    ctx.quest.choices = { 1, 2 }
+    ctx.complete()
+    check("quest pick: a new window moves the mark", ctx.marked(), "1")
+    check("quest pick: still never selects", #ctx.selected, 0)
+end
+
+do
+    local ctx = loadQuest({ 3, 4 })
+    ctx.complete()
+    check("quest pick: a tie on item level and quality marks none", ctx.marked(), "")
+    ctx.quest.choices = { 3, 4, 1 }
+    ctx.complete()
+    check("quest pick: a tie below the best still marks the best", ctx.marked(), "3")
+    ctx.quest.choices = { 1 }
+    ctx.complete()
+    check("quest pick: one choice marks none", ctx.marked(), "")
+    ctx.quest.choices = { 8, 12 }
+    ctx.complete()
+    check("quest pick: an unusable choice never wins", ctx.marked(), "2")
+end
+
+do
+    local ctx = loadQuest({ 1, 13 })
+    ctx.level = 10
+    ctx.complete()
+    check("quest pick: no usable choice marks none", ctx.marked(), "")
+    ctx.quest.choices = { 9, 99 }
+    ctx.level = 40
+    ctx.complete()
+    check("quest pick: non-equippable choices mark none", ctx.marked(), "")
+    check("quest pick: non-equippable choices are not asked for", next(ctx.requested), nil)
+end
+
+do
+    local ctx = loadQuest({ 3, 1 })
+    ctx.combat = true
+    local from = #ctx.printed
+    ctx.complete()
+    check("quest pick: nothing in combat", ctx.marked(), "")
+    check("quest pick: nothing printed in combat", #ctx.since(from), 0)
+end
+
+for _, style in ipairs({ "named", "old" }) do
+    local ctx = loadQuest({ 3, 1 }, { style = style })
+    ctx.complete()
+    check("quest pick: the " .. style .. " buttons", ctx.marked(), "2")
+end
+
+do
+    local ctx = loadQuest({ 3, 1 }, { style = "none" })
+    local ok = pcall(ctx.complete)
+    check("quest pick: no button found is no error", ok, true)
+    check("quest pick: no button found marks none", ctx.marked(), "")
+end
+
+do
+    local ctx = loadQuest({ 3, 1 })
+    ctx.env.GetNumQuestChoices = nil
+    local ok = pcall(ctx.complete)
+    check("quest pick: a missing quest API is no error", ok, true)
+    check("quest pick: a missing quest API marks none", ctx.marked(), "")
+end
+
+do
+    -- Item 900 is a plate chest of item level 60 the client has not loaded yet.
+    local ctx = loadQuest({ 1, 900 })
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 900 then
+            return 900, nil, nil, "INVTYPE_CHEST", nil, 4, 4
+        end
+        return instant(id)
+    end
+    ctx.complete()
+    check("quest pick: an uncached choice is asked for", ctx.requested[900], true)
+    check("quest pick: nothing marked while a choice is loading", ctx.marked(), "")
+    ctx.cache[900] = { "Late Plate", nil, 3, 60 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("quest pick: another item's info changes nothing", ctx.marked(), "")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("quest pick: judged again once it arrives", ctx.marked(), "2")
+    ctx.fire("QUEST_FINISHED")
+    ctx.cache[900] = nil
+    ctx.complete()
+    ctx.fire("QUEST_FINISHED")
+    ctx.cache[900] = { "Late Plate", nil, 3, 60 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("quest pick: a closed window is not judged again", ctx.marked(), "")
+end
+
 if failures > 0 then
     os.exit(1)
 end

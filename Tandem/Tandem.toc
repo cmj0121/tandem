@@ -23,6 +23,7 @@ Advisor.lua
 View.lua
 Check.lua
 MapPins.lua
+QuestPick.lua
 Commands.lua
 Browse.lua
 Launcher.lua
