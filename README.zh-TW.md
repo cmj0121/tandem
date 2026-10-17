@@ -589,9 +589,9 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
   或調整大小時儲存，`minimapHidden` 只在按鈕隱藏時存在。它不計入 `Unsaved records`，無效的位置、角度或旗標會在載入時
   捨棄。無效的大小只會單獨捨棄，位置仍會保留。
 
-- 屬性鍵為 `str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block
-blockvalue`：`sp` 為法術傷害與治療，`heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的
-  版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
+- 屬性鍵為 `str`、`agi`、`sta`、`int`、`spi`、`armor`、`dps`、`ap`、`rap`、`sp`、`heal`、`hit`、`crit`、
+  `spellhit`、`spellcrit`、`mp5`、`def`、`dodge`、`parry`、`block` 與 `blockvalue`：`sp` 為法術傷害與治療，
+  `heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
 
 `TandemDB.schemaVersion` 為 `4`。schema 2 或 3 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，兩者都會新增
 空的 `stats` 與 `weights`。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會記錄任何資料。

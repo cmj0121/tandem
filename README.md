@@ -641,8 +641,9 @@ Everything goes into one account-wide table, `TandemDB`, saved as
   hidden; the angle is saved once you drag the button, the size whenever you move or resize the window, and `minimapHidden` only
   while the button is hidden. It is not counted in `Unsaved records`, and an invalid position, angle or flag is
   dropped on load. An invalid size is dropped alone, and the position is kept.
-- The stat keys are `str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block
-blockvalue`: `sp` is spell damage and healing, `heal` healing only, `dps` a weapon's damage per second.
+- The stat keys are `str`, `agi`, `sta`, `int`, `spi`, `armor`, `dps`, `ap`, `rap`, `sp`, `heal`, `hit`, `crit`,
+  `spellhit`, `spellcrit`, `mp5`, `def`, `dodge`, `parry`, `block` and `blockvalue`: `sp` is spell damage and healing,
+  `heal` healing only, `dps` a weapon's damage per second.
   `statsVersion` is the version of the reader the saved stats were read with. On load, an unknown stat key or a value
   that is not a number is dropped alone, as is an invalid `spec` or override; an item's or character's entry that is
   not a table is dropped.

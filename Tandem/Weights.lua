@@ -8,11 +8,8 @@ ns.Weights = Weights
 
 local Safe = ns.Store.Safe
 
--- The stored stat keys (decision 7), in display order.
-Weights.KEYS = {
-    "str", "agi", "sta", "int", "spi", "armor", "dps", "ap", "rap", "sp", "heal", "hit", "crit", "spellhit",
-    "spellcrit", "mp5", "def", "dodge", "parry", "block", "blockvalue",
-}
+-- The stored stat keys (decision 7), in display order; Store owns the list.
+Weights.KEYS = ns.Store.STAT_KEYS
 local IS_KEY = {}
 for _, key in ipairs(Weights.KEYS) do
     IS_KEY[key] = true
