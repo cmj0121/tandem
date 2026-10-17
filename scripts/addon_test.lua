@@ -2275,14 +2275,15 @@ do
     check("gear overview header", out[1], "Best known gear for level 40 Warrior:")
     check("gear overview empty slot", out[2], "Head: none known")
     check("gear overview chest is a link and an upgrade over nothing", out[6],
-        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (upgrade)")
-    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (upgrade)")
+        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (upgrade) (no stats)")
+    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (upgrade) (no stats)")
     check("gear overview skips a sourceless two-hander", out[16], "Two-hand: none known")
-    check("gear overview footer", out[18], "Ranked by item level, then quality; stats are not considered")
+    check("gear overview footer", out[18],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("gear overview line count", #out, 18)
     check("gear asks the client for uncached items", ctx.requested[1], true)
     check("gear overview all shows sourceless items, marked", ctx.run("gear all")[16],
-        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (upgrade) (no known source)")
+        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (upgrade) (no stats) (no known source)")
     check("GEAR overview is case-insensitive", ctx.run("GEAR")[1], "Best known gear for level 40 Warrior:")
 end
 
@@ -2294,12 +2295,15 @@ do
     local out = ctx.run("gear chest")
     check("gear chest header", out[1], "Best Chest for level 40 Warrior:")
     check("gear chest equipped line", out[2], "Equipped: " .. built(3, BLUE) .. ", ilvl 30")
-    check("gear chest uses the cached client link", out[3], "1. " .. plate .. ", ilvl 45, level 40 (upgrade)")
+    check("gear chest uses the cached client link", out[3],
+        "1. " .. plate .. ", ilvl 45, level 40 (upgrade) (no stats)")
     check("gear chest does not request a cached item", ctx.requested[1], nil)
-    check("gear chest marks the equipped item", out[4], "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (equipped)")
-    check("gear chest same ilvl is no upgrade", out[5], "3. " .. built(4, BLUE) .. ", ilvl 30, level 25")
-    check("gear chest lower ilvl is no upgrade", out[7], "5. " .. built(12, GREEN) .. ", ilvl 20, level 10")
-    check("gear chest footer", out[8], "Ranked by item level, then quality; stats are not considered")
+    check("gear chest marks the equipped item", out[4],
+        "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (equipped) (no stats)")
+    check("gear chest same ilvl is no upgrade", out[5], "3. " .. built(4, BLUE) .. ", ilvl 30, level 25 (no stats)")
+    check("gear chest lower ilvl is no upgrade", out[7], "5. " .. built(12, GREEN) .. ", ilvl 20, level 10 (no stats)")
+    check("gear chest footer", out[8],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("gear chest line count", #out, 8)
 
     ctx.equipped[5] = "|cff0070dd|Hitem:777::::|h[Unknown]|h|r"
@@ -2307,28 +2311,32 @@ do
     out = ctx.run("gear chest")
     check("gear chest ilvl of an uncached equipped item from the client", out[2],
         "Equipped: " .. ctx.equipped[5] .. ", ilvl 40")
-    check("gear chest upgrade over the client ilvl", out[3], "1. " .. plate .. ", ilvl 45, level 40 (upgrade)")
-    check("gear chest no upgrade below the client ilvl", out[4], "2. " .. built(3, BLUE) .. ", ilvl 30, level 25")
+    check("gear chest upgrade over the client ilvl", out[3],
+        "1. " .. plate .. ", ilvl 45, level 40 (upgrade) (no stats)")
+    check("gear chest no upgrade below the client ilvl", out[4],
+        "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (no stats)")
 
     ctx.cache[777] = nil
     out = ctx.run("gear chest")
     check("gear chest unknown equipped ilvl", out[2], "Equipped: " .. built(777, "ffffff") .. ", ilvl ?")
-    check("gear chest unknown equipped ilvl gives no marks", out[3], "1. " .. plate .. ", ilvl 45, level 40")
+    check("gear chest unknown equipped ilvl gives no marks", out[3], "1. " .. plate .. ", ilvl 45, level 40 (no stats)")
 
     ctx.equipped[5] = secret()
     out = ctx.run("gear chest")
     check("gear chest secret equipped link gives no equipped line and no marks", out[2],
-        "1. " .. plate .. ", ilvl 45, level 40")
+        "1. " .. plate .. ", ilvl 45, level 40 (no stats)")
 
     ctx.level, ctx.class, ctx.className = 60, "MAGE", "Mage"
     ctx.equipped[5] = nil
     out = ctx.run("gear chest")
-    check("gear chest hides sourceless items", out[3], "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade)")
+    check("gear chest hides sourceless items", out[3],
+        "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
     check("gear chest hides sourceless items count", #out, 4)
     out = ctx.run("gear chest all")
     check("gear chest all shows sourceless items, marked", out[3],
-        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source)")
-    check("gear chest all keeps sourced items", out[4], "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade)")
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no stats) (no known source)")
+    check("gear chest all keeps sourced items", out[4],
+        "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
     out = ctx.run("gear twohand")
     check("gear with nothing usable", out[3], "No known Two-hand you can use")
 end
@@ -2344,10 +2352,10 @@ do
     check("gear finger lists both rings", out[2] .. " / " .. out[3],
         "Equipped: |Hitem:778:|h, ilvl 20 / Equipped: nothing")
     check("gear finger compares with the empty ring slot", out[4],
-        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (upgrade)")
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (upgrade) (no stats)")
     ctx.equipped[12] = "|Hitem:778:|h"
     check("gear finger compares with the lower ring", ctx.run("gear finger")[4],
-        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10")
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (no stats)")
 end
 
 do
@@ -2362,16 +2370,16 @@ do
     end
     local ctx = loadGear("enUS", db, shipped)
     local out = ctx.run("rank 1")
-    check("rank by id", out[1], built(1, BLUE) .. " (upgrade): rank 1 of 5 for Chest")
+    check("rank by id", out[1], built(1, BLUE) .. " (upgrade) (no stats): rank 1 of 5 for Chest")
     check("rank unknown source", out[2], "  unknown source, unknown map - drops: 1")
     check("rank source per kill", out[3], "  Hogger, Elwynn Forest - drops: 1, 25.0% per kill")
     check("rank source per looted corpse", out[4],
         "  npc #449, unknown map - drops: 1, 50.0% per looted corpse (upper bound)")
-    check("rank footer", out[5], "Ranked by item level, then quality; stats are not considered")
+    check("rank footer", out[5], "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("rank line count", #out, 5)
 
     out = ctx.run("rank |cff0070dd|Hitem:2::::::::::::::|h[Mail Robe]|h|r")
-    check("rank by link", out[1], built(2, GREEN) .. " (upgrade): rank 4 of 5 for Chest")
+    check("rank by link", out[1], built(2, GREEN) .. " (upgrade) (no stats): rank 4 of 5 for Chest")
     check("rank shipped source without a name", out[2], "  npc #500, Elwynn Forest - drops: 1")
     check("rank by a link inside text", ctx.run("rank this |Hitem:2:0|h one")[1], out[1])
 
@@ -2383,10 +2391,10 @@ do
 
     ctx.equipped[5] = "|Hitem:1:|h"
     check("rank marks the equipped item", ctx.run("rank 1")[1],
-        built(1, BLUE) .. " (equipped): rank 1 of 5 for Chest")
+        built(1, BLUE) .. " (equipped) (no stats): rank 1 of 5 for Chest")
 
     out = ctx.run("rank 11")
-    check("rank sourceless item", out[1], built(11, "ff8000") .. " (upgrade): rank 1 of 6 for Chest")
+    check("rank sourceless item", out[1], built(11, "ff8000") .. " (upgrade) (no stats): rank 1 of 6 for Chest")
     check("rank sourceless item says so", out[2], "  no known source")
     out = ctx.run("rank 9")
     check("rank unranked slot", out[1], built(9, "ffffff") .. " does not go in a ranked slot")
@@ -2396,7 +2404,7 @@ do
     ctx.equipped[5] = nil
     ctx.level = 30
     out = ctx.run("rank 1")
-    check("rank too low gives no upgrade mark", out[1], built(1, BLUE) .. ": rank 1 of 5 for Chest")
+    check("rank too low gives no upgrade mark", out[1], built(1, BLUE) .. " (no stats): rank 1 of 5 for Chest")
     check("rank too low", out[2], "  you cannot use it: level 40 required")
     ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
     check("rank wrong class", ctx.run("rank 1")[2], "  your class cannot use it")
@@ -2501,15 +2509,15 @@ do
     local out = ctx.run("gear chest")
     check("zhTW gear chest header", out[1], "最佳胸部（40 級戰士）：")
     check("zhTW gear chest equipped", out[2], "已裝備：無")
-    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（升級）")
-    check("zhTW gear footer", out[#out], "依物品等級、再依品質排名；未考慮屬性")
+    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（升級）（無屬性）")
+    check("zhTW gear footer", out[#out], "依屬性分數、再依物品等級與品質排名；標示（無屬性）的物品排在最後")
     out = ctx.run("gear")
     check("zhTW gear overview header", out[1], "40 級戰士的最佳已知裝備：")
     check("zhTW gear overview none", out[2], "頭部：無已知物品")
     check("zhTW gear overview all", ctx.run("gear all")[16],
-        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（升級）（來源未知）")
+        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（升級）（無屬性）（來源未知）")
     out = ctx.run("rank 1")
-    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（升級）：排名第 1／5（胸部）")
+    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（升級）（無屬性）：排名第 1／5（胸部）")
     check("zhTW rank per kill", out[2], "  霍格，Elwynn Forest：掉落 1 次，每次擊殺 25.0%")
     check("zhTW rank per corpse", out[3], "  NPC #449，未知地圖：掉落 1 次，每具拾取屍體 50.0%（上限）")
     check("zhTW rank sourceless", ctx.run("rank 11")[2], "  來源未知")
@@ -2537,24 +2545,24 @@ do
     ctx.equipped[16] = "|Hitem:15:|h"
     local out = ctx.run("gear offhand")
     check("gear offhand behind a cached two-hander has no upgrade mark", out[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
     ctx.equipped[16] = "|Hitem:780:|h"
     ctx.instant[780] = "INVTYPE_2HWEAPON"
     check("gear offhand behind a client two-hander has no upgrade mark", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
     ctx.equipped[16] = "|Hitem:7:|h"
     check("gear offhand behind a one-hander is an upgrade over nothing", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (upgrade)")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (upgrade) (no stats)")
     ctx.equipped[16] = secret()
     check("gear offhand behind a secret main hand has no upgrade mark", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
 
     ctx.equipped[16] = "|Hitem:7:|h"
     ctx.equipped[17] = "|Hitem:779:|h"
     ctx.cache[779] = { "Big Shield", "|Hitem:779:|h", 4, 60 }
     out = ctx.run("gear twohand all")
     check("gear twohand compares with the main hand only", out[3],
-        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (upgrade) (no known source)")
+        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (upgrade) (no stats) (no known source)")
     check("gear twohand lists only the main hand", out[2], "Equipped: " .. built(7, GREEN) .. ", ilvl 25")
 end
 
@@ -2954,16 +2962,17 @@ do
     check("browse row: icon from the client", b[1].icon.texture, 135000)
     check("browse row: icon fallback", b[2].icon.texture, "Interface\\Icons\\INV_Misc_QuestionMark")
     check("browse row: name before the item loads", b[1].name:GetText(),
-        "|cffff8000item #11|r" .. GREY .. " (upgrade) (no known source)|r")
+        "|cffff8000item #11|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
     check("browse row: asks the client to load the item", ctx.requested[11], true)
     check("browse row: ilvl", b[1].ilvl:GetText(), "99")
     check("browse row: level", b[1].level:GetText(), "1")
     check("browse row: usable is opaque", b[1].alpha, 1)
-    check("browse row: unusable item has no upgrade mark", b[2].name:GetText(), "|cff0070dditem #1|r")
+    check("browse row: unusable item has no upgrade mark", b[2].name:GetText(),
+        "|cff0070dditem #1|r" .. GREY .. " (no stats)|r")
     check("browse row: unusable item is faded", b[2].alpha, 0.5)
     check("browse row: needed level in red", b[2].level:GetText(), "|cffff202040|r")
-    check("browse row: equipped mark", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped)|r")
-    check("browse row: no marks", b[4].name:GetText(), "|cff0070dditem #4|r")
+    check("browse row: equipped mark", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped) (no stats)|r")
+    check("browse row: no marks", b[4].name:GetText(), "|cff0070dditem #4|r" .. GREY .. " (no stats)|r")
 
     b[1].scripts.OnEnter(b[1])
     check("browse row: tooltip item", ctx.ui.tooltip, 11)
@@ -2982,8 +2991,9 @@ do
     local provider = win.box.provider
     ctx.tick()
     check("browse refresh: name after the item loads", b[1].name:GetText(),
-        "|cffff8000GM Robe|r" .. GREY .. " (upgrade) (no known source)|r")
-    check("browse refresh: second item too", b[3].name:GetText(), "|cff0070ddLeather Vest|r" .. GREY .. " (equipped)|r")
+        "|cffff8000GM Robe|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
+    check("browse refresh: second item too", b[3].name:GetText(),
+        "|cff0070ddLeather Vest|r" .. GREY .. " (equipped) (no stats)|r")
     check("browse refresh: rows are not listed again", win.box.provider, provider)
     ctx.fire("GET_ITEM_INFO_RECEIVED", 999, true)
     check("browse refresh: an item not in the rows is ignored", #ctx.ui.timers, 0)
@@ -3019,19 +3029,22 @@ do
     local win = ctx.win()
     local b = win.box.buttons
     check("browse gear change: listens for it", ctx.frame.registered.PLAYER_EQUIPMENT_CHANGED, true)
-    check("browse gear change: worn item marked", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped)|r")
+    check("browse gear change: worn item marked", b[3].name:GetText(),
+        "|cff0070dditem #3|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.equipped[5] = "|Hitem:4:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, false)
-    check("browse gear change: old item no longer marked", b[3].name:GetText(), "|cff0070dditem #3|r")
-    check("browse gear change: new item marked", b[4].name:GetText(), "|cff0070dditem #4|r" .. GREY .. " (equipped)|r")
+    check("browse gear change: old item no longer marked", b[3].name:GetText(),
+        "|cff0070dditem #3|r" .. GREY .. " (no stats)|r")
+    check("browse gear change: new item marked", b[4].name:GetText(),
+        "|cff0070dditem #4|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.run("browse")
     ctx.equipped[5] = nil
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, true)
     check("browse gear change: nothing redrawn while hidden", b[4].name:GetText(),
-        "|cff0070dditem #4|r" .. GREY .. " (equipped)|r")
+        "|cff0070dditem #4|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.run("browse chest")
     check("browse gear change: showing again reads the gear", b[4].name:GetText(),
-        "|cff0070dditem #4|r" .. GREY .. " (upgrade)|r")
+        "|cff0070dditem #4|r" .. GREY .. " (upgrade) (no stats)|r")
 end
 
 do
@@ -4148,11 +4161,112 @@ do
     check("rank memo: a new db walks again", A.Rank(2, "WARRIOR", 40).total, 3)
 end
 
+-- Advisor: stat-weighted ranking (stage 7, decision 3).
+
+-- gearData() with stats: own strength mail chest 12 (ilvl 20), own caster cloth robe 4 (ilvl 30, which the shipped
+-- strength copy loses to); 1 and 2 have none.
+local function statData()
+    local db, shipped = gearData()
+    db.stats = { [4] = { int = 15, sp = 20 }, [12] = { str = 10 } }
+    shipped.stats = { [4] = { str = 100 } }
+    return db, shipped
+end
+
+local PLAYER_ENV = { UnitName = function() return "Tank" end, GetRealmName = function() return "Realm" end }
+
+do
+    local A = loadAdvisor(statData())
+    check("score: a strength item ranks above a caster item for a warrior", ids(A.Best("chest", "WARRIOR", 40)),
+        "12,4,1,3,2")
+    local rows = A.List("chest", "WARRIOR", 40)
+    check("score: List rows carry the score", rows[1].score .. " " .. rows[2].score, "10 0")
+    check("score: an item without stats has no score", tostring(rows[3].score), "nil")
+    check("score: own stats win over shipped ones", A.Place(4, "WARRIOR", 40).score, 0)
+    check("score: Place carries the score", A.Place(12, "WARRIOR", 40).score, 10)
+    check("score: PlaceRecord without an id has no score", A.PlaceRecord(A.Item(12), "WARRIOR", 40).score, nil)
+    local r = A.Rank(4, "WARRIOR", 40)
+    check("score: Rank of a zero-score item is among the scored", r.rank .. "/" .. r.total .. " " .. r.score, "2/5 0")
+    r = A.Rank(1, "WARRIOR", 40)
+    check("score: Rank of a stat-less item comes after the scored",
+        r.rank .. "/" .. r.total .. " " .. tostring(r.score), "3/5 nil")
+    check("score: a mage ranks the caster robe by its stats", A.Best("chest", "MAGE", 60)[1].score, 20 + 15 * 0.45)
+    check("score: stat-less items keep the item level order", ids(A.List("chest", "WARRIOR", 40, { quality = 3 })),
+        "4,1,3")
+
+    local db, shipped = gearData()
+    shipped.stats = { [12] = { str = 1 } }
+    A = loadAdvisor(db, shipped)
+    check("score: shipped stats score when own has none", ids(A.Best("chest", "WARRIOR", 40)), "12,1,3,4,2")
+    A = loadAdvisor(gearData())
+    check("score: without any stats the order is by item level", ids(A.Best("chest", "WARRIOR", 40)), "1,3,4,2,12")
+end
+
+do
+    local db, shipped = statData()
+    local addon = loadWithDB(db, "enUS", { shipped = shipped, env = PLAYER_ENV })
+    local A, W = addon.Advisor, addon.Weights
+    local function rank(id)
+        local r = A.Rank(id, "WARRIOR", 40)
+        return r.rank .. "/" .. r.total
+    end
+    check("score memo: before a weight change", rank(4), "2/5")
+    check("score memo: SetOverride saves", W.SetOverride("int", 5, "WARRIOR", 40), true)
+    check("score memo: a weight change ranks again", rank(4) .. " " .. rank(12), "1/5 2/5")
+    check("score memo: List follows the weight change", ids(A.Best("chest", "WARRIOR", 40)), "4,12,1,3,2")
+    check("score memo: SetSpec saves", W.SetSpec(3), true)
+    check("score memo: a spec change ranks again", rank(4) .. " " .. rank(12), "2/5 1/5")
+    W.SetSpec("auto")
+    check("score memo: back to auto ranks with the override again", rank(4), "1/5")
+    W.Reset("WARRIOR", 40)
+    check("score memo: a reset ranks again", rank(4), "2/5")
+    W.SetOverride("str", 2, "WARRIOR", 40)
+    local stats = { str = 10, int = 3, sta = 4 }
+    check("score: a passed weights table scores as Score builds it",
+        W.Score(stats, "WARRIOR", 1, W.Effective("WARRIOR", 1)), W.Score(stats, "WARRIOR", 1))
+    check("score: the passed weights table is used", W.Score(stats, "WARRIOR", 1, { int = 1 }), 3)
+end
+
+do
+    local db, shipped = statData()
+    db.stats[1] = { str = 5 }
+    local ctx = loadGear("enUS", db, shipped)
+    ctx.equipped[5] = "|Hitem:12:|h"
+    local out = ctx.run("gear chest")
+    check("score upgrade: the worn item is equipped", out[3],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 (equipped)")
+    check("score upgrade: a lower score is no upgrade", out[4], "2. " .. built(1, BLUE) .. ", ilvl 45, level 40")
+    check("score upgrade: higher ilvl but lower score is no upgrade", out[5],
+        "3. " .. built(4, BLUE) .. ", ilvl 30, level 25")
+    check("score upgrade: a stat-less item falls back to item level", out[6],
+        "4. " .. built(3, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
+    ctx.equipped[5] = "|Hitem:4:|h"
+    out = ctx.run("gear chest")
+    check("score upgrade: a higher score is an upgrade at a lower ilvl", out[3],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 (upgrade)")
+    ctx.equipped[5] = "|Hitem:2:|h"
+    out = ctx.run("gear chest")
+    check("score upgrade: a stat-less worn item compares by item level", out[3] .. " / " .. out[4],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 / 2. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade)")
+    check("score upgrade: the footer explains the order", out[#out],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
+    local View = ctx.addon.View
+    check("score upgrade: equal scores are no upgrade",
+        View.IsUpgrade({ ilvl = 50, score = 5, usable = true }, { score = 5, ilvl = 1 }), false)
+    check("score upgrade: an unusable item never is",
+        View.IsUpgrade({ ilvl = 50, score = 9, usable = false }, { score = 5, ilvl = 1 }), false)
+    check("score upgrade: an empty slot has no score", View.Equipped("back").score, nil)
+end
+
+do
+    local ctx = loadGear("zhTW", statData())
+    check("zhTW (no stats) mark", ctx.run("gear chest")[5]:sub(-15), "（無屬性）")
+end
+
 -- Commands: deprecated items in /tandem rank and /tandem gear.
 
 for locale, want in pairs({
-    enUS = { built(3, BLUE) .. " (upgrade): rank 2 of 5 for Chest", "  this item is deprecated" },
-    zhTW = { built(3, BLUE, "物品 #3") .. "（升級）：排名第 2／5（胸部）", "  此物品已棄用" },
+    enUS = { built(3, BLUE) .. " (upgrade) (no stats): rank 2 of 5 for Chest", "  this item is deprecated" },
+    zhTW = { built(3, BLUE, "物品 #3") .. "（升級）（無屬性）：排名第 2／5（胸部）", "  此物品已棄用" },
 }) do
     local db, shipped = gearData()
     db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
@@ -4169,8 +4283,8 @@ do
     local ctx = loadGear("enUS", db, shipped)
     local out = ctx.run("gear chest")
     check("gear chest skips a deprecated item", out[3] .. " / " .. out[4],
-        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade) / 2. " .. built(4, BLUE)
-            .. ", ilvl 30, level 25 (upgrade)")
+        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade) (no stats) / 2. " .. built(4, BLUE)
+            .. ", ilvl 30, level 25 (upgrade) (no stats)")
     check("gear chest without the deprecated item", #out, 7)
     check("rank of an unranked deprecated item says so", ctx.run("rank 9")[2], "  this item is deprecated")
     check("rank of a plain item says nothing more", ctx.run("rank 1")[2]:find("deprecated", 1, true), nil)
@@ -4248,33 +4362,39 @@ do
     ctx.run("browse")
     local win = ctx.win()
     local sword = "|cff1eff00item #7|r"
-    check("hands: beats the weaker hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade)|r")
+    check("hands: beats the weaker hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade) (no stats)|r")
     ctx.run("browse mainhand")
-    check("hands: the main hand view compares with the main hand only", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: the main hand view compares with the main hand only", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
     ctx.run("browse")
     ctx.run("browse")
 
     ctx.equipped[17] = "|Hitem:7:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 17, false)
-    check("hands: equipped in the off hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (equipped)|r")
+    check("hands: equipped in the off hand", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (equipped) (no stats)|r")
 
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:15:|h", nil
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: the off hand behind a two-hander is ignored", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: the off hand behind a two-hander is ignored", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     ctx.equipped[16] = "|Hitem:781:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: an empty off hand is beaten", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade)|r")
+    check("hands: an empty off hand is beaten", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (upgrade) (no stats)|r")
 
     ctx.equipped[16] = secret()
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: no hand ilvl known gives no upgrade", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: no hand ilvl known gives no upgrade", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     ctx.equipped[16] = "|Hitem:781:|h"
     ctx.class, ctx.className = "PALADIN", "Paladin"
     ctx.run("browse")
     ctx.run("browse")
-    check("hands: a non-dual-wielder compares with the main hand only", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: a non-dual-wielder compares with the main hand only", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     local hands = ctx.addon.View.EquippedHands()
     local worn = {}
@@ -4307,9 +4427,9 @@ do
     check("browse deprecated: unticking lists them", rowIDs(win), "11,1,3,4,2,12")
     local b = win.box.buttons
     check("browse deprecated: a flagged row is marked", b[3].name:GetText(),
-        "|cff0070dditem #3|r" .. GREY .. " (deprecated)|r")
+        "|cff0070dditem #3|r" .. GREY .. " (no stats) (deprecated)|r")
     check("browse deprecated: a named flagged row is marked", b[4].name:GetText(),
-        "|cff0070ddDeprecated Robe|r" .. GREY .. " (deprecated)|r")
+        "|cff0070ddDeprecated Robe|r" .. GREY .. " (no stats) (deprecated)|r")
 
     win.deprecated:SetChecked(true)
     win.deprecated:GetScript("OnClick")(win.deprecated)
@@ -4319,7 +4439,7 @@ do
     check("browse deprecated: a name loaded while shown flags the item", ctx.env.TandemDB.items[2][7], 1)
     check("browse deprecated: the row stays until the next listing", rowIDs(win), "11,1,2,12")
     check("browse deprecated: the row is marked", win.box.buttons[3].name:GetText(),
-        "|cff1eff00Deprecated Mail|r" .. GREY .. " (deprecated)|r")
+        "|cff1eff00Deprecated Mail|r" .. GREY .. " (no stats) (deprecated)|r")
     ctx.run("browse chest")
     check("browse deprecated: the next listing hides it", rowIDs(win), "11,1,12")
 
@@ -4508,7 +4628,7 @@ do
     win.deprecated:SetChecked(false)
     win.deprecated:GetScript("OnClick")(win.deprecated)
     check("zhTW browse deprecated mark", win.box.buttons[3].name:GetText(),
-        "|cff0070dd物品 #3|r" .. GREY .. "（已棄用）|r")
+        "|cff0070dd物品 #3|r" .. GREY .. "（無屬性）（已棄用）|r")
 end
 
 -- Cached-name peeks never ask the server: only ids IsItemDataCachedByID knows, each once per session.
@@ -4554,7 +4674,7 @@ do
     local win = ctx.win()
     check("browse peek: without IsItemDataCachedByID a deprecated name is not peeked", rowIDs(win), "11,1,3,4,2,12")
     check("browse peek: drawing the row still flags and marks it", win.box.buttons[4].name:GetText(),
-        "|cff0070ddDeprecated Robe|r" .. GREY .. " (deprecated)|r")
+        "|cff0070ddDeprecated Robe|r" .. GREY .. " (no stats) (deprecated)|r")
     ctx.run("browse chest")
     check("browse peek: the next listing hides it", rowIDs(win), "11,1,3,2,12")
 end
@@ -4652,31 +4772,34 @@ do
 
     local t = ctx.hover({ id = 1 })
     check("tooltip: rank, upgrade and kill-rate source", texts(t),
-        "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+        "Tandem: rank 1 of 5 for Chest (upgrade) (no stats)"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: rank line is blue", colour(t.lines[1]), "0.4,0.8,1")
     check("tooltip: source line is grey-white", colour(t.lines[2]), "0.8,0.8,0.8")
     check("tooltip: lines do not wrap", t.lines[1].wrap, false)
 
     check("tooltip: corpse-rate source with more", ctx.text(3),
-        "Tandem: rank 2 of 5 for Chest (upgrade) / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
+        "Tandem: rank 2 of 5 for Chest (upgrade) (no stats)"
+            .. " / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
     check("tooltip: source without a rate", ctx.text(2),
-        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 4 of 5 for Chest (upgrade) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
     check("tooltip: unsourced item has only the rank line", ctx.text(11),
-        "Tandem: rank 1 of 6 for Chest (upgrade) (no known source)")
+        "Tandem: rank 1 of 6 for Chest (upgrade) (no stats) (no known source)")
     check("tooltip: no ranked slot shows only the source", ctx.text(9),
         "Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: ItemRefTooltip gets the lines too", ctx.text(2, ctx.env.ItemRefTooltip),
-        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 4 of 5 for Chest (upgrade) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
 
     ctx.equipped[5] = "|Hitem:1:|h"
     check("tooltip: equipped mark", ctx.text(1),
-        "Tandem: rank 1 of 5 for Chest (equipped) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+        "Tandem: rank 1 of 5 for Chest (equipped) (no stats)"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     ctx.equipped[5] = nil
 
     ctx.level = 30
     t = ctx.hover({ id = 1 })
     check("tooltip: too low a level gives no upgrade and a red line", texts(t),
-        "Tandem: rank 1 of 5 for Chest / Tandem: you cannot use it: level 40 required"
+        "Tandem: rank 1 of 5 for Chest (no stats) / Tandem: you cannot use it: level 40 required"
             .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: unusable line is red", colour(t.lines[2]), "1,0.25,0.25")
     ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
@@ -4742,10 +4865,10 @@ do
     ctx.equipped[16] = "|Hitem:778:|h"
     ctx.equipped[17] = "|Hitem:779:|h"
     local line = ctx.hover({ id = 7 }).lines[1].text
-    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%)$") ~= nil, true)
+    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%) %(no stats%)$") ~= nil, true)
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:779:|h", "|Hitem:7:|h"
     line = ctx.hover({ id = 7 }).lines[1].text
-    check("tooltip hands: equipped in the off hand", line:match("%(equipped%)$") ~= nil, true)
+    check("tooltip hands: equipped in the off hand", line:match("%(equipped%) %(no stats%)$") ~= nil, true)
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:778:|h", "|Hitem:779:|h"
     ctx.class, ctx.className = "PALADIN", "Paladin"
     line = ctx.hover({ id = 7 }).lines[1].text
@@ -4783,11 +4906,11 @@ do
     check("tooltip memo: still one walk", counts(), "1/1")
     ctx.addon.Store.AddItem(50, 60, 30, 4, "INVTYPE_CHEST", 4, 4)
     check("tooltip memo: AddItem invalidates it", ctx.text(2),
-        "Tandem: rank 5 of 6 for Chest (equipped) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 5 of 6 for Chest (equipped) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
     check("tooltip memo: AddItem walks again", counts(), "2/2")
     ctx.addon.Store.AddLoot(2, "c", 448, 1429)
     check("tooltip memo: AddLoot invalidates it", ctx.text(2),
-        "Tandem: rank 5 of 6 for Chest (equipped)"
+        "Tandem: rank 5 of 6 for Chest (equipped) (no stats)"
             .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill) (+1 more)")
     check("tooltip memo: AddLoot walks again", counts(), "3/3")
     ctx.level = 41
@@ -4798,11 +4921,12 @@ do
 end
 
 for locale, want in pairs({
-    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
+    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) (no stats)"
+                 .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
              "Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)",
              "Tandem: you cannot use it: level 40 required", "Tandem: your class cannot use it",
              "Tandem: deprecated item" },
-    zhTW = { "Tandem：排名第 1／5（胸部）（升級） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
+    zhTW = { "Tandem：排名第 1／5（胸部）（升級）（無屬性） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
              "Tandem：掉落自 NPC #449，Elwynn Forest（最高 50.0%）（另有 1 個來源）",
              "Tandem：你無法使用：需要等級 40", "Tandem：你的職業無法使用", "Tandem：已棄用的物品" },
 }) do
@@ -5759,7 +5883,7 @@ local function chestTips(ctx)
 end
 
 local function searchRow(i, id, hex, ilvl, level, line)
-    return ("%d. %s, ilvl %d, level %d (upgrade): %s"):format(i, built(id, hex), ilvl, level, line)
+    return ("%d. %s, ilvl %d, level %d (upgrade) (no stats): %s"):format(i, built(id, hex), ilvl, level, line)
 end
 
 do
@@ -5836,9 +5960,9 @@ do
     local out = ctx.run("gear chest +體力")
     check("zhTW gear search header", out[1], "最佳胸部（40 級Warrior，符合「+體力」）：")
     check("zhTW gear search best first", out[2],
-        ("1. %s，物品等級 30，需求等級 25（升級）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
+        ("1. %s，物品等級 30，需求等級 25（升級）（無屬性）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
     check("zhTW gear search second", out[3],
-        ("2. %s，物品等級 45，需求等級 40（升級）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
+        ("2. %s，物品等級 45，需求等級 40（升級）（無屬性）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
     check("zhTW gear search footer", out[4], "依符合的提示行上的數字排序，再依物品等級與品質")
     out = ctx.run("gear chest +法術暴擊")
     check("zhTW gear search spell crit by value", out[2]:match("^1%. .-(%d)%%。$") .. out[3]:match("^2%. .-(%d)%%。$"),
@@ -5872,9 +5996,10 @@ do
     ctx.tip(11, { "GM Robe", "+99 Stamina" })
     out = ctx.run("gear chest all +stamina")
     check("gear search with all includes sourceless items", out[2],
-        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source): +99 Stamina")
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no stats) (no known source): +99 Stamina")
     out = ctx.run("gear chest all")
-    check("gear chest all alone still ranks", out[#out], "Ranked by item level, then quality; stats are not considered")
+    check("gear chest all alone still ranks", out[#out],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     out = ctx.run("gear chest nothing")
     check("gear search no match", out[2], 'No known Chest you can use matches "nothing"')
     check("gear search no match line count", #out, 3)

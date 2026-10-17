@@ -157,7 +157,7 @@ Best known gear for level 12 Warrior:
 Head: none known
 Chest: [Tough Leather Armor], ilvl 14 (upgrade)
 ...
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 `/tandem gear <slot>` prints what you wear in that slot, then up to 10 items with their required level:
@@ -167,7 +167,7 @@ Best Chest for level 12 Warrior:
 Equipped: [Recruit's Vest], ilvl 5
 1. [Tough Leather Armor], ilvl 14, level 9 (upgrade)
 2. [Rough Leather Vest], ilvl 10, level 5 (upgrade)
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 The items and numbers are an example. Items print as item links: click one to see the game's tooltip with its icon and
@@ -197,7 +197,7 @@ use it yourself, and up to 5 places to get it:
   Corina Steele, Elwynn Forest - vendor
   Kobold Miner, Elwynn Forest - drops: 3, 4.2% per looted corpse (upper bound)
   Defias Thug, Elwynn Forest - drops: 1
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 Quest rewards read `<quest>, <map> - quest reward` and vendor items `<npc>, <map> - vendor`, with no count or
@@ -382,8 +382,15 @@ In combat the command, the button and a pin click print `Tandem: not available i
 
 ### How gear is ranked
 
-Items are sorted by item level, then by quality, then by item ID. Stats are not considered, so a caster item can rank
-high for a warrior. Each command that ranks says so on its last line.
+Items are sorted by a stat score: each stat on the item times its weight for your class and talent tree, added up.
+The tree is the one with the most talent points spent; below level 10, or while the talents cannot be read, it is the
+usual levelling tree of the class (Arms, Retribution, Beast Mastery, Combat, Shadow, Enhancement, Frost, Affliction,
+Feral Combat). So a strength item ranks above a caster item for a warrior even at a lower item level. Ties go by item
+level, then quality, then item ID. A score of 0, an item whose stats your weights ignore, still counts as scored.
+
+Stats come from your own scans first, else from the shipped data. Items whose stats were never read are listed after
+every scored item, by item level, then quality, then item ID, and marked `(no stats)`. Rescan to read them. Each command
+that ranks says so on its last line.
 
 `gear` lists, and `rank` ranks against, only items your class and level can use; the browse window does too while
 `Usable only` is ticked. An item is usable when:
@@ -400,8 +407,10 @@ high for a warrior. Each command that ranks says so on its last line.
 Marks after an item:
 
 - `(equipped)`: you wear it.
-- `(upgrade)`: its item level is above what you wear in that slot; an empty slot counts as item level 0. No mark is
-  given when the client does not reveal what you wear, and none in `offhand` while you wield a two-hand weapon.
+- `(upgrade)`: its score is above that of what you wear in that slot; when either has no stats, its item level is
+  above instead, and an empty slot counts as item level 0. No mark is given when the client does not reveal what you
+  wear, and none in `offhand` while you wield a two-hand weapon.
+- `(no stats)`: its stats have not been read, so it is ranked after the scored items.
 - `(no known source)`: no drop, quest reward or vendor entry for it (`gear ... all` and the browse window only).
 
 ### Item tooltip

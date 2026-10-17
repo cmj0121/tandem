@@ -286,7 +286,7 @@ local function gear(args)
     else
         gearOverview(all, className, level, classFile)
     end
-    print(L["Ranked by item level, then quality; stats are not considered"])
+    print(L["Ranked by stat score, then item level and quality; items marked (no stats) come last"])
 end
 
 -- Returns the item ID of a shift-clicked link among args, or of a lone number, or nil.
@@ -314,7 +314,7 @@ local function rank(args)
     local link = View.LinkOf(id)
     if r.slot then
         -- Sourced: the sources follow, so no "(no known source)" mark.
-        local row = { id = id, ilvl = ns.Advisor.Item(id)[1], sourced = true, usable = r.usable }
+        local row = { id = id, ilvl = ns.Advisor.Item(id)[1], score = r.score, sourced = true, usable = r.usable }
         print(L["%s: rank %d of %d for %s"]:format(link .. View.Marks(row, View.Equipped(r.slot)), r.rank, r.total,
             View.SlotLabel(r.slot)))
     else
@@ -332,7 +332,7 @@ local function rank(args)
         print(line)
     end
     if r.slot then
-        print(L["Ranked by item level, then quality; stats are not considered"])
+        print(L["Ranked by stat score, then item level and quality; items marked (no stats) come last"])
     end
 end
 

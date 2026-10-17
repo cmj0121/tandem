@@ -151,7 +151,7 @@ Best known gear for level 12 Warrior:
 Head: none known
 Chest: [Tough Leather Armor], ilvl 14 (upgrade)
 ...
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 `/tandem gear <slot>` 會印出你在該部位穿戴的物品，接著列出最多 10 件物品及其需求等級：
@@ -161,7 +161,7 @@ Best Chest for level 12 Warrior:
 Equipped: [Recruit's Vest], ilvl 5
 1. [Tough Leather Armor], ilvl 14, level 9 (upgrade)
 2. [Rough Leather Vest], ilvl 10, level 5 (upgrade)
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 物品與數字僅為範例；`zhTW` 用戶端會印出中文。物品以物品連結印出：點擊即可看到遊戲的提示框，包含圖示與屬性。用戶端
@@ -189,7 +189,7 @@ ranged`。不論用戶端語言，參數一律使用英文；印出的部位名�
   Corina Steele, Elwynn Forest - vendor
   Kobold Miner, Elwynn Forest - drops: 3, 4.2% per looted corpse (upper bound)
   Defias Thug, Elwynn Forest - drops: 1
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 任務獎勵顯示為 `<quest>, <map> - quest reward`，商人物品顯示為 `<npc>, <map> - vendor`，不附掉落次數或掉落率。它們
@@ -356,8 +356,13 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 ### 裝備如何排名
 
-物品依物品等級排序，其次是品質，最後是物品 ID。不考慮屬性，因此法系物品也可能在戰士的排名中名列前茅。每個會排名的
-指令都會在最後一行說明這點。
+物品依屬性分數排序：物品上的每項屬性乘以你的職業與天賦樹對它的權重後加總。天賦樹是投入最多天賦點數的那一系；
+低於 10 級或讀不到天賦時，採用該職業常見的練功天賦（武器、懲戒、野獸控制、戰鬥、暗影、增強、冰霜、痛苦、野性戰鬥）。
+因此即使物品等級較低，力量物品在戰士的排名中仍會高於法系物品。分數相同時依物品等級、再依品質、最後依物品 ID 排序。
+分數為 0（屬性全都不在你的權重中）的物品仍算有分數。
+
+屬性先取自你自己的掃描，沒有時才用隨附資料。從未讀取過屬性的物品排在所有有分數的物品之後，依物品等級、品質、物品
+ID 排序，並標示 `(no stats)`；重新掃描即可讀取。每個會排名的指令都會在最後一行說明這點。
 
 `gear` 只列出、`rank` 只拿來比較的，都是你的職業與等級能使用的物品；勾選 `Usable only` 時，瀏覽視窗也一樣。物品可使用的條件：
 
@@ -371,8 +376,9 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 物品後的標示：
 
 - `(equipped)`：你正穿戴著它。
-- `(upgrade)`：它的物品等級高於你在該部位穿戴的物品；空部位視為物品等級 0。用戶端不提供你穿戴的物品時不會標示，
-  手持雙手武器時 `offhand` 也不會標示。
+- `(upgrade)`：它的分數高於你在該部位穿戴的物品；任一方沒有屬性時改比物品等級，空部位視為物品等級 0。用戶端不
+  提供你穿戴的物品時不會標示，手持雙手武器時 `offhand` 也不會標示。
+- `(no stats)`：尚未讀取它的屬性，因此排在有分數的物品之後。
 - `(no known source)`：沒有它的掉落、任務獎勵或商人紀錄（只出現在 `gear ... all` 與瀏覽視窗）。
 
 ### 物品提示框

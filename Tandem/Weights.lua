@@ -3,7 +3,8 @@ local _, ns = ...
 -- Stat weights per class and talent tree (decision 8): built-in Classic defaults, the active tree detected from the
 -- talent points spent, and per-character overrides in TandemDB.weights["Name-Realm"] =
 -- { spec = n|nil, overrides = { [spec] = { key = w } } }. A nil spec means auto.
-local Weights = {}
+-- revision goes up with every saved spec or weight change; Advisor keys its ranking memo on it.
+local Weights = { revision = 0 }
 ns.Weights = Weights
 
 local Safe = ns.Store.Safe
@@ -205,17 +206,20 @@ function Weights.Effective(classFile, spec)
 end
 
 -- Returns the weighted sum of stats ({ key = number }) for the class and spec, or nil when stats is nil. A nil spec
--- means the active one at the player's level.
-function Weights.Score(stats, classFile, spec)
+-- means the active one at the player's level. weights, an Effective table, skips building it again for each item.
+function Weights.Score(stats, classFile, spec, weights)
     if type(stats) ~= "table" then
         return nil
     end
-    if spec == nil then
-        local level = UnitLevel and Safe(UnitLevel("player"))
-        spec = Weights.Active(classFile, level)
+    if not weights then
+        if spec == nil then
+            local level = UnitLevel and Safe(UnitLevel("player"))
+            spec = Weights.Active(classFile, level)
+        end
+        weights = Weights.Effective(classFile, spec)
     end
     local score = 0
-    for key, w in pairs(Weights.Effective(classFile, spec)) do
+    for key, w in pairs(weights) do
         local v = stats[key]
         if type(v) == "number" then
             score = score + v * w
@@ -237,6 +241,7 @@ function Weights.SetSpec(spec)
         return false
     end
     e.spec = spec
+    Weights.revision = Weights.revision + 1
     return true
 end
 
@@ -255,6 +260,7 @@ function Weights.SetOverride(key, w, classFile, level)
         e.overrides[spec] = {}
     end
     e.overrides[spec][key] = w
+    Weights.revision = Weights.revision + 1
     return true
 end
 
@@ -266,5 +272,6 @@ function Weights.Reset(classFile, level)
         return false
     end
     e.overrides[spec] = nil
+    Weights.revision = Weights.revision + 1
     return true
 end
