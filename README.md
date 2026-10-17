@@ -622,6 +622,8 @@ Everything goes into one account-wide table, `TandemDB`, saved as
 | `kills`   | Per npc ID: your character's killing blows on that npc                                                            |
 | `corpses` | Per npc ID: distinct corpses of that npc you looted                                                               |
 | `ui`      | `window`: anchor, relative point, x, y, width, height; `minimap`: button angle; `minimapHidden`: `true` if hidden |
+| `stats`   | Per item ID: stat key to value, such as `str = 5`; `{}` when read with no stats, absent when not read yet         |
+| `weights` | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec             |
 
 - Items that exist but cannot be equipped are counted in `scan.nonEquippable`, not stored.
 - `scan.lastRun` holds the last run's start time, ID range, rate, elapsed seconds and the counts the summary prints.
@@ -639,9 +641,15 @@ Everything goes into one account-wide table, `TandemDB`, saved as
   hidden; the angle is saved once you drag the button, the size whenever you move or resize the window, and `minimapHidden` only
   while the button is hidden. It is not counted in `Unsaved records`, and an invalid position, angle or flag is
   dropped on load. An invalid size is dropped alone, and the position is kept.
+- The stat keys are `str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block
+blockvalue`: `sp` is spell damage and healing, `heal` healing only, `dps` a weapon's damage per second.
+  `statsVersion` is the version of the reader the saved stats were read with. On load, an unknown stat key or a value
+  that is not a number is dropped alone, as is an invalid `spec` or override; an item's or character's entry that is
+  not a table is dropped.
 
-`TandemDB.schemaVersion` is `3`. Saved data from schema 2 is migrated on load, gaining an empty `quests`. Saved data
-from a newer schema is kept as it is, and nothing is recorded until the addon is updated.
+`TandemDB.schemaVersion` is `4`. Saved data from schema 2 or 3 is migrated on load: schema 2 gains an empty `quests`,
+and both gain empty `stats` and `weights`. Saved data from a newer schema is kept as it is, and nothing is recorded
+until the addon is updated.
 
 The client writes `Tandem.lua` only on logout or `/reload`. A crash or a forced quit loses everything collected since
 the last save; `/tandem count` shows how many records are waiting. `/reload` after a long scan.

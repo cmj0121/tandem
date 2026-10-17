@@ -573,6 +573,8 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 | `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
 | `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
 | `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
+| `stats`   | 每個物品 ID：屬性鍵對應數值，例如 `str = 5`；讀過但沒有屬性時為 `{}`，尚未讀取時不存在                |
+| `weights` | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`      |
 
 - 存在但不可裝備的物品只計入 `scan.nonEquippable`，不會儲存。
 - `scan.lastRun` 保存上次掃描的開始時間、ID 範圍、速率、經過秒數，以及摘要印出的各項計數。
@@ -587,8 +589,12 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
   或調整大小時儲存，`minimapHidden` 只在按鈕隱藏時存在。它不計入 `Unsaved records`，無效的位置、角度或旗標會在載入時
   捨棄。無效的大小只會單獨捨棄，位置仍會保留。
 
-`TandemDB.schemaVersion` 為 `3`。schema 2 的存檔資料會在載入時遷移，並新增空的 `quests`。較新 schema 的存檔資料會
-原樣保留，在 addon 更新之前不會記錄任何資料。
+- 屬性鍵為 `str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block
+blockvalue`：`sp` 為法術傷害與治療，`heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的
+  版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
+
+`TandemDB.schemaVersion` 為 `4`。schema 2 或 3 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，兩者都會新增
+空的 `stats` 與 `weights`。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會記錄任何資料。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。當機或強制結束會遺失上次存檔後收集的所有資料；`/tandem count`
 會顯示有多少筆紀錄尚未儲存。長時間掃描後請執行 `/reload`。

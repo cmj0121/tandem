@@ -143,23 +143,24 @@ local function loadWithDB(db, locale, opts)
 end
 
 local function isCurrent(db)
-    return type(db) == "table" and db.schemaVersion == 3 and type(db.items) == "table"
+    return type(db) == "table" and db.schemaVersion == 4 and type(db.items) == "table"
         and type(db.scan) == "table" and db.scan.cursor == 1 and db.scan.nonEquippable == 0
         and type(db.scan.blocks) == "table" and type(db.npcs) == "table" and type(db.quests) == "table"
         and type(db.loot) == "table"
         and type(db.kills) == "table" and type(db.corpses) == "table"
+        and type(db.stats) == "table" and type(db.weights) == "table"
 end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v3 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v4 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
 end
 
 do
     local _, printed, env = loadWithDB("garbage")
-    check("garbage db becomes a fresh v3 table", isCurrent(env.TandemDB), true)
+    check("garbage db becomes a fresh v4 table", isCurrent(env.TandemDB), true)
     check("garbage db prints a reset line", printed[2], "Tandem: saved data was unreadable and has been reset")
 end
 
@@ -183,7 +184,7 @@ do
         unknownTop = true,
     })
     local db = env.TandemDB
-    check("old db is migrated to v3", db.schemaVersion, 3)
+    check("old db is migrated to v4", db.schemaVersion, 4)
     check("old db keeps a valid item", db.items[25] and db.items[25][4], "INVTYPE_HEAD")
     check("old db strips extra item fields", db.items[25] and #db.items[25], 6)
     check("old db drops an invalid item", db.items[26], nil)
@@ -213,29 +214,29 @@ do
     local _, printed, env = loadWithDB({ schemaVersion = 1, items = { [7] = { 1, 1, 1, "INVTYPE_FEET", 4, 2 } } })
     check("v1 db keeps its items", env.TandemDB.items[7][4], "INVTYPE_FEET")
     check("v1 db fills missing sections", isCurrent(env.TandemDB), true)
-    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 3")
+    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 4")
     check("v1 db prints nothing else", #printed, 2)
 end
 
 for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
     local _, printed, env = loadWithDB({ schemaVersion = bad })
-    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 3)
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 4)
     check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
     local _, printed = loadWithDB({ schemaVersion = 1 }, "zhTW")
-    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 3")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 4")
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 3, kills = { [448] = 2 }, corpses = { [448] = 5 } })
-    check("v3 db keeps kills", env.TandemDB.kills[448], 2)
-    check("v3 db keeps corpses", env.TandemDB.corpses[448], 5)
-    check("valid v3 db prints only the load line", #printed, 1)
+    local _, printed, env = loadWithDB({ schemaVersion = 4, kills = { [448] = 2 }, corpses = { [448] = 5 } })
+    check("v4 db keeps kills", env.TandemDB.kills[448], 2)
+    check("v4 db keeps corpses", env.TandemDB.corpses[448], 5)
+    check("valid v4 db prints only the load line", #printed, 1)
 end
 
--- Schema 3: a v2 db migrates losslessly (decision 8).
+-- Schema 3: a v2 db migrates losslessly (decision 8); schema 4: so does a v3 db (stage 7, decision 6).
 do
     local v2 = {
         schemaVersion = 2,
@@ -284,18 +285,136 @@ do
     local want = deep(v2)
     local _, printed, env = loadWithDB(v2)
     local db = env.TandemDB
-    check("v2 db migrates to v3", db.schemaVersion, 3)
+    check("v2 db migrates to v4", db.schemaVersion, 4)
     check("v2 db gains an empty quests table", type(db.quests) == "table" and next(db.quests) == nil, true)
-    db.schemaVersion, db.quests, want.schemaVersion = nil, nil, nil
+    db.schemaVersion, db.quests, db.stats, db.weights, want.schemaVersion = nil, nil, nil, nil, nil
     check("v2 db keeps every other field", same(db, want), true)
     check("v2 db prints only the upgrade line", printed[2] .. " #" .. #printed,
-        "Tandem: saved data upgraded from schema 2 to 3 #2")
+        "Tandem: saved data upgraded from schema 2 to 4 #2")
+
+    local v3 = deep(v2)
+    v3.schemaVersion, v3.quests = 3, { [176] = "Wanted: Hogger" }
+    want = deep(v3)
+    _, printed, env = loadWithDB(v3)
+    db = env.TandemDB
+    check("v3 db migrates to v4", db.schemaVersion, 4)
+    check("v3 db gains an empty stats table", type(db.stats) == "table" and next(db.stats) == nil, true)
+    check("v3 db gains an empty weights table", type(db.weights) == "table" and next(db.weights) == nil, true)
+    check("v3 db has no stats version", db.statsVersion, nil)
+    db.schemaVersion, db.stats, db.weights, want.schemaVersion = nil, nil, nil, nil
+    check("v3 db keeps every other field", same(db, want), true)
+    check("v3 db prints only the upgrade line", printed[2] .. " #" .. #printed,
+        "Tandem: saved data upgraded from schema 3 to 4 #2")
+
+    v3 = deep(v2)
+    v3.schemaVersion, v3.quests, v3.stats = 3, { [176] = "Wanted: Hogger" }, "bad"
+    want = deep(v3)
+    _, printed, env = loadWithDB(v3)
+    db = env.TandemDB
+    check("v3 db with a bad stats field gets an empty one", type(db.stats) == "table" and next(db.stats) == nil,
+        true)
+    db.schemaVersion, db.stats, db.weights, want.schemaVersion, want.stats = nil, nil, nil, nil, nil
+    check("v3 db with a bad stats field keeps its records", same(db, want), true)
+    check("v3 db with a bad stats field counts it dropped", printed[3], "Tandem: dropped 1 invalid saved entries")
+end
+
+-- Store: item stats and weights (stage 7, decisions 6-8).
+do
+    local addon, printed, env = loadWithDB({
+        schemaVersion = 4,
+        stats = {
+            [10] = { str = 5, sta = 3, dps = 12.5 },
+            [11] = {},
+            [12] = { int = 4, shadow = 9, spi = "2", hit = 0 / 0, crit = 1 },
+            [13] = "bad",
+            [0] = { str = 1 },
+            [14] = { spi = -5 },
+        },
+        statsVersion = 2,
+        weights = {
+            ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5, sta = 0 }, [1] = { int = 1 } } },
+            ["Jaina-Realm"] = { spec = 4, overrides = { [1] = { int = 1, fire = 2, sp = "x" }, [5] = { str = 1 },
+                                                        [2] = "bad" } },
+            ["Arthas-Realm"] = { overrides = "bad" },
+            ["Uther-Realm"] = "bad",
+            [""] = { spec = 1 },
+            [7] = { spec = 1 },
+        },
+    })
+    local db, Store = env.TandemDB, addon.Store
+    check("stats: a valid record is kept", db.stats[10].str .. " " .. db.stats[10].sta .. " " .. db.stats[10].dps,
+        "5 3 12.5")
+    check("stats: an empty record is kept as parsed with none", type(db.stats[11]) == "table"
+        and next(db.stats[11]) == nil, true)
+    local r = db.stats[12]
+    check("stats: valid keys survive next to bad ones", r and r.int .. " " .. r.crit, "4 1")
+    check("stats: an unknown key is dropped", r and r.shadow, nil)
+    check("stats: a string value is dropped", r and r.spi, nil)
+    check("stats: a NaN value is dropped", r and r.hit, nil)
+    check("stats: a non-table record is dropped alone", db.stats[13], nil)
+    check("stats: item 0 is dropped", db.stats[0], nil)
+    check("stats: a negative value is kept", db.stats[14].spi, -5)
+    check("stats: statsVersion is kept", db.statsVersion, 2)
+    local w = db.weights["Thrall-Realm"]
+    check("weights: a valid entry keeps its spec", w and w.spec, 2)
+    check("weights: a valid entry keeps its overrides", w and w.overrides[2].str .. " " .. w.overrides[2].sta
+        .. " " .. w.overrides[1].int, "2.5 0 1")
+    local j = db.weights["Jaina-Realm"]
+    check("weights: spec 4 is dropped, the entry kept", j and tostring(j.spec), "nil")
+    check("weights: a valid override key survives", j and j.overrides[1].int, 1)
+    check("weights: bad override keys are dropped", j and tostring(j.overrides[1].fire) .. tostring(j.overrides[1].sp),
+        "nilnil")
+    check("weights: an override for spec 5 is dropped", j and j.overrides[5], nil)
+    check("weights: a non-table override is dropped", j and j.overrides[2], nil)
+    local a = db.weights["Arthas-Realm"]
+    check("weights: bad overrides become empty", a and type(a.overrides) == "table" and next(a.overrides) == nil,
+        true)
+    check("weights: a non-table entry is dropped", db.weights["Uther-Realm"], nil)
+    check("weights: an empty name is dropped", db.weights[""], nil)
+    check("weights: a number name is dropped", db.weights[7], nil)
+    -- stats: shadow, spi, hit, 13, 0; weights: Jaina spec, fire, sp, [5], [2]; Arthas overrides; Uther, "", 7
+    check("stats: invalid entries are counted", printed[2], "Tandem: dropped 14 invalid saved entries")
+
+    check("Stats reads a record", Store.Stats(10).str, 5)
+    check("Stats is nil for an unparsed item", Store.Stats(99), nil)
+    check("StatsVersion reads the version", Store.StatsVersion(), 2)
+    local before = Store.revision
+    check("SetStats records stats", Store.SetStats(99, { int = 7, sp = 12 }), true)
+    check("SetStats writes TandemDB", db.stats[99].int .. " " .. db.stats[99].sp, "7 12")
+    check("SetStats is a record change", Store.revision, before + 1)
+    check("SetStats copies the table", Store.Stats(99) ~= nil and Store.SetStats(99, { int = 7, sp = 12 }), false)
+    check("SetStats replaces changed stats", Store.SetStats(99, { int = 7 }), true)
+    check("SetStats drops keys no longer there", db.stats[99].sp, nil)
+    check("SetStats records parsed with none", Store.SetStats(98, {}), true)
+    check("SetStats skips an unchanged empty record", Store.SetStats(98, {}), false)
+    check("SetStats replaces an empty record", Store.SetStats(98, { str = 1 }), true)
+    before = Store.unsaved
+    for name, args in pairs({
+        ["an unknown key"] = { 97, { int = 1, shadow = 2 } }, ["a string value"] = { 97, { int = "1" } },
+        ["a NaN value"] = { 97, { int = 0 / 0 } }, ["item 0"] = { 0, { int = 1 } },
+        ["a non-table"] = { 97, "int" }, ["nil stats"] = { 97 },
+    }) do
+        check("SetStats rejects " .. name, Store.SetStats(args[1], args[2]), false)
+    end
+    check("SetStats rejections write nothing", tostring(db.stats[97]) .. " " .. Store.unsaved, "nil " .. before)
+    check("SetStatsVersion sets the version", Store.SetStatsVersion(3), true)
+    check("SetStatsVersion skips an unchanged version", Store.SetStatsVersion(3), false)
+    check("SetStatsVersion rejects 0", Store.SetStatsVersion(0), false)
+    check("SetStatsVersion is not a record", Store.unsaved, before)
+    check("STAT_KEYS lists 21 keys", #Store.STAT_KEYS, 21)
+end
+
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 4, statsVersion = 1.5, weights = "bad" })
+    check("stats: a fractional statsVersion is dropped", env.TandemDB.statsVersion, nil)
+    check("weights: a non-table weights becomes empty", type(env.TandemDB.weights) == "table", true)
+    check("stats: a bad version and weights count as dropped", printed[2], "Tandem: dropped 2 invalid saved entries")
 end
 
 -- Store: quest and vendor sources (stage 5, unit 1).
 do
     local addon, printed, env = loadWithDB({
-        schemaVersion = 3,
+        schemaVersion = 4,
         quests = { [176] = "Wanted: Hogger", [0] = "zero", [177] = "", [178] = 5 },
         loot = {
             a = { item = 1, kind = "q", id = 176, map = 1429, count = 3, coords = { { 1, 2 }, { 3, 4 } },
@@ -368,12 +487,12 @@ do
 end
 
 do
-    local newer = { schemaVersion = 4, items = "new format" }
+    local newer = { schemaVersion = 5, items = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items, "new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 4; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 5; recording is off until the addon is updated")
     check("newer db blocks AddItem", addon.Store.AddItem(1, 1, 1, 1, "INVTYPE_HEAD", 4, 1), false)
     check("newer db blocks AddLoot", addon.Store.AddLoot(1, "c", 1, 1), false)
     check("newer db blocks SetNpcName", addon.Store.SetNpcName(1, "x"), false)
@@ -381,6 +500,10 @@ do
     check("newer db blocks SetQuestName", addon.Store.SetQuestName(1, "x"), false)
     check("newer db blocks AddKill", addon.Store.AddKill(1), false)
     check("newer db blocks AddCorpse", addon.Store.AddCorpse(1), false)
+    check("newer db blocks SetStats", addon.Store.SetStats(1, { str = 1 }), false)
+    check("newer db blocks SetStatsVersion", addon.Store.SetStatsVersion(1), false)
+    check("newer db reads no stats", addon.Store.Stats(1), nil)
+    check("newer db reads no stats version", addon.Store.StatsVersion(), nil)
     check("newer db Counts kills does not fail", addon.Store.Counts().kills, 0)
     check("newer db Counts does not fail", addon.Store.Counts().items, 0)
     check("newer db is read-only", addon.Store.Counts().readOnly, true)
@@ -613,7 +736,7 @@ do
 end
 
 do
-    local addon, printed = loadWithDB({ schemaVersion = 4, items = "new format" })
+    local addon, printed = loadWithDB({ schemaVersion = 5, items = "new format" })
     local out = run(addon, printed, "count")
     check("count on a newer db does not fail", out[1], "Tandem: 0 known items, ? non-equippable")
     check("count on a newer db says read-only", out[#out],
@@ -877,7 +1000,7 @@ do
 end
 
 do
-    local ctx = loadScanner({}, { schemaVersion = 4, scan = { cursor = 9 } })
+    local ctx = loadScanner({}, { schemaVersion = 5, scan = { cursor = 9 } })
     local mark = #ctx.printed
     ctx.Scanner.Start({ rate = 10, cap = 5 })
     check("read-only start is refused", ctx.since(mark)[1], "Recording is off: saved data uses a newer schema")
@@ -1143,7 +1266,7 @@ do
 end
 
 do
-    local ctx = loadLoot({ schemaVersion = 4, loot = {} })
+    local ctx = loadLoot({ schemaVersion = 5, loot = {} })
     ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
     ctx.loot()
     check("loot: read-only db is not written", next(ctx.env.TandemDB.loot), nil)
@@ -1286,7 +1409,7 @@ local MERCHANT = "Creature-0-1-0-12-1250-0000CAFE"
 -- (ctx.merchant = {guid, name, items = {links}}) and items ({[id] = {equipLoc, loaded = bool}}); the player is
 -- Alliance at map 1429, 0.4123/0.6789.
 local function loadSources(items)
-    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 3 })
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 4 })
     local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
                   faction = "Alliance", quest = { id = 0, choices = {}, rewards = {} },
                   merchant = { items = {} }, requested = {} }
@@ -1543,7 +1666,7 @@ local function loadKills(opts)
             return spread(ctx.cleu)
         end
     end
-    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 3 }, "enUS",
+    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 4 }, "enUS",
         { env = env, blockCLEU = opts.blockCLEU })
     ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = addon, printed, e, fire, frame
     -- Fires one combat log event: timestamp, sub, hideCaster, src, srcName, srcFlags, srcRaidFlags, dst.
@@ -1653,7 +1776,7 @@ do
 end
 
 do
-    local ctx = loadKills({ db = { schemaVersion = 4 } })
+    local ctx = loadKills({ db = { schemaVersion = 5 } })
     ctx.log("PARTY_KILL", PLAYER, HOGGER)
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("kills: read-only db is not written", ctx.env.TandemDB.kills, nil)
@@ -1691,7 +1814,7 @@ local function gearData()
             shippedItems[id] = r
         end
     end
-    local db = { schemaVersion = 3, items = ownItems, loot = {
+    local db = { schemaVersion = 4, items = ownItems, loot = {
         ["1:c:448:1429"] = { item = 1, kind = "c", id = 448, map = 1429, count = 1 },
         ["3:o:77:1429"] = { item = 3, kind = "o", id = 77, map = 1429, count = 1 },
     } }
@@ -1726,7 +1849,7 @@ do
     for i, loc in ipairs(LOCS) do
         items[100 + i], idOf[loc] = { 10, 1, 1, loc, 4, 1 }, 100 + i
     end
-    local A = loadAdvisor({ schemaVersion = 3, items = items })
+    local A = loadAdvisor({ schemaVersion = 4, items = items })
     local function slots(equipLoc, class, level)
         local id, out = idOf[equipLoc], {}
         for _, slot in ipairs(A.SLOTS) do
@@ -1933,7 +2056,7 @@ for name, shipped in pairs({
 end
 
 do
-    local A = loadAdvisor({ schemaVersion = 4, items = "new format", loot = 4 }, select(2, gearData()))
+    local A = loadAdvisor({ schemaVersion = 5, items = "new format", loot = 4 }, select(2, gearData()))
     check("advisor: newer own db is ignored", ids(A.Best("chest", "WARRIOR", 40)), "4,2,12")
     check("advisor: newer own db Sources", #A.Sources(2), 1)
 end
@@ -1948,7 +2071,7 @@ end
 -- Sources: own + shipped merged by max (decision 13), rate per npc (decision 16).
 do
     local db = {
-        schemaVersion = 3,
+        schemaVersion = 4,
         npcs = { [448] = "Hogger" },
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 3, coords = { { 1, 1 } } },
@@ -2008,7 +2131,7 @@ end
 
 do
     local db = {
-        schemaVersion = 3,
+        schemaVersion = 4,
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 1 },
             ["4:c:449:1429"] = { item = 4, kind = "c", id = 449, map = 1429, count = 1 },
@@ -2349,7 +2472,7 @@ do
 end
 
 do
-    local ctx = loadGear("enUS", { schemaVersion = 4, items = "new format" }, nil)
+    local ctx = loadGear("enUS", { schemaVersion = 5, items = "new format" }, nil)
     local out = ctx.run("export")
     check("export on a newer db", out[1],
         "Tandem export: 0 loot entries, 0 npc names, 0 items, 0 kills, 0 looted corpses")
@@ -2461,7 +2584,7 @@ end
 
 do
     local ui = { window = { point = "TOPLEFT", x = 120.5, y = -40 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
     local w = env.TandemDB.ui.window
     check("ui: a valid position is kept", w.point .. " " .. w.x .. " " .. w.y, "TOPLEFT 120.5 -40")
     check("ui: a valid position prints only the load line", #printed, 1)
@@ -2490,7 +2613,7 @@ do
 end
 
 do
-    local _, _, env = loadWithDB({ schemaVersion = 3 })
+    local _, _, env = loadWithDB({ schemaVersion = 4 })
     check("ui: a fresh db has no position", env.TandemDB.ui, nil)
     check("ui: a db without ui is current", isCurrent(env.TandemDB), true)
 end
@@ -2502,27 +2625,27 @@ for name, ui in pairs({
     ["NaN y"] = { window = { point = "TOP", x = 0, y = 0 / 0 } }, ["missing y"] = { window = { point = "TOP", x = 0 } },
     ["unknown relativePoint"] = { window = { point = "TOP", relativePoint = "UP", x = 0, y = 0 } },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
     check("ui: drops a position with " .. name, env.TandemDB.ui, nil)
     check("ui: counts a position with " .. name .. " as dropped", printed[2], "Tandem: dropped 1 invalid saved entries")
     check("ui: UIPosition after dropping " .. name, addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = 1, y = 2, extra = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { point = "TOP", x = 1, y = 2, extra = true } })
     check("ui: keys outside window and minimap are not kept", env.TandemDB.ui, nil)
     check("ui: keys outside window and minimap are not counted", #printed, 1)
     check("ui: no position from top-level keys", addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = 5, y = 6 } } })
+    local addon = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = 5, y = 6 } } })
     check("ui: a newer db still gives a valid position", addon.Store.UIPosition().y, 6)
     check("ui: a newer db is not written", addon.Store.SetUIPosition("TOP", "TOP", 1, 1), false)
     check("ui: a newer db keeps its position", addon.Store.db.ui.window.x, 5)
-    addon = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = "5", y = 6 } } })
+    addon = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = "5", y = 6 } } })
     check("ui: a newer db with a bad position gives none", addon.Store.UIPosition(), nil)
-    addon = loadWithDB({ schemaVersion = 4, ui = "junk" })
+    addon = loadWithDB({ schemaVersion = 5, ui = "junk" })
     check("ui: a newer db with a junk ui gives no position", addon.Store.UIPosition(), nil)
     check("ui: a newer db with a junk ui gives no angle", addon.Store.MinimapAngle(), nil)
 end
@@ -3082,7 +3205,7 @@ end
 -- Store: minimap button angle in TandemDB.ui (unit 7).
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3,
+    local addon, printed, env = loadWithDB({ schemaVersion = 4,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 90.5 } })
     check("minimap: a valid angle is kept", env.TandemDB.ui.minimap, 90.5)
     check("minimap: kept with the position", addon.Store.UIPosition().point, "TOP")
@@ -3102,11 +3225,11 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimap = 200 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimap = 200 } })
     check("minimap: an angle without a position is kept", env.TandemDB.ui.minimap, 200)
     check("minimap: no position from an angle alone", addon.Store.UIPosition(), nil)
     check("minimap: an angle alone prints only the load line", #printed, 1)
-    local fresh = loadWithDB({ schemaVersion = 3 })
+    local fresh = loadWithDB({ schemaVersion = 4 })
     check("minimap: a fresh db has no angle", fresh.Store.MinimapAngle(), nil)
     check("minimap: SetMinimapAngle on a fresh db", fresh.Store.SetMinimapAngle(45) and fresh.Store.db.ui.minimap, 45)
     check("minimap: no position from SetMinimapAngle", fresh.Store.UIPosition(), nil)
@@ -3118,7 +3241,7 @@ for name, case in pairs({
     ["NaN"] = { ui = { minimap = 0 / 0 }, dropped = 1 },
     ["a bad position too"] = { ui = { window = { point = "UP", x = 0, y = 0 }, minimap = -5 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = case.ui })
     check("minimap: drops an angle of " .. name, env.TandemDB.ui, nil)
     check("minimap: counts an angle of " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3126,7 +3249,7 @@ for name, case in pairs({
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3,
+    local addon, printed, env = loadWithDB({ schemaVersion = 4,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 400 } })
     local ui = env.TandemDB.ui
     check("minimap: a bad angle keeps a good position", ui.window.point .. " " .. tostring(ui.minimap), "TOP nil")
@@ -3135,10 +3258,10 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 4, ui = { minimap = 10 } })
+    local addon = loadWithDB({ schemaVersion = 5, ui = { minimap = 10 } })
     check("minimap: a newer db still gives its angle", addon.Store.MinimapAngle(), 10)
     check("minimap: a newer db is not written", addon.Store.SetMinimapAngle(20), false)
-    addon = loadWithDB({ schemaVersion = 4, ui = { minimap = "10" } })
+    addon = loadWithDB({ schemaVersion = 5, ui = { minimap = "10" } })
     check("minimap: a newer db with a bad angle gives none", addon.Store.MinimapAngle(), nil)
 end
 
@@ -3415,7 +3538,7 @@ end
 
 do
     local db, shipped = gearData()
-    db.schemaVersion = 4
+    db.schemaVersion = 5
     db.ui = { minimap = 10 }
     local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
     ctx.fire("PLAYER_LOGIN")
@@ -3427,7 +3550,7 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = true } })
     check("minimapHidden: kept alone", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: prints only the load line", #printed, 1)
     check("minimapHidden: MinimapHidden", addon.Store.MinimapHidden(), true)
@@ -3445,7 +3568,7 @@ do
     end
     check("minimapHidden: a rejected value keeps the old one", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: not a record", addon.Store.unsaved, 0)
-    local fresh = loadWithDB({ schemaVersion = 3 })
+    local fresh = loadWithDB({ schemaVersion = 4 })
     check("minimapHidden: a fresh db shows the button", fresh.Store.MinimapHidden(), false)
 end
 
@@ -3455,7 +3578,7 @@ for name, case in pairs({
     ["a number"] = { ui = { minimapHidden = 1 }, dropped = 1 },
     ["a bad angle too"] = { ui = { minimapHidden = {}, minimap = 400 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = case.ui })
     check("minimapHidden: drops " .. name, env.TandemDB.ui, nil)
     check("minimapHidden: counts " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3463,14 +3586,14 @@ for name, case in pairs({
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimap = 45, minimapHidden = "no" } })
+    local _, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimap = 45, minimapHidden = "no" } })
     check("minimapHidden: a bad flag keeps a good angle", env.TandemDB.ui.minimap .. " "
         .. tostring(env.TandemDB.ui.minimapHidden), "45 nil")
     check("minimapHidden: a bad flag alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
-    local newer = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = true } })
+    local newer = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = true } })
     check("minimapHidden: a newer db still gives its flag", newer.Store.MinimapHidden(), true)
     check("minimapHidden: a newer db is not written", newer.Store.SetMinimapHidden(false), false)
-    newer = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = "yes" } })
+    newer = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = "yes" } })
     check("minimapHidden: a newer db with a bad flag shows the button", newer.Store.MinimapHidden(), false)
 end
 
@@ -3673,7 +3796,7 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 3, items = { [5] = GEAR[5], [7] = GEAR[7] } })
+    local addon = loadWithDB({ schemaVersion = 4, items = { [5] = GEAR[5], [7] = GEAR[7] } })
     check("ItemCount: counted on load", addon.Store.ItemCount(), 2)
     addon.Store.AddItem(9, 1, 1, 1, "INVTYPE_BODY", 4, 0)
     check("ItemCount: AddItem counts", addon.Store.ItemCount(), 3)
@@ -3682,7 +3805,7 @@ do
     check("ItemCount: a repeated or invalid item is not counted", addon.Store.ItemCount(), 3)
     check("ItemCount: matches Counts", addon.Store.Counts().items, 3)
     check("ScanCursor: a fresh scan starts at 1", addon.Store.ScanCursor(), 1)
-    addon = loadWithDB({ schemaVersion = 4, items = "junk", scan = { cursor = 2.5 } })
+    addon = loadWithDB({ schemaVersion = 5, items = "junk", scan = { cursor = 2.5 } })
     check("ItemCount: a newer db with junk items", addon.Store.ItemCount(), 0)
     check("ScanCursor: a fractional cursor gives none", addon.Store.ScanCursor(), nil)
 end
@@ -3690,7 +3813,7 @@ end
 for name, scan in pairs({ ["no scan table"] = false, ["no cursor"] = {}, ["a fractional cursor"] = { cursor = 1.5 },
                           ["a string cursor"] = { cursor = "7" } }) do
     local db, shipped = gearData()
-    db.schemaVersion = 4
+    db.schemaVersion = 5
     db.scan = scan or nil
     local ctx = loadBrowse("enUS", db, shipped)
     ctx.run("browse")
@@ -3831,7 +3954,7 @@ do
         [3] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, true }, [4] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 2 },
         [5] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1, "extra" },
     }
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, items = items })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, items = items })
     local db = env.TandemDB
     check("deprecated: a 7th field of 1 is kept", db.items[1][7], 1)
     check("deprecated: a string 7th field is stripped", #db.items[2], 6)
@@ -3839,7 +3962,7 @@ do
     check("deprecated: another number is stripped", #db.items[4], 6)
     check("deprecated: fields after the flag are stripped", #db.items[5] .. " " .. db.items[5][7], "7 1")
     check("deprecated: a stripped flag is not a drop", #printed, 1)
-    check("deprecated: the schema stays 3", db.schemaVersion, 3)
+    check("deprecated: the schema stays 4", db.schemaVersion, 4)
     check("deprecated: Advisor reads a flagged record", addon.Advisor.Item(1) ~= nil, true)
     check("deprecated: IsDeprecated of a flagged record", addon.Advisor.IsDeprecated(1), true)
     check("deprecated: IsDeprecated of a stripped record", addon.Advisor.IsDeprecated(2), false)
@@ -3858,7 +3981,7 @@ do
 end
 
 do
-    local addon, _, env = loadWithDB({ schemaVersion = 3 })
+    local addon, _, env = loadWithDB({ schemaVersion = 4 })
     local Store = addon.Store
     check("revision: a fresh load starts at 0", Store.revision, 0)
     Store.AddItem(1, 10, 5, 2, "INVTYPE_HEAD", 4, 1, true)
@@ -3883,7 +4006,7 @@ do
     Store.SetUIPosition("TOP", "TOP", 1, 2)
     Store.SetMinimapAngle(10)
     check("revision: ui settings are not records", Store.revision, rev + 4)
-    Store.Load({ schemaVersion = 3 })
+    Store.Load({ schemaVersion = 4 })
     check("revision: Load resets it", Store.revision, 0)
 end
 
@@ -3911,7 +4034,7 @@ do
     check("MarkDeprecated: an invalid id", Store.MarkDeprecated(0, addon.Advisor.Item(4)), false)
     check("MarkDeprecated: nothing stored for refusals", env.TandemDB.items[999], nil)
 
-    local newer = loadWithDB({ schemaVersion = 4, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
+    local newer = loadWithDB({ schemaVersion = 5, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
     check("MarkDeprecated: a newer db is not written", newer.MarkDeprecated(1, { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }),
         false)
     check("MarkDeprecated: a newer db keeps its record", newer.db.items[1][7], nil)
@@ -4021,7 +4144,7 @@ do
         A.Rank(2, "PALADIN", 40)
         return calls > 2
     end)(), true)
-    Store.Load({ schemaVersion = 3 })
+    Store.Load({ schemaVersion = 4 })
     check("rank memo: a new db walks again", A.Rank(2, "WARRIOR", 40).total, 3)
 end
 
@@ -4057,7 +4180,7 @@ end
 
 do
     local ui = { window = { point = "TOP", x = 1, y = 2, width = 700, height = 600.5 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
     local Store = addon.Store
     check("ui size: a valid size is kept", env.TandemDB.ui.window.width .. "x" .. env.TandemDB.ui.window.height,
         "700x600.5")
@@ -4081,12 +4204,12 @@ do
 end
 
 do
-    local Store = loadWithDB({ schemaVersion = 3 }).Store
+    local Store = loadWithDB({ schemaVersion = 4 }).Store
     check("ui size: SetUISize without a position", Store.SetUISize(800, 600), false)
     check("ui size: nothing saved without a position", Store.UISize(), nil)
     Store.SetUIPosition("TOP", "TOP", 0, 0)
     check("ui size: no size until one is saved", Store.UISize(), nil)
-    local newer = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
+    local newer = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
                                                                     height = 700 } } }).Store
     check("ui size: a newer db still gives a valid size", table.concat({ newer.UISize() }, "x"), "900x700")
     check("ui size: a newer db is not written", newer.SetUISize(800, 600), false)
@@ -4099,7 +4222,7 @@ for name, window in pairs({
     ["string height"] = { point = "TOP", x = 1, y = 2, width = 700, height = "700" },
     ["far width"] = { point = "TOP", x = 1, y = 2, width = 10001, height = 700 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { window = window } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { window = window } })
     local w = env.TandemDB.ui and env.TandemDB.ui.window
     check("ui size: " .. name .. " keeps the position", w and w.point .. " " .. w.x .. " " .. w.y, "TOP 1 2")
     check("ui size: " .. name .. " is stripped", tostring(w and w.width) .. " " .. tostring(w and w.height), "nil nil")
@@ -4324,7 +4447,7 @@ do
     check("browse layout: the list stretches with the window", point(win.box) .. " / " .. point(win.box, 2),
         "TOPLEFT TandemBrowseFrame TOPLEFT 12 -138 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
 
-    local again = loadBrowse("enUS", { schemaVersion = 3, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
+    local again = loadBrowse("enUS", { schemaVersion = 4, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
     again.run("browse")
     check("browse size: restores the saved size", again.win().width .. "x" .. again.win().height, "800x700")
 end
@@ -4700,7 +4823,7 @@ end
 -- quest 101 (no factions), vendor 201 (Alliance) and quest 102 (an invalid factions mask).
 local function questVendorData()
     local db = {
-        schemaVersion = 3,
+        schemaVersion = 4,
         npcs = { [200] = "Vendor Bob", [448] = "Hogger" },
         quests = { [100] = "Own Quest" },
         loot = {
@@ -4754,7 +4877,7 @@ do
     A = loadAdvisor(nil, { loot = { { 4, "v", 201, 1429, 2 } } })
     check("q/v sources: shipped data without factions", sourceRows(A.Sources(4, 2)), "v201:2:nil:nil:nil")
 
-    local own = { schemaVersion = 3, loot = {
+    local own = { schemaVersion = 4, loot = {
         ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, coords = { { 1, 1 } },
                              factions = 1 },
     } }
