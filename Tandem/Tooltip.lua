@@ -94,7 +94,7 @@ function Tooltip.OnItem(tooltip, data)
     end
     local r = e.rank
     if r.slot then
-        local row = { id = id, ilvl = record[1], sourced = r.sourced, usable = r.usable }
+        local row = { id = id, ilvl = record[1], score = r.score, sourced = r.sourced, usable = r.usable }
         local worn = r.offhand and View.EquippedHands() or View.Equipped(r.slot)
         addLine(tooltip, L["Tandem: rank %d of %d for %s"]:format(r.rank, r.total, View.SlotLabel(r.slot))
             .. View.Marks(row, worn), BLUE)

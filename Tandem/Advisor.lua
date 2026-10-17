@@ -195,7 +195,28 @@ function Advisor.HasSource(id)
     return isSourced(id, Advisor.SourceIndex())
 end
 
+-- Returns an item's stats { key = number }: own first, else shipped; nil when neither has parsed it.
+local function statsOf(id)
+    local s = type(Store.db) == "table" and type(Store.db.stats) == "table" and Store.Stats(id)
+    if type(s) ~= "table" then
+        s = shipped("stats")[id]
+    end
+    return type(s) == "table" and s or nil
+end
+
+-- Returns the item's weighted score for the class at the level (its active spec), or nil when it has no stats.
+function Advisor.Score(id, class, level)
+    return ns.Weights.Score(statsOf(id), class, (ns.Weights.Active(class, level)))
+end
+
+-- Decision 3: scored items first by score, then item level, quality and ID; stat-less ones after by the same.
 local function before(a, b)
+    if (a.score == nil) ~= (b.score == nil) then
+        return a.score ~= nil
+    end
+    if a.score ~= b.score then
+        return a.score > b.score
+    end
     if a.ilvl ~= b.ilvl then
         return a.ilvl > b.ilvl
     end
@@ -211,6 +232,8 @@ end
 local function list(slot, class, level, f)
     local out, done = {}, {}
     local index = f.index
+    local spec = ns.Weights.Active(class, level)
+    local weights = ns.Weights.Effective(class, spec)
     local function consider(id)
         if done[id] or type(id) ~= "number" then
             return
@@ -234,6 +257,7 @@ local function list(slot, class, level, f)
             out[#out + 1] = { id = id, slot = rowSlot, ilvl = r[1], quality = r[3], reqLevel = r[2], usable = usable,
                               reason = reason, needLevel = needLevel, sourced = sourced,
                               deprecated = isDeprecated(r) or nil,
+                              score = ns.Weights.Score(statsOf(id), class, spec, weights),
                               offhand = (not slot and alsoOffhand(r[4], class, level)) or nil }
         end
     end
@@ -253,7 +277,8 @@ local function best(slot, class, level, all, index)
 end
 
 -- Returns every known item for slot, or for all ranked slots when slot is nil, sorted best first:
--- { id, slot, ilvl, quality, reqLevel, usable, reason, needLevel, sourced, deprecated, offhand }; offhand is true in
+-- { id, slot, ilvl, quality, reqLevel, usable, reason, needLevel, sourced, deprecated, offhand, score }; score is the
+-- weighted stat sum for the class's active spec, nil for an item without stats; offhand is true in
 -- All slots for a one-hander the class can also wield in the off hand. opts.usableOnly drops rows the class or level
 -- cannot use, opts.hideDeprecated flagged items, opts.quality (a number) items of any other quality. nil for an
 -- unknown slot.
@@ -276,26 +301,30 @@ function Advisor.Best(slot, class, level, opts)
 end
 
 -- Returns where an item goes for a class at a level without walking the other items: nil for an unknown item, else
--- { slot, usable, reason, needLevel, deprecated, offhand }; slot is nil when the item has no ranked slot, offhand is
--- true for a one-hander the class can also wield in the off hand.
+-- { slot, usable, reason, needLevel, deprecated, offhand, score }; slot is nil when the item has no ranked slot,
+-- offhand is true for a one-hander the class can also wield in the off hand, score as in List.
 function Advisor.Place(id, class, level)
     local r = Advisor.Item(id)
-    return r and Advisor.PlaceRecord(r, class, level)
+    return r and Advisor.PlaceRecord(r, class, level, id)
 end
 
--- Returns Place's table for an item record { ilvl, reqLevel, quality, equipLoc, classID, subclassID }.
-function Advisor.PlaceRecord(r, class, level)
+-- Returns Place's table for an item record { ilvl, reqLevel, quality, equipLoc, classID, subclassID }; score only
+-- when the item's id is given.
+function Advisor.PlaceRecord(r, class, level, id)
     local usable, reason, needLevel = Advisor.Usable(r, class, level)
     return { slot = SLOT_OF[r[4]], usable = usable, reason = reason, needLevel = needLevel,
-             deprecated = isDeprecated(r) or nil, offhand = alsoOffhand(r[4], class, level) or nil }
+             deprecated = isDeprecated(r) or nil, offhand = alsoOffhand(r[4], class, level) or nil,
+             score = id and Advisor.Score(id, class, level) or nil }
 end
 
--- Rank's memo: the source index and the ranked list per slot, for one class:level:Store.revision over one own db
--- and one shipped table. Any record change bumps the revision; a level-up changes the key.
+-- Rank's memo: the source index and the ranked list per slot, for one class:level:spec:Store.revision:
+-- Weights.revision over one own db and one shipped table. Any record or weight change bumps a revision; a level-up
+-- or a spec switch changes the key.
 local memo = {}
 
 local function memoFor(class, level)
-    local key = class .. ":" .. level .. ":" .. ns.Store.revision
+    local key = class .. ":" .. level .. ":" .. tostring(ns.Weights.Active(class, level)) .. ":" .. ns.Store.revision
+        .. ":" .. ns.Weights.revision
     if memo.key ~= key or memo.db ~= ns.Store.db or memo.shipped ~= ns.Shipped then
         memo = { key = key, db = ns.Store.db, shipped = ns.Shipped, index = Advisor.SourceIndex(), ranked = {} }
     end
@@ -308,8 +337,8 @@ local function rankedFor(m, slot, class, level)
 end
 
 -- Returns nil for an unknown item, else { rank, total, slot, usable, reason, needLevel, sourced, deprecated,
--- offhand }; rank and total are nil when the item has no ranked slot. Repeated calls reuse one walk per slot until a
--- record changes.
+-- offhand, score }; rank and total are nil when the item has no ranked slot. Repeated calls reuse one walk per slot
+-- until a record, a weight or the spec changes.
 function Advisor.Rank(id, class, level)
     local result = Advisor.Place(id, class, level)
     if not result then
@@ -321,7 +350,7 @@ function Advisor.Rank(id, class, level)
         return result
     end
     local r = Advisor.Item(id)
-    local me = { id = id, ilvl = r[1], quality = r[3] }
+    local me = { id = id, ilvl = r[1], quality = r[3], score = result.score }
     local ranked = rankedFor(m, result.slot, class, level)
     local rank, listed = 1, false
     for _, e in ipairs(ranked) do
