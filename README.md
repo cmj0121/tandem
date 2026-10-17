@@ -109,9 +109,18 @@ The rate defaults to `10/s` and must lie between `1/m` and `50/s`. The cap defau
 The two tokens may come in either order, so `/tandem scan 500 5/s` and `/tandem scan 5/s 500` are the same. An invalid
 or repeated token prints the command list and starts nothing.
 
-The scan resumes where the last one stopped: each ID it queries moves the cursor up by one, with no upper limit. IDs
-already in the cache are skipped. The rate is a ceiling: the scan waits while 10 queries are still waiting for a server
-reply, and a query unanswered after 5 seconds counts as a timeout. In combat the scan pauses and resumes by itself.
+The scan resumes where the last one stopped: each ID it queries moves the cursor up by one, with no upper limit. The
+rate is a ceiling: the scan waits while 10 queries are still waiting for a server reply, and a query unanswered after 5
+seconds counts as a timeout. In combat the scan pauses and resumes by itself.
+
+When `/tandem check` shows `Stat search` as available, the scan also reads each item's stats (strength, spell power,
+hit, armor, weapon DPS and so on) from its tooltip, on an English (`enUS`, `enGB`) or Traditional Chinese (`zhTW`)
+client; a client in any other language reads no stats and leaves items unread rather than stat-less. An ID
+already in the cache is skipped, unless its stats were never read or were read by an older version of Tandem: then
+the scan reads them again (a backfill). A backfill is not a new item: it counts neither as a hit nor as skipped, and
+the summary gets an extra line `<n> cached items read for stats`. An item whose tooltip has not loaded yet waits and
+is retried like any other deferred query; when it times out, its stats stay unread until the next scan. Without
+`Stat search`, cached IDs are skipped and no stats are read.
 
 ```text
 Tandem: scanning 100 IDs from ID 1
