@@ -600,7 +600,8 @@ rate, nor do quest rewards and vendor items.
 
 The addon ships `Tandem/Data/Loot.lua`, merged by `make import` from every contribution under `data/contributions/`:
 loot (drops, quest rewards and vendor items), npc and quest names per language, the factions that saw each quest reward
-and vendor item, kills, looted corpses and the item cache. Commands use it together with your own
+and vendor item, kills, looted corpses, the item cache and each item's stats as read from its tooltip (the stat
+weights you set per character are not shipped). Commands use it together with your own
 `TandemDB`. For each loot entry's drop count they take the larger of your value and the shipped one, since your data
 may already be in the shipped file. Kill and corpse counts are never mixed this way: a drop rate takes its drops and its
 count from one dataset, as described under [Drop rates](#drop-rates). A quest reward or vendor item seen in both
@@ -955,33 +956,36 @@ make import
 ```
 
 ```text
-wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 15 kills, 12 looted corpses)
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 95 item stats, 15 kills, 12 looted corpses)
 wrote Tandem/Data/Loot.lua (1 contributors, 120 items, 42 loot rows)
 ```
 
 The ID and the numbers are an example. `make import` reads every
 `<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua` of the detected client and writes:
 
-| File                          | Content                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| `data/contributions/<id>.lua` | One account's `loot`, `npcs`, `quests`, `items`, `kills`, `corpses` and locale |
-| `Tandem/Data/Loot.lua`        | Merged from every contribution and loaded by the addon                         |
+| File                          | Content                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `data/contributions/<id>.lua` | One account's `loot`, `npcs`, `quests`, `items`, `kills`, `corpses`, `stats` and locale |
+| `Tandem/Data/Loot.lua`        | Merged from every contribution and loaded by the addon                                  |
 
 The merged file sums loot counts, kills and looted corpses, keeps up to 5 positions per loot entry, keeps npc and quest
 names per locale, and takes the union of the item caches. A quest reward or vendor item becomes one row whatever map
 each contribution saw it on: it keeps the lowest map ID and that map's positions, sums the counts, so the count is the
 number of contributors who saw it, and combines the factions in `S.factions`, keyed `"<item>:<kind>:<id>:<map>"`.
 When two contributions disagree on an item, the one whose file name sorts first wins, except that the item is flagged
-deprecated when any contribution flags it. It also records how many contributions it merged, as `contributors`.
-`data/loot.lua` from earlier versions is no longer written. Contributions written before kills, corpses, items and
-quests were imported are still read.
+deprecated when any contribution flags it. An item's stats, `S.stats[<item>] = { <stat> = <number>, ... }` (`{}` when
+its tooltip has no stat lines), come whole from one contribution, never mixed: any contribution with stats for the item
+beats those without, the one with the most stat entries wins, and on a tie the one whose file name sorts first. It
+also records how many contributions it merged, as `contributors`. `data/loot.lua` from earlier versions is no longer
+written. Contributions written before kills, corpses, items, quests and stats were imported are still read.
 
 - `<id>` is the first 12 hex digits of the SHA-256 of the account folder name. The folder name, the account number, is
   never written or printed, and the same account always gets the same ID.
 - The locale is the `SET textLocale` line of `WTF/Config.wtf`, `enUS` when missing. Npc names and quest titles are
   stored in the client language, so `Tandem/Data/Loot.lua` keeps them under `names[<locale>]` and
   `questNames[<locale>]`.
-- `scan` and `ui` stay local. `items` is imported, because ranking among a few hundred personally scanned items says little.
+- `scan`, `ui`, `weights` and `statsVersion` stay local: stat weights belong to one character. `items` and `stats` are
+  imported, because ranking among a few hundred personally scanned items says little.
 - Running it again is safe: each account's contribution is a full snapshot that replaces the last one, so counts are
   never added twice, and the same input gives byte-identical files.
 - Each saved-variables file runs in an empty environment, with no functions to call and a limit on how long it may run,

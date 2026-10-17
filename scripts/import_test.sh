@@ -87,7 +87,7 @@ check "the out file and its directory are created" "$?" "0"
 check "data/loot.lua is no longer written" "$?" "0"
 contains "success line names the out file" "$tmp/out" "wrote $out (2 contributors, 2 items, 3 loot rows)"
 contains "contribution line counts every block" "$tmp/out" \
-	'(enUS: 2 loot entries, 2 npc names, 0 quest names, 1 items, 3 kills, 2 looted corpses)'
+	'(enUS: 2 loot entries, 2 npc names, 0 quest names, 1 items, 0 item stats, 3 kills, 2 looted corpses)'
 cp "$out" "$tmp/shipped1"
 cp "$data/contributions/aaaa.lua" "$tmp/aaaa1"
 
@@ -174,6 +174,62 @@ contains "the first record's flag survives a later unflagged record" "$dep/Loot.
 	't[53] = { 20, 15, 2, "INVTYPE_WAIST", 4, 1, 1 }'
 shipped "flagged records load back" "$dep/Loot.lua" '
 assert(S.items[50][7] == 1 and S.items[51][7] == 1 and S.items[52][7] == nil and #S.items[52] == 6)'
+
+# Item stats (schema 4): carried into contributions and S.stats; per item the contribution with the most stat keys
+# wins whole, the lexically first on a tie, and {} (parsed, none) beats no record. Weights are never exported.
+sv st-a.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 4,
+	items = { [80] = { 20, 15, 3, "INVTYPE_CHEST", 4, 2 } },
+	stats = {
+		[80] = { sta = 5, str = 3 },
+		[81] = { int = 4 },
+		[82] = { sp = 7, crit = 1 },
+		[83] = { dps = 12.5 },
+		[84] = { str = 1, bogus = 9, sta = "x" },
+		[0] = { str = 1 },
+		[85] = "none",
+	},
+	statsVersion = 2,
+	weights = { ["Tank-Realm"] = { spec = 3, overrides = { [3] = { sta = 2 } } } },
+}
+EOF
+sv st-b.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 4,
+	stats = { [80] = { sta = 9 }, [81] = { int = 6, spi = 2 }, [82] = { sp = 1, hit = 1 }, [86] = {} },
+	weights = { ["Mage-Realm"] = { overrides = { [1] = { sp = 1 } } } },
+}
+EOF
+st="$tmp/st"
+import "$st" "$st/Loot.lua" enUS bbbb "$tmp/st-b.lua" enUS aaaa "$tmp/st-a.lua"
+check "stats import" "$?" "0"
+contains "invalid stats are reported" "$tmp/err" "st-a.lua: 4 invalid entries ignored"
+contains "contribution line counts item stats" "$tmp/out" '(enUS: 0 loot entries, 0 npc names, 0 quest names, 1 items, 5 item stats,'
+contains "contribution keeps stats in stat key order" "$st/contributions/aaaa.lua" '[80] = { str = 3, sta = 5 },'
+contains "contribution keeps a fractional stat" "$st/contributions/aaaa.lua" '[83] = { dps = 12.5 },'
+contains "contribution keeps the valid stats of a partly bad record" "$st/contributions/aaaa.lua" '[84] = { str = 1 },'
+contains "contribution keeps parsed-none stats" "$st/contributions/bbbb.lua" '[86] = {},'
+for f in "$st/contributions/aaaa.lua" "$st/contributions/bbbb.lua" "$st/Loot.lua"; do
+	check "$(basename "$f") has no weights" "$(grep -c -e 'weights' -e 'Realm' -e 'overrides' -e 'statsVersion' "$f")" "0"
+done
+contains "out file fills S.stats in chunks" "$st/Loot.lua" 'fill(S.stats)'
+contains "shipped stats are one record per line" "$st/Loot.lua" 't[80] = { str = 3, sta = 5 }'
+shipped "stats round-trip and merge by most keys" "$st/Loot.lua" '
+assert(S.stats[80].str == 3 and S.stats[80].sta == 5, "more keys win over the other contributor")
+assert(S.stats[81].int == 6 and S.stats[81].spi == 2, "more keys win whatever the file order")
+assert(S.stats[82].sp == 7 and S.stats[82].crit == 1 and S.stats[82].hit == nil, "a tie goes to the first file, unmixed")
+assert(S.stats[83].dps == 12.5 and S.stats[84].str == 1 and S.stats[84].bogus == nil)
+assert(next(S.stats[86]) == nil, "parsed-none is shipped as {}")
+assert(S.stats[0] == nil and S.stats[85] == nil and S.weights == nil)
+assert(S.items[80] and S.stats[80], "stats sit beside item records, which are unchanged")'
+cp "$st/Loot.lua" "$tmp/st1"
+import "$st" "$st/Loot.lua"
+cmp -s "$st/Loot.lua" "$tmp/st1"
+check "a stats rebuild is byte-identical" "$?" "0"
+import "$st" "$st/Loot.lua" enUS aaaa "$tmp/st-a.lua" enUS bbbb "$tmp/st-b.lua"
+cmp -s "$st/Loot.lua" "$tmp/st1"
+check "argument order does not change the shipped stats" "$?" "0"
 
 # Quest rewards (q) and vendor items (v): counts are summed, factions ORed into S.factions, quest names merged per
 # locale into S.questNames; a bad q/v row drops only that row.
@@ -310,6 +366,7 @@ check "an old contribution rebuilds" "$?" "0"
 check "an old contribution has nothing invalid" "$(cat "$tmp/err")" ""
 shipped "an old contribution is shipped" "$old/Loot.lua" '
 assert(S.contributors == 1 and next(S.items) == nil and next(S.kills) == nil and next(S.corpses) == nil)
+assert(next(S.stats) == nil, "a contribution from before stats ships an empty stats block")
 assert(S.loot[1][1] == 159 and S.loot[1][2] == "c" and S.loot[1][6] == 612 and S.names.zhTW[476])'
 import "$old" "$old/Loot.lua" enUS aaaa "$tmp/a.lua"
 shipped "an old contribution merges with a new one" "$old/Loot.lua" '
@@ -387,6 +444,10 @@ for i = 1, 70000 do
     f:write(("        { item = %d, kind = \"c\", id = %d, map = %d, count = %d, coords = { { %d, %d } } },\n")
         :format(i, i + 300000, i + 400000, i + 500000, i, i + 600000))
 end
+f:write('    },\n    stats = {\n')
+for i = 1, 70000 do
+    f:write(("        [%d] = { str = %d, sta = %d, dps = %d.5 },\n"):format(i, i, i + 700000, i))
+end
 f:write('    },\n}\n')
 f:close()
 EOF
@@ -394,12 +455,13 @@ EOF
 import "$big" "$big/Loot.lua"
 check "a large contribution rebuilds" "$?" "0"
 shipped "a large out file loads" "$big/Loot.lua" '
-assert(S.items[70000][4] == "INVTYPE_70000" and #S.loot == 70000 and S.loot[70000][6] == 70000)'
+assert(S.items[70000][4] == "INVTYPE_70000" and #S.loot == 70000 and S.loot[70000][6] == 70000)
+assert(S.stats[70000].sta == 770000 and S.stats[70000].dps == 70000.5)'
 if command -v luajit >/dev/null 2>&1; then
 	lua=$LUA
 	LUA=luajit
 	shipped "a large out file loads under LuaJIT" "$big/Loot.lua" '
-assert(S.items[70000][4] == "INVTYPE_70000" and #S.loot == 70000)'
+assert(S.items[70000][4] == "INVTYPE_70000" and #S.loot == 70000 and S.stats[70000].dps == 70000.5)'
 	LUA=$lua
 else
 	printf 'skip a large out file loads under LuaJIT: no luajit\n'

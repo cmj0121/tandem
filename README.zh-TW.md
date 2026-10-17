@@ -551,7 +551,8 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 ### 隨附資料
 
 addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/` 底下的所有貢獻合併而成：掉落紀錄（掉落、
-任務獎勵與商人物品）、依語系分組的 NPC 與任務名稱、看過每筆任務獎勵與商人物品的陣營、擊殺數、拾取屍體數與物品快取。
+任務獎勵與商人物品）、依語系分組的 NPC 與任務名稱、看過每筆任務獎勵與商人物品的陣營、擊殺數、拾取屍體數、物品快取，
+以及從物品提示框讀出的每件物品屬性（你為每個角色設定的屬性權重不會隨附）。
 指令會把它與你自己的 `TandemDB` 一起使用。每筆掉落紀錄的掉落次數取你的
 數值與隨附數值中較大者，因為你的資料可能已經包含在隨附檔案中。擊殺數與拾取屍體數不這樣混用：掉落率的掉落次數與分母
 取自同一份資料，詳見[掉落率](#掉落率)。兩邊都有的任務獎勵或商人物品會合併成一個來源，帶有兩邊的陣營。物品紀錄則以
@@ -862,29 +863,32 @@ make import
 ```
 
 ```text
-wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 15 kills, 12 looted corpses)
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 95 item stats, 15 kills, 12 looted corpses)
 wrote Tandem/Data/Loot.lua (1 contributors, 120 items, 42 loot rows)
 ```
 
 ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一個
 `<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua`，並寫入：
 
-| 檔案                          | 內容                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses` 及其語系，每次匯入都會覆寫 |
-| `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                               |
+| 檔案                          | 內容                                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses`、`stats` 與語系，匯入時覆寫 |
+| `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                                |
 
 合併檔會加總掉落次數、擊殺數與拾取屍體數，每筆掉落紀錄保留最多 5 個座標，NPC 與任務名稱依語系分組，物品快取則取
 聯集。任務獎勵或商人物品不論各份貢獻在哪張地圖看到，都合併成一列：保留最小的地圖 ID 與該地圖的座標，加總計數（因此
 計數就是看過它的貢獻者人數），並把陣營合併到 `S.factions`，key 為 `"<item>:<kind>:<id>:<map>"`；兩份
-貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。它也以 `contributors` 記錄合併了多少份貢獻。舊版的
-`data/loot.lua` 不再寫入。在匯入擊殺、屍體、物品與任務之前寫成的貢獻檔仍可讀取。
+貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。物品
+屬性 `S.stats[<item>] = { <stat> = <number>, ... }`（提示框沒有屬性行時為 `{}`）整份取自單一貢獻，不會混用：有該物品
+屬性的貢獻勝過沒有的，屬性項目最多的那份為準，數量相同時以檔名排序在前的那份為準。它也以 `contributors` 記錄合併了
+多少份貢獻。舊版的 `data/loot.lua` 不再寫入。在匯入擊殺、屍體、物品、任務與屬性之前寫成的貢獻檔仍可讀取。
 
 - `<id>` 是帳號資料夾名稱 SHA-256 的前 12 個十六進位字元。資料夾名稱，也就是帳號號碼，絕不會被寫入或印出；同一個
   帳號永遠得到相同的 ID。
 - 語系取自 `WTF/Config.wtf` 的 `SET textLocale` 這一行，沒有時為 `enUS`。NPC 名稱與任務名稱以用戶端語言儲存，因此
   `Tandem/Data/Loot.lua` 把它們分別放在 `names[<locale>]` 與 `questNames[<locale>]` 底下。
-- `scan` 與 `ui` 只留在本機。`items` 會匯入，因為只在自己掃描的幾百件物品之間排名意義不大。
+- `scan`、`ui`、`weights` 與 `statsVersion` 只留在本機：屬性權重屬於單一角色。`items` 與 `stats` 會匯入，因為只在
+  自己掃描的幾百件物品之間排名意義不大。
 - 重複執行是安全的：每個帳號的貢獻都是完整的快照，會取代上一份，因此掉落次數不會重複加總，相同的輸入也會產生逐位元組
   相同的檔案。
 - 每個 SavedVariables 檔案都在空的環境中執行，沒有任何函式可呼叫，執行時間也有上限；它的 `TandemDB` 會以 addon
