@@ -77,24 +77,30 @@ Scan the next 100 item IDs at 10 per second, then look at what was collected:
 /tandem count
 ```
 
-| Command                               | What it does                                                     |
-| ------------------------------------- | ---------------------------------------------------------------- |
-| `/tandem`                             | Prints the commands, as does any unknown subcommand              |
-| `/tandem count`                       | Prints what has been collected so far                            |
-| `/tandem scan [<n>/s\|<n>/m] [<cap>]` | Scans `<cap>` IDs up from the cursor, `<n>` per second or minute |
-| `/tandem scan from <id>`              | Sets the scan cursor to `<id>`; does not start a scan            |
-| `/tandem scan stop`                   | Stops the running scan and prints its summary                    |
-| `/tandem gear [<slot>] [all]`         | Lists the best known gear you can use, per slot or in one slot   |
-| `/tandem gear <slot> [all] <words>`   | Lists a slot's gear whose tooltip has the words on one line      |
-| `/tandem rank <item link\|id>`        | Ranks an item in its slot and lists where to get it              |
-| `/tandem export`                      | Shows what `make import` would collect from this account         |
-| `/tandem browse [<slot>]`             | Opens or closes a window of all known gear, in every slot or one |
-| `/tandem minimap [on\|off]`           | Shows or hides the minimap button; with no argument, toggles it  |
-| `/tandem check`                       | Lists, per feature, which client APIs it needs are found         |
-| `/tandem map <item link\|id>`         | Opens the world map with a pin on each known place of the item   |
-| `/tandem map clear`                   | Removes the map pins                                             |
+| Command                                | What it does                                                       |
+| -------------------------------------- | ------------------------------------------------------------------ |
+| `/tandem`                              | Prints the commands, as does any unknown subcommand                |
+| `/tandem count`                        | Prints what has been collected so far                              |
+| `/tandem scan [<n>/s\|<n>/m] [<cap>]`  | Scans `<cap>` IDs up from the cursor, `<n>` per second or minute   |
+| `/tandem scan from <id>`               | Sets the scan cursor to `<id>`; does not start a scan              |
+| `/tandem scan stop`                    | Stops the running scan and prints its summary                      |
+| `/tandem gear [<slot>] [all]`          | Lists the best known gear you can use, per slot or in one slot     |
+| `/tandem gear <slot> [all] <words>`    | Lists a slot's gear whose tooltip has the words on one line        |
+| `/tandem rank <item link\|id>`         | Ranks an item in its slot and lists where to get it                |
+| `/tandem export`                       | Shows what `make import` would collect from this account           |
+| `/tandem browse [<slot>]`              | Opens or closes a window of all known gear, in every slot or one   |
+| `/tandem minimap [on\|off]`            | Shows or hides the minimap button; with no argument, toggles it    |
+| `/tandem check`                        | Lists, per feature, which client APIs it needs are found           |
+| `/tandem map <item link\|id>`          | Opens the world map with a pin on each known place of the item     |
+| `/tandem map clear`                    | Removes the map pins                                               |
+| `/tandem forget <from> <to>`           | Drops your own items, stats and loot rows of item IDs in a range   |
+| `/tandem weights`                      | Shows the stat weights of your talent tree                         |
+| `/tandem weights spec <1\|2\|3\|auto>` | Picks the talent tree the weights are for, or follows talents      |
+| `/tandem weights set <stat> <number>`  | Sets your own weight for one stat of the active tree; 0 ignores it |
+| `/tandem weights reset`                | Drops your own weights for the active tree                         |
 
-`gear`, `rank`, `export`, `browse`, `check` and `map` print `Tandem: not available in combat` and do nothing while you are in combat.
+`gear`, `rank`, `export`, `browse`, `check`, `map`, `forget` and `weights` print `Tandem: not available in combat` and do
+nothing while you are in combat.
 `minimap` works in combat too.
 
 ### `/tandem scan`
@@ -354,8 +360,8 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
-`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats` and
-`Stat search`. A feature whose API is missing stays off instead of raising an error.
+`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats`,
+`Stat search` and `Talent spec`. A feature whose API is missing stays off instead of raising an error.
 
 ### `/tandem map`
 
@@ -377,6 +383,62 @@ When nothing can be pinned, it says why and opens nothing:
 A click on a pin prints `Tandem: this map does not take a waypoint` on a map that refuses waypoints, and
 `Tandem: waypoints are not available on this client; see /tandem check` when the `Map waypoint` APIs are missing.
 In combat the command, the button and a pin click print `Tandem: not available in combat` and do nothing.
+
+### `/tandem forget`
+
+`/tandem forget <from> <to>` drops this account's own item records, item stats and loot rows (drops, quest rewards and
+vendor items) of every item ID from `<from>` to `<to>`, both included. Use it to clear out a range of IDs that no
+longer means what it did, such as a beta's items, before scanning it again:
+
+```text
+/tandem forget 277000 277999
+Tandem: forgot 12 items, 12 stats and 3 loot rows with IDs 277000-277999
+```
+
+`/tandem count` then counts that many fewer items and loot entries; IDs outside the range are untouched. Each record
+dropped counts as an unsaved record, so the change is saved on `/reload` or logout. Npc and quest names, kills and
+looted corpses stay. The [shipped data](#shipped-data) is not touched: its items still show until `make import`
+writes a new `Loot.lua`.
+
+`<from>` and `<to>` must be whole numbers of 1 or more with `<from>` not above `<to>`; otherwise it prints
+`Tandem: usage /tandem forget <from> <to>` and drops nothing. On saved data of a newer schema it prints
+`Recording is off: saved data uses a newer schema`.
+
+### `/tandem weights`
+
+Each class has built-in stat weights for each of its three talent trees. `/tandem weights` shows the ones in use:
+
+```text
+/tandem weights
+Tandem: Arms Warrior weights, tree 1 (auto)
+str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10
+```
+
+The first line names the active tree and its number in talent tab order, then `auto` when it follows your talents or
+`manual` when you picked it. With `auto`, the tree is the one with the most talent points; below level 10, with no
+points spent or when the `Talent spec` line of [`/tandem check`](#tandem-check) is `missing`, it is the class's usual
+levelling tree. The second line lists each weighted stat by its key, in this order:
+`str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block blockvalue`.
+`sp` is spell damage and healing, `heal` healing only and `dps` a weapon's damage per second; hit and crit weights are
+per 1%.
+
+- `/tandem weights spec <1|2|3>` picks a tree; `/tandem weights spec auto` follows the talents again. It prints
+  `Tandem: weights use tree <n>` or `Tandem: weights follow your talents`.
+- `/tandem weights set <stat> <number>` sets your own weight for one stat of the active tree, printing
+  `Tandem: <stat> weight set to <number>`. `0` ignores the stat; a stat the tree has no weight for is added. The number
+  may have a sign and a decimal point, such as `-1` or `0.5`. Your own weights are marked `*`, followed by the line
+  `* your own weight; /tandem weights reset drops them`.
+- `/tandem weights reset` drops your own weights for the active tree, printing
+  `Tandem: own weights for tree <n> dropped`. The other trees keep theirs.
+
+Each change then shows the weights as they now are. Your choices are saved per character (`Name-Realm`) and per tree,
+so they survive switching talents; they are not records and do not count as unsaved. Other messages:
+
+- `Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]` for anything else; nothing changes.
+- `Tandem: unknown stat <stat>; use one of: <keys>` for a stat key not in the list above.
+- `Tandem: no built-in weights for <class>` for a class without built-in weights.
+- `Tandem: weights cannot be saved: recording is off or your character is not known yet` on saved data of a newer
+  schema, or while the client does not tell your name and realm.
 
 ## Gear advice
 
@@ -815,9 +877,9 @@ tooltip in step 5, and any Lua error.
 The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
 not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nine lines, one each for `Item tooltip`,
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and ten lines, one each for `Item tooltip`,
    `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
-   `Item stats` and `Stat search`, each followed by `ok` or `missing` and its APIs.
+   `Item stats`, `Stat search` and `Talent spec`, each followed by `ok` or `missing` and its APIs.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -830,9 +892,11 @@ not verified on Forever. One pass of `/tandem check` tells which of them the cli
    check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins). If `Quest reward pick` is `ok` in step
    2, run [Check the quest reward pick](#check-the-quest-reward-pick). If `Upgrade alert` is `ok`, run
    [Check the upgrade alert](#check-the-upgrade-alert). If `Stat search` is `ok`, run
-   [Check the stat search](#check-the-stat-search).
+   [Check the stat search](#check-the-stat-search). If `Talent spec` is `ok`, run `/tandem weights` on a character
+   level 10 or more: its first line names the tree with the most talent points, followed by `(auto)`.
 
-Report back every line of steps 1 and 2 as printed, and any Lua error.
+Report back every line of steps 1 and 2 as printed, the first line of `/tandem weights` from step 5, and any Lua
+error.
 
 ### Check the map pins
 

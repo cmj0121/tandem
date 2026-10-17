@@ -411,6 +411,62 @@ do
     check("stats: a bad version and weights count as dropped", printed[2], "Tandem: dropped 2 invalid saved entries")
 end
 
+-- Store.Forget and /tandem forget (unit F): drop own records of an item ID range.
+local function forgetDB()
+    local item = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 }
+    return {
+        schemaVersion = 4,
+        items = { [276999] = item, [277000] = item, [277500] = item, [277999] = item, [278000] = item },
+        stats = { [277000] = { str = 1 }, [277001] = {}, [278000] = { sta = 2 } },
+        loot = {
+            a = { item = 277000, kind = "c", id = 100, map = 1429, count = 2, coords = {} },
+            b = { item = 277999, kind = "q", id = 176, map = 1429, count = 1, factions = 1 },
+            c = { item = 277500, kind = "v", id = 54, map = 0, count = 1, factions = 2 },
+            d = { item = 278000, kind = "c", id = 100, map = 1429, count = 1, coords = {} },
+            e = { item = 276999, kind = "o", id = 7, map = 1429, count = 1, coords = {} },
+        },
+    }
+end
+
+do
+    local addon, _, env = loadWithDB(forgetDB())
+    local db, Store = env.TandemDB, addon.Store
+    local before = Store.revision
+    local gone = Store.Forget(277000, 277999)
+    check("Forget counts what went", gone.items .. " " .. gone.stats .. " " .. gone.loot, "3 2 3")
+    check("Forget drops the items in the range", tostring(db.items[277000]) .. tostring(db.items[277500])
+        .. tostring(db.items[277999]), "nilnilnil")
+    check("Forget keeps the items around the range", db.items[276999] ~= nil and db.items[278000] ~= nil, true)
+    check("Forget drops the stats in the range", tostring(db.stats[277000]) .. tostring(db.stats[277001]), "nilnil")
+    check("Forget keeps other stats", db.stats[278000].sta, 2)
+    check("Forget drops every loot kind in the range", tostring(db.loot["277000:c:100:1429"])
+        .. tostring(db.loot["277999:q:176:1429"]) .. tostring(db.loot["277500:v:54:0"]), "nilnilnil")
+    check("Forget keeps other loot", db.loot["278000:c:100:1429"] ~= nil and db.loot["276999:o:7:1429"] ~= nil, true)
+    check("Forget keeps the item count", Store.ItemCount(), 2)
+    check("Forget counts each record as a change", Store.revision - before, 8)
+    check("Forget unsaved follows", Store.unsaved, 8)
+    check("Forget forgets the sources index", Store.AddSource(277999, "q", 176, 1429, nil, nil, 1), true)
+    check("Forget re-adds a source as a new row", db.loot["277999:q:176:1429"].factions, 1)
+    check("Forget re-adds an item", Store.AddItem(277000, 1, 1, 1, "INVTYPE_HEAD", 4, 1), true)
+    check("Forget item count after re-add", Store.ItemCount(), 3)
+    gone = Store.Forget(1, 10)
+    check("Forget an empty range drops nothing", gone.items .. " " .. gone.stats .. " " .. gone.loot, "0 0 0")
+    check("Forget a single ID", Store.Forget(278000, 278000).items, 1)
+    before = Store.unsaved
+    for name, args in pairs({
+        ["from above to"] = { 5, 4 }, ["from 0"] = { 0, 4 }, ["a fraction"] = { 1.5, 4 },
+        ["a string"] = { "1", 4 }, ["nil to"] = { 1 },
+    }) do
+        check("Forget rejects " .. name, Store.Forget(args[1], args[2]), nil)
+    end
+    check("Forget rejections are not records", Store.unsaved, before)
+end
+
+do
+    local addon = loadWithDB({ schemaVersion = 5, items = { [5] = {} } })
+    check("newer db blocks Forget", addon.Store.Forget(1, 10), nil)
+end
+
 -- Store: quest and vendor sources (stage 5, unit 1).
 do
     local addon, printed, env = loadWithDB({
@@ -617,6 +673,43 @@ local function stubScanner(addon)
     return calls
 end
 
+-- /tandem forget (unit F).
+do
+    local addon, printed, env = loadWithDB(forgetDB())
+    local out = run(addon, printed, "forget 277000 277999")
+    check("forget prints what went", out[1], "Tandem: forgot 3 items, 2 stats and 3 loot rows with IDs 277000-277999")
+    check("forget prints one line", #out, 1)
+    check("forget: count drops accordingly", run(addon, printed, "count")[1], "Tandem: 2 known items, 0 non-equippable")
+    check("forget: loot count drops accordingly", run(addon, printed, "count")[3], "Loot entries: 2, npc names: 0")
+    check("forget: other IDs untouched", env.TandemDB.items[278000] ~= nil, true)
+    for _, msg in ipairs({ "forget", "forget 5", "forget 5 4", "forget 0 4", "forget a 4", "forget 1 2 3",
+                           "forget -1 4", "forget 1.5 4" }) do
+        local before = addon.Store.unsaved
+        out = run(addon, printed, msg)
+        check(("%q prints the forget usage"):format(msg), out[1], "Tandem: usage /tandem forget <from> <to>")
+        check(("%q forgets nothing"):format(msg), addon.Store.unsaved, before)
+    end
+    env.InCombatLockdown = function()
+        return true
+    end
+    out = run(addon, printed, "forget 1 300000")
+    check("forget in combat: refused", out[1] .. "|" .. #out, "Tandem: not available in combat|1")
+    check("forget in combat: nothing dropped", env.TandemDB.items[278000] ~= nil, true)
+end
+
+do
+    local addon, printed = loadWithDB({ schemaVersion = 5 })
+    check("forget on a newer db says read-only", run(addon, printed, "forget 1 2")[1],
+        "Recording is off: saved data uses a newer schema")
+end
+
+do
+    local addon, printed = loadWithDB(forgetDB(), "zhTW")
+    check("zhTW forget line", run(addon, printed, "forget 277000 277999")[1],
+        "Tandem：已刪除物品 3 件、屬性 2 筆、掉落紀錄 3 筆（ID 277000-277999）")
+    check("zhTW forget usage", run(addon, printed, "forget")[1], "Tandem：用法 /tandem forget <起> <迄>")
+end
+
 do
     local addon, printed, env = loadWithDB(nil)
     local ParseRate = addon.Commands.ParseRate
@@ -659,7 +752,15 @@ do
     check("usage lists map clear", help[14], "  /tandem map clear - remove the map pins")
     check("usage lists gear search", help[7],
         "  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line")
-    check("usage line count", #help, 14)
+    check("usage lists forget", help[15],
+        "  /tandem forget <from> <to> - drop your own items, stats and loot rows in an ID range")
+    check("usage lists weights", help[16], "  /tandem weights - show the stat weights of your talent tree")
+    check("usage lists weights spec", help[17],
+        "  /tandem weights spec <1|2|3|auto> - pick the talent tree, or follow your talents")
+    check("usage lists weights set", help[18],
+        "  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)")
+    check("usage lists weights reset", help[19], "  /tandem weights reset - drop your own weights for the active tree")
+    check("usage line count", #help, 19)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -6164,6 +6265,128 @@ do
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
     check("zhTW check: talent spec line", out[#out]:match("^天賦專精："), "天賦專精：")
+end
+
+-- /tandem weights (stage 7, unit 6): show, spec, set and reset.
+
+-- Loads the addon as a level 60 Tom-Realm warrior with no talent API; ctx.class, ctx.className, ctx.level,
+-- ctx.combat and ctx.name change the player. Returns ctx with ctx.run(msg) -> printed lines.
+local function loadWeights(locale, db)
+    local ctx = { class = "WARRIOR", className = "Warrior", level = 60, name = "Tom" }
+    local addon, printed, env = loadWithDB(db, locale or "enUS", { env = {
+        UnitClass = function()
+            return ctx.className, ctx.class
+        end,
+        UnitLevel = function()
+            return ctx.level
+        end,
+        UnitName = function()
+            return ctx.name
+        end,
+        GetRealmName = function()
+            return "Realm"
+        end,
+        InCombatLockdown = function()
+            return ctx.combat == true
+        end,
+    } })
+    ctx.addon, ctx.env = addon, env
+    function ctx.run(msg)
+        return run(addon, printed, msg)
+    end
+    return ctx
+end
+
+local ARMS = "str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10"
+
+do
+    local ctx = loadWeights()
+    local out = ctx.run("weights")
+    check("weights: shows the active tree", out[1], "Tandem: Arms Warrior weights, tree 1 (auto)")
+    check("weights: lists the weights in stat key order", out[2], ARMS)
+    check("weights: no own weight, no legend", #out, 2)
+    check("weights: the command writes nothing", ctx.env.TandemDB.weights["Tom-Realm"], nil)
+
+    out = ctx.run("weights spec 2")
+    check("weights spec 2: confirms", out[1], "Tandem: weights use tree 2")
+    check("weights spec 2: shows the chosen tree", out[2], "Tandem: Fury Warrior weights, tree 2 (manual)")
+    check("weights spec 2: saves the spec", ctx.env.TandemDB.weights["Tom-Realm"].spec, 2)
+
+    out = ctx.run("weights set hit 20")
+    check("weights set: confirms", out[1], "Tandem: hit weight set to 20")
+    check("weights set: marks the own weight", out[3],
+        "str 1, agi 0.7, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 20*, crit 11")
+    check("weights set: prints the legend", out[4], "  * your own weight; /tandem weights reset drops them")
+    check("weights set: saves on the active tree", ctx.env.TandemDB.weights["Tom-Realm"].overrides[2].hit, 20)
+    out = ctx.run("weights set sta 0")
+    check("weights set 0: shows the ignored stat", out[3]:match("sta [^,]*"), "sta 0*")
+    out = ctx.run("weights set sp 0.25")
+    check("weights set: a stat without a built-in is added", out[3]:match("sp [^,]*"), "sp 0.25*")
+    check("weights set: a negative number", ctx.run("weights set spi -1")[1], "Tandem: spi weight set to -1")
+    check("weights set: a leading point", ctx.run("weights set int .5")[1], "Tandem: int weight set to 0.5")
+
+    out = ctx.run("weights reset")
+    check("weights reset: confirms", out[1], "Tandem: own weights for tree 2 dropped")
+    check("weights reset: shows the built-ins", out[3],
+        "str 1, agi 0.7, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 12, crit 11")
+    check("weights reset: no legend", #out, 3)
+
+    out = ctx.run("weights spec auto")
+    check("weights spec auto: confirms", out[1], "Tandem: weights follow your talents")
+    check("weights spec auto: back to the default tree", out[2], "Tandem: Arms Warrior weights, tree 1 (auto)")
+    check("weights spec auto: clears the saved spec", ctx.env.TandemDB.weights["Tom-Realm"].spec, nil)
+    check("weights: SPECS names the trees", ctx.addon.Weights.SPECS.WARRIOR[1], "Arms")
+
+    local before = ctx.run("weights")
+    for _, msg in ipairs({ "weights spec", "weights spec 0", "weights spec 4", "weights spec x", "weights spec 1 2",
+                           "weights set", "weights set str", "weights set str x", "weights set str 1 2",
+                           "weights set str 1e3", "weights set str 0x10", "weights reset now", "weights dance" }) do
+        out = ctx.run(msg)
+        check(("%q prints the weights usage"):format(msg), out[1] .. "|" .. #out,
+            "Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]|1")
+    end
+    out = ctx.run("weights set fire 2")
+    check("weights set: an unknown stat is named", out[1], "Tandem: unknown stat fire; use one of: "
+        .. table.concat(ctx.addon.Store.STAT_KEYS, " "))
+    check("weights set: an unknown stat prints one line", #out, 1)
+    check("weights: refusals change nothing", table.concat(ctx.run("weights"), "|"), table.concat(before, "|"))
+
+    ctx.combat = true
+    for _, msg in ipairs({ "weights", "weights spec 2", "weights set str 2", "weights reset", "weights x" }) do
+        out = ctx.run(msg)
+        check(("%q refuses in combat"):format(msg), out[1] .. "|" .. #out, "Tandem: not available in combat|1")
+    end
+    check("weights in combat: nothing saved", ctx.env.TandemDB.weights["Tom-Realm"].spec, nil)
+    ctx.combat = false
+
+    ctx.class, ctx.className = "MONK", "Monk"
+    check("weights: a class without built-ins", ctx.run("weights")[1], "Tandem: no built-in weights for Monk")
+    ctx.class = nil
+    check("weights: an unknown class", ctx.run("weights spec 2")[1],
+        "Tandem: your class or level is not known yet; try again in a moment")
+    ctx.class, ctx.className, ctx.name = "MAGE", "Mage", ""
+    out = ctx.run("weights spec 1")
+    check("weights: an unknown character cannot save", out[1] .. "|" .. #out,
+        "Tandem: weights cannot be saved: recording is off or your character is not known yet|1")
+    check("weights: an unknown character still sees the built-ins", ctx.run("weights")[1],
+        "Tandem: Frost Mage weights, tree 3 (auto)")
+end
+
+do
+    local ctx = loadWeights("enUS", { schemaVersion = 99 })
+    check("weights on a newer db: set is refused", ctx.run("weights set str 2")[1],
+        "Tandem: weights cannot be saved: recording is off or your character is not known yet")
+    check("weights on a newer db: the db is untouched", ctx.env.TandemDB.weights, nil)
+end
+
+do
+    local ctx = loadWeights("zhTW")
+    local out = ctx.run("weights set str 2")
+    check("zhTW weights set line", out[1], "Tandem：str 的權重設為 2")
+    check("zhTW weights header", out[2], "Tandem：武器Warrior的屬性權重，第 1 系（自動）")
+    check("zhTW weights legend", out[4], "  * 你自訂的權重；/tandem weights reset 可刪除")
+    check("zhTW weights usage", ctx.run("weights x")[1],
+        "Tandem：用法 /tandem weights [spec <1|2|3|auto> | set <屬性> <數字> | reset]")
 end
 
 if failures > 0 then

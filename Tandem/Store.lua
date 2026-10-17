@@ -598,6 +598,40 @@ function Store.StatsVersion()
     end
 end
 
+-- Store.Forget(from, to) -> { items = n, stats = n, loot = n }
+-- Drops the own item records, stats and loot rows (every kind) of item IDs from..to inclusive; each one dropped is a
+-- record change. Nil when from or to is not a whole number >= 1, from > to, or read-only.
+function Store.Forget(from, to)
+    if Store.readOnly or not isInt(from, 1) or not isInt(to, from) then
+        return nil
+    end
+    local db, gone = Store.db, { items = 0, stats = 0, loot = 0 }
+    local function inRange(id)
+        return id >= from and id <= to
+    end
+    for _, field in ipairs({ "items", "stats" }) do
+        for id in pairs(db[field]) do
+            if inRange(id) then
+                db[field][id] = nil
+                gone[field] = gone[field] + 1
+                changed()
+            end
+        end
+    end
+    Store.itemCount = Store.itemCount - gone.items
+    for key, entry in pairs(db.loot) do
+        if inRange(entry.item) then
+            db.loot[key] = nil
+            if SET_ONCE[entry.kind] then
+                sources[sourceKey(entry.item, entry.kind, entry.id)] = nil
+            end
+            gone.loot = gone.loot + 1
+            changed()
+        end
+    end
+    return gone
+end
+
 -- Records a quest name; false when unchanged, invalid or read-only.
 function Store.SetQuestName(questID, name)
     if Store.readOnly or not isInt(questID, 1) or type(name) ~= "string" or name == ""
