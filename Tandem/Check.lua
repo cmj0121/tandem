@@ -39,6 +39,9 @@ Check.FEATURES = {
     { name = "Stat search", needs = {
         { "C_TooltipInfo.GetItemByID" },
     } },
+    { name = "Talent spec", needs = {
+        { "GetTalentTabInfo", "C_SpecializationInfo.GetSpecialization", "GetSpecialization" },
+    } },
 }
 
 -- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.
