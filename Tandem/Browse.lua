@@ -11,13 +11,21 @@ local Safe = ns.Store.Safe
 
 local NAME = "TandemBrowseFrame"
 local WIDTH, HEIGHT = 640, 620
-local MIN_WIDTH, MIN_HEIGHT = 520, 480
+local MIN_WIDTH, MIN_HEIGHT = 600, 520
 local MAX_WIDTH, MAX_HEIGHT = 1200, 1000
 local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ROW_HEIGHT = 20
+-- Right-hand row columns, from the right edge in: required level, item level, stat score.
+local COLUMNS = { { "level", 36, "Req" }, { "ilvl", 36, "iLvl" }, { "score", 44, "Score" } }
 local PANE_HEIGHT = 110
 local SOURCE_ROWS = 5
-local SEARCH_LETTERS = 60
+-- Stat filter boxes (decision 9), in two rows of six; each column is this wide.
+local STAT_ROWS = { { "str", "agi", "sta", "int", "spi", "sp" }, { "heal", "hit", "crit", "ap", "mp5", "def" } }
+local STAT_NAMES = {
+    str = "Strength", agi = "Agility", sta = "Stamina", int = "Intellect", spi = "Spirit", sp = "Spell power",
+    heal = "Healing", hit = "Hit", crit = "Crit", ap = "Attack power", mp5 = "MP5", def = "Defense",
+}
+local STAT_COLUMN = 96
 local REDRAW_DELAY = 0.2
 local PROGRESS_INTERVAL = 1
 -- Check boxes sit this many levels above the window, over the dropdowns and the template's own frames.
@@ -31,10 +39,8 @@ local QUALITY_NAMES = { [0] = "Poor", "Common", "Uncommon", "Rare", "Epic", "Leg
 local HANDS = "mainhand+offhand"
 
 local frame, progress
-local slot, onlyQuality, selected, unknown, pending, paneStale, relist
+local slot, onlyQuality, selected, unknown, pending, paneStale
 local rows, listed, worn = {}, {}, {}
--- Items the stat search waits for: when one loads, the list is made again.
-local searching = {}
 -- Items whose cached name refresh has read: a name does not change, so each is read once per session.
 local peeked = {}
 
@@ -111,17 +117,17 @@ local function buildRow(button)
     button.icon = button:CreateTexture(nil, "ARTWORK")
     button.icon:SetSize(ROW_HEIGHT - 2, ROW_HEIGHT - 2)
     button.icon:SetPoint("LEFT", button, "LEFT", 2, 0)
-    button.level = button:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    button.level:SetPoint("RIGHT", button, "RIGHT", -4, 0)
-    button.level:SetWidth(36)
-    button.level:SetJustifyH("RIGHT")
-    button.ilvl = button:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    button.ilvl:SetPoint("RIGHT", button.level, "LEFT", -4, 0)
-    button.ilvl:SetWidth(36)
-    button.ilvl:SetJustifyH("RIGHT")
+    local right = button
+    for _, col in ipairs(COLUMNS) do
+        local fs = button:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        fs:SetPoint("RIGHT", right, right == button and "RIGHT" or "LEFT", -4, 0)
+        fs:SetWidth(col[2])
+        fs:SetJustifyH("RIGHT")
+        button[col[1]], right = fs, fs
+    end
     button.name = button:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     button.name:SetPoint("LEFT", button.icon, "RIGHT", 4, 0)
-    button.name:SetPoint("RIGHT", button.ilvl, "LEFT", -4, 0)
+    button.name:SetPoint("RIGHT", button.score, "LEFT", -4, 0)
     button.name:SetJustifyH("LEFT")
     button.name:SetWordWrap(false)
     button.selected = button:CreateTexture(nil, "BACKGROUND")
@@ -150,6 +156,7 @@ local function initRow(button, row)
     end
     button.icon:SetTexture(iconOf(row.id))
     button.name:SetText(name .. (marks ~= "" and GREY .. marks .. "|r" or ""))
+    button.score:SetText(View.ScoreText(row.score))
     button.ilvl:SetText(tostring(row.ilvl))
     if row.needLevel then
         button.level:SetText(RED .. row.needLevel .. "|r")
@@ -286,25 +293,22 @@ local function buildScanBar(f)
     f.scan:SetScript("OnClick", function()
         Browse.ToggleScan()
     end)
-    -- Stat search: the rest of the row; disabled with a note when the client lacks the tooltip data API.
-    f.searchLabel = label(f, L["Stat search"])
-    f.searchLabel:SetPoint("LEFT", f.scan, "RIGHT", 12, 0)
-    f.search = editBox(f, 120, "")
-    f.search:SetMaxLetters(SEARCH_LETTERS)
-    f.search:SetPoint("LEFT", f.searchLabel, "RIGHT", 8, 0)
-    f.search:SetPoint("RIGHT", f, "RIGHT", -14, 0)
-    if ns.StatSearch.Ready() then
-        f.search:SetScript("OnTextChanged", function()
-            Browse.Refresh()
-        end)
-    else
-        f.search:SetEnabled(false)
-        f.searchLabel:SetText(L["Stat search: not on this client"])
-    end
     f.status = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     f.status:SetPoint("TOPLEFT", rateLabel, "BOTTOMLEFT", 0, -12)
     f.status:SetPoint("RIGHT", f, "RIGHT", -14, 0)
     f.status:SetJustifyH("LEFT")
+end
+
+-- The stat filter: a box per stat key under the scan bar, in a grid so both rows line up.
+local function buildStatBoxes(f)
+    f.stats = {}
+    for r, keys in ipairs(STAT_ROWS) do
+        for c, key in ipairs(keys) do
+            local box = checkbox(f, L[STAT_NAMES[key]], false, Browse.Refresh)
+            box:SetPoint("TOPLEFT", f, "TOPLEFT", 12 + (c - 1) * STAT_COLUMN, -132 - (r - 1) * 24)
+            f.stats[key] = box
+        end
+    end
 end
 
 local function build()
@@ -416,9 +420,10 @@ local function build()
     f.minimap:SetPoint("LEFT", deprecatedLabel, "RIGHT", 12, 0)
 
     buildScanBar(f)
+    buildStatBoxes(f)
 
     local box = CreateFrame("Frame", nil, f, "WowScrollBoxList")
-    box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -138)
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -198)
     box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, PANE_HEIGHT + 8)
     local view = CreateScrollBoxListLinearView()
     view:SetElementExtent(ROW_HEIGHT)
@@ -434,6 +439,21 @@ local function build()
         box:Init(view)
     end
     f.box = box
+    -- Column headings over the row columns, right-aligned like the numbers under them.
+    f.headings = {}
+    local right
+    for _, col in ipairs(COLUMNS) do
+        local fs = f:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        if right then
+            fs:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", -4, 0)
+        else
+            fs:SetPoint("BOTTOMRIGHT", box, "TOPRIGHT", -4, 2)
+        end
+        fs:SetWidth(col[2])
+        fs:SetJustifyH("RIGHT")
+        fs:SetText(L[col[3]])
+        f.headings[col[1]], right = fs, fs
+    end
     for _, target in ipairs({ f, box }) do
         target:SetScript("OnReceiveDrag", onDrop)
         target:SetScript("OnMouseUp", onDrop)
@@ -469,6 +489,22 @@ local function build()
     return f
 end
 
+-- Returns the rows whose stats (own, else shipped) have every wanted key above 0; a row without stats has none.
+local function statFiltered(found, wanted)
+    local out = {}
+    for _, row in ipairs(found) do
+        local stats = ns.Advisor.Stats(row.id)
+        local ok = stats ~= nil
+        for _, key in ipairs(wanted) do
+            ok = ok and type(stats[key]) == "number" and stats[key] > 0
+        end
+        if ok then
+            out[#out + 1] = row
+        end
+    end
+    return out
+end
+
 local function refresh(class, level)
     local hide = frame.deprecated:GetChecked() and true or false
     local found = ns.Advisor.List(slot, class, level, { usableOnly = frame.usable:GetChecked() and true or false,
@@ -488,25 +524,22 @@ local function refresh(class, level)
             listed[row.id] = true
         end
     end
-    searching = {}
-    local terms = ns.StatSearch.Ready() and ns.StatSearch.Parse(frame.search:GetText())
-    local loading = 0
-    if terms then
-        rows, searching = ns.StatSearch.Filter(rows, terms)
-        listed = {}
+    local wanted = {}
+    for _, keys in ipairs(STAT_ROWS) do
+        for _, key in ipairs(keys) do
+            if frame.stats[key]:GetChecked() then
+                wanted[#wanted + 1] = key
+            end
+        end
+    end
+    if #wanted > 0 then
+        rows, listed = statFiltered(rows, wanted), {}
         for _, row in ipairs(rows) do
             listed[row.id] = true
         end
-        for _ in pairs(searching) do
-            loading = loading + 1
-        end
     end
     frame.box:SetDataProvider(CreateDataProvider(rows))
-    if loading > 0 then
-        frame.count:SetText(L["%d items, %d loading"]:format(#rows, loading))
-    else
-        frame.count:SetText(L["%d items"]:format(#rows))
-    end
+    frame.count:SetText(L["%d items"]:format(#rows))
     updateSources()
 end
 
@@ -561,31 +594,26 @@ end
 local function redraw()
     pending = false
     if frame:IsShown() then
-        if relist then
-            Browse.Refresh()
-        else
-            frame.box:ForEachFrame(reinit)
-            if paneStale then
-                updateSources()
-            end
+        frame.box:ForEachFrame(reinit)
+        if paneStale then
+            updateSources()
         end
     end
-    paneStale, relist = false, false
+    paneStale = false
 end
 
 -- Redraws the rows once shortly after the client loads an item they show, so a burst of loads costs one redraw;
--- the sources pane only when the selected item loaded. An item the stat search waits for lists the items again.
+-- the sources pane only when the selected item loaded.
 function Browse.OnItemInfo(id, success)
     if not frame or not frame:IsShown() then
         return
     end
     id = Safe(id)
-    if not id or not (listed[id] or id == selected or searching[id]) or Safe(success) == false then
+    if not id or not (listed[id] or id == selected) or Safe(success) == false then
         return
     end
     -- Checked before pending: the selected item may load inside a burst another item started.
     paneStale = paneStale or id == selected
-    relist = relist or searching[id] == true
     if pending then
         return
     end
@@ -703,8 +731,10 @@ local function lookup(id)
         return
     end
     View.NoteName(id, View.CachedName(id))
-    -- A search could hide the dropped item.
-    frame.search:SetText("")
+    -- A ticked stat could hide the dropped item.
+    for _, box in pairs(frame.stats) do
+        box:SetChecked(false)
+    end
     local r = ns.Advisor.Place(id, class, level)
     if r then
         selectItem(id)

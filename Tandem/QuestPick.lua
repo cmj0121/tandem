@@ -1,7 +1,8 @@
 local _, ns = ...
 
 -- Marks the best quest reward choice on turn-in (decision 3): among the choices the player can use, the one that
--- strictly beats every other by item level, then quality, gets a small Tandem icon on its button. Advises only: the
+-- strictly beats every other by stat score when every one has stats, else by item level, then quality, gets a small
+-- Tandem icon on its button. Advises only: the
 -- icon is a child texture of the reward button, nothing is selected, and nothing happens in combat or when the
 -- client lacks the quest API or the reward buttons.
 local QuestPick = {}
@@ -22,27 +23,50 @@ local function choiceID(i)
     return type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
 end
 
+-- Returns the index of the strict winner among choices { index, ilvl, quality, score }, or nil on a tie: by score
+-- when every choice has one, else by item level, then quality.
+local function winner(choices)
+    local scored = true
+    for _, c in ipairs(choices) do
+        scored = scored and c.score ~= nil
+    end
+    local function cmp(a, b)
+        if scored then
+            return a.score - b.score
+        end
+        return a.ilvl ~= b.ilvl and a.ilvl - b.ilvl or a.quality - b.quality
+    end
+    local best, tied
+    for _, c in ipairs(choices) do
+        local d = best and cmp(c, best)
+        if not best or d > 0 then
+            best, tied = c, false
+        elseif d == 0 then
+            tied = true
+        end
+    end
+    return best and not tied and best.index or nil
+end
+
 -- QuestPick.Pick(ids, class, level) -> index, pending
--- Returns the index of the usable choice that beats every other usable one by item level, then quality; nil on a
--- tie or when none is usable. pending lists the ids not loaded yet, and while any is, nothing is picked.
+-- Returns the index of the usable choice that strictly beats every other usable one: by stat score when every usable
+-- choice has stats, else by item level, then quality; nil on a tie or when none is usable. pending lists the ids not
+-- loaded yet, and while any is, nothing is picked.
 function QuestPick.Pick(ids, class, level)
-    local best, bestIndex, tied, pending = nil, nil, false, {}
+    local choices, pending = {}, {}
     for i, id in ipairs(ids) do
         local r = id and ns.View.Record(id)
         if r == nil and id then
             pending[#pending + 1] = id
         elseif r and ns.Advisor.Usable(r, class, level) then
-            if not best or r[1] > best[1] or (r[1] == best[1] and r[3] > best[3]) then
-                best, bestIndex, tied = r, i, false
-            elseif r[1] == best[1] and r[3] == best[3] then
-                tied = true
-            end
+            choices[#choices + 1] = { index = i, ilvl = r[1], quality = r[3],
+                                      score = ns.Advisor.Score(id, class, level) }
         end
     end
-    if #pending > 0 or tied then
+    if #pending > 0 then
         return nil, pending
     end
-    return bestIndex, pending
+    return winner(choices), pending
 end
 
 -- Returns the reward button of choice i: a choice button in QuestInfoRewardsFrame.RewardButtons, else the named

@@ -204,6 +204,8 @@ local function statsOf(id)
     return type(s) == "table" and s or nil
 end
 
+Advisor.Stats = statsOf
+
 -- Returns the item's weighted score for the class at the level (its active spec), or nil when it has no stats.
 function Advisor.Score(id, class, level)
     return ns.Weights.Score(statsOf(id), class, (ns.Weights.Active(class, level)))

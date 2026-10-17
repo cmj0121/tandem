@@ -3301,6 +3301,7 @@ do
         "|cffff8000item #11|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
     check("browse row: asks the client to load the item", ctx.requested[11], true)
     check("browse row: ilvl", b[1].ilvl:GetText(), "99")
+    check("browse row: no score without stats", b[1].score:GetText(), "")
     check("browse row: level", b[1].level:GetText(), "1")
     check("browse row: usable is opaque", b[1].alpha, 1)
     check("browse row: unusable item has no upgrade mark", b[2].name:GetText(),
@@ -4594,6 +4595,31 @@ do
 end
 
 do
+    local db, shipped = statData()
+    local ctx = loadBrowse("enUS", db, shipped, { env = PLAYER_ENV })
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("score browse: rows sort as Advisor ranks", rowIDs(win), "12,4,11,1,3,2")
+    local b = win.box.buttons
+    check("score browse: the score column", b[1].score:GetText() .. "|" .. b[2].score:GetText() .. "|"
+        .. b[3].score:GetText(), "10.0|0.0|")
+    check("score browse: no (no stats) mark on a scored row", b[1].name:GetText():find("(no stats)", 1, true), nil)
+    ctx.addon.Weights.SetOverride("int", 5, "WARRIOR", 40)
+    ctx.run("browse")
+    ctx.run("browse chest")
+    check("score browse: a weight change re-sorts", rowIDs(win), "4,12,11,1,3,2")
+    check("score browse: and rescoring shows", win.box.buttons[1].score:GetText(), "75.0")
+end
+
+do
+    local ctx = loadBrowse("zhTW")
+    ctx.run("browse")
+    local h = ctx.win().headings
+    check("zhTW browse headings", h.score:GetText() .. " " .. h.ilvl:GetText() .. " " .. h.level:GetText(),
+        "分數 裝等 需求")
+end
+
+do
     local ctx = loadGear("zhTW", statData())
     check("zhTW (no stats) mark", ctx.run("gear chest")[5]:sub(-15), "（無屬性）")
 end
@@ -4862,7 +4888,7 @@ do
     local win = ctx.win()
     check("browse size: wider default", win.width .. "x" .. win.height, "640x620")
     check("browse size: resizable", win.resizable, true)
-    check("browse size: bounds", table.concat(win.bounds, ","), "520,480,1200,1000")
+    check("browse size: bounds", table.concat(win.bounds, ","), "600,520,1200,1000")
     local grip = win.grip
     check("browse size: a grip", grip and grip.kind .. " " .. grip.width .. "x" .. grip.height, "Button 16x16")
     check("browse size: the grip sits at the bottom-right corner", point(grip),
@@ -4901,7 +4927,16 @@ do
     check("browse layout: the usable label clicks its box", table.concat(win.usable.hitInsets, " "),
         "0 " .. -(2 + 6 * #"Usable only") .. " 0 0")
     check("browse layout: the list stretches with the window", point(win.box) .. " / " .. point(win.box, 2),
-        "TOPLEFT TandemBrowseFrame TOPLEFT 12 -138 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
+        "TOPLEFT TandemBrowseFrame TOPLEFT 12 -198 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
+    check("browse layout: the level heading sits over the list's right edge", point(win.headings.level),
+        "BOTTOMRIGHT Frame TOPRIGHT -4 2")
+    check("browse layout: the item level heading left of it",
+        point(win.headings.ilvl) .. " " .. tostring(win.headings.ilvl.points[1][2] == win.headings.level),
+        "BOTTOMRIGHT FontString BOTTOMLEFT -4 0 true")
+    check("browse layout: the score heading left of that",
+        tostring(win.headings.score.points[1][2] == win.headings.ilvl), "true")
+    check("browse layout: heading texts", win.headings.score:GetText() .. " " .. win.headings.ilvl:GetText() .. " "
+        .. win.headings.level:GetText(), "Score iLvl Req")
 
     local again = loadBrowse("enUS", { schemaVersion = 4, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
     again.run("browse")
@@ -4910,9 +4945,9 @@ end
 
 for name, case in pairs({
     ["too large"] = { 2000, 1500, nil, "1200x1000" },
-    ["too small"] = { 100, 50, nil, "520x480" },
+    ["too small"] = { 100, 50, nil, "600x520" },
     ["larger than the screen"] = { 1100, 900, { 1000, 700 }, "1000x700" },
-    ["a screen below the minimum"] = { 600, 500, { 400, 300 }, "520x480" },
+    ["a screen below the minimum"] = { 650, 560, { 400, 300 }, "600x520" },
 }) do
     local db, shipped = gearData()
     db.ui = { window = { point = "TOP", x = 0, y = 0, width = case[1], height = case[2] } }
@@ -4932,7 +4967,7 @@ do
     ctx.run("browse")
     local win = ctx.win()
     check("browse size: min and max without SetResizeBounds",
-        table.concat(win.minResize, ",") .. " " .. table.concat(win.maxResize, ","), "520,480 1200,1000")
+        table.concat(win.minResize, ",") .. " " .. table.concat(win.maxResize, ","), "600,520 1200,1000")
 
     local db, shipped = gearData()
     db.ui = { window = { point = "TOP", x = 0, y = 0, width = 900, height = 700 } }
@@ -5254,6 +5289,26 @@ do
     check("tooltip memo: a level-up walks again", counts(), "4/4")
     ctx.hover({ id = 1 })
     check("tooltip memo: another item has its own entry", counts(), "5/5")
+end
+
+do
+    local db, shipped = statData()
+    local ctx = loadTooltip("enUS", db, shipped)
+    ctx.env.UnitName, ctx.env.GetRealmName = PLAYER_ENV.UnitName, PLAYER_ENV.GetRealmName
+    check("tooltip score: the rank line shows the score", ctx.hover({ id = 12 }).lines[1].text,
+        "Tandem: rank 1 of 5 for Chest, score 10.0 (upgrade)")
+    check("tooltip score: a zero score still shows", ctx.hover({ id = 4 }).lines[1].text,
+        "Tandem: rank 2 of 5 for Chest, score 0.0 (upgrade)")
+    check("tooltip score: a stat-less item has no score", ctx.hover({ id = 1 }).lines[1].text,
+        "Tandem: rank 3 of 5 for Chest (upgrade) (no stats)")
+    ctx.addon.Weights.SetOverride("int", 5, "WARRIOR", 40)
+    check("tooltip memo: a weight change ranks and scores again", ctx.hover({ id = 4 }).lines[1].text,
+        "Tandem: rank 1 of 5 for Chest, score 75.0 (upgrade)")
+    ctx.addon.Weights.SetSpec(3)
+    check("tooltip memo: a spec change ranks again", ctx.hover({ id = 4 }).lines[1].text,
+        "Tandem: rank 2 of 5 for Chest, score 0.0 (upgrade)")
+    local zh = loadTooltip("zhTW", statData())
+    check("zhTW tooltip score", zh.hover({ id = 12 }).lines[1].text, "Tandem：排名第 1／5（胸部），分數 10.0（升級）")
 end
 
 for locale, want in pairs({
@@ -5937,6 +5992,24 @@ do
 end
 
 do
+    local ctx = loadQuest({ 1, 3, 12 })
+    local stats = ctx.env.TandemDB.stats
+    stats[1], stats[3], stats[12] = { str = 2 }, { str = 1 }, { str = 9 }
+    ctx.complete()
+    check("quest pick score: every choice scored picks the highest score", ctx.marked(), "3")
+    stats[3] = { str = 9 }
+    ctx.complete()
+    check("quest pick score: a tie on score marks none, whatever the item level", ctx.marked(), "")
+    stats[3] = nil
+    ctx.complete()
+    check("quest pick score: a stat-less choice falls back to item level", ctx.marked(), "1")
+    ctx.quest.choices = { 12, 8 }
+    stats[8] = nil
+    ctx.complete()
+    check("quest pick score: an unusable stat-less choice does not stop the score pick", ctx.marked(), "1")
+end
+
+do
     local ctx = loadQuest({ 1, 13 })
     ctx.level = 10
     ctx.complete()
@@ -6171,6 +6244,33 @@ for _, api in ipairs({ "global", "none" }) do
 end
 
 do
+    local ctx = loadUpgrade()
+    local stats = ctx.env.TandemDB.stats
+    stats[3], stats[1], stats[12], stats[13] = { str = 10 }, { str = 5 }, { str = 12 }, { str = 1 }
+    ctx.bagUpdate()
+    check("upgrade score: a lower score is no upgrade at a higher item level", #ctx.loot(1), 0)
+    check("upgrade score: a higher score is an upgrade at a lower item level", ctx.loot(12)[1],
+        ("Tandem: upgrade for Chest: %s (score 12.0 over 10.0)"):format(built(12, GREEN)))
+    check("upgrade score: an empty slot has no score, so item level decides", ctx.loot(13)[1],
+        upgradeLine("Legs", 13, BLUE, 50, 0))
+    stats[3] = nil
+    check("upgrade score: a stat-less worn item compares by item level", ctx.loot(4, 2)[1], nil)
+    ctx.equipped[5] = "|Hitem:2:|h"
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    stats[2] = { str = 50 }
+    check("upgrade score: equal scores are no upgrade", #ctx.loot(), 0)
+end
+
+do
+    local ctx = loadUpgrade({ locale = "zhTW" })
+    ctx.env.TandemDB.stats[3], ctx.env.TandemDB.stats[12] = { str = 1 }, { str = 2 }
+    ctx.bagUpdate()
+    check("zhTW upgrade alert score line", ctx.loot(12)[1],
+        ("Tandem：胸部的升級：%s（分數 2.0，高於 1.0）"):format(built(12, GREEN, "物品 #12")))
+end
+
+do
     local ctx = loadUpgrade({ locale = "zhTW" })
     ctx.bagUpdate()
     check("zhTW upgrade alert line", ctx.loot(1)[1],
@@ -6361,57 +6461,83 @@ do
         "Tandem: stat search is not available on this client; see /tandem check")
     check("gear search without the API prints one line", #out, 1)
     check("gear without a query works without the API", ctx.run("gear chest")[1], "Best Chest for level 40 Warrior:")
-    ctx.run("browse chest")
-    local win = ctx.win()
-    check("browse search box disabled without the API", win.search:IsEnabled(), false)
-    check("browse search label says why", win.searchLabel:GetText(), "Stat search: not on this client")
-    check("browse search box has no text handler without the API", win.search.scripts.OnTextChanged, nil)
-    win.search:SetText("stamina")
-    ctx.addon.Browse.Refresh()
-    check("browse ignores typed text without the API", rowIDs(win), "11,1,3,4,2,12")
+end
+
+-- Browse stat boxes (stage 7, unit 8): an item is listed only when it has every ticked stat above 0.
+local function statBoxData()
+    local db, shipped = gearData()
+    db.stats = { [1] = { sta = 5, str = 3 }, [3] = { sta = 10, int = 4 }, [11] = { int = 7 },
+                 [2] = { sta = 0, int = 6 } }
+    shipped.stats = { [4] = { sta = 2, int = 3 }, [12] = { str = 4 }, [2] = { sta = 9, int = 9 } }
+    return db, shipped
+end
+
+local function tick(win, key, on)
+    win.stats[key]:SetChecked(on)
+    win.stats[key]:GetScript("OnClick")(win.stats[key])
 end
 
 do
-    local ctx = loadSearch()
-    chestTips(ctx)
-    ctx.tip(11, { "GM Robe", "+99 Stamina" })
+    local ctx = loadBrowse("enUS", statBoxData())
     ctx.run("browse chest")
     local win = ctx.win()
-    check("browse search box enabled", win.search:IsEnabled() ~= false, true)
-    check("browse search label", win.searchLabel:GetText(), "Stat search")
-    check("browse search box takes a long query", win.search.maxLetters, 60)
-    check("browse before search", rowIDs(win), "11,1,3,4,2,12")
-    win.search:SetText("+stamina")
-    win.search.scripts.OnTextChanged(win.search, true)
-    check("browse search filters and sorts by value", rowIDs(win), "11,3,1,4")
-    check("browse search count says what is loading", win.count:GetText(), "4 items, 1 loading")
-    win.search:SetFocus()
-    win.search.scripts.OnEscapePressed(win.search)
-    check("browse search Escape drops the focus", win.search.focused, false)
-    ctx.cache[2] = { "Item 2" }
-    ctx.fire("GET_ITEM_INFO_RECEIVED", 2, true)
-    check("browse search waits for the redraw", rowIDs(win), "11,3,1,4")
-    ctx.tick()
-    check("browse search a late item appears", rowIDs(win), "11,3,2,1,4")
-    check("browse search count after the late item", win.count:GetText(), "5 items")
-    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
-    check("browse search ignores other items", #ctx.ui.timers, 0)
+    local keys = { "str", "agi", "sta", "int", "spi", "sp", "heal", "hit", "crit", "ap", "mp5", "def" }
+    local labels = {}
+    for i, key in ipairs(keys) do
+        local box = win.stats[key]
+        local row, col = math.floor((i - 1) / 6), (i - 1) % 6
+        check("stat boxes: " .. key .. " sits in its grid cell", point(box),
+            ("TOPLEFT TandemBrowseFrame TOPLEFT %d %d"):format(12 + col * 96, -132 - row * 24))
+        check("stat boxes: " .. key .. " starts unticked", box:GetChecked(), false)
+        check("stat boxes: " .. key .. " sits above the window", box.level, win:GetFrameLevel() + 5)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.kind == "FontString" and w.points[1] and w.points[1][2] == box then
+                labels[#labels + 1] = w.text
+                check("stat boxes: the " .. key .. " label clicks its box", table.concat(box.hitInsets, " "),
+                    "0 " .. -(2 + 6 * #w.text) .. " 0 0")
+            end
+        end
+    end
+    check("stat boxes: labels", table.concat(labels, ","),
+        "Strength,Agility,Stamina,Intellect,Spirit,Spell power,Healing,Hit,Crit,Attack power,MP5,Defense")
+    check("stat boxes: the list starts below them", point(win.box), "TOPLEFT TandemBrowseFrame TOPLEFT 12 -198")
+    check("stat boxes: nothing ticked lists everything", rowIDs(win), "1,3,12,4,11,2")
+    tick(win, "sta", true)
+    check("stat boxes: STA lists the items with stamina, stat-less and zero ones hidden", rowIDs(win), "1,3,4")
+    check("stat boxes: the count follows", win.count:GetText(), "3 items")
+    tick(win, "int", true)
+    check("stat boxes: STA and INT lists only items with both", rowIDs(win), "3,4")
+    tick(win, "sta", false)
+    check("stat boxes: own stats win over shipped ones", rowIDs(win), "3,4,11,2")
+    tick(win, "def", true)
+    check("stat boxes: no item has every ticked stat", rowIDs(win) .. " " .. win.count:GetText(), " 0 items")
+    tick(win, "def", false)
+    tick(win, "int", false)
+    check("stat boxes: unticking all restores the list", rowIDs(win), "1,3,12,4,11,2")
+    tick(win, "str", true)
     ctx.level = 30
     ctx.addon.Browse.Refresh()
-    check("browse search keeps the other filters", rowIDs(win), "11,3,2,4")
-    ctx.level = 40
-    win.search:SetText("strength")
-    win.search.scripts.OnTextChanged(win.search, true)
-    check("browse search another stat", rowIDs(win), "12,1")
-    check("browse search count", win.count:GetText(), "2 items")
-    win.search:SetText("")
-    win.search.scripts.OnTextChanged(win.search, true)
-    check("browse search cleared lists all", rowIDs(win), "11,1,3,4,2,12")
-    win.search:SetText("stamina")
-    ctx.cursor = { "item", 12 }
+    check("stat boxes: the other filters still apply", rowIDs(win), "12")
+    ctx.cursor = { "item", 11 }
     win.scripts.OnReceiveDrag(win)
-    check("browse drop clears the search", win.search:GetText(), "")
-    check("browse drop shows the dropped item", rowIDs(win):find("12", 1, true) ~= nil, true)
+    check("stat boxes: a drop unticks them", win.stats.str:GetChecked(), false)
+    check("stat boxes: a drop shows the dropped item", rowIDs(win):find("11", 1, true) ~= nil, true)
+    check("stat boxes: no text search box", win.search, nil)
+end
+
+do
+    local ctx = loadBrowse("zhTW", statBoxData())
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local labels = {}
+    for _, w in ipairs(ctx.ui.widgets) do
+        for _, key in ipairs({ "str", "sp", "heal", "crit", "ap", "mp5", "def" }) do
+            if w.kind == "FontString" and w.points[1] and w.points[1][2] == win.stats[key] then
+                labels[#labels + 1] = w.text
+            end
+        end
+    end
+    check("zhTW stat box labels", table.concat(labels, ","), "力量,法術能量,治療,致命一擊,攻擊強度,法力恢復,防禦")
 end
 
 do

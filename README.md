@@ -259,9 +259,9 @@ Along the top of the window:
 
 - A slot dropdown: `All slots`, then each slot by name. `All slots` lists each item once, under its first slot, so a
   one-hand weapon appears once, as a main-hand weapon. When your class dual-wields at your level, such a one-hander is
-  marked against both hands there: `(equipped)` when you wear it in either hand, and `(upgrade)` when its item level is
-  above the lower of the two hands whose item level is known. In the `Main hand` and `Off hand` views it is compared
-  with that hand only.
+  marked against both hands there: `(equipped)` when you wear it in either hand, and `(upgrade)` when it beats the
+  weaker of the two hands, by score or item level as in [How gear is ranked](#how-gear-is-ranked). In the `Main hand`
+  and `Off hand` views it is compared with that hand only.
 - A quality dropdown: `All qualities`, then `Poor`, `Common`, `Uncommon`, `Rare`, `Epic` and `Legendary`, each in its
   quality colour. Picking a quality lists only the items of that quality.
 - The number of listed items, as `<n> items`.
@@ -287,9 +287,28 @@ Below the boxes, a scan bar runs the same scan as [`/tandem scan`](#tandem-scan)
   or logout but never saved; after one, the boxes read `10/s` and `100` again.
 - `Start`, which scans from the cursor with those values. While a scan runs, whether started here or with
   `/tandem scan`, the button reads `Stop` and stops it as `/tandem scan stop` does.
-- A `Stat search` box at the end of the row; see [Stat search](#stat-search).
 - A status line. While a scan runs it reads `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>` and is updated
   every second while the window is open; otherwise it reads `<n> known items, next scan from ID <id>`.
+
+Under the scan bar, twelve stat boxes in two rows filter the list by stat:
+
+```text
+[ ] Strength  [ ] Agility  [ ] Stamina  [ ] Intellect     [ ] Spirit  [ ] Spell power
+[ ] Healing   [ ] Hit      [ ] Crit     [ ] Attack power  [ ] MP5     [ ] Defense
+```
+
+- With a box ticked, only items that have that stat, above 0, are listed. With several ticked, an item must have every
+  one of them: ticking `Stamina` and `Intellect` lists only items with both. The rows keep the score order and the
+  count follows.
+- The stats are the ones read by the scan (see [`/tandem scan`](#tandem-scan)): your own first, else the shipped data.
+  Items marked `(no stats)` are hidden while any box is ticked, since their stats are not known.
+- `Spell power` is the "damage and healing" line, `Healing` the healing-only line, `Hit` and `Crit` the physical ones;
+  spell hit and spell critical strike have no box. Armor and weapon damage have none either, as nearly every item has
+  them.
+- Untick every box to list all items again. The boxes start unticked, are kept while the client runs, and are never
+  saved. Dropping an item on the window unticks them so the item shows.
+- They work on stored stats, so they need no tooltip API. To search tooltip text instead, use
+  `/tandem gear <slot> <words>`; see [Stat search](#stat-search).
 
 A scan started from the bar prints the same chat lines as the command, such as `Tandem: scanning <n> IDs from ID <id>`
 and the summary. An invalid value prints the command's usage line and starts nothing:
@@ -301,12 +320,17 @@ and the summary. An invalid value prints the command's usage line and starts not
 In combat, `Start` and `Stop` print `Tandem: not available in combat` and do nothing. When a scan ends, by reaching its
 cap or by being stopped, an open window lists the items again, so items the scan found show up without reopening it.
 
+The rows are in the order of [How gear is ranked](#how-gear-is-ranked): scored items by score, then the `(no stats)`
+ones by item level. Grey headings over the right of the list name the three number columns, `Score`, `iLvl` and `Req`.
 Each row shows:
 
 - The item's icon, or a question mark when the client gives none.
 - Its name in its quality colour, followed in grey by the marks of [How gear is ranked](#how-gear-is-ranked):
-  `(equipped)`, `(upgrade)` or `(no known source)`. Like `gear ... all`, the window lists items with no known source too.
-  A dimmed item is never marked `(upgrade)`.
+  `(equipped)`, `(upgrade)`, `(no stats)` or `(no known source)`. Like `gear ... all`, the window lists items with no
+  known source too. A dimmed item is never marked `(upgrade)`.
+- Its stat score for your class and talent tree with one decimal, such as `12.5`; blank for an item marked
+  `(no stats)`. A weight or tree change from [`/tandem weights`](#tandem-weights) shows the next time the list is
+  rebuilt, for example when you change a filter or reopen the window.
 - Its item level, then a level. Normally that is the item's required level. When your level is too low to use the
   item, it is the level from which you could, in red: the higher of the item's required level and the level your class
   learns that armor or weapon type, so mail for a hunter shows `40`. An item your class cannot use at all is dimmed but
@@ -342,7 +366,7 @@ an open window closes when combat starts; it stays closed afterwards. Escape clo
 left mouse button to move it. Its position is kept in `TandemDB.ui` and restored after a `/reload` or the next login;
 until you first move it, it opens in the middle of the screen.
 
-The window opens 640 wide and 620 high. Drag the grip at its bottom right corner to resize it, from 520 × 480 up to
+The window opens 640 wide and 620 high. Drag the grip at its bottom right corner to resize it, from 600 × 520 up to
 1200 × 1000, or the size of the screen when that is smaller. The list and the item names widen with the window, and the
 pane stays at the bottom. Whenever you move or resize the window, its size is kept in `TandemDB.ui` with the position
 and restored after a `/reload` or the next login, brought back within those bounds. On a client that cannot resize
@@ -491,9 +515,11 @@ the item's tooltip is the game's main tooltip, such as in your bags, on your cha
 and in the tooltip that opens when you click an item link in chat. The comparison tooltips that show what you wear are
 left alone.
 
-- In Tandem blue, `Tandem: rank <n> of <total> for <slot>`, followed by the marks of
-  [How gear is ranked](#how-gear-is-ranked): `(equipped)`, `(upgrade)` or `(no known source)`. The rank is the one
-  `/tandem rank` prints. A one-hand weapon is ranked as a main-hand weapon; when your class dual-wields at your level,
+- In Tandem blue, `Tandem: rank <n> of <total> for <slot>, score <score>`, followed by the marks of
+  [How gear is ranked](#how-gear-is-ranked): `(equipped)`, `(upgrade)`, `(no stats)` or `(no known source)`. The score
+  has one decimal; an item whose stats were never read has no `, score` part and is marked `(no stats)`. The rank is
+  the one `/tandem rank` prints, and a weight or tree change from [`/tandem weights`](#tandem-weights) shows at the
+  next hover. A one-hand weapon is ranked as a main-hand weapon; when your class dual-wields at your level,
   it is marked against both hands, as in the browse window's `All slots`. An item with no ranked slot, such as a shirt,
   gets no rank line.
 - In red, when you cannot use the item, `Tandem: you cannot use it: level <n> required` or
@@ -512,7 +538,7 @@ left alone.
 For example:
 
 ```text
-Tandem: rank 2 of 14 for Chest (upgrade)
+Tandem: rank 2 of 14 for Chest, score 24.5 (upgrade)
 Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 ```
 
@@ -566,12 +592,14 @@ limited stock or ask for reputation, and a quest may follow a chain, be one-off,
 
 When you hand in a quest that lets you choose one of two or more rewards (`QUEST_COMPLETE`), Tandem puts a small Tandem
 icon on the top right of the best choice's button. The best choice is the one your class and level can use that beats
-every other usable choice by item level, then by quality, as in [How gear is ranked](#how-gear-is-ranked). It is not
+every other usable choice. When every usable choice has stats, that is by stat score alone, as in
+[How gear is ranked](#how-gear-is-ranked); when any of them is marked `(no stats)`, it is by item level, then by
+quality, for all of them. It is not
 compared with what you wear: hover the choice to see its rank and `(upgrade)` mark in the
 [item tooltip](#item-tooltip).
 
-- No icon when two usable choices share the best item level and quality, when no choice is usable, or when the quest
-  offers a single choice.
+- No icon when two usable choices share the best score (or, without stats, the best item level and quality), when no
+  choice is usable, or when the quest offers a single choice.
 - A choice the client has not loaded yet is asked for; the icon shows once every choice has arrived, while the reward
   window is still open.
 - The icon only advises: Tandem never selects a reward, and you still click the one you want.
@@ -582,15 +610,18 @@ compared with what you wear: hover the choice to see its rank and `(upgrade)` ma
 ### Upgrade alert
 
 When an item lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4) that your class and level can use and that beats
-what you wear in its slot by item level, chat shows one line:
+what you wear in its slot, chat shows one line. When both the new item and what you wear have stats, they are compared
+by stat score; otherwise by item level:
 
 ```text
+Tandem: upgrade for Chest: [Plate Chest] (score 24.5 over 18.0)
 Tandem: upgrade for Chest: [Plate Chest] (item level 45 over 30)
 ```
 
-The rule is the `(upgrade)` mark of [`/tandem gear`](#tandem-gear): an empty slot counts as item level 0, a ring or
-trinket is compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker hand, and an
-off-hand item says nothing while you wield a two-hander. Stats are not considered.
+The rule is the `(upgrade)` mark of [`/tandem gear`](#tandem-gear): an empty slot has no stats and counts as item level
+0, a ring or trinket is compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker
+hand, and an off-hand item says nothing while you wield a two-hander. The score is for your class and talent tree, with
+your [`/tandem weights`](#tandem-weights).
 
 - Each item is announced at most once per session, and only when it is new in the bags: the bags you log in with are
   read silently, and moving an item between bags says nothing.
@@ -603,8 +634,9 @@ off-hand item says nothing while you wield a two-hander. Stats are not considere
 
 ### Stat search
 
-Find gear by what its tooltip says, such as stamina or spell critical strike. Type words in the `Stat search` box of
-the browse window, or after the slot of `/tandem gear`:
+Find gear by what its tooltip says, such as stamina or spell critical strike. Type words after the slot of
+`/tandem gear`. The browse window filters by stat with its stat boxes instead; see
+[`/tandem browse`](#tandem-browse).
 
 ```text
 /tandem gear chest +stamina
@@ -620,12 +652,11 @@ by 1%.`, but not a tooltip with `spell` on one line and `critical` on another.
   reads `耐力` and spell critical strike reads `裝備：使你的法術造成致命一擊的機率提高1%。`, so search `耐力` or
   `法術 致命一擊`. A few common words are translated for you on zhTW: `體力` searches `耐力`, `暴擊` searches
   `致命一擊`, and `法術暴擊` searches `法術 致命一擊`. Other words must match the tooltip as written.
-- Only items that pass the other filters are searched: the slot and quality dropdowns, `Usable only` and
-  `Hide deprecated` in the window; the slot, usable items and, without `all`, items with a known source in the command.
-- The window lists the matches as you type and the count follows. An item the client has not loaded yet counts as not
-  matching and is asked for: the count reads `<n> items, <m> loading`, and the item joins the list when it arrives.
-  The command prints `<m> items are still loading; run the command again in a moment` instead.
-- Each item's tooltip is read once per session. Dropping an item on the window clears the search so the item shows.
+- Only items that pass the other filters are searched: the slot, usable items and, without `all`, items with a known
+  source.
+- An item the client has not loaded yet counts as not matching and is asked for; the command then prints
+  `<m> items are still loading; run the command again in a moment`.
+- Each item's tooltip is read once per session.
 - `/tandem gear <slot> <words>` prints up to 10 matches, each with the matching line, and ends with
   `Sorted by the number on the matching tooltip line, then item level and quality`. Words need a slot: `all` alone is
   the flag of [`/tandem gear`](#tandem-gear), and `/tandem gear all <words>` is an unknown slot.
@@ -638,8 +669,8 @@ Sorted by the number on the matching tooltip line, then item level and quality
 ```
 
 The search reads `C_TooltipInfo.GetItemByID`. When the `Stat search` line of [`/tandem check`](#tandem-check) is
-`missing`, the box is greyed out and its label reads `Stat search: not on this client`, and the command prints
-`Tandem: stat search is not available on this client; see /tandem check`.
+`missing`, the command prints `Tandem: stat search is not available on this client; see /tandem check`; the browse
+window's stat boxes still work, as they read the stored stats.
 
 ### Deprecated items
 
@@ -851,7 +882,7 @@ that is listed for your class but cannot be equipped.
 17. Drop an item that is not cached, such as a quest item: the pane reads
     `Tandem: item <id> is not known; scan or loot it first`.
 18. Pick up a spell from your spellbook and drop it on the window: nothing changes and the spell stays on the cursor.
-19. Drag the grip at the bottom right corner: the window grows and shrinks, but not below 520 × 480 or above
+19. Drag the grip at the bottom right corner: the window grows and shrinks, but not below 600 × 520 or above
     1200 × 1000, and the list and item names follow its width. Make it wider, move it, type `/reload`, then run
     `/tandem browse`: it opens at the same place and size.
 20. Pick `Rare` in the quality dropdown: only blue (rare) items are listed, and the count drops. Pick
@@ -862,16 +893,21 @@ that is listed for your class but cannot be equipped.
     you wear it in your off hand, and `(upgrade)` when it beats the weaker of your two weapons.
 23. Run `/tandem gear` and `/tandem rank <id>` with the ID of a deprecated item: `gear` never lists it, and `rank`
     prints `this item is deprecated` after the rank line.
+24. Pick `Chest`. Grey `Score`, `iLvl` and `Req` headings sit over the three number columns. Rows with a score come
+    first, highest score first; rows marked `(no stats)` follow with a blank score. Run `/tandem weights set sta 5`,
+    then pick `Chest` again: items with stamina move up and their scores grow. Run `/tandem weights reset` after.
 
 Report back whether the scroll bar showed, how scrolling felt in step 2, whether the compartment entry and the minimap
-button showed in step 11, whether the grip showed in step 19, any Lua error, and any text that does not fit in the
-window, at its smallest size too.
+button showed in step 11, whether the grip showed in step 19, whether the headings line up with the columns in step 24,
+any Lua error, and any text that does not fit in the window, at its smallest size too.
 
 ### Check the item tooltip
 
 1. Out of combat, hover an item in your bags that Tandem knows and that goes in a ranked slot. Below the game's lines,
-   a blue line reads `Tandem: rank <n> of <total> for <slot>`, with `(equipped)`, `(upgrade)` or `(no known source)`
-   as the browse window shows for the same item.
+   a blue line reads `Tandem: rank <n> of <total> for <slot>, score <score>`, with `(equipped)`, `(upgrade)` or
+   `(no known source)` as the browse window shows for the same item, and the same score as its browse row. An item
+   marked `(no stats)` has no `, score` part. Run `/tandem weights set sta 5` and hover it again: the score follows.
+   Run `/tandem weights reset` after.
 2. Hover an item you cannot use: a red line reads `Tandem: you cannot use it: level <n> required` or
    `Tandem: your class cannot use it`.
 3. Hover an item you looted from a mob: a grey line reads `Tandem: drops from <source>, <map>`, with a rate when one is
@@ -941,23 +977,25 @@ was set, the map ID of any map that refused it, and any Lua error.
 1. Out of combat, hand in a quest that offers a choice of two or more rewards, at least one of which your class can
    use. In the reward window, a small Tandem icon sits on the top right of one choice's button. Nothing is printed and
    no reward is selected.
-2. Hover each choice: the marked one has the highest item level among the choices you can use, or the same item level
-   and a better quality. Note the item level and quality of each choice.
+2. Hover each choice: when every choice you can use shows `, score` on its Tandem line, the marked one has the highest
+   score; otherwise it has the highest item level among them, or the same item level and a better quality. Note the
+   score, item level and quality of each choice.
 3. Close the reward window without choosing, then talk to the quest giver again: the icon shows again on the same
    choice.
-4. For a quest whose usable choices share item level and quality, or that offers nothing your class can use, no icon
-   shows.
+4. For a quest whose usable choices share the best score (or, without stats, item level and quality), or that offers
+   nothing your class can use, no icon shows.
 5. If you can, open a reward window in combat: no icon shows and nothing is printed.
 
-Report back the quest, the choices with their item level and quality, which one was marked, whether the icon sat well
+Report back the quest, the choices with their score, item level and quality, which one was marked, whether the icon sat well
 on the button or hid part of it, and any Lua error.
 
 ### Check the upgrade alert
 
 1. Log in or run `/reload` with some gear in your bags: no `Tandem: upgrade for` line shows.
-2. Out of combat, loot, buy or take from the mail an item your class can use with a higher item level than what you
-   wear in its slot (or any usable item for an empty slot). Chat shows one line,
-   `Tandem: upgrade for <slot>: <item link> (item level <n> over <m>)`, and nothing is equipped.
+2. Out of combat, loot, buy or take from the mail an item your class can use that is marked `(upgrade)` in its tooltip
+   (or any usable item for an empty slot). Chat shows one line, nothing is equipped, and it reads
+   `Tandem: upgrade for <slot>: <item link> (score <n> over <m>)` when both items show a score in their tooltip,
+   else `Tandem: upgrade for <slot>: <item link> (item level <n> over <m>)`.
 3. Move that item to another bag, sell it and buy it back, or drop and loot it again: no second line for it this
    session.
 4. Get an item you cannot use, or one no better than what you wear: no line.
@@ -965,27 +1003,29 @@ on the button or hid part of it, and any Lua error.
 6. If you can, loot an upgrade the client has never shown before (a fresh drop): the line may come a moment later, once
    the item has loaded.
 
-Report back each line as printed with the item level of what you wore, any upgrade that got no line or any line for an
+Report back each line as printed with the score and item level of what you wore, any upgrade that got no line or any line for an
 item that is not an upgrade, and any Lua error.
 
 ### Check the stat search
 
-1. Out of combat, run `/tandem browse chest`, or another slot you have scanned. The scan row ends with a
-   `Stat search` box.
-2. Type `+stamina` (`耐力` on a zhTW client). The list shrinks to items with stamina, the one with the most stamina
-   first, and the count follows. Hover the top rows: each tooltip has a stamina line with a number no lower than the
-   rows below it.
-3. Type `spell critical` (`法術 致命一擊` on zhTW, or `+法術暴擊`): items whose tooltip has an equip line about spell
-   critical strike are listed, highest percentage first. Type `體力` on zhTW: the same list as `耐力`.
-4. If the count reads `<n> items, <m> loading`, wait a moment: rows join the list and the loading part goes away.
-5. Press Escape in the box: the focus leaves it and the window stays open. Clear the box: every item is listed again.
-6. Untick `Usable only` or pick a quality with words in the box: the search follows the filters.
-7. Run `/tandem gear chest +stamina` (`/tandem gear chest 耐力` on zhTW) and `/tandem gear chest all +stamina`: chat
-   lists the matches with their tooltip line, highest number first, and ends with the sorting note.
-8. Note how long the first search over `All slots` with `Usable only` unticked takes, and whether the game stalls.
+1. Out of combat, run `/tandem browse chest`, or another slot you have scanned. Under the scan bar, twelve unticked
+   boxes sit in two rows, `Strength` to `Spell power` and `Healing` to `Defense` (`力量` to `法術能量` and `治療` to
+   `防禦` on a zhTW client), their columns lined up. Click a label: its box toggles, as clicking the box does.
+2. Tick `Stamina`. The list shrinks to items with stamina, still in score order, and the count follows; no row is
+   marked `(no stats)`. Hover a few rows: each tooltip has a stamina line.
+3. Tick `Intellect` too: only items with both stamina and intellect stay. Untick `Stamina`: the list holds the items
+   with intellect. Untick every box: every item is listed again.
+4. With `Stamina` ticked, untick `Usable only` or pick a quality: the stat filter follows the other filters. Drop an
+   item from your bags on the window: the boxes untick and the item is shown.
+5. Run `/tandem gear chest +stamina` (`/tandem gear chest 耐力` on zhTW) and `/tandem gear chest all +stamina`: chat
+   lists the matches with their tooltip line, highest number first, and ends with the sorting note. Run
+   `/tandem gear chest spell critical` (`法術 致命一擊` on zhTW, or `+法術暴擊`): items whose tooltip has an equip line
+   about spell critical strike are listed, highest percentage first.
+6. Note how long the list takes to change when you tick a box over `All slots` with `Usable only` unticked, and whether
+   the game stalls.
 
-Report back the query, the first rows with the line their tooltip shows, any item that should match but does not (with
-the tooltip line as the client words it), the stall in step 8, and any Lua error.
+Report back any label that does not fit its column or overlaps the next box, any item listed under a ticked stat its
+tooltip does not show (or missing though it does), the stall in step 6, and any Lua error.
 
 ## Interface number
 

@@ -284,6 +284,11 @@ function View.IsUpgrade(row, worn)
     return worn.ilvl ~= nil and row.ilvl > worn.ilvl
 end
 
+-- Returns a stat score as shown beside an item, one decimal; "" for an item without stats (nil).
+function View.ScoreText(score)
+    return score and ("%.1f"):format(score) or ""
+end
+
 -- Returns the marks after an item row { id, ilvl, score, sourced, usable } against what is worn in its slot.
 function View.Marks(row, worn)
     local s = ""
