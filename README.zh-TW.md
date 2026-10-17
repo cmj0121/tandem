@@ -75,24 +75,29 @@ make install MODE=copy
 /tandem count
 ```
 
-| 指令                                  | 作用                                                              |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `/tandem`                             | 印出指令列表；任何未知的子指令也一樣                              |
-| `/tandem count`                       | 印出目前收集到的資料                                              |
-| `/tandem scan [<n>/s\|<n>/m] [<cap>]` | 從掃描位置往上掃描 `<cap>` 個物品 ID，速率為每秒或每分鐘 `<n>` 個 |
-| `/tandem scan from <id>`              | 把掃描位置設為 `<id>`；不會開始掃描                               |
-| `/tandem scan stop`                   | 停止進行中的掃描並印出摘要                                        |
-| `/tandem gear [<slot>] [all]`         | 列出你能使用的最佳已知裝備，可列出所有部位或單一部位              |
-| `/tandem gear <slot> [all] <words>`   | 列出某部位中提示框同一行含有這些字詞的裝備                        |
-| `/tandem rank <item link\|id>`        | 列出物品在其部位中的排名，以及到哪裡取得                          |
-| `/tandem export`                      | 顯示 `make import` 會從這個帳號收集哪些資料                       |
-| `/tandem browse [<slot>]`             | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
-| `/tandem minimap [on\|off]`           | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
-| `/tandem check`                       | 逐項功能列出它需要的用戶端 API 是否存在                           |
-| `/tandem map <item link\|id>`         | 開啟世界地圖，並在物品的每個已知位置放上標記                      |
-| `/tandem map clear`                   | 移除地圖標記                                                      |
+| 指令                                   | 作用                                                              |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `/tandem`                              | 印出指令列表；任何未知的子指令也一樣                              |
+| `/tandem count`                        | 印出目前收集到的資料                                              |
+| `/tandem scan [<n>/s\|<n>/m] [<cap>]`  | 從掃描位置往上掃描 `<cap>` 個物品 ID，速率為每秒或每分鐘 `<n>` 個 |
+| `/tandem scan from <id>`               | 把掃描位置設為 `<id>`；不會開始掃描                               |
+| `/tandem scan stop`                    | 停止進行中的掃描並印出摘要                                        |
+| `/tandem gear [<slot>] [all]`          | 列出你能使用的最佳已知裝備，可列出所有部位或單一部位              |
+| `/tandem gear <slot> [all] <words>`    | 列出某部位中提示框同一行含有這些字詞的裝備                        |
+| `/tandem rank <item link\|id>`         | 列出物品在其部位中的排名，以及到哪裡取得                          |
+| `/tandem export`                       | 顯示 `make import` 會從這個帳號收集哪些資料                       |
+| `/tandem browse [<slot>]`              | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
+| `/tandem minimap [on\|off]`            | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
+| `/tandem check`                        | 逐項功能列出它需要的用戶端 API 是否存在                           |
+| `/tandem map <item link\|id>`          | 開啟世界地圖，並在物品的每個已知位置放上標記                      |
+| `/tandem map clear`                    | 移除地圖標記                                                      |
+| `/tandem forget <from> <to>`           | 刪除你自己在某個物品 ID 範圍內的物品、屬性與掉落紀錄              |
+| `/tandem weights`                      | 顯示你的天賦系的屬性權重                                          |
+| `/tandem weights spec <1\|2\|3\|auto>` | 選擇權重所用的天賦系，或依天賦自動判斷                            |
+| `/tandem weights set <stat> <number>`  | 自訂目前天賦系某項屬性的權重；0 表示忽略                          |
+| `/tandem weights reset`                | 刪除目前天賦系的自訂權重                                          |
 
-戰鬥中執行 `gear`、`rank`、`export`、`browse`、`check` 與 `map` 時，只會印出 `Tandem: not available in combat`，不做任何事。
+戰鬥中執行 `gear`、`rank`、`export`、`browse`、`check`、`map`、`forget` 與 `weights` 時，只會印出 `Tandem: not available in combat`，不做任何事。
 `minimap` 在戰鬥中也能使用。
 
 ### `/tandem scan`
@@ -328,7 +333,7 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
-`Quest reward pick`、`Upgrade alert`、`Item stats` 與 `Stat search`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search` 與 `Talent spec`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 
 ### `/tandem map`
 
@@ -351,6 +356,59 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 印出 `Tandem: not available in combat`，不做任何事。
 
 `zhTW` 用戶端的這些訊息與按鈕文字會顯示為中文。
+
+### `/tandem forget`
+
+`/tandem forget <from> <to>` 會刪除這個帳號自己記錄的、物品 ID 從 `<from>` 到 `<to>`（含兩端）的物品紀錄、物品屬性與
+掉落紀錄（掉落、任務獎勵與商人販售）。可用來清掉一段意義已經改變的 ID，例如測試版的物品，再重新掃描：
+
+```text
+/tandem forget 277000 277999
+Tandem: forgot 12 items, 12 stats and 3 loot rows with IDs 277000-277999
+```
+
+之後 `/tandem count` 的物品與掉落紀錄數會相應減少；範圍外的 ID 不受影響。每刪除一筆紀錄都算一筆未儲存紀錄，因此
+會在 `/reload` 或登出時儲存。NPC 與任務名稱、擊殺數與拾取屍體數會保留。[隨附資料](#隨附資料)不會被修改：其中的物品
+會一直顯示，直到 `make import` 寫出新的 `Loot.lua`。
+
+`<from>` 與 `<to>` 必須是 1 以上的整數，且 `<from>` 不大於 `<to>`；否則印出
+`Tandem: usage /tandem forget <from> <to>`，不刪除任何資料。存檔資料使用較新的結構版本時，印出
+`Recording is off: saved data uses a newer schema`。`zhTW` 用戶端的這些訊息會顯示為中文。
+
+### `/tandem weights`
+
+每個職業的三個天賦系各有一組內建的屬性權重。`/tandem weights` 顯示目前使用的權重：
+
+```text
+/tandem weights
+Tandem: Arms Warrior weights, tree 1 (auto)
+str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10
+```
+
+第一行列出目前的天賦系與它在天賦頁中的編號，接著是 `auto`（依你的天賦判斷）或 `manual`（你自己選的）。`auto` 時
+使用投入點數最多的天賦系；低於 10 級、尚未投入點數，或 [`/tandem check`](#tandem-check) 的 `Talent spec` 這行為
+`missing` 時，使用該職業常見的練功天賦系。第二行依下列順序，以屬性代碼列出每項有權重的屬性：
+`str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block blockvalue`。
+`sp` 是法術傷害與治療，`heal` 只有治療，`dps` 是武器的每秒傷害；命中與致命一擊的權重以每 1% 計。
+
+- `/tandem weights spec <1|2|3>` 選擇天賦系；`/tandem weights spec auto` 恢復依天賦判斷。會印出
+  `Tandem: weights use tree <n>` 或 `Tandem: weights follow your talents`。
+- `/tandem weights set <stat> <number>` 自訂目前天賦系某項屬性的權重，並印出 `Tandem: <stat> weight set to <number>`。
+  `0` 表示忽略該屬性；天賦系原本沒有權重的屬性會被加入。數字可以帶正負號與小數點，例如 `-1` 或 `0.5`。自訂的權重
+  標有 `*`，並接著一行 `* your own weight; /tandem weights reset drops them`。
+- `/tandem weights reset` 刪除目前天賦系的自訂權重，並印出 `Tandem: own weights for tree <n> dropped`。其他天賦系的
+  自訂權重保留。
+
+每次變更後都會顯示目前的權重。你的選擇依角色（`Name-Realm`）與天賦系分別儲存，因此切換天賦後仍會保留；它們不算紀錄，
+也不計入未儲存紀錄。其他訊息：
+
+- 其他任何輸入：`Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]`，不做任何變更。
+- 不在上列的屬性代碼：`Tandem: unknown stat <stat>; use one of: <keys>`。
+- 沒有內建權重的職業：`Tandem: no built-in weights for <class>`。
+- 存檔資料使用較新的結構版本，或用戶端尚未提供你的名字與伺服器時：
+  `Tandem: weights cannot be saved: recording is off or your character is not known yet`。
+
+`zhTW` 用戶端的這些訊息與天賦系名稱會顯示為中文。
 
 ## 裝備建議
 
@@ -741,9 +799,9 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 物品提示框、任務與商人來源、地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與九行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十行，分別是 `Item tooltip`、
    `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert`、
-   `Item stats` 與 `Stat search`，每行後面接著 `ok` 或 `missing` 以及它的 API。
+   `Item stats`、`Stat search` 與 `Talent spec`，每行後面接著 `ok` 或 `missing` 以及它的 API。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -753,9 +811,10 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    為 `ok`，請進行[檢查資料收集](#檢查資料收集)的步驟 8 與提示框檢查的步驟 4。若 `Map pins` 為 `ok`，請進行
    [檢查地圖標記](#檢查地圖標記)。若步驟 2 中 `Quest reward pick` 為 `ok`，請進行[檢查任務獎勵建議](#檢查任務獎勵建議)。
    若 `Upgrade alert` 為 `ok`，請進行[檢查升級提醒](#檢查升級提醒)。若 `Stat search` 為 `ok`，請進行
-   [檢查屬性搜尋](#檢查屬性搜尋)。
+   [檢查屬性搜尋](#檢查屬性搜尋)。若 `Talent spec` 為 `ok`，在 10 級以上的角色執行 `/tandem weights`：第一行列出投入
+   點數最多的天賦系，後面接著 `(auto)`。
 
-請回報步驟 1 與 2 印出的每一行，以及任何 Lua 錯誤。
+請回報步驟 1 與 2 印出的每一行、步驟 5 中 `/tandem weights` 的第一行，以及任何 Lua 錯誤。
 
 ### 檢查地圖標記
 

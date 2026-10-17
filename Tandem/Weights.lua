@@ -186,6 +186,7 @@ local function overrides(spec)
     end
     return out
 end
+Weights.Overrides = overrides
 
 -- Returns a new { key = w } for the class and spec: the built-in weights with the character's overrides on top.
 -- Empty for a class or spec without built-ins.
