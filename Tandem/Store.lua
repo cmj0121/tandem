@@ -581,6 +581,16 @@ function Store.Stats(id)
     end
 end
 
+-- Drops every saved stats record (read by an older parser, to be read again); false when none or read-only.
+function Store.ClearStats()
+    if Store.readOnly or next(Store.db.stats) == nil then
+        return false
+    end
+    Store.db.stats = {}
+    changed()
+    return true
+end
+
 -- Records the stat parser version the saved stats were read with; false when unchanged, invalid or read-only. Not a
 -- record.
 function Store.SetStatsVersion(version)

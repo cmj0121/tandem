@@ -1056,6 +1056,241 @@ do
     check("a secret field still counts the hit", ctx.run().hits, 1)
 end
 
+-- Scanner stats (stage 7, unit 2): tooltip lines parsed into stat keys at scan time.
+
+-- Gives a loadScanner ctx the tooltip API over tips ({[id] = {left texts}}; an id without lines is not loaded).
+local function withTips(ctx, tips)
+    ctx.tipCalls = {}
+    ctx.env.C_TooltipInfo = { GetItemByID = function(id)
+        ctx.tipCalls[id] = (ctx.tipCalls[id] or 0) + 1
+        if not tips[id] then
+            return nil
+        end
+        local lines = {}
+        for i, text in ipairs(tips[id]) do
+            lines[i] = { leftText = text }
+        end
+        return { lines = lines }
+    end }
+    return ctx
+end
+
+-- Returns stats as "key=n,..." sorted by key, or "nil".
+local function statsText(stats)
+    if not stats then
+        return "nil"
+    end
+    local parts = {}
+    for key, n in pairs(stats) do
+        parts[#parts + 1] = key .. "=" .. n
+    end
+    table.sort(parts)
+    return table.concat(parts, ",")
+end
+
+do
+    local ctx = withTips(loadScanner({}), {
+        [1] = { "Robe of Tests", "Binds when equipped", "Chest", "Cloth", "|cffffffff65 Armor|r", "+10 Stamina",
+            "+12 Intellect", "+8 Spirit", "+3 Fire Resistance",
+            "Equip: Increases damage and healing done by magical spells and effects by up to 23.",
+            "Equip: Increases healing done by spells and effects by up to 44.",
+            "Equip: Improves your chance to hit with spells by 1%.",
+            "Equip: Improves your chance to get a critical strike with spells by 2%.",
+            "Equip: Restores 6 mana per 5 sec.", "Equip: Increases damage done by Fire spells and effects by up to 9.",
+            "(2) Set: Restores 4 mana per 5 sec." },
+        [2] = { "Blade of Tests", "Main Hand", "Sword", "41 - 77 Damage", "Speed 2.50", "(23.6 damage per second)",
+            "+5 Strength", "+7 Agility", "Equip: +20 Attack Power.", "Equip: +12 ranged Attack Power.",
+            "Equip: Improves your chance to hit by 1%.", "Equip: Improves your chance to get a critical strike by 1%.",
+            "Equip: +10 Attack Power when fighting Undead." },
+        [3] = { "Shield of Tests", "Off Hand", "Shield", "1500 Armor", "26 Block", "Equip: Increased Defense +7.",
+            "Equip: Increases your chance to dodge an attack by 1%.",
+            "Equip: Increases your chance to parry an attack by 2%.",
+            "Equip: Increases your chance to block attacks with a shield by 3%.",
+            "Equip: Increases the block value of your shield by 14." },
+        [4] = { "Plain Ring", "Finger" },
+    })
+    local Read = ctx.addon.StatSearch.ReadStats
+    check("stats enUS: caster lines", statsText(Read(1)),
+        "armor=65,heal=44,int=12,mp5=6,sp=23,spellcrit=2,spellhit=1,spi=8,sta=10")
+    check("stats enUS: weapon lines", statsText(Read(2)), "agi=7,ap=20,crit=1,dps=23.6,hit=1,rap=12,str=5")
+    check("stats enUS: tank lines", statsText(Read(3)), "armor=1500,block=3,blockvalue=40,def=7,dodge=1,parry=2")
+    check("stats enUS: no stat lines is an empty table", statsText(Read(4)), "")
+    check("stats enUS: an unloaded tooltip is nil", Read(5), nil)
+    check("stats: parser version", ctx.addon.StatSearch.VERSION, 1)
+end
+
+do
+    local ctx = withTips(loadScanner({}, nil, "zhTW"), {
+        [1] = { "測試長袍", "胸部", "布甲", "65點護甲", "+10 耐力", "+12 智力", "+8 精神",
+            "裝備：使所有法術和魔法效果所造成的傷害和治療效果提高最多23點。",
+            "裝備：使法術和魔法效果的治療效果提高最多44點。",
+            "裝備：使你的法術擊中敵人的機率提高1%。",
+            "裝備：使你的法術造成致命一擊的機率提高1%。",
+            "裝備：每5秒恢復6點法力值。" },
+        [2] = { "測試之刃", "主手", "劍", "(每秒傷害23.6)", "+5 力量", "+7 敏捷", "裝備：+20 攻擊強度。",
+            "裝備：+12遠程攻擊強度。", "裝備：使你擊中目標的機率提高1%。", "裝備：使你造成致命一擊的機率提高2%。" },
+        [3] = { "測試之盾", "副手", "盾牌", "1500點護甲", "26點格擋", "裝備：防禦技能提高7點。",
+            "裝備：使你躲閃攻擊的機率提高1%。", "裝備：使你招架攻擊的機率提高2%。",
+            "裝備：使你用盾牌格擋攻擊的機率提高3%。", "裝備：使你的盾牌格擋值提高14點。" },
+    })
+    local Read = ctx.addon.StatSearch.ReadStats
+    check("stats zhTW: caster lines", statsText(Read(1)),
+        "armor=65,heal=44,int=12,mp5=6,sp=23,spellcrit=1,spellhit=1,spi=8,sta=10")
+    check("stats zhTW: weapon lines", statsText(Read(2)), "agi=7,ap=20,crit=2,dps=23.6,hit=1,rap=12,str=5")
+    check("stats zhTW: tank lines", statsText(Read(3)), "armor=1500,block=3,blockvalue=40,def=7,dodge=1,parry=2")
+end
+
+do
+    -- a new item gets its stats when cached; the parser version is recorded
+    local ctx = withTips(loadScanner({ [1] = equip }), { [1] = { "Helm", "+4 Stamina" } })
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    local mark = #ctx.printed
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("scan stats: a new item's stats", statsText(db.stats[1]), "sta=4")
+    check("scan stats: parser version saved", db.statsVersion, 1)
+    check("scan stats: a new item is a hit, not a backfill", ctx.run().hits .. " " .. ctx.run().backfilled, "1 0")
+    check("scan stats: no backfill line without backfills", #ctx.since(mark), 2)
+end
+
+do
+    -- backfill: a cached item without stats is read, one with current stats is skipped
+    local ctx = withTips(loadScanner({ [4] = equip, [5] = equip, [6] = equip }, {
+        schemaVersion = 4, statsVersion = 1, scan = { cursor = 4 },
+        items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 },
+                  [6] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+        stats = { [5] = { sta = 1 }, [6] = {} },
+    }), { [4] = { "Helm", "+9 Spirit" }, [5] = { "Helm", "+2 Stamina" }, [6] = { "Helm", "+3 Agility" } })
+    ctx.Scanner.Start({ rate = 10, cap = 3 })
+    local mark = #ctx.printed
+    ctx.tick(3)
+    local db, out = ctx.env.TandemDB, ctx.since(mark)
+    check("backfill: a cached item without stats gets them", statsText(db.stats[4]), "spi=9")
+    check("backfill: current stats are kept", statsText(db.stats[5]), "sta=1")
+    check("backfill: parsed-none is current too", statsText(db.stats[6]), "")
+    check("backfill: current stats are not read", ctx.tipCalls[5], nil)
+    check("backfill: summary counts skipped, not processed as hits", out[1],
+        "Tandem: scan stopped, IDs 4-6 in 0.3s, 3 processed, 2 skipped")
+    check("backfill: no hit, no new item", out[2], "  0 hits (0 equippable), 0 misses, 0 deferred, 0 timeouts")
+    check("backfill: backfill line", out[3], "  1 cached items read for stats")
+    check("backfill: lastRun.backfilled", ctx.run().backfilled, 1)
+    check("backfill: no new item record", ctx.addon.Store.itemCount, 3)
+end
+
+do
+    -- a newer parser reads every cached item again and drops stats it has not re-read
+    local ctx = withTips(loadScanner({ [5] = equip }, {
+        schemaVersion = 4, statsVersion = 1, scan = { cursor = 5 },
+        items = { [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [7] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+        stats = { [5] = { sta = 1 }, [7] = { sta = 1 } },
+    }), { [5] = { "Helm", "+2 Stamina", "+1 Strength" } })
+    ctx.addon.StatSearch.VERSION = 2
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("stale stats: re-read", statsText(db.stats[5]), "sta=2,str=1")
+    check("stale stats: unread ones dropped for the next scan", db.stats[7], nil)
+    check("stale stats: version raised", db.statsVersion, 2)
+    check("stale stats: counted as a backfill", ctx.run().backfilled .. " " .. ctx.run().skipped, "1 0")
+end
+
+do
+    -- pending: an unloaded tooltip is retried, never stored as {}, and times out like an item query
+    local tips = {}
+    local ctx = withTips(loadScanner({ [4] = equip, [5] = equip }, {
+        schemaVersion = 4, scan = { cursor = 4 },
+        items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+    }), tips)
+    ctx.Scanner.Start({ rate = 10, cap = 2 })
+    ctx.tick(2)
+    local db = ctx.env.TandemDB
+    check("stats pending: nothing stored", tostring(db.stats[4]) .. " " .. tostring(db.stats[5]), "nil nil")
+    check("stats pending: deferred", ctx.run().deferred, 2)
+    check("stats pending: the item is asked for", ctx.requested[1], 4)
+    check("stats pending: keeps the scan running", ctx.Scanner.IsRunning(), true)
+    tips[4] = { "Helm", "+6 Intellect" }
+    ctx.tick(1)
+    check("stats pending: a loaded tooltip is read on the next tick", statsText(db.stats[4]), "int=6")
+    check("stats pending: then counts as a backfill", ctx.run().backfilled, 1)
+    check("stats pending: the other one still waits", ctx.Scanner.IsRunning(), true)
+    ctx.clock = ctx.clock + 6
+    ctx.tick(1)
+    check("stats pending: times out", ctx.run().timeouts, 1)
+    check("stats pending: a timeout stores nothing", db.stats[5], nil)
+    check("stats pending: the scan ends", ctx.Scanner.IsRunning(), false)
+end
+
+do
+    -- a new item whose tooltip lags is stored now and gets its stats on GET_ITEM_INFO_RECEIVED
+    local tips = {}
+    local ctx = withTips(loadScanner({ [1] = equip }), tips)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("new item tooltip pending: record stored", db.items[1] ~= nil, true)
+    check("new item tooltip pending: no stats yet", db.stats[1], nil)
+    check("new item tooltip pending: waits", ctx.Scanner.IsRunning(), true)
+    tips[1] = { "Helm", "+3 Agility" }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 1, true)
+    check("new item tooltip pending: stats on reply", statsText(db.stats[1]), "agi=3")
+    check("new item tooltip pending: not a backfill", ctx.run().backfilled, 0)
+    check("new item tooltip pending: one hit", ctx.run().hits, 1)
+    check("new item tooltip pending: the scan ends", ctx.Scanner.IsRunning(), false)
+end
+
+do
+    -- without the tooltip API a cached item is skipped and no stats are written
+    local ctx = loadScanner({ [1] = equip, [4] = equip }, {
+        schemaVersion = 4, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+    })
+    ctx.Scanner.SetCursor(4)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("no tooltip API: a cached item is skipped", ctx.run().skipped, 1)
+    ctx.Scanner.SetCursor(1)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("no tooltip API: a new item is stored", ctx.env.TandemDB.items[1] ~= nil, true)
+    check("no tooltip API: no stats", next(ctx.env.TandemDB.stats), nil)
+    check("no tooltip API: no parser version", ctx.env.TandemDB.statsVersion, nil)
+end
+
+do
+    -- CacheItem from loot and quest sources reads stats too
+    local ctx = withTips(loadScanner({ [1] = equip, [2] = equip }), { [1] = { "Helm", "+1 Spirit" } })
+    local added, statsPending = ctx.Scanner.CacheItem(1, "INVTYPE_HEAD", 4, 1)
+    check("CacheItem: added with stats", tostring(added) .. " " .. tostring(statsPending), "true false")
+    check("CacheItem: stats saved", statsText(ctx.env.TandemDB.stats[1]), "spi=1")
+    added, statsPending = ctx.Scanner.CacheItem(2, "INVTYPE_HEAD", 4, 1)
+    check("CacheItem: tooltip pending", tostring(added) .. " " .. tostring(statsPending), "true true")
+end
+
+do
+    -- a client without stat patterns caches items but leaves them unparsed, never saved as stat-less
+    local ctx = withTips(loadScanner({ [1] = equip, [4] = equip }, {
+        schemaVersion = 4, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+    }, "deDE"), { [1] = { "Helm", "+4 Ausdauer" }, [4] = { "Helm", "+2 Ausdauer" } })
+    check("deDE: no stat patterns", ctx.addon.StatPatterns, nil)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    ctx.Scanner.SetCursor(4)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("deDE: a new item is cached", db.items[1] ~= nil, true)
+    check("deDE: no stats written", next(db.stats), nil)
+    check("deDE: no parser version", db.statsVersion, nil)
+    check("deDE: a cached item is skipped, not backfilled", ctx.run().skipped .. " " .. ctx.run().backfilled, "1 0")
+    check("deDE: no tooltip read", next(ctx.tipCalls), nil)
+end
+
+do
+    local ctx = withTips(loadScanner({ [1] = equip }, nil, "enGB"), { [1] = { "Helm", "+4 Stamina" } })
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("enGB: English patterns", statsText(ctx.env.TandemDB.stats[1]), "sta=4")
+end
+
 do
     -- /tandem scan reaches the real scanner
     local ctx = loadScanner({ [2] = { "" } })

@@ -29,6 +29,7 @@ L["Last run: IDs %s-%s at %s in %ss, %s processed, %s skipped"] =
     "上次掃描：ID %s-%s，速率 %s，耗時 %s 秒，處理 %s 個，略過 %s 個"
 L["  %s hits (%s equippable), %s misses, %s deferred, %s timeouts"] =
     "  命中 %s 個（可裝備 %s 個），未命中 %s 個，延後 %s 個，逾時 %s 個"
+L["  %s cached items read for stats"] = "  已讀取 %s 個已快取物品的屬性"
 L["Last run: never"] = "上次掃描：從未執行"
 L["Recording is off: saved data uses a newer schema"] = "記錄已停用：存檔資料使用較新的結構版本"
 
@@ -199,4 +200,31 @@ ns.StatAliases = {
     ["體力"] = "耐力",
     ["暴擊"] = "致命一擊",
     ["法術暴擊"] = "法術 致命一擊",
+}
+
+-- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
+-- line comes after it.
+ns.StatPatterns = {
+    { "^%+(%d+) ?力量$", "str" },
+    { "^%+(%d+) ?敏捷$", "agi" },
+    { "^%+(%d+) ?耐力$", "sta" },
+    { "^%+(%d+) ?智力$", "int" },
+    { "^%+(%d+) ?精神$", "spi" },
+    { "^(%d+) ?點護甲$", "armor" },
+    { "^(%d+) ?點格擋$", "blockvalue" },
+    { "每秒傷害 ?(%d+%.?%d*)", "dps" },
+    { "^裝備：%+(%d+) ?遠程攻擊強度", "rap" },
+    { "^裝備：%+(%d+) ?攻擊強度", "ap" },
+    { "^裝備：.-傷害和治療效果提高最多(%d+)點", "sp" },
+    { "^裝備：.-治療效果提高最多(%d+)點", "heal" },
+    { "^裝備：使你的法術造成致命一擊的機率提高(%d+%.?%d*)%%", "spellcrit" },
+    { "^裝備：使你的法術擊中.-機率提高(%d+%.?%d*)%%", "spellhit" },
+    { "^裝備：使你造成致命一擊的機率提高(%d+%.?%d*)%%", "crit" },
+    { "^裝備：使你擊中.-機率提高(%d+%.?%d*)%%", "hit" },
+    { "^裝備：每5秒恢復(%d+)點法力", "mp5" },
+    { "^裝備：防禦技能提高(%d+)點", "def" },
+    { "^裝備：使你躲閃.-機率提高(%d+%.?%d*)%%", "dodge" },
+    { "^裝備：使你招架.-機率提高(%d+%.?%d*)%%", "parry" },
+    { "^裝備：.-盾牌格擋值提高(%d+)點", "blockvalue" },
+    { "^裝備：使你.-格擋.-機率提高(%d+%.?%d*)%%", "block" },
 }
