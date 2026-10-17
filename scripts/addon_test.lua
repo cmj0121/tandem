@@ -4860,6 +4860,7 @@ local function checkAPIs()
         GetInventoryItemLink = fn,
         C_Item = { GetItemStats = fn },
         C_TooltipInfo = { GetItemByID = fn },
+        C_SpecializationInfo = { GetSpecialization = fn },
     }
 end
 
@@ -4878,7 +4879,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: nine features", #addon.Check.FEATURES, 9)
+    check("check: ten features", #addon.Check.FEATURES, 10)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -4886,7 +4887,7 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
-        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search" }) do
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -4946,7 +4947,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out - 1], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#out - 2],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -5832,7 +5833,214 @@ end
 do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
-    check("zhTW check: stat search line", out[#out], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+    check("zhTW check: stat search line", out[#out - 1], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+end
+
+-- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
+
+-- Loads the addon for "Tom-Realm" (ctx.name renames) with opts.talents as the talent API: "old" (name, icon,
+-- points), "new" (id, name, description, icon, points) over ctx.points, "spec" (C_SpecializationInfo over ctx.spec)
+-- or nil for none. opts.db is TandemDB. Returns addon, ctx, env.
+local function weightsData(opts)
+    opts = opts or {}
+    local ctx = { points = { 0, 0, 0 } }
+    local env = {
+        UnitName = function()
+            return ctx.name or "Tom"
+        end,
+        GetRealmName = function()
+            return "Realm"
+        end,
+        UnitLevel = function()
+            return 60
+        end,
+    }
+    if opts.talents == "old" or opts.talents == "new" then
+        env.GetNumTalentTabs = function()
+            return 3
+        end
+        env.GetTalentTabInfo = function(i)
+            if opts.talents == "old" then
+                return "Tree" .. i, "icon", ctx.points[i], "bg"
+            end
+            return 100 + i, "Tree" .. i, "desc", "icon", ctx.points[i], "bg", 0, true
+        end
+    elseif opts.talents == "spec" then
+        env.C_SpecializationInfo = { GetSpecialization = function()
+            return ctx.spec
+        end }
+    end
+    local addon, _, e = loadWithDB(opts.db, "enUS", { env = env })
+    return addon, ctx, e
+end
+
+do
+    local W = weightsData().Weights
+    local classes, trees, badKeys, badDefault = 0, 0, 0, 0
+    local isKey = {}
+    for _, key in ipairs(W.KEYS) do
+        isKey[key] = true
+    end
+    for class, specs in pairs(W.DEFAULTS) do
+        classes = classes + 1
+        trees = trees + #specs
+        for _, weights in ipairs(specs) do
+            for key, w in pairs(weights) do
+                if not isKey[key] or type(w) ~= "number" then
+                    badKeys = badKeys + 1
+                end
+            end
+        end
+        local d = W.DEFAULT_SPEC[class]
+        if not (d and specs[d] and #W.SPECS[class] == 3) then
+            badDefault = badDefault + 1
+        end
+    end
+    check("weights: nine classes", classes, 9)
+    check("weights: three trees each", trees, 27)
+    check("weights: built-ins use only the stored stat keys", badKeys, 0)
+    check("weights: each class has a default tree", badDefault, 0)
+    check("weights: twenty-one stat keys", #W.KEYS, 21)
+end
+
+do
+    local W = weightsData().Weights
+    check("weights: Score of nil stats is nil", W.Score(nil, "WARRIOR", 1), nil)
+    check("weights: Score is the weighted sum", W.Score({ str = 10, sta = 5 }, "WARRIOR", 1), 12.5)
+    check("weights: Score ignores unweighted stats", W.Score({ str = 10, sp = 30 }, "WARRIOR", 1), 10)
+    check("weights: Score of no stats is 0", W.Score({}, "WARRIOR", 1), 0)
+    check("weights: Score for an unknown class is 0", W.Score({ str = 10 }, "MONK", 1), 0)
+    check("weights: Score without a spec uses the active one", W.Score({ str = 10, sta = 5 }, "WARRIOR"), 12.5)
+    check("weights: a caster item scores below a strength item for a warrior",
+        W.Score({ sp = 20, int = 10 }, "WARRIOR", 1) < W.Score({ str = 10 }, "WARRIOR", 1), true)
+    check("weights: a caster item scores above a strength item for a mage",
+        W.Score({ sp = 20, int = 10 }, "MAGE", 3) > W.Score({ str = 10 }, "MAGE", 3), true)
+    check("weights: healing counts for a holy priest", W.Score({ heal = 10 }, "PRIEST", 2), 10)
+    check("weights: healing does not count for a shadow priest", W.Score({ heal = 10 }, "PRIEST", 3), 0)
+    local e = W.Effective("WARRIOR", 1)
+    e.str = 99
+    check("weights: Effective returns a copy", W.DEFAULTS.WARRIOR[1].str, 1)
+    check("weights: Effective of an unknown spec is empty", next(W.Effective("WARRIOR", 4)), nil)
+end
+
+do
+    local addon = weightsData()
+    local W = addon.Weights
+    check("weights: no talent API is not ready", addon.Check.Ready("Talent spec"), false)
+    check("weights: no talent API detects nothing", W.DetectSpec(60), nil)
+    local spec, auto = W.Active("PRIEST", 60)
+    check("weights: no talent API falls back to the class default", spec, 3)
+    check("weights: the fallback is auto", auto, true)
+    check("weights: a class without built-ins has no active spec", (W.Active("MONK", 60)), nil)
+end
+
+for _, style in ipairs({ "old", "new" }) do
+    local addon, ctx = weightsData({ talents = style })
+    local W = addon.Weights
+    check(("weights %s: talent tabs are ready"):format(style), addon.Check.Ready("Talent spec"), true)
+    check(("weights %s: nothing spent detects nothing"):format(style), W.DetectSpec(60), nil)
+    check(("weights %s: nothing spent falls back to the default"):format(style), (W.Active("WARRIOR", 60)), 1)
+    ctx.points = { 5, 0, 31 }
+    check(("weights %s: the tree with most points"):format(style), W.DetectSpec(60), 3)
+    check(("weights %s: Active follows the talents"):format(style), (W.Active("WARRIOR", 60)), 3)
+    check(("weights %s: below level 10 uses the default"):format(style), (W.Active("WARRIOR", 9)), 1)
+    ctx.points = { 10, 10, 0 }
+    check(("weights %s: a tie picks the first tree"):format(style), W.DetectSpec(60), 1)
+end
+
+do
+    local addon, ctx = weightsData({ talents = "spec" })
+    local W = addon.Weights
+    check("weights spec: the specialization API is ready", addon.Check.Ready("Talent spec"), true)
+    ctx.spec = 2
+    check("weights spec: reads the specialization", W.DetectSpec(60), 2)
+    ctx.spec = 5
+    check("weights spec: an out-of-range spec falls back", (W.Active("DRUID", 60)), 2)
+    ctx.spec = nil
+    check("weights spec: no specialization falls back", (W.Active("MAGE", 60)), 3)
+end
+
+do
+    local addon, _, env = weightsData({ talents = "old" })
+    local W = addon.Weights
+    check("weights: a db without weights reads the built-ins", W.Effective("WARRIOR", 1).str, 1)
+    check("weights: set an override", W.SetOverride("str", 2, "WARRIOR", 60), true)
+    check("weights: the weights table is created lazily", type(env.TandemDB.weights), "table")
+    check("weights: the override is saved per character and spec",
+        env.TandemDB.weights["Tom-Realm"].overrides[1].str, 2)
+    check("weights: Effective applies the override", W.Effective("WARRIOR", 1).str, 2)
+    check("weights: Score uses the override", W.Score({ str = 10 }, "WARRIOR", 1), 20)
+    check("weights: an override does not touch the built-ins", W.DEFAULTS.WARRIOR[1].str, 1)
+    check("weights: 0 is a valid override", W.SetOverride("sta", 0, "WARRIOR", 60), true)
+    check("weights: a 0 override ignores the stat", W.Score({ sta = 10 }, "WARRIOR", 1), 0)
+    check("weights: an override may add a stat",
+        W.SetOverride("sp", 0.5, "WARRIOR", 60) and W.Score({ sp = 10 }, "WARRIOR", 1), 5)
+    check("weights: an unknown stat is refused", W.SetOverride("fire", 1, "WARRIOR", 60), false)
+    check("weights: a non-number is refused", W.SetOverride("str", "2", "WARRIOR", 60), false)
+    check("weights: NaN is refused", W.SetOverride("str", 0 / 0, "WARRIOR", 60), false)
+    check("weights: a class without built-ins is refused", W.SetOverride("str", 1, "MONK", 60), false)
+    check("weights: overrides are not records", addon.Store.unsaved, 0)
+
+    check("weights: set spec 2", W.SetSpec(2), true)
+    local spec, auto = W.Active("WARRIOR", 60)
+    check("weights: a chosen spec is active", spec, 2)
+    check("weights: a chosen spec is not auto", auto, false)
+    check("weights: the other spec's overrides do not apply", W.Effective("WARRIOR", 2).str, 1)
+    check("weights: set an override on spec 2", W.SetOverride("agi", 3, "WARRIOR", 60), true)
+    check("weights: reset drops the active spec's overrides", W.Reset("WARRIOR", 60), true)
+    check("weights: reset spec 2 restores its built-ins", W.Effective("WARRIOR", 2).agi, 0.7)
+    check("weights: reset keeps the other spec's overrides", W.Effective("WARRIOR", 1).str, 2)
+    check("weights: spec 4 is refused", W.SetSpec(4), false)
+    check("weights: spec 1.5 is refused", W.SetSpec(1.5), false)
+    check("weights: a refused spec keeps the choice", (W.Active("WARRIOR", 60)), 2)
+    check("weights: set spec auto", W.SetSpec("auto"), true)
+    spec, auto = W.Active("WARRIOR", 60)
+    check("weights: auto returns to the detected or default spec", spec, 1)
+    check("weights: auto is auto", auto, true)
+    check("weights: auto clears the saved spec", env.TandemDB.weights["Tom-Realm"].spec, nil)
+end
+
+do
+    local addon, ctx, env = weightsData()
+    local W = addon.Weights
+    env.TandemDB.weights = { ["Tom-Realm"] = "bad", ["Ann-Realm"] = { spec = 7, overrides = {
+        [1] = { str = "x", fire = 3, agi = 2 }, [3] = "bad" } } }
+    check("weights: a garbled entry reads as none", W.Effective("WARRIOR", 1).str, 1)
+    check("weights: a garbled entry is replaced on write",
+        W.SetSpec(3) and env.TandemDB.weights["Tom-Realm"].spec, 3)
+    ctx.name = "Ann"
+    check("weights: an invalid saved spec is auto", select(2, W.Active("WARRIOR", 60)), true)
+    local e = W.Effective("WARRIOR", 1)
+    check("weights: a non-number override is skipped", e.str, 1)
+    check("weights: an unknown key override is skipped", e.fire, nil)
+    check("weights: a valid override beside bad ones applies", e.agi, 2)
+    check("weights: a non-table spec override is skipped", W.Effective("WARRIOR", 3).sta, 1)
+    check("weights: an override replaces a non-table spec entry",
+        W.SetSpec(3) and W.SetOverride("sta", 2, "WARRIOR", 60) and W.Effective("WARRIOR", 3).sta, 2)
+    ctx.name = ""
+    check("weights: an unknown character cannot save", W.SetSpec(1), false)
+    check("weights: an unknown character reads the built-ins", W.Effective("WARRIOR", 3).sta, 1)
+end
+
+do
+    local addon, _, env = weightsData({ db = { schemaVersion = 99, items = {} } })
+    local W = addon.Weights
+    check("weights: a newer db is read-only", addon.Store.readOnly, true)
+    check("weights: read-only refuses a spec", W.SetSpec(2), false)
+    check("weights: read-only refuses an override", W.SetOverride("str", 2, "WARRIOR", 60), false)
+    check("weights: read-only refuses a reset", W.Reset("WARRIOR", 60), false)
+    check("weights: read-only leaves the db alone", env.TandemDB.weights, nil)
+end
+
+do
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    local byName = runCheck(addon, printed)
+    check("check: talent spec lists its alternatives", byName["Talent spec"],
+        "Talent spec: ok (GetTalentTabInfo missing, C_SpecializationInfo.GetSpecialization ok, "
+            .. "GetSpecialization missing)")
+    local zh, zhPrinted = loadWithDB(nil, "zhTW")
+    local out = run(zh, zhPrinted, "check")
+    check("zhTW check: talent spec line", out[#out]:match("^天賦專精："), "天賦專精：")
 end
 
 if failures > 0 then

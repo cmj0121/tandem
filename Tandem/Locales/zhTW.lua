@@ -79,6 +79,7 @@ L["Quest reward pick"] = "任務獎勵建議"
 L["Upgrade alert"] = "升級提醒"
 L["Item stats"] = "物品屬性"
 L["Stat search"] = "屬性搜尋"
+L["Talent spec"] = "天賦專精"
 L["Stat search: not on this client"] = "屬性搜尋：此用戶端不支援"
 L["%d items, %d loading"] = "%d 件物品，%d 件載入中"
 L["  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line"] =
