@@ -2598,6 +2598,11 @@ function WIDGET.SetHighlightTexture(w, t) w.highlight = t end
 function WIDGET.SetEnabled(w, enabled) w.enabled = enabled end
 function WIDGET.IsEnabled(w) return w.enabled end
 function WIDGET.SetMaxLetters(w, n) w.maxLetters = n end
+function WIDGET.SetFrameLevel(w, level) w.level = level end
+function WIDGET.GetFrameLevel(w) return w.level or 1 end
+function WIDGET.SetHitRectInsets(w, ...) w.hitInsets = { ... } end
+-- Six pixels a character stands in for the font's measure.
+function WIDGET.GetStringWidth(w) return 6 * #(w.text or "") end
 
 local function newWidget(ui, kind, name, parent, template)
     local w = setmetatable({ ui = ui, kind = kind, name = name, parent = parent, template = template, shown = true,
@@ -4311,6 +4316,11 @@ do
         win.deprecated.points[1][2].text .. " " .. win.deprecated.points[1][1], "Usable only LEFT")
     check("browse layout: the minimap box follows the deprecated label",
         win.minimap.points[1][2].text .. " " .. win.minimap.points[1][1], "Hide deprecated LEFT")
+    for _, box in ipairs({ win.usable, win.deprecated, win.minimap }) do
+        check("browse layout: a check box sits above the window", box.level, win:GetFrameLevel() + 5)
+    end
+    check("browse layout: the usable label clicks its box", table.concat(win.usable.hitInsets, " "),
+        "0 " .. -(2 + 6 * #"Usable only") .. " 0 0")
     check("browse layout: the list stretches with the window", point(win.box) .. " / " .. point(win.box, 2),
         "TOPLEFT TandemBrowseFrame TOPLEFT 12 -138 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
 

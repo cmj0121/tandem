@@ -20,6 +20,8 @@ local SOURCE_ROWS = 5
 local SEARCH_LETTERS = 60
 local REDRAW_DELAY = 0.2
 local PROGRESS_INTERVAL = 1
+-- Check boxes sit this many levels above the window, over the dropdowns and the template's own frames.
+local CHECK_LEVEL = 5
 local DEFAULT_RATE_TEXT = ("%d/s"):format(ns.Commands.DEFAULT_RATE)
 local DEFAULT_CAP_TEXT = tostring(ns.Commands.DEFAULT_CAP)
 local GREY, RED = "|cff808080", "|cffff2020"
@@ -193,14 +195,17 @@ local function label(parent, text)
     return fs
 end
 
--- A check box with its label on the right; returns the box and the label, for the next control to anchor to.
+-- A check box with its label on the right; returns the box and the label, for the next control to anchor to. The
+-- box is raised so no other frame takes clicks on part of it, and clicking its label toggles it too.
 local function checkbox(parent, text, checked, onToggle)
     local box = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     box:SetSize(24, 24)
+    box:SetFrameLevel(parent:GetFrameLevel() + CHECK_LEVEL)
     box:SetChecked(checked)
     box:SetScript("OnClick", onToggle)
     local fs = label(parent, text)
     fs:SetPoint("LEFT", box, "RIGHT", 2, 0)
+    box:SetHitRectInsets(0, -(2 + fs:GetStringWidth()), 0, 0)
     return box, fs
 end
 
