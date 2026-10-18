@@ -394,7 +394,7 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats`,
-`Stat search` and `Talent spec`. A feature whose API is missing stays off instead of raising an error.
+`Stat search`, `Talent spec` and `Trainer record`. A feature whose API is missing stays off instead of raising an error.
 
 ### `/tandem map`
 
@@ -762,6 +762,11 @@ Everything goes into one account-wide table, `TandemDB`, saved as
   not a table is dropped.
 - A `trainers` class key is an uppercase class token such as `MAGE`. On load, a spell ID or entry that is not valid
   is dropped alone, and a class key that is not a token, or whose spells are not a table, is dropped.
+- A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
+  class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
+  `3`). Section headers, tradeskill trainers and spells the client gives no spell ID for are skipped, and nothing is
+  recorded when the `Trainer record` line of [`/tandem check`](#tandem-check) is `missing`. A spell seen again keeps
+  the lower level.
 
 `TandemDB.schemaVersion` is `5`. Saved data from schema 2, 3 or 4 is migrated on load: schema 2 gains an empty
 `quests`, schemas 2 and 3 gain empty `stats` and `weights`, and all three gain an empty `trainers`. Saved data from
@@ -934,9 +939,9 @@ tooltip in step 5, and any Lua error.
 The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
 not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and ten lines, one each for `Item tooltip`,
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eleven lines, one each for `Item tooltip`,
    `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
-   `Item stats`, `Stat search` and `Talent spec`, each followed by `ok` or `missing` and its APIs.
+   `Item stats`, `Stat search`, `Talent spec` and `Trainer record`, each followed by `ok` or `missing` and its APIs.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has

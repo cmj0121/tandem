@@ -12,6 +12,8 @@ frame:RegisterEvent("QUEST_COMPLETE")
 frame:RegisterEvent("QUEST_FINISHED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_UPDATE")
+frame:RegisterEvent("TRAINER_SHOW")
+frame:RegisterEvent("TRAINER_UPDATE")
 frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
@@ -66,6 +68,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.QuestPick.OnQuestFinished()
     elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
         ns.Sources.OnMerchant()
+    elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
+        ns.Trainer.OnTrainer()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Browse.OnCombat()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then

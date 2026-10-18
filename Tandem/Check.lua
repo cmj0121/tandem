@@ -42,6 +42,10 @@ Check.FEATURES = {
     { name = "Talent spec", needs = {
         { "GetTalentTabInfo", "C_SpecializationInfo.GetSpecialization", "GetSpecialization" },
     } },
+    { name = "Trainer record", needs = {
+        { "GetNumTrainerServices" }, { "GetTrainerServiceInfo" }, { "GetTrainerServiceLevelReq" },
+        { "C_TooltipInfo.GetTrainerService" },
+    } },
 }
 
 -- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.
