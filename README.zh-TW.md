@@ -362,7 +362,7 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
-`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search` 與 `Talent spec`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec` 與 `Trainer record`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 
 ### `/tandem map`
 
@@ -692,6 +692,10 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
   `heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
 - `trainers` 的職業鍵是大寫的職業代號，例如 `MAGE`。載入時，無效的法術 ID 或項目會單獨捨棄；不是職業代號的鍵，
   或法術不是表的職業，會被捨棄。
+- 每次在戰鬥外開啟或更新職業訓練師視窗時，都會以你角色的職業記錄它的法術：列出的每個法術（不論是否已學會）、需求
+  等級，以及法術等級文字中的數字（`等級 3` 記為 `3`）。分類標題、專業技能訓練師，以及用戶端沒有提供法術 ID 的法術會
+  略過；[`/tandem check`](#tandem-check) 的 `Trainer record` 這行為 `missing` 時不會記錄。再次看到同一個法術時保留
+  較低的等級。
 
 `TandemDB.schemaVersion` 為 `5`。schema 2、3 或 4 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，
 schema 2 與 3 會新增空的 `stats` 與 `weights`，三者都會新增空的 `trainers`。較新 schema 的存檔資料會原樣保留，
@@ -846,9 +850,9 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 物品提示框、任務與商人來源、地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十一行，分別是 `Item tooltip`、
    `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert`、
-   `Item stats`、`Stat search` 與 `Talent spec`，每行後面接著 `ok` 或 `missing` 以及它的 API。
+   `Item stats`、`Stat search`、`Talent spec` 與 `Trainer record`，每行後面接著 `ok` 或 `missing` 以及它的 API。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。

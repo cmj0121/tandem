@@ -20,6 +20,7 @@ SpellRanks.lua
 Scanner.lua
 Loot.lua
 Sources.lua
+Trainer.lua
 Kills.lua
 Advisor.lua
 View.lua

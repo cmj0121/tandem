@@ -2058,6 +2058,119 @@ do
     check("sources: a secret quest ID records nothing", ctx.loots(), 0)
 end
 
+-- Trainer: class trainer services recorded with stubbed trainer and tooltip APIs (stage 8, unit 2).
+
+-- Loads the addon with a trainer window of ctx.services ({ name, rank, kind, level, id }); the player is a mage out of
+-- combat at a class trainer. ctx.tradeskill makes it a tradeskill trainer.
+local function loadTrainer()
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 5 })
+    local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
+                  tradeskill = false, services = {
+                      { "Frost", nil, "header" },
+                      { "Frostbolt", "Rank 2", "available", 8, 205 },
+                      { "Ice Armor", "", "unavailable", 30, 7302 },
+                  } }
+    env.InCombatLockdown = function()
+        return ctx.combat
+    end
+    env.UnitClass = function(unit)
+        if unit == "player" then
+            return "Mage", "MAGE", 8
+        end
+    end
+    env.IsTradeskillTrainer = function()
+        return ctx.tradeskill
+    end
+    env.GetNumTrainerServices = function()
+        return #ctx.services
+    end
+    env.GetTrainerServiceInfo = function(i)
+        local s = ctx.services[i]
+        return s[1], s[2], s[3]
+    end
+    env.GetTrainerServiceLevelReq = function(i)
+        return ctx.services[i][4]
+    end
+    env.C_TooltipInfo = {
+        GetTrainerService = function(i)
+            local s = ctx.services[i]
+            if s[3] ~= "header" then
+                return { id = s[5], lines = {} }
+            end
+        end,
+    }
+    function ctx.spells()
+        local out = {}
+        for id, e in pairs(env.TandemDB.trainers.MAGE or {}) do
+            out[#out + 1] = ("%s=%d/%s"):format(tostring(id), e.level, tostring(e.rank))
+        end
+        table.sort(out)
+        return table.concat(out, " ")
+    end
+    return ctx
+end
+
+do
+    local ctx = loadTrainer()
+    for _, ev in ipairs({ "TRAINER_SHOW", "TRAINER_UPDATE" }) do
+        check("trainer: registers " .. ev, ctx.frame.registered[ev], true)
+    end
+    ctx.fire("TRAINER_SHOW")
+    check("trainer: records ranked and rankless services, skips the header", ctx.spells(), "205=8/2 7302=30/nil")
+    check("trainer: one record per service", ctx.addon.Store.unsaved, 2)
+    ctx.fire("TRAINER_UPDATE")
+    check("trainer: TRAINER_UPDATE records nothing twice", ctx.addon.Store.unsaved, 2)
+    ctx.services[4] = { "Fire Ward", "Rank 1", "used", 20, "543" }
+    ctx.services[5] = { "Frostbolt", "Rank 3", "unavailable", 14, 837 }
+    ctx.services[6] = { "Blink", nil, "available", 20 }
+    ctx.fire("TRAINER_UPDATE")
+    check("trainer: TRAINER_UPDATE records a new service, skips missing and non-numeric ids", ctx.spells(),
+        "205=8/2 7302=30/nil 837=14/3")
+end
+
+for name, setup in pairs({
+    ["in combat"] = function(ctx)
+        ctx.combat = true
+    end,
+    ["while read-only"] = function(ctx)
+        ctx.addon.Store.readOnly = true
+    end,
+    ["at a tradeskill trainer"] = function(ctx)
+        ctx.tradeskill = true
+    end,
+    ["without GetNumTrainerServices"] = function(ctx)
+        ctx.env.GetNumTrainerServices = nil
+    end,
+    ["without GetTrainerServiceInfo"] = function(ctx)
+        ctx.env.GetTrainerServiceInfo = nil
+    end,
+    ["without GetTrainerServiceLevelReq"] = function(ctx)
+        ctx.env.GetTrainerServiceLevelReq = nil
+    end,
+    ["without C_TooltipInfo.GetTrainerService"] = function(ctx)
+        ctx.env.C_TooltipInfo = {}
+    end,
+    ["without UnitClass"] = function(ctx)
+        ctx.env.UnitClass = nil
+    end,
+}) do
+    local ctx = loadTrainer()
+    setup(ctx)
+    ctx.fire("TRAINER_SHOW")
+    ctx.fire("TRAINER_UPDATE")
+    check("trainer: nothing recorded " .. name, ctx.env.TandemDB.trainers.MAGE, nil)
+end
+
+do
+    local ctx = loadTrainer()
+    ctx.env.IsTradeskillTrainer = nil
+    ctx.env.issecretvalue = function(v)
+        return v == 205
+    end
+    ctx.fire("TRAINER_SHOW")
+    check("trainer: a secret spell id is skipped", ctx.spells(), "7302=30/nil")
+end
+
 -- Kills: player's PARTY_KILLs from the combat log.
 
 local PLAYER = "Player-1-00000001"
@@ -5577,8 +5690,9 @@ local function checkAPIs()
         C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn },
         GetInventoryItemLink = fn,
         C_Item = { GetItemStats = fn },
-        C_TooltipInfo = { GetItemByID = fn },
+        C_TooltipInfo = { GetItemByID = fn, GetTrainerService = fn },
         C_SpecializationInfo = { GetSpecialization = fn },
+        GetNumTrainerServices = fn, GetTrainerServiceInfo = fn, GetTrainerServiceLevelReq = fn,
     }
 end
 
@@ -5597,7 +5711,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: ten features", #addon.Check.FEATURES, 10)
+    check("check: eleven features", #addon.Check.FEATURES, 11)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -5605,7 +5719,7 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
-        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec" }) do
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec", "Trainer record" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -5665,7 +5779,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out - 2],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#out - 3],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -6623,7 +6737,7 @@ end
 do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
-    check("zhTW check: stat search line", out[#out - 1], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+    check("zhTW check: stat search line", out[#out - 2], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
 end
 
 -- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
@@ -6830,7 +6944,9 @@ do
             .. "GetSpecialization missing)")
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
-    check("zhTW check: talent spec line", out[#out]:match("^天賦專精："), "天賦專精：")
+    check("zhTW check: talent spec line", out[#out - 1]:match("^天賦專精："), "天賦專精：")
+    check("zhTW check: trainer record line", out[#out], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
+        .. "GetTrainerServiceInfo 缺少, GetTrainerServiceLevelReq 缺少, C_TooltipInfo.GetTrainerService 缺少）")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
