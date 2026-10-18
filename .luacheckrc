@@ -17,6 +17,17 @@ globals = {
 -- WoW API used by the addon; add new ones here as the addon grows.
 read_globals = {
     "AddonCompartmentFrame",
+    "BOOKTYPE_SPELL",
+    "C_Spell",
+    "C_SpellBook",
+    "GetActionInfo",
+    "GetNumSpellTabs",
+    "GetSpellBookItemInfo",
+    "GetSpellInfo",
+    "GetSpellSubtext",
+    "GetSpellTabInfo",
+    "IsPlayerSpell",
+    "IsSpellKnown",
     "ButtonFrameTemplate_HideButtonBar",
     "ButtonFrameTemplate_HidePortrait",
     "C_Container",

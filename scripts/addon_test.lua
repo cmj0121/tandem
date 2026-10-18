@@ -6955,6 +6955,200 @@ do
         "Tandem：用法 /tandem weights [spec <1|2|3|auto> | set <屬性> <數字> | reset]")
 end
 
+-- SpellRanks: red/yellow state per action slot from spellbook ranks and trainer data.
+
+local RANKED = {
+    [116] = { "Frostbolt", 1 }, [205] = { "Frostbolt", 2 }, [837] = { "Frostbolt", 3 },
+    [133] = { "Fireball", 1 }, [143] = { "Fireball", 2 },
+    [1459] = { "Arcane Intellect" }, [2139] = { "Counterspell" },
+}
+
+-- Loads the addon as a mage with ctx.known[spellID] learned (all in the spellbook), ctx.bar[slot] = { kind, id }
+-- for GetActionInfo and ctx.level. opts.book: "modern" (C_SpellBook, default), "legacy" (GetNumSpellTabs) or "none";
+-- opts.legacySpell uses GetSpellInfo/GetSpellSubtext instead of C_Spell; opts.shipped goes to loadAddon.
+local function loadSpellRanks(opts)
+    opts = opts or {}
+    local ctx = { known = {}, bar = {}, level = 60 }
+    local function book()
+        local ranked = {}
+        for id in pairs(RANKED) do
+            ranked[#ranked + 1] = id
+        end
+        table.sort(ranked)
+        local learned = {}
+        for _, id in ipairs(ranked) do
+            if ctx.known[id] then
+                learned[#learned + 1] = id
+            end
+        end
+        return learned
+    end
+    local function subtext(id)
+        local s = RANKED[id]
+        return s and (s[2] and ("Rank " .. s[2]) or "") or nil
+    end
+    local env = {
+        UnitClass = function()
+            return "Mage", "MAGE"
+        end,
+        UnitLevel = function()
+            return ctx.level
+        end,
+        GetActionInfo = function(slot)
+            local a = ctx.bar[slot]
+            if a then
+                return a[1], a[2]
+            end
+        end,
+        IsSpellKnown = function(id)
+            return ctx.known[id] == true
+        end,
+    }
+    if opts.legacySpell then
+        env.GetSpellInfo = function(id)
+            return RANKED[id] and RANKED[id][1]
+        end
+        env.GetSpellSubtext = subtext
+    else
+        env.C_Spell = {
+            GetSpellInfo = function(id)
+                return RANKED[id] and { name = RANKED[id][1] }
+            end,
+            GetSpellSubtext = subtext,
+        }
+    end
+    if (opts.book or "modern") == "modern" then
+        env.Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+        env.C_SpellBook = {
+            GetNumSpellBookSkillLines = function()
+                return 2
+            end,
+            GetSpellBookSkillLineInfo = function(line)
+                return line == 1 and { itemIndexOffset = 0, numSpellBookItems = 0 }
+                    or { itemIndexOffset = 0, numSpellBookItems = #book() + 1 }
+            end,
+            GetSpellBookItemInfo = function(index)
+                local id = book()[index]
+                if id then
+                    return { itemType = 1, spellID = id }
+                end
+                return { itemType = 2, spellID = 837 }
+            end,
+        }
+    elseif opts.book == "legacy" then
+        env.BOOKTYPE_SPELL = "spell"
+        env.GetNumSpellTabs = function()
+            return 1
+        end
+        env.GetSpellTabInfo = function()
+            return "General", "icon", 0, #book() + 1
+        end
+        env.GetSpellBookItemInfo = function(index, bank)
+            local id = book()[index]
+            if bank ~= "spell" then
+                return nil
+            end
+            if id then
+                return "SPELL", id
+            end
+            return "FUTURESPELL", 837
+        end
+    end
+    local addon = loadWithDB(nil, "enUS", { env = env, shipped = opts.shipped })
+    ctx.addon, ctx.Store = addon, addon.Store
+    function ctx.state(slot)
+        addon.SpellRanks.Invalidate()
+        return tostring(addon.SpellRanks.State(slot))
+    end
+    return ctx
+end
+
+do
+    local ctx = loadSpellRanks()
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1], ctx.bar[2] = { "spell", 116 }, { "spell", 205 }
+    check("spell ranks: a lower rank with a higher one known is red", ctx.state(1), "red")
+    check("spell ranks: the highest known rank without trainer data is none", ctx.state(2), "nil")
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.level = 14
+    check("spell ranks: the next rank trainable at the player's level is yellow", ctx.state(2), "yellow")
+    ctx.level = 13
+    check("spell ranks: the next rank above the player's level is none", ctx.state(2), "nil")
+    ctx.level = 14
+    check("spell ranks: red wins over yellow", ctx.state(1), "red")
+    ctx.known[837] = true
+    check("spell ranks: a learned next rank is not yellow", ctx.state(2), "red")
+    ctx.bar[3] = { "spell", 837 }
+    check("spell ranks: the highest rank learned is none", ctx.state(3), "nil")
+    ctx.bar[4], ctx.bar[5], ctx.bar[6] = { "macro", 1 }, { "item", 2589 }, nil
+    check("spell ranks: a macro is none", ctx.state(4), "nil")
+    check("spell ranks: an item is none", ctx.state(5), "nil")
+    check("spell ranks: an empty slot is none", ctx.state(6), "nil")
+    ctx.bar[7] = { "spell", "21CB4" }
+    check("spell ranks: a non-numeric id is none", ctx.state(7), "nil")
+    ctx.bar[8] = { "spell", secret() }
+    check("spell ranks: a secret id is none", ctx.state(8), "nil")
+    ctx.known[1459] = true
+    ctx.bar[9] = { "spell", 1459 }
+    check("spell ranks: a rankless spell without a trainer next rank is none", ctx.state(9), "nil")
+    ctx.known[133] = true
+    ctx.Store.SetTrainerSpell("MAGE", 143, 6)
+    ctx.bar[10] = { "spell", 133 }
+    check("spell ranks: a trainer spell without a recorded rank uses its subtext", ctx.state(10), "yellow")
+end
+
+do
+    local ctx = loadSpellRanks()
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.addon.SpellRanks.Invalidate()
+    check("spell ranks: state is cached until invalidated", tostring(ctx.addon.SpellRanks.State(1)), "nil")
+    ctx.known[205] = true
+    check("spell ranks: the cache keeps the old ranks", tostring(ctx.addon.SpellRanks.State(1)), "nil")
+    ctx.addon.SpellRanks.Invalidate()
+    check("spell ranks: invalidating reads the new ranks", tostring(ctx.addon.SpellRanks.State(1)), "red")
+end
+
+do
+    local ctx = loadSpellRanks({ shipped = { trainers = { MAGE = { [205] = { level = 8, rank = 2 } } } } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    check("spell ranks: shipped-only trainer data makes yellow", ctx.state(1), "yellow")
+    ctx.Store.SetTrainerSpell("MAGE", 205, 20, 2)
+    ctx.level = 10
+    check("spell ranks: own and shipped trainer data keep the lower level", ctx.state(1), "yellow")
+end
+
+do
+    local ctx = loadSpellRanks({ shipped = { trainers = { WARRIOR = { [205] = { level = 8, rank = 2 } } } } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    check("spell ranks: another class's trainer data is none", ctx.state(1), "nil")
+    check("spell ranks: shipped data without trainers is none",
+        loadSpellRanks({ shipped = { contributors = 1 } }).state(1), "nil")
+end
+
+do
+    local ctx = loadSpellRanks({ book = "legacy", legacySpell = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    check("spell ranks: the legacy spellbook and spell API make red", ctx.state(1), "red")
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.bar[2] = { "spell", 205 }
+    check("spell ranks: the legacy spellbook makes yellow", ctx.state(2), "yellow")
+end
+
+do
+    local ctx = loadSpellRanks({ book = "none" })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.bar[1], ctx.bar[2] = { "spell", 116 }, { "spell", 205 }
+    local ok, got = pcall(ctx.state, 1)
+    check("spell ranks: no spellbook API is none without errors", tostring(ok) .. " " .. got, "true nil")
+    ok, got = pcall(ctx.state, 2)
+    check("spell ranks: no spellbook API is never yellow", tostring(ok) .. " " .. got, "true nil")
+end
+
 if failures > 0 then
     os.exit(1)
 end
