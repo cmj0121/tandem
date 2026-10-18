@@ -205,16 +205,19 @@ local function equipLocOf(id)
     end
 end
 
--- Returns what the player wears in a slot token: { ids = {[id] = true}, list = { {id, ilvl} | {ilvl = 0} | {unknown} },
--- ilvl } where ilvl is the one to beat (the lower of a pair, 0 when a slot is empty) or nil when unknown. An off hand
--- behind a two-hander, or behind a main hand the client does not reveal, has nothing to beat.
+-- Returns what the player wears in a slot token: { ids = {[id] = true}, list = { {id, ilvl, score} | {ilvl = 0} |
+-- {unknown} }, ilvl, score } where ilvl is the one to beat (the lower of a pair, 0 when a slot is empty) or nil when
+-- unknown, and score the lower stat score of the pair, nil unless every worn item has stats (an empty slot has none).
+-- An off hand behind a two-hander, or behind a main hand the client does not reveal, has nothing to beat.
 function View.Equipped(slot)
-    local out = { ids = {}, list = {}, ilvl = math.huge }
+    local out = { ids = {}, list = {}, ilvl = math.huge, score = math.huge }
+    local _, classFile, level = View.Player(true)
     for _, inv in ipairs(INVENTORY[slot]) do
         local id = wornID(inv)
         local e = {}
         if id then
             e.id, e.ilvl = id, ilvlOf(id)
+            e.score = classFile and ns.Advisor.Score(id, classFile, level) or nil
             out.ids[id] = true
         elseif id == false then
             e.ilvl = 0
@@ -227,21 +230,28 @@ function View.Equipped(slot)
         else
             out.ilvl = nil
         end
+        if out.score and e.score then
+            out.score = math.min(out.score, e.score)
+        else
+            out.score = nil
+        end
     end
     if slot == "offhand" then
         local main = wornID(16)
         if main == nil or (main and equipLocOf(main) == "INVTYPE_2HWEAPON") then
-            out.ilvl = nil
+            out.ilvl, out.score = nil, nil
         end
     end
     return out
 end
 
--- Returns what the player wears in both hands, for a one-hander that fills either: ids of both, list of both, and
--- ilvl the lower of the hands whose item level is known (nil when neither is).
+-- Returns what the player wears in both hands, for a one-hander that fills either: ids of both, list of both, ilvl
+-- the lower of the hands whose item level is known (nil when neither is), and score the lower of their scores, nil
+-- when a hand with a known item level has no score.
 function View.EquippedHands()
     local main, off = View.Equipped("mainhand"), View.Equipped("offhand")
     local out = { ids = {}, list = {} }
+    local score, scored = math.huge, false
     for _, worn in ipairs({ main, off }) do
         for id in pairs(worn.ids) do
             out.ids[id] = true
@@ -252,18 +262,43 @@ function View.EquippedHands()
         if worn.ilvl and (not out.ilvl or worn.ilvl < out.ilvl) then
             out.ilvl = worn.ilvl
         end
+        if worn.score and score then
+            score, scored = math.min(score, worn.score), true
+        elseif worn.ilvl then
+            score = nil
+        end
     end
+    out.score = scored and score or nil
     return out
 end
 
--- Returns the marks after an item row { id, ilvl, sourced, usable } against what is worn in its slot: an item the
--- player cannot use is never an upgrade.
+-- Returns true when a row { ilvl, score, usable } beats what is worn (decision 3): by score when both sides have
+-- stats, else by item level; an item the player cannot use never does.
+function View.IsUpgrade(row, worn)
+    if not row.usable then
+        return false
+    end
+    if row.score and worn.score then
+        return row.score > worn.score
+    end
+    return worn.ilvl ~= nil and row.ilvl > worn.ilvl
+end
+
+-- Returns a stat score as shown beside an item, one decimal; "" for an item without stats (nil).
+function View.ScoreText(score)
+    return score and ("%.1f"):format(score) or ""
+end
+
+-- Returns the marks after an item row { id, ilvl, score, sourced, usable } against what is worn in its slot.
 function View.Marks(row, worn)
     local s = ""
     if worn.ids[row.id] then
         s = s .. L[" (equipped)"]
-    elseif row.usable and worn.ilvl and row.ilvl > worn.ilvl then
+    elseif View.IsUpgrade(row, worn) then
         s = s .. L[" (upgrade)"]
+    end
+    if row.score == nil then
+        s = s .. L[" (no stats)"]
     end
     if not row.sourced then
         s = s .. L[" (no known source)"]

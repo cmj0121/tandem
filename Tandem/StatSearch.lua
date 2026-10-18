@@ -8,6 +8,9 @@ ns.StatSearch = StatSearch
 
 local Safe = ns.Store.Safe
 
+-- Version of the stat parser (ReadStats and ns.StatPatterns); stats saved by an older one are read again on a scan.
+StatSearch.VERSION = 1
+
 -- Tooltip lines per item for the session: { {text = lower-cased, raw = as shown}, ... }, colour codes stripped.
 local cache = {}
 
@@ -39,8 +42,9 @@ local function strip(text)
     return (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|H.-|h", ""):gsub("|h", ""))
 end
 
+-- StatSearch.Lines(id) -> { {text = lower-cased, raw = as shown}, ... } | nil
 -- Returns the item's tooltip lines, or nil while the client has not loaded the item (it is then asked for).
-local function linesOf(id)
+function StatSearch.Lines(id)
     if cache[id] then
         return cache[id]
     end
@@ -79,7 +83,7 @@ end
 -- Returns the first number on the first tooltip line holding every term (0 when it has none) and that line as shown;
 -- nil when no line matches, with pending true while the item's tooltip is not loaded yet.
 function StatSearch.Match(id, terms)
-    local lines = linesOf(id)
+    local lines = StatSearch.Lines(id)
     if not lines then
         return nil, true
     end
@@ -120,4 +124,25 @@ function StatSearch.Filter(rows, terms)
         return order[a] < order[b]
     end)
     return matched, pending
+end
+
+-- StatSearch.ReadStats(id) -> { statKey = number } | nil
+-- Parses the item's tooltip with the locale's ns.StatPatterns: the first pattern a line matches gives its stat, and
+-- a stat on several lines adds up. An empty table when no line holds a stat; nil while the tooltip is not loaded.
+function StatSearch.ReadStats(id)
+    local lines = StatSearch.Lines(id)
+    if not lines then
+        return nil
+    end
+    local stats = {}
+    for _, line in ipairs(lines) do
+        for _, p in ipairs(ns.StatPatterns or {}) do
+            local n = tonumber(line.raw:match(p[1]))
+            if n then
+                stats[p[2]] = (stats[p[2]] or 0) + n
+                break
+            end
+        end
+    end
+    return stats
 end

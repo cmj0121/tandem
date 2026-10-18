@@ -49,9 +49,36 @@ local function isEquipLoc(equipLoc)
     return equipLoc ~= nil and equipLoc ~= "" and equipLoc ~= NON_EQUIP
 end
 
--- Scanner.CacheItem(id, equipLoc, classID, subclassID) -> added
--- Stores an equippable item's core fields when the client has them: nil when it does not yet (or the item API is
--- missing), else whether the record was added.
+-- Returns true when the item's stats are to be read from its tooltip: the tooltip API and the locale's patterns are
+-- there and the item has none saved, or the saved ones come from an older parser.
+local function needsStats(id)
+    local Store = ns.Store
+    if Store.readOnly or not ns.StatPatterns or not ns.Check.Ready("Stat search") then
+        return false
+    end
+    return (Store.StatsVersion() or 0) < ns.StatSearch.VERSION or Store.Stats(id) == nil
+end
+
+-- Reads and saves the item's stats; false while its tooltip is not loaded. Saved stats from an older parser are
+-- dropped first, so every item lacking stats is read again.
+local function readStats(id)
+    local stats = ns.StatSearch.ReadStats(id)
+    if not stats then
+        return false
+    end
+    local Store = ns.Store
+    if (Store.StatsVersion() or 0) < ns.StatSearch.VERSION then
+        Store.ClearStats()
+        Store.SetStatsVersion(ns.StatSearch.VERSION)
+    end
+    Store.SetStats(id, stats)
+    return true
+end
+
+-- Scanner.CacheItem(id, equipLoc, classID, subclassID) -> added, statsPending
+-- Stores an equippable item's core fields when the client has them, and its tooltip stats when they are due: nil
+-- when the client does not have the item yet (or the item API is missing), else whether the record was added, and
+-- true for statsPending while the stats wait for the tooltip.
 function Scanner.CacheItem(id, equipLoc, classID, subclassID)
     if not itemAPI() then
         return nil
@@ -61,8 +88,10 @@ function Scanner.CacheItem(id, equipLoc, classID, subclassID)
     if not name then
         return nil
     end
-    return ns.Store.AddItem(id, Safe(ilvl), Safe(reqLevel), Safe(quality), equipLoc, classID, subclassID,
+    local added = ns.Store.AddItem(id, Safe(ilvl), Safe(reqLevel), Safe(quality), equipLoc, classID, subclassID,
         ns.Store.IsDeprecatedName(name))
+    local statsPending = ns.Store.db.items[id] ~= nil and needsStats(id) and not readStats(id)
+    return added, statsPending
 end
 
 -- Scanner.Equippable(id) -> equipLoc, classID, subclassID
@@ -79,9 +108,19 @@ function Scanner.Equippable(id)
     return equipLoc, Safe(classID), Safe(subclassID)
 end
 
+-- Holds id until the client replies or it times out, counted as deferred; entry.stats marks a wait for the tooltip
+-- only (the item record is in), entry.backfill one for an item cached before this run.
+local function defer(id, entry)
+    entry.at = GetTime()
+    pending[id] = entry
+    pendingCount = pendingCount + 1
+    local run = scanDB().lastRun
+    run.deferred = run.deferred + 1
+end
+
 -- Caches a scanned item and counts it in the run; returns false when the client does not have it yet.
 local function cache(id, equipLoc, classID, subclassID)
-    local added = Scanner.CacheItem(id, equipLoc, classID, subclassID)
+    local added, statsPending = Scanner.CacheItem(id, equipLoc, classID, subclassID)
     if added == nil then
         return false
     end
@@ -89,6 +128,9 @@ local function cache(id, equipLoc, classID, subclassID)
     if added then
         local run = scanDB().lastRun
         run.equippable = run.equippable + 1
+    end
+    if statsPending then
+        defer(id, { stats = true })
     end
     return true
 end
@@ -98,6 +140,19 @@ local function release(id)
     pendingCount = pendingCount - 1
 end
 
+-- Reads a pending tooltip wait's stats; true once read and released.
+local function retryStats(id, entry)
+    if not readStats(id) then
+        return false
+    end
+    release(id)
+    if entry.backfill then
+        local run = scanDB().lastRun
+        run.backfilled = run.backfilled + 1
+    end
+    return true
+end
+
 local function finished()
     return scanDB().lastRun.processed >= cap and pendingCount == 0
 end
@@ -105,7 +160,13 @@ end
 local function process(id)
     local run = scanDB().lastRun
     if ns.Store.db.items[id] then
-        run.skipped = run.skipped + 1
+        if not needsStats(id) then
+            run.skipped = run.skipped + 1
+        elseif readStats(id) then
+            run.backfilled = run.backfilled + 1
+        else
+            defer(id, { stats = true, backfill = true })
+        end
         return
     end
     if C_Item.DoesItemExistByID and Safe(C_Item.DoesItemExistByID(id)) == false then
@@ -125,10 +186,7 @@ local function process(id)
         return
     end
     if not cache(id, equipLoc, Safe(classID), Safe(subclassID)) then
-        pending[id] = { at = GetTime(), equipLoc = equipLoc, classID = Safe(classID),
-                        subclassID = Safe(subclassID) }
-        pendingCount = pendingCount + 1
-        run.deferred = run.deferred + 1
+        defer(id, { equipLoc = equipLoc, classID = Safe(classID), subclassID = Safe(subclassID) })
         if C_Item.RequestLoadItemDataByID then
             C_Item.RequestLoadItemDataByID(id)
         end
@@ -169,7 +227,7 @@ function Scanner.Start(opts)
     local scan = scanDB()
     scan.lastRun = {
         started = time(), from = scan.cursor, rate = opts.rate, processed = 0, skipped = 0, hits = 0,
-        misses = 0, equippable = 0, deferred = 0, timeouts = 0, elapsed = 0,
+        misses = 0, equippable = 0, deferred = 0, timeouts = 0, backfilled = 0, elapsed = 0,
     }
     cap = opts.cap
     startedAt = GetTime()
@@ -203,6 +261,9 @@ function Scanner.Stop()
         num(run.from), num(run.to), ("%.1f"):format(run.elapsed), run.processed, run.skipped))
     print(L["  %s hits (%s equippable), %s misses, %s deferred, %s timeouts"]:format(
         run.hits, run.equippable, run.misses, run.deferred, run.timeouts))
+    if run.backfilled > 0 then
+        print(L["  %s cached items read for stats"]:format(run.backfilled))
+    end
     if Scanner.onStop then
         Scanner.onStop()
     end
@@ -239,7 +300,7 @@ function Scanner.Tick()
     local run = scan.lastRun
     run.elapsed = now - startedAt
     for id, entry in pairs(pending) do
-        if now - entry.at > TIMEOUT then
+        if not (entry.stats and retryStats(id, entry)) and now - entry.at > TIMEOUT then
             release(id)
             run.timeouts = run.timeouts + 1
         end
@@ -262,6 +323,13 @@ function Scanner.OnItemInfo(id, success)
     id = Safe(id)
     local entry = running and id and pending[id]
     if not entry then
+        return
+    end
+    if entry.stats then
+        retryStats(id, entry)
+        if finished() then
+            Scanner.Stop()
+        end
         return
     end
     release(id)

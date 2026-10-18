@@ -29,6 +29,7 @@ L["Last run: IDs %s-%s at %s in %ss, %s processed, %s skipped"] =
     "上次掃描：ID %s-%s，速率 %s，耗時 %s 秒，處理 %s 個，略過 %s 個"
 L["  %s hits (%s equippable), %s misses, %s deferred, %s timeouts"] =
     "  命中 %s 個（可裝備 %s 個），未命中 %s 個，延後 %s 個，逾時 %s 個"
+L["  %s cached items read for stats"] = "  已讀取 %s 個已快取物品的屬性"
 L["Last run: never"] = "上次掃描：從未執行"
 L["Recording is off: saved data uses a newer schema"] = "記錄已停用：存檔資料使用較新的結構版本"
 
@@ -50,6 +51,21 @@ L["  /tandem browse [<slot>] - browse known gear in a window"] = "  /tandem brow
 L["Tandem gear"] = "Tandem 裝備"
 L["All slots"] = "所有部位"
 L["Usable only"] = "僅限可用"
+L["Score"] = "分數"
+L["iLvl"] = "裝等"
+L["Req"] = "需求"
+L["Strength"] = "力量"
+L["Agility"] = "敏捷"
+L["Stamina"] = "耐力"
+L["Intellect"] = "智力"
+L["Spirit"] = "精神"
+L["Spell power"] = "法術能量"
+L["Healing"] = "治療"
+L["Hit"] = "命中"
+L["Crit"] = "致命一擊"
+L["Attack power"] = "攻擊強度"
+L["MP5"] = "法力恢復"
+L["Defense"] = "防禦"
 L["%d items"] = "%d 件物品"
 L["Select an item to see where it drops"] = "選擇一件物品以查看掉落來源"
 L["Rate"] = "速度"
@@ -79,8 +95,7 @@ L["Quest reward pick"] = "任務獎勵建議"
 L["Upgrade alert"] = "升級提醒"
 L["Item stats"] = "物品屬性"
 L["Stat search"] = "屬性搜尋"
-L["Stat search: not on this client"] = "屬性搜尋：此用戶端不支援"
-L["%d items, %d loading"] = "%d 件物品，%d 件載入中"
+L["Talent spec"] = "天賦專精"
 L["  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line"] =
     "  /tandem gear <部位> [all] <字詞> - 滑鼠提示同一行含有這些字詞的裝備"
 L["Tandem: stat search is not available on this client; see /tandem check"] =
@@ -92,12 +107,63 @@ L["%d items are still loading; run the command again in a moment"] = "還有 %d 
 L["Sorted by the number on the matching tooltip line, then item level and quality"] =
     "依符合的提示行上的數字排序，再依物品等級與品質"
 L["Tandem: upgrade for %s: %s (item level %d over %d)"] = "Tandem：%s的升級：%s（物品等級 %d，高於 %d）"
+L["Tandem: upgrade for %s: %s (score %s over %s)"] = "Tandem：%s的升級：%s（分數 %s，高於 %s）"
 L["  /tandem map <item link|id> - pin where an item comes from on the world map"] =
     "  /tandem map <物品連結|id> - 在世界地圖上標記物品的來源位置"
 L["  /tandem map clear - remove the map pins"] = "  /tandem map clear - 移除地圖標記"
 L["Tandem: usage /tandem map <item link|id> or /tandem map clear"] =
     "Tandem：用法 /tandem map <物品連結|id> 或 /tandem map clear"
 L["Tandem: map pins cleared"] = "Tandem：已移除地圖標記"
+L["  /tandem forget <from> <to> - drop your own items, stats and loot rows in an ID range"] =
+    "  /tandem forget <起> <迄> - 刪除你自己在此 ID 範圍內的物品、屬性與掉落紀錄"
+L["Tandem: usage /tandem forget <from> <to>"] = "Tandem：用法 /tandem forget <起> <迄>"
+L["Tandem: forgot %d items, %d stats and %d loot rows with IDs %d-%d"] =
+    "Tandem：已刪除物品 %d 件、屬性 %d 筆、掉落紀錄 %d 筆（ID %d-%d）"
+L["  /tandem weights - show the stat weights of your talent tree"] = "  /tandem weights - 顯示你的天賦系的屬性權重"
+L["  /tandem weights spec <1|2|3|auto> - pick the talent tree, or follow your talents"] =
+    "  /tandem weights spec <1|2|3|auto> - 選擇天賦系，或依你的天賦自動判斷"
+L["  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)"] =
+    "  /tandem weights set <屬性> <數字> - 自訂某項屬性的權重（0 表示忽略）"
+L["  /tandem weights reset - drop your own weights for the active tree"] =
+    "  /tandem weights reset - 刪除目前天賦系的自訂權重"
+L["Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]"] =
+    "Tandem：用法 /tandem weights [spec <1|2|3|auto> | set <屬性> <數字> | reset]"
+L["Tandem: %s %s weights, tree %d (%s)"] = "Tandem：%s%s的屬性權重，第 %d 系（%s）"
+L["auto"] = "自動"
+L["manual"] = "手動"
+L["  * your own weight; /tandem weights reset drops them"] = "  * 你自訂的權重；/tandem weights reset 可刪除"
+L["Tandem: no built-in weights for %s"] = "Tandem：%s沒有內建權重"
+L["Tandem: weights follow your talents"] = "Tandem：權重依你的天賦自動判斷"
+L["Tandem: weights use tree %d"] = "Tandem：權重使用第 %d 系"
+L["Tandem: unknown stat %s; use one of: %s"] = "Tandem：未知的屬性 %s；請使用其中之一：%s"
+L["Tandem: %s weight set to %s"] = "Tandem：%s 的權重設為 %s"
+L["Tandem: own weights for tree %d dropped"] = "Tandem：已刪除第 %d 系的自訂權重"
+L["Tandem: weights cannot be saved: recording is off or your character is not known yet"] =
+    "Tandem：無法儲存權重：記錄已停用，或尚未取得你的角色"
+L["Arms"] = "武器"
+L["Fury"] = "狂怒"
+L["Protection"] = "防護"
+L["Holy"] = "神聖"
+L["Retribution"] = "懲戒"
+L["Beast Mastery"] = "野獸控制"
+L["Marksmanship"] = "射擊"
+L["Survival"] = "生存"
+L["Assassination"] = "刺殺"
+L["Combat"] = "戰鬥"
+L["Subtlety"] = "敏銳"
+L["Discipline"] = "戒律"
+L["Shadow"] = "暗影"
+L["Elemental"] = "元素"
+L["Enhancement"] = "增強"
+L["Restoration"] = "恢復"
+L["Arcane"] = "秘法"
+L["Fire"] = "火焰"
+L["Frost"] = "冰霜"
+L["Affliction"] = "痛苦"
+L["Demonology"] = "惡魔學識"
+L["Destruction"] = "毀滅"
+L["Balance"] = "平衡"
+L["Feral Combat"] = "野性戰鬥"
 L["Tandem: map pins are not available on this client; see /tandem check"] =
     "Tandem：此用戶端無法使用地圖標記；請見 /tandem check"
 L["Tandem: no known map position for item %d"] = "Tandem：物品 %d 沒有已知的地圖位置"
@@ -128,10 +194,12 @@ L["%s: none known"] = "%s：無已知物品"
 L["No known %s you can use"] = "沒有你能使用的已知%s"
 L[" (equipped)"] = "（已裝備）"
 L[" (upgrade)"] = "（升級）"
+L[" (no stats)"] = "（無屬性）"
 L[" (no known source)"] = "（來源未知）"
 L["Equipped: %s, ilvl %s"] = "已裝備：%s，物品等級 %s"
 L["Equipped: nothing"] = "已裝備：無"
-L["Ranked by item level, then quality; stats are not considered"] = "依物品等級、再依品質排名；未考慮屬性"
+L["Ranked by stat score, then item level and quality; items marked (no stats) come last"] =
+    "依屬性分數、再依物品等級與品質排名；標示（無屬性）的物品排在最後"
 L["Tandem: usage /tandem rank <item link|id>"] = "Tandem：用法 /tandem rank <物品連結|id>"
 L["Tandem: item %d is not known; scan or loot it first"] = "Tandem：未知的物品 %d；請先掃描或拾取"
 L["%s does not go in a ranked slot"] = "%s 不屬於可排名的部位"
@@ -154,6 +222,7 @@ L[" (%s only)"] = "（僅限%s）"
 L["Alliance"] = "聯盟"
 L["Horde"] = "部落"
 L["Tandem: rank %d of %d for %s"] = "Tandem：排名第 %d／%d（%s）"
+L["Tandem: rank %d of %d for %s, score %s"] = "Tandem：排名第 %d／%d（%s），分數 %s"
 L["Tandem: you cannot use it: level %d required"] = "Tandem：你無法使用：需要等級 %d"
 L["Tandem: your class cannot use it"] = "Tandem：你的職業無法使用"
 L["Tandem: drops from %s, %s"] = "Tandem：掉落自 %s，%s"
@@ -198,4 +267,31 @@ ns.StatAliases = {
     ["體力"] = "耐力",
     ["暴擊"] = "致命一擊",
     ["法術暴擊"] = "法術 致命一擊",
+}
+
+-- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
+-- line comes after it.
+ns.StatPatterns = {
+    { "^%+(%d+) ?力量$", "str" },
+    { "^%+(%d+) ?敏捷$", "agi" },
+    { "^%+(%d+) ?耐力$", "sta" },
+    { "^%+(%d+) ?智力$", "int" },
+    { "^%+(%d+) ?精神$", "spi" },
+    { "^(%d+) ?點護甲$", "armor" },
+    { "^(%d+) ?點格擋$", "blockvalue" },
+    { "每秒傷害 ?(%d+%.?%d*)", "dps" },
+    { "^裝備：%+(%d+) ?遠程攻擊強度", "rap" },
+    { "^裝備：%+(%d+) ?攻擊強度", "ap" },
+    { "^裝備：.-傷害和治療效果提高最多(%d+)點", "sp" },
+    { "^裝備：.-治療效果提高最多(%d+)點", "heal" },
+    { "^裝備：使你的法術造成致命一擊的機率提高(%d+%.?%d*)%%", "spellcrit" },
+    { "^裝備：使你的法術擊中.-機率提高(%d+%.?%d*)%%", "spellhit" },
+    { "^裝備：使你造成致命一擊的機率提高(%d+%.?%d*)%%", "crit" },
+    { "^裝備：使你擊中.-機率提高(%d+%.?%d*)%%", "hit" },
+    { "^裝備：每5秒恢復(%d+)點法力", "mp5" },
+    { "^裝備：防禦技能提高(%d+)點", "def" },
+    { "^裝備：使你躲閃.-機率提高(%d+%.?%d*)%%", "dodge" },
+    { "^裝備：使你招架.-機率提高(%d+%.?%d*)%%", "parry" },
+    { "^裝備：.-盾牌格擋值提高(%d+)點", "blockvalue" },
+    { "^裝備：使你.-格擋.-機率提高(%d+%.?%d*)%%", "block" },
 }

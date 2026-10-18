@@ -143,23 +143,24 @@ local function loadWithDB(db, locale, opts)
 end
 
 local function isCurrent(db)
-    return type(db) == "table" and db.schemaVersion == 3 and type(db.items) == "table"
+    return type(db) == "table" and db.schemaVersion == 4 and type(db.items) == "table"
         and type(db.scan) == "table" and db.scan.cursor == 1 and db.scan.nonEquippable == 0
         and type(db.scan.blocks) == "table" and type(db.npcs) == "table" and type(db.quests) == "table"
         and type(db.loot) == "table"
         and type(db.kills) == "table" and type(db.corpses) == "table"
+        and type(db.stats) == "table" and type(db.weights) == "table"
 end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v3 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v4 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
 end
 
 do
     local _, printed, env = loadWithDB("garbage")
-    check("garbage db becomes a fresh v3 table", isCurrent(env.TandemDB), true)
+    check("garbage db becomes a fresh v4 table", isCurrent(env.TandemDB), true)
     check("garbage db prints a reset line", printed[2], "Tandem: saved data was unreadable and has been reset")
 end
 
@@ -183,7 +184,7 @@ do
         unknownTop = true,
     })
     local db = env.TandemDB
-    check("old db is migrated to v3", db.schemaVersion, 3)
+    check("old db is migrated to v4", db.schemaVersion, 4)
     check("old db keeps a valid item", db.items[25] and db.items[25][4], "INVTYPE_HEAD")
     check("old db strips extra item fields", db.items[25] and #db.items[25], 6)
     check("old db drops an invalid item", db.items[26], nil)
@@ -213,29 +214,29 @@ do
     local _, printed, env = loadWithDB({ schemaVersion = 1, items = { [7] = { 1, 1, 1, "INVTYPE_FEET", 4, 2 } } })
     check("v1 db keeps its items", env.TandemDB.items[7][4], "INVTYPE_FEET")
     check("v1 db fills missing sections", isCurrent(env.TandemDB), true)
-    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 3")
+    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 4")
     check("v1 db prints nothing else", #printed, 2)
 end
 
 for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
     local _, printed, env = loadWithDB({ schemaVersion = bad })
-    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 3)
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 4)
     check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
     local _, printed = loadWithDB({ schemaVersion = 1 }, "zhTW")
-    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 3")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 4")
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 3, kills = { [448] = 2 }, corpses = { [448] = 5 } })
-    check("v3 db keeps kills", env.TandemDB.kills[448], 2)
-    check("v3 db keeps corpses", env.TandemDB.corpses[448], 5)
-    check("valid v3 db prints only the load line", #printed, 1)
+    local _, printed, env = loadWithDB({ schemaVersion = 4, kills = { [448] = 2 }, corpses = { [448] = 5 } })
+    check("v4 db keeps kills", env.TandemDB.kills[448], 2)
+    check("v4 db keeps corpses", env.TandemDB.corpses[448], 5)
+    check("valid v4 db prints only the load line", #printed, 1)
 end
 
--- Schema 3: a v2 db migrates losslessly (decision 8).
+-- Schema 3: a v2 db migrates losslessly (decision 8); schema 4: so does a v3 db (stage 7, decision 6).
 do
     local v2 = {
         schemaVersion = 2,
@@ -284,18 +285,192 @@ do
     local want = deep(v2)
     local _, printed, env = loadWithDB(v2)
     local db = env.TandemDB
-    check("v2 db migrates to v3", db.schemaVersion, 3)
+    check("v2 db migrates to v4", db.schemaVersion, 4)
     check("v2 db gains an empty quests table", type(db.quests) == "table" and next(db.quests) == nil, true)
-    db.schemaVersion, db.quests, want.schemaVersion = nil, nil, nil
+    db.schemaVersion, db.quests, db.stats, db.weights, want.schemaVersion = nil, nil, nil, nil, nil
     check("v2 db keeps every other field", same(db, want), true)
     check("v2 db prints only the upgrade line", printed[2] .. " #" .. #printed,
-        "Tandem: saved data upgraded from schema 2 to 3 #2")
+        "Tandem: saved data upgraded from schema 2 to 4 #2")
+
+    local v3 = deep(v2)
+    v3.schemaVersion, v3.quests = 3, { [176] = "Wanted: Hogger" }
+    want = deep(v3)
+    _, printed, env = loadWithDB(v3)
+    db = env.TandemDB
+    check("v3 db migrates to v4", db.schemaVersion, 4)
+    check("v3 db gains an empty stats table", type(db.stats) == "table" and next(db.stats) == nil, true)
+    check("v3 db gains an empty weights table", type(db.weights) == "table" and next(db.weights) == nil, true)
+    check("v3 db has no stats version", db.statsVersion, nil)
+    db.schemaVersion, db.stats, db.weights, want.schemaVersion = nil, nil, nil, nil
+    check("v3 db keeps every other field", same(db, want), true)
+    check("v3 db prints only the upgrade line", printed[2] .. " #" .. #printed,
+        "Tandem: saved data upgraded from schema 3 to 4 #2")
+
+    v3 = deep(v2)
+    v3.schemaVersion, v3.quests, v3.stats = 3, { [176] = "Wanted: Hogger" }, "bad"
+    want = deep(v3)
+    _, printed, env = loadWithDB(v3)
+    db = env.TandemDB
+    check("v3 db with a bad stats field gets an empty one", type(db.stats) == "table" and next(db.stats) == nil,
+        true)
+    db.schemaVersion, db.stats, db.weights, want.schemaVersion, want.stats = nil, nil, nil, nil, nil
+    check("v3 db with a bad stats field keeps its records", same(db, want), true)
+    check("v3 db with a bad stats field counts it dropped", printed[3], "Tandem: dropped 1 invalid saved entries")
+end
+
+-- Store: item stats and weights (stage 7, decisions 6-8).
+do
+    local addon, printed, env = loadWithDB({
+        schemaVersion = 4,
+        stats = {
+            [10] = { str = 5, sta = 3, dps = 12.5 },
+            [11] = {},
+            [12] = { int = 4, shadow = 9, spi = "2", hit = 0 / 0, crit = 1 },
+            [13] = "bad",
+            [0] = { str = 1 },
+            [14] = { spi = -5 },
+        },
+        statsVersion = 2,
+        weights = {
+            ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5, sta = 0 }, [1] = { int = 1 } } },
+            ["Jaina-Realm"] = { spec = 4, overrides = { [1] = { int = 1, fire = 2, sp = "x" }, [5] = { str = 1 },
+                                                        [2] = "bad" } },
+            ["Arthas-Realm"] = { overrides = "bad" },
+            ["Uther-Realm"] = "bad",
+            [""] = { spec = 1 },
+            [7] = { spec = 1 },
+        },
+    })
+    local db, Store = env.TandemDB, addon.Store
+    check("stats: a valid record is kept", db.stats[10].str .. " " .. db.stats[10].sta .. " " .. db.stats[10].dps,
+        "5 3 12.5")
+    check("stats: an empty record is kept as parsed with none", type(db.stats[11]) == "table"
+        and next(db.stats[11]) == nil, true)
+    local r = db.stats[12]
+    check("stats: valid keys survive next to bad ones", r and r.int .. " " .. r.crit, "4 1")
+    check("stats: an unknown key is dropped", r and r.shadow, nil)
+    check("stats: a string value is dropped", r and r.spi, nil)
+    check("stats: a NaN value is dropped", r and r.hit, nil)
+    check("stats: a non-table record is dropped alone", db.stats[13], nil)
+    check("stats: item 0 is dropped", db.stats[0], nil)
+    check("stats: a negative value is kept", db.stats[14].spi, -5)
+    check("stats: statsVersion is kept", db.statsVersion, 2)
+    local w = db.weights["Thrall-Realm"]
+    check("weights: a valid entry keeps its spec", w and w.spec, 2)
+    check("weights: a valid entry keeps its overrides", w and w.overrides[2].str .. " " .. w.overrides[2].sta
+        .. " " .. w.overrides[1].int, "2.5 0 1")
+    local j = db.weights["Jaina-Realm"]
+    check("weights: spec 4 is dropped, the entry kept", j and tostring(j.spec), "nil")
+    check("weights: a valid override key survives", j and j.overrides[1].int, 1)
+    check("weights: bad override keys are dropped", j and tostring(j.overrides[1].fire) .. tostring(j.overrides[1].sp),
+        "nilnil")
+    check("weights: an override for spec 5 is dropped", j and j.overrides[5], nil)
+    check("weights: a non-table override is dropped", j and j.overrides[2], nil)
+    local a = db.weights["Arthas-Realm"]
+    check("weights: bad overrides become empty", a and type(a.overrides) == "table" and next(a.overrides) == nil,
+        true)
+    check("weights: a non-table entry is dropped", db.weights["Uther-Realm"], nil)
+    check("weights: an empty name is dropped", db.weights[""], nil)
+    check("weights: a number name is dropped", db.weights[7], nil)
+    -- stats: shadow, spi, hit, 13, 0; weights: Jaina spec, fire, sp, [5], [2]; Arthas overrides; Uther, "", 7
+    check("stats: invalid entries are counted", printed[2], "Tandem: dropped 14 invalid saved entries")
+
+    check("Stats reads a record", Store.Stats(10).str, 5)
+    check("Stats is nil for an unparsed item", Store.Stats(99), nil)
+    check("StatsVersion reads the version", Store.StatsVersion(), 2)
+    local before = Store.revision
+    check("SetStats records stats", Store.SetStats(99, { int = 7, sp = 12 }), true)
+    check("SetStats writes TandemDB", db.stats[99].int .. " " .. db.stats[99].sp, "7 12")
+    check("SetStats is a record change", Store.revision, before + 1)
+    check("SetStats copies the table", Store.Stats(99) ~= nil and Store.SetStats(99, { int = 7, sp = 12 }), false)
+    check("SetStats replaces changed stats", Store.SetStats(99, { int = 7 }), true)
+    check("SetStats drops keys no longer there", db.stats[99].sp, nil)
+    check("SetStats records parsed with none", Store.SetStats(98, {}), true)
+    check("SetStats skips an unchanged empty record", Store.SetStats(98, {}), false)
+    check("SetStats replaces an empty record", Store.SetStats(98, { str = 1 }), true)
+    before = Store.unsaved
+    for name, args in pairs({
+        ["an unknown key"] = { 97, { int = 1, shadow = 2 } }, ["a string value"] = { 97, { int = "1" } },
+        ["a NaN value"] = { 97, { int = 0 / 0 } }, ["item 0"] = { 0, { int = 1 } },
+        ["a non-table"] = { 97, "int" }, ["nil stats"] = { 97 },
+    }) do
+        check("SetStats rejects " .. name, Store.SetStats(args[1], args[2]), false)
+    end
+    check("SetStats rejections write nothing", tostring(db.stats[97]) .. " " .. Store.unsaved, "nil " .. before)
+    check("SetStatsVersion sets the version", Store.SetStatsVersion(3), true)
+    check("SetStatsVersion skips an unchanged version", Store.SetStatsVersion(3), false)
+    check("SetStatsVersion rejects 0", Store.SetStatsVersion(0), false)
+    check("SetStatsVersion is not a record", Store.unsaved, before)
+    check("STAT_KEYS lists 21 keys", #Store.STAT_KEYS, 21)
+end
+
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 4, statsVersion = 1.5, weights = "bad" })
+    check("stats: a fractional statsVersion is dropped", env.TandemDB.statsVersion, nil)
+    check("weights: a non-table weights becomes empty", type(env.TandemDB.weights) == "table", true)
+    check("stats: a bad version and weights count as dropped", printed[2], "Tandem: dropped 2 invalid saved entries")
+end
+
+-- Store.Forget and /tandem forget (unit F): drop own records of an item ID range.
+local function forgetDB()
+    local item = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 }
+    return {
+        schemaVersion = 4,
+        items = { [276999] = item, [277000] = item, [277500] = item, [277999] = item, [278000] = item },
+        stats = { [277000] = { str = 1 }, [277001] = {}, [278000] = { sta = 2 } },
+        loot = {
+            a = { item = 277000, kind = "c", id = 100, map = 1429, count = 2, coords = {} },
+            b = { item = 277999, kind = "q", id = 176, map = 1429, count = 1, factions = 1 },
+            c = { item = 277500, kind = "v", id = 54, map = 0, count = 1, factions = 2 },
+            d = { item = 278000, kind = "c", id = 100, map = 1429, count = 1, coords = {} },
+            e = { item = 276999, kind = "o", id = 7, map = 1429, count = 1, coords = {} },
+        },
+    }
+end
+
+do
+    local addon, _, env = loadWithDB(forgetDB())
+    local db, Store = env.TandemDB, addon.Store
+    local before = Store.revision
+    local gone = Store.Forget(277000, 277999)
+    check("Forget counts what went", gone.items .. " " .. gone.stats .. " " .. gone.loot, "3 2 3")
+    check("Forget drops the items in the range", tostring(db.items[277000]) .. tostring(db.items[277500])
+        .. tostring(db.items[277999]), "nilnilnil")
+    check("Forget keeps the items around the range", db.items[276999] ~= nil and db.items[278000] ~= nil, true)
+    check("Forget drops the stats in the range", tostring(db.stats[277000]) .. tostring(db.stats[277001]), "nilnil")
+    check("Forget keeps other stats", db.stats[278000].sta, 2)
+    check("Forget drops every loot kind in the range", tostring(db.loot["277000:c:100:1429"])
+        .. tostring(db.loot["277999:q:176:1429"]) .. tostring(db.loot["277500:v:54:0"]), "nilnilnil")
+    check("Forget keeps other loot", db.loot["278000:c:100:1429"] ~= nil and db.loot["276999:o:7:1429"] ~= nil, true)
+    check("Forget keeps the item count", Store.ItemCount(), 2)
+    check("Forget counts each record as a change", Store.revision - before, 8)
+    check("Forget unsaved follows", Store.unsaved, 8)
+    check("Forget forgets the sources index", Store.AddSource(277999, "q", 176, 1429, nil, nil, 1), true)
+    check("Forget re-adds a source as a new row", db.loot["277999:q:176:1429"].factions, 1)
+    check("Forget re-adds an item", Store.AddItem(277000, 1, 1, 1, "INVTYPE_HEAD", 4, 1), true)
+    check("Forget item count after re-add", Store.ItemCount(), 3)
+    gone = Store.Forget(1, 10)
+    check("Forget an empty range drops nothing", gone.items .. " " .. gone.stats .. " " .. gone.loot, "0 0 0")
+    check("Forget a single ID", Store.Forget(278000, 278000).items, 1)
+    before = Store.unsaved
+    for name, args in pairs({
+        ["from above to"] = { 5, 4 }, ["from 0"] = { 0, 4 }, ["a fraction"] = { 1.5, 4 },
+        ["a string"] = { "1", 4 }, ["nil to"] = { 1 },
+    }) do
+        check("Forget rejects " .. name, Store.Forget(args[1], args[2]), nil)
+    end
+    check("Forget rejections are not records", Store.unsaved, before)
+end
+
+do
+    local addon = loadWithDB({ schemaVersion = 5, items = { [5] = {} } })
+    check("newer db blocks Forget", addon.Store.Forget(1, 10), nil)
 end
 
 -- Store: quest and vendor sources (stage 5, unit 1).
 do
     local addon, printed, env = loadWithDB({
-        schemaVersion = 3,
+        schemaVersion = 4,
         quests = { [176] = "Wanted: Hogger", [0] = "zero", [177] = "", [178] = 5 },
         loot = {
             a = { item = 1, kind = "q", id = 176, map = 1429, count = 3, coords = { { 1, 2 }, { 3, 4 } },
@@ -368,12 +543,12 @@ do
 end
 
 do
-    local newer = { schemaVersion = 4, items = "new format" }
+    local newer = { schemaVersion = 5, items = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items, "new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 4; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 5; recording is off until the addon is updated")
     check("newer db blocks AddItem", addon.Store.AddItem(1, 1, 1, 1, "INVTYPE_HEAD", 4, 1), false)
     check("newer db blocks AddLoot", addon.Store.AddLoot(1, "c", 1, 1), false)
     check("newer db blocks SetNpcName", addon.Store.SetNpcName(1, "x"), false)
@@ -381,6 +556,10 @@ do
     check("newer db blocks SetQuestName", addon.Store.SetQuestName(1, "x"), false)
     check("newer db blocks AddKill", addon.Store.AddKill(1), false)
     check("newer db blocks AddCorpse", addon.Store.AddCorpse(1), false)
+    check("newer db blocks SetStats", addon.Store.SetStats(1, { str = 1 }), false)
+    check("newer db blocks SetStatsVersion", addon.Store.SetStatsVersion(1), false)
+    check("newer db reads no stats", addon.Store.Stats(1), nil)
+    check("newer db reads no stats version", addon.Store.StatsVersion(), nil)
     check("newer db Counts kills does not fail", addon.Store.Counts().kills, 0)
     check("newer db Counts does not fail", addon.Store.Counts().items, 0)
     check("newer db is read-only", addon.Store.Counts().readOnly, true)
@@ -494,6 +673,43 @@ local function stubScanner(addon)
     return calls
 end
 
+-- /tandem forget (unit F).
+do
+    local addon, printed, env = loadWithDB(forgetDB())
+    local out = run(addon, printed, "forget 277000 277999")
+    check("forget prints what went", out[1], "Tandem: forgot 3 items, 2 stats and 3 loot rows with IDs 277000-277999")
+    check("forget prints one line", #out, 1)
+    check("forget: count drops accordingly", run(addon, printed, "count")[1], "Tandem: 2 known items, 0 non-equippable")
+    check("forget: loot count drops accordingly", run(addon, printed, "count")[3], "Loot entries: 2, npc names: 0")
+    check("forget: other IDs untouched", env.TandemDB.items[278000] ~= nil, true)
+    for _, msg in ipairs({ "forget", "forget 5", "forget 5 4", "forget 0 4", "forget a 4", "forget 1 2 3",
+                           "forget -1 4", "forget 1.5 4" }) do
+        local before = addon.Store.unsaved
+        out = run(addon, printed, msg)
+        check(("%q prints the forget usage"):format(msg), out[1], "Tandem: usage /tandem forget <from> <to>")
+        check(("%q forgets nothing"):format(msg), addon.Store.unsaved, before)
+    end
+    env.InCombatLockdown = function()
+        return true
+    end
+    out = run(addon, printed, "forget 1 300000")
+    check("forget in combat: refused", out[1] .. "|" .. #out, "Tandem: not available in combat|1")
+    check("forget in combat: nothing dropped", env.TandemDB.items[278000] ~= nil, true)
+end
+
+do
+    local addon, printed = loadWithDB({ schemaVersion = 5 })
+    check("forget on a newer db says read-only", run(addon, printed, "forget 1 2")[1],
+        "Recording is off: saved data uses a newer schema")
+end
+
+do
+    local addon, printed = loadWithDB(forgetDB(), "zhTW")
+    check("zhTW forget line", run(addon, printed, "forget 277000 277999")[1],
+        "Tandem：已刪除物品 3 件、屬性 2 筆、掉落紀錄 3 筆（ID 277000-277999）")
+    check("zhTW forget usage", run(addon, printed, "forget")[1], "Tandem：用法 /tandem forget <起> <迄>")
+end
+
 do
     local addon, printed, env = loadWithDB(nil)
     local ParseRate = addon.Commands.ParseRate
@@ -536,7 +752,15 @@ do
     check("usage lists map clear", help[14], "  /tandem map clear - remove the map pins")
     check("usage lists gear search", help[7],
         "  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line")
-    check("usage line count", #help, 14)
+    check("usage lists forget", help[15],
+        "  /tandem forget <from> <to> - drop your own items, stats and loot rows in an ID range")
+    check("usage lists weights", help[16], "  /tandem weights - show the stat weights of your talent tree")
+    check("usage lists weights spec", help[17],
+        "  /tandem weights spec <1|2|3|auto> - pick the talent tree, or follow your talents")
+    check("usage lists weights set", help[18],
+        "  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)")
+    check("usage lists weights reset", help[19], "  /tandem weights reset - drop your own weights for the active tree")
+    check("usage line count", #help, 19)
 
     addon.Scanner = nil
     check("scan without a scanner", run(addon, printed, "scan")[1], "Tandem: scanner not available")
@@ -613,7 +837,7 @@ do
 end
 
 do
-    local addon, printed = loadWithDB({ schemaVersion = 4, items = "new format" })
+    local addon, printed = loadWithDB({ schemaVersion = 5, items = "new format" })
     local out = run(addon, printed, "count")
     check("count on a newer db does not fail", out[1], "Tandem: 0 known items, ? non-equippable")
     check("count on a newer db says read-only", out[#out],
@@ -877,7 +1101,7 @@ do
 end
 
 do
-    local ctx = loadScanner({}, { schemaVersion = 4, scan = { cursor = 9 } })
+    local ctx = loadScanner({}, { schemaVersion = 5, scan = { cursor = 9 } })
     local mark = #ctx.printed
     ctx.Scanner.Start({ rate = 10, cap = 5 })
     check("read-only start is refused", ctx.since(mark)[1], "Recording is off: saved data uses a newer schema")
@@ -931,6 +1155,241 @@ do
     ctx.tick(1)
     check("a secret field is not stored", ctx.env.TandemDB.items[1], nil)
     check("a secret field still counts the hit", ctx.run().hits, 1)
+end
+
+-- Scanner stats (stage 7, unit 2): tooltip lines parsed into stat keys at scan time.
+
+-- Gives a loadScanner ctx the tooltip API over tips ({[id] = {left texts}}; an id without lines is not loaded).
+local function withTips(ctx, tips)
+    ctx.tipCalls = {}
+    ctx.env.C_TooltipInfo = { GetItemByID = function(id)
+        ctx.tipCalls[id] = (ctx.tipCalls[id] or 0) + 1
+        if not tips[id] then
+            return nil
+        end
+        local lines = {}
+        for i, text in ipairs(tips[id]) do
+            lines[i] = { leftText = text }
+        end
+        return { lines = lines }
+    end }
+    return ctx
+end
+
+-- Returns stats as "key=n,..." sorted by key, or "nil".
+local function statsText(stats)
+    if not stats then
+        return "nil"
+    end
+    local parts = {}
+    for key, n in pairs(stats) do
+        parts[#parts + 1] = key .. "=" .. n
+    end
+    table.sort(parts)
+    return table.concat(parts, ",")
+end
+
+do
+    local ctx = withTips(loadScanner({}), {
+        [1] = { "Robe of Tests", "Binds when equipped", "Chest", "Cloth", "|cffffffff65 Armor|r", "+10 Stamina",
+            "+12 Intellect", "+8 Spirit", "+3 Fire Resistance",
+            "Equip: Increases damage and healing done by magical spells and effects by up to 23.",
+            "Equip: Increases healing done by spells and effects by up to 44.",
+            "Equip: Improves your chance to hit with spells by 1%.",
+            "Equip: Improves your chance to get a critical strike with spells by 2%.",
+            "Equip: Restores 6 mana per 5 sec.", "Equip: Increases damage done by Fire spells and effects by up to 9.",
+            "(2) Set: Restores 4 mana per 5 sec." },
+        [2] = { "Blade of Tests", "Main Hand", "Sword", "41 - 77 Damage", "Speed 2.50", "(23.6 damage per second)",
+            "+5 Strength", "+7 Agility", "Equip: +20 Attack Power.", "Equip: +12 ranged Attack Power.",
+            "Equip: Improves your chance to hit by 1%.", "Equip: Improves your chance to get a critical strike by 1%.",
+            "Equip: +10 Attack Power when fighting Undead." },
+        [3] = { "Shield of Tests", "Off Hand", "Shield", "1500 Armor", "26 Block", "Equip: Increased Defense +7.",
+            "Equip: Increases your chance to dodge an attack by 1%.",
+            "Equip: Increases your chance to parry an attack by 2%.",
+            "Equip: Increases your chance to block attacks with a shield by 3%.",
+            "Equip: Increases the block value of your shield by 14." },
+        [4] = { "Plain Ring", "Finger" },
+    })
+    local Read = ctx.addon.StatSearch.ReadStats
+    check("stats enUS: caster lines", statsText(Read(1)),
+        "armor=65,heal=44,int=12,mp5=6,sp=23,spellcrit=2,spellhit=1,spi=8,sta=10")
+    check("stats enUS: weapon lines", statsText(Read(2)), "agi=7,ap=20,crit=1,dps=23.6,hit=1,rap=12,str=5")
+    check("stats enUS: tank lines", statsText(Read(3)), "armor=1500,block=3,blockvalue=40,def=7,dodge=1,parry=2")
+    check("stats enUS: no stat lines is an empty table", statsText(Read(4)), "")
+    check("stats enUS: an unloaded tooltip is nil", Read(5), nil)
+    check("stats: parser version", ctx.addon.StatSearch.VERSION, 1)
+end
+
+do
+    local ctx = withTips(loadScanner({}, nil, "zhTW"), {
+        [1] = { "測試長袍", "胸部", "布甲", "65點護甲", "+10 耐力", "+12 智力", "+8 精神",
+            "裝備：使所有法術和魔法效果所造成的傷害和治療效果提高最多23點。",
+            "裝備：使法術和魔法效果的治療效果提高最多44點。",
+            "裝備：使你的法術擊中敵人的機率提高1%。",
+            "裝備：使你的法術造成致命一擊的機率提高1%。",
+            "裝備：每5秒恢復6點法力值。" },
+        [2] = { "測試之刃", "主手", "劍", "(每秒傷害23.6)", "+5 力量", "+7 敏捷", "裝備：+20 攻擊強度。",
+            "裝備：+12遠程攻擊強度。", "裝備：使你擊中目標的機率提高1%。", "裝備：使你造成致命一擊的機率提高2%。" },
+        [3] = { "測試之盾", "副手", "盾牌", "1500點護甲", "26點格擋", "裝備：防禦技能提高7點。",
+            "裝備：使你躲閃攻擊的機率提高1%。", "裝備：使你招架攻擊的機率提高2%。",
+            "裝備：使你用盾牌格擋攻擊的機率提高3%。", "裝備：使你的盾牌格擋值提高14點。" },
+    })
+    local Read = ctx.addon.StatSearch.ReadStats
+    check("stats zhTW: caster lines", statsText(Read(1)),
+        "armor=65,heal=44,int=12,mp5=6,sp=23,spellcrit=1,spellhit=1,spi=8,sta=10")
+    check("stats zhTW: weapon lines", statsText(Read(2)), "agi=7,ap=20,crit=2,dps=23.6,hit=1,rap=12,str=5")
+    check("stats zhTW: tank lines", statsText(Read(3)), "armor=1500,block=3,blockvalue=40,def=7,dodge=1,parry=2")
+end
+
+do
+    -- a new item gets its stats when cached; the parser version is recorded
+    local ctx = withTips(loadScanner({ [1] = equip }), { [1] = { "Helm", "+4 Stamina" } })
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    local mark = #ctx.printed
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("scan stats: a new item's stats", statsText(db.stats[1]), "sta=4")
+    check("scan stats: parser version saved", db.statsVersion, 1)
+    check("scan stats: a new item is a hit, not a backfill", ctx.run().hits .. " " .. ctx.run().backfilled, "1 0")
+    check("scan stats: no backfill line without backfills", #ctx.since(mark), 2)
+end
+
+do
+    -- backfill: a cached item without stats is read, one with current stats is skipped
+    local ctx = withTips(loadScanner({ [4] = equip, [5] = equip, [6] = equip }, {
+        schemaVersion = 4, statsVersion = 1, scan = { cursor = 4 },
+        items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 },
+                  [6] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+        stats = { [5] = { sta = 1 }, [6] = {} },
+    }), { [4] = { "Helm", "+9 Spirit" }, [5] = { "Helm", "+2 Stamina" }, [6] = { "Helm", "+3 Agility" } })
+    ctx.Scanner.Start({ rate = 10, cap = 3 })
+    local mark = #ctx.printed
+    ctx.tick(3)
+    local db, out = ctx.env.TandemDB, ctx.since(mark)
+    check("backfill: a cached item without stats gets them", statsText(db.stats[4]), "spi=9")
+    check("backfill: current stats are kept", statsText(db.stats[5]), "sta=1")
+    check("backfill: parsed-none is current too", statsText(db.stats[6]), "")
+    check("backfill: current stats are not read", ctx.tipCalls[5], nil)
+    check("backfill: summary counts skipped, not processed as hits", out[1],
+        "Tandem: scan stopped, IDs 4-6 in 0.3s, 3 processed, 2 skipped")
+    check("backfill: no hit, no new item", out[2], "  0 hits (0 equippable), 0 misses, 0 deferred, 0 timeouts")
+    check("backfill: backfill line", out[3], "  1 cached items read for stats")
+    check("backfill: lastRun.backfilled", ctx.run().backfilled, 1)
+    check("backfill: no new item record", ctx.addon.Store.itemCount, 3)
+end
+
+do
+    -- a newer parser reads every cached item again and drops stats it has not re-read
+    local ctx = withTips(loadScanner({ [5] = equip }, {
+        schemaVersion = 4, statsVersion = 1, scan = { cursor = 5 },
+        items = { [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [7] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+        stats = { [5] = { sta = 1 }, [7] = { sta = 1 } },
+    }), { [5] = { "Helm", "+2 Stamina", "+1 Strength" } })
+    ctx.addon.StatSearch.VERSION = 2
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("stale stats: re-read", statsText(db.stats[5]), "sta=2,str=1")
+    check("stale stats: unread ones dropped for the next scan", db.stats[7], nil)
+    check("stale stats: version raised", db.statsVersion, 2)
+    check("stale stats: counted as a backfill", ctx.run().backfilled .. " " .. ctx.run().skipped, "1 0")
+end
+
+do
+    -- pending: an unloaded tooltip is retried, never stored as {}, and times out like an item query
+    local tips = {}
+    local ctx = withTips(loadScanner({ [4] = equip, [5] = equip }, {
+        schemaVersion = 4, scan = { cursor = 4 },
+        items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+    }), tips)
+    ctx.Scanner.Start({ rate = 10, cap = 2 })
+    ctx.tick(2)
+    local db = ctx.env.TandemDB
+    check("stats pending: nothing stored", tostring(db.stats[4]) .. " " .. tostring(db.stats[5]), "nil nil")
+    check("stats pending: deferred", ctx.run().deferred, 2)
+    check("stats pending: the item is asked for", ctx.requested[1], 4)
+    check("stats pending: keeps the scan running", ctx.Scanner.IsRunning(), true)
+    tips[4] = { "Helm", "+6 Intellect" }
+    ctx.tick(1)
+    check("stats pending: a loaded tooltip is read on the next tick", statsText(db.stats[4]), "int=6")
+    check("stats pending: then counts as a backfill", ctx.run().backfilled, 1)
+    check("stats pending: the other one still waits", ctx.Scanner.IsRunning(), true)
+    ctx.clock = ctx.clock + 6
+    ctx.tick(1)
+    check("stats pending: times out", ctx.run().timeouts, 1)
+    check("stats pending: a timeout stores nothing", db.stats[5], nil)
+    check("stats pending: the scan ends", ctx.Scanner.IsRunning(), false)
+end
+
+do
+    -- a new item whose tooltip lags is stored now and gets its stats on GET_ITEM_INFO_RECEIVED
+    local tips = {}
+    local ctx = withTips(loadScanner({ [1] = equip }), tips)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("new item tooltip pending: record stored", db.items[1] ~= nil, true)
+    check("new item tooltip pending: no stats yet", db.stats[1], nil)
+    check("new item tooltip pending: waits", ctx.Scanner.IsRunning(), true)
+    tips[1] = { "Helm", "+3 Agility" }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 1, true)
+    check("new item tooltip pending: stats on reply", statsText(db.stats[1]), "agi=3")
+    check("new item tooltip pending: not a backfill", ctx.run().backfilled, 0)
+    check("new item tooltip pending: one hit", ctx.run().hits, 1)
+    check("new item tooltip pending: the scan ends", ctx.Scanner.IsRunning(), false)
+end
+
+do
+    -- without the tooltip API a cached item is skipped and no stats are written
+    local ctx = loadScanner({ [1] = equip, [4] = equip }, {
+        schemaVersion = 4, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+    })
+    ctx.Scanner.SetCursor(4)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("no tooltip API: a cached item is skipped", ctx.run().skipped, 1)
+    ctx.Scanner.SetCursor(1)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("no tooltip API: a new item is stored", ctx.env.TandemDB.items[1] ~= nil, true)
+    check("no tooltip API: no stats", next(ctx.env.TandemDB.stats), nil)
+    check("no tooltip API: no parser version", ctx.env.TandemDB.statsVersion, nil)
+end
+
+do
+    -- CacheItem from loot and quest sources reads stats too
+    local ctx = withTips(loadScanner({ [1] = equip, [2] = equip }), { [1] = { "Helm", "+1 Spirit" } })
+    local added, statsPending = ctx.Scanner.CacheItem(1, "INVTYPE_HEAD", 4, 1)
+    check("CacheItem: added with stats", tostring(added) .. " " .. tostring(statsPending), "true false")
+    check("CacheItem: stats saved", statsText(ctx.env.TandemDB.stats[1]), "spi=1")
+    added, statsPending = ctx.Scanner.CacheItem(2, "INVTYPE_HEAD", 4, 1)
+    check("CacheItem: tooltip pending", tostring(added) .. " " .. tostring(statsPending), "true true")
+end
+
+do
+    -- a client without stat patterns caches items but leaves them unparsed, never saved as stat-less
+    local ctx = withTips(loadScanner({ [1] = equip, [4] = equip }, {
+        schemaVersion = 4, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+    }, "deDE"), { [1] = { "Helm", "+4 Ausdauer" }, [4] = { "Helm", "+2 Ausdauer" } })
+    check("deDE: no stat patterns", ctx.addon.StatPatterns, nil)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    ctx.Scanner.SetCursor(4)
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    local db = ctx.env.TandemDB
+    check("deDE: a new item is cached", db.items[1] ~= nil, true)
+    check("deDE: no stats written", next(db.stats), nil)
+    check("deDE: no parser version", db.statsVersion, nil)
+    check("deDE: a cached item is skipped, not backfilled", ctx.run().skipped .. " " .. ctx.run().backfilled, "1 0")
+    check("deDE: no tooltip read", next(ctx.tipCalls), nil)
+end
+
+do
+    local ctx = withTips(loadScanner({ [1] = equip }, nil, "enGB"), { [1] = { "Helm", "+4 Stamina" } })
+    ctx.Scanner.Start({ rate = 10, cap = 1 })
+    ctx.tick(1)
+    check("enGB: English patterns", statsText(ctx.env.TandemDB.stats[1]), "sta=4")
 end
 
 do
@@ -1143,7 +1602,7 @@ do
 end
 
 do
-    local ctx = loadLoot({ schemaVersion = 4, loot = {} })
+    local ctx = loadLoot({ schemaVersion = 5, loot = {} })
     ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
     ctx.loot()
     check("loot: read-only db is not written", next(ctx.env.TandemDB.loot), nil)
@@ -1286,7 +1745,7 @@ local MERCHANT = "Creature-0-1-0-12-1250-0000CAFE"
 -- (ctx.merchant = {guid, name, items = {links}}) and items ({[id] = {equipLoc, loaded = bool}}); the player is
 -- Alliance at map 1429, 0.4123/0.6789.
 local function loadSources(items)
-    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 3 })
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 4 })
     local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
                   faction = "Alliance", quest = { id = 0, choices = {}, rewards = {} },
                   merchant = { items = {} }, requested = {} }
@@ -1543,7 +2002,7 @@ local function loadKills(opts)
             return spread(ctx.cleu)
         end
     end
-    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 3 }, "enUS",
+    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 4 }, "enUS",
         { env = env, blockCLEU = opts.blockCLEU })
     ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = addon, printed, e, fire, frame
     -- Fires one combat log event: timestamp, sub, hideCaster, src, srcName, srcFlags, srcRaidFlags, dst.
@@ -1653,7 +2112,7 @@ do
 end
 
 do
-    local ctx = loadKills({ db = { schemaVersion = 4 } })
+    local ctx = loadKills({ db = { schemaVersion = 5 } })
     ctx.log("PARTY_KILL", PLAYER, HOGGER)
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("kills: read-only db is not written", ctx.env.TandemDB.kills, nil)
@@ -1691,7 +2150,7 @@ local function gearData()
             shippedItems[id] = r
         end
     end
-    local db = { schemaVersion = 3, items = ownItems, loot = {
+    local db = { schemaVersion = 4, items = ownItems, loot = {
         ["1:c:448:1429"] = { item = 1, kind = "c", id = 448, map = 1429, count = 1 },
         ["3:o:77:1429"] = { item = 3, kind = "o", id = 77, map = 1429, count = 1 },
     } }
@@ -1726,7 +2185,7 @@ do
     for i, loc in ipairs(LOCS) do
         items[100 + i], idOf[loc] = { 10, 1, 1, loc, 4, 1 }, 100 + i
     end
-    local A = loadAdvisor({ schemaVersion = 3, items = items })
+    local A = loadAdvisor({ schemaVersion = 4, items = items })
     local function slots(equipLoc, class, level)
         local id, out = idOf[equipLoc], {}
         for _, slot in ipairs(A.SLOTS) do
@@ -1933,7 +2392,7 @@ for name, shipped in pairs({
 end
 
 do
-    local A = loadAdvisor({ schemaVersion = 4, items = "new format", loot = 4 }, select(2, gearData()))
+    local A = loadAdvisor({ schemaVersion = 5, items = "new format", loot = 4 }, select(2, gearData()))
     check("advisor: newer own db is ignored", ids(A.Best("chest", "WARRIOR", 40)), "4,2,12")
     check("advisor: newer own db Sources", #A.Sources(2), 1)
 end
@@ -1948,7 +2407,7 @@ end
 -- Sources: own + shipped merged by max (decision 13), rate per npc (decision 16).
 do
     local db = {
-        schemaVersion = 3,
+        schemaVersion = 4,
         npcs = { [448] = "Hogger" },
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 3, coords = { { 1, 1 } } },
@@ -2008,7 +2467,7 @@ end
 
 do
     local db = {
-        schemaVersion = 3,
+        schemaVersion = 4,
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 1 },
             ["4:c:449:1429"] = { item = 4, kind = "c", id = 449, map = 1429, count = 1 },
@@ -2152,14 +2611,15 @@ do
     check("gear overview header", out[1], "Best known gear for level 40 Warrior:")
     check("gear overview empty slot", out[2], "Head: none known")
     check("gear overview chest is a link and an upgrade over nothing", out[6],
-        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (upgrade)")
-    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (upgrade)")
+        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (upgrade) (no stats)")
+    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (upgrade) (no stats)")
     check("gear overview skips a sourceless two-hander", out[16], "Two-hand: none known")
-    check("gear overview footer", out[18], "Ranked by item level, then quality; stats are not considered")
+    check("gear overview footer", out[18],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("gear overview line count", #out, 18)
     check("gear asks the client for uncached items", ctx.requested[1], true)
     check("gear overview all shows sourceless items, marked", ctx.run("gear all")[16],
-        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (upgrade) (no known source)")
+        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (upgrade) (no stats) (no known source)")
     check("GEAR overview is case-insensitive", ctx.run("GEAR")[1], "Best known gear for level 40 Warrior:")
 end
 
@@ -2171,12 +2631,15 @@ do
     local out = ctx.run("gear chest")
     check("gear chest header", out[1], "Best Chest for level 40 Warrior:")
     check("gear chest equipped line", out[2], "Equipped: " .. built(3, BLUE) .. ", ilvl 30")
-    check("gear chest uses the cached client link", out[3], "1. " .. plate .. ", ilvl 45, level 40 (upgrade)")
+    check("gear chest uses the cached client link", out[3],
+        "1. " .. plate .. ", ilvl 45, level 40 (upgrade) (no stats)")
     check("gear chest does not request a cached item", ctx.requested[1], nil)
-    check("gear chest marks the equipped item", out[4], "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (equipped)")
-    check("gear chest same ilvl is no upgrade", out[5], "3. " .. built(4, BLUE) .. ", ilvl 30, level 25")
-    check("gear chest lower ilvl is no upgrade", out[7], "5. " .. built(12, GREEN) .. ", ilvl 20, level 10")
-    check("gear chest footer", out[8], "Ranked by item level, then quality; stats are not considered")
+    check("gear chest marks the equipped item", out[4],
+        "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (equipped) (no stats)")
+    check("gear chest same ilvl is no upgrade", out[5], "3. " .. built(4, BLUE) .. ", ilvl 30, level 25 (no stats)")
+    check("gear chest lower ilvl is no upgrade", out[7], "5. " .. built(12, GREEN) .. ", ilvl 20, level 10 (no stats)")
+    check("gear chest footer", out[8],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("gear chest line count", #out, 8)
 
     ctx.equipped[5] = "|cff0070dd|Hitem:777::::|h[Unknown]|h|r"
@@ -2184,28 +2647,32 @@ do
     out = ctx.run("gear chest")
     check("gear chest ilvl of an uncached equipped item from the client", out[2],
         "Equipped: " .. ctx.equipped[5] .. ", ilvl 40")
-    check("gear chest upgrade over the client ilvl", out[3], "1. " .. plate .. ", ilvl 45, level 40 (upgrade)")
-    check("gear chest no upgrade below the client ilvl", out[4], "2. " .. built(3, BLUE) .. ", ilvl 30, level 25")
+    check("gear chest upgrade over the client ilvl", out[3],
+        "1. " .. plate .. ", ilvl 45, level 40 (upgrade) (no stats)")
+    check("gear chest no upgrade below the client ilvl", out[4],
+        "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (no stats)")
 
     ctx.cache[777] = nil
     out = ctx.run("gear chest")
     check("gear chest unknown equipped ilvl", out[2], "Equipped: " .. built(777, "ffffff") .. ", ilvl ?")
-    check("gear chest unknown equipped ilvl gives no marks", out[3], "1. " .. plate .. ", ilvl 45, level 40")
+    check("gear chest unknown equipped ilvl gives no marks", out[3], "1. " .. plate .. ", ilvl 45, level 40 (no stats)")
 
     ctx.equipped[5] = secret()
     out = ctx.run("gear chest")
     check("gear chest secret equipped link gives no equipped line and no marks", out[2],
-        "1. " .. plate .. ", ilvl 45, level 40")
+        "1. " .. plate .. ", ilvl 45, level 40 (no stats)")
 
     ctx.level, ctx.class, ctx.className = 60, "MAGE", "Mage"
     ctx.equipped[5] = nil
     out = ctx.run("gear chest")
-    check("gear chest hides sourceless items", out[3], "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade)")
+    check("gear chest hides sourceless items", out[3],
+        "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
     check("gear chest hides sourceless items count", #out, 4)
     out = ctx.run("gear chest all")
     check("gear chest all shows sourceless items, marked", out[3],
-        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source)")
-    check("gear chest all keeps sourced items", out[4], "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade)")
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no stats) (no known source)")
+    check("gear chest all keeps sourced items", out[4],
+        "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
     out = ctx.run("gear twohand")
     check("gear with nothing usable", out[3], "No known Two-hand you can use")
 end
@@ -2221,10 +2688,10 @@ do
     check("gear finger lists both rings", out[2] .. " / " .. out[3],
         "Equipped: |Hitem:778:|h, ilvl 20 / Equipped: nothing")
     check("gear finger compares with the empty ring slot", out[4],
-        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (upgrade)")
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (upgrade) (no stats)")
     ctx.equipped[12] = "|Hitem:778:|h"
     check("gear finger compares with the lower ring", ctx.run("gear finger")[4],
-        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10")
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (no stats)")
 end
 
 do
@@ -2239,16 +2706,16 @@ do
     end
     local ctx = loadGear("enUS", db, shipped)
     local out = ctx.run("rank 1")
-    check("rank by id", out[1], built(1, BLUE) .. " (upgrade): rank 1 of 5 for Chest")
+    check("rank by id", out[1], built(1, BLUE) .. " (upgrade) (no stats): rank 1 of 5 for Chest")
     check("rank unknown source", out[2], "  unknown source, unknown map - drops: 1")
     check("rank source per kill", out[3], "  Hogger, Elwynn Forest - drops: 1, 25.0% per kill")
     check("rank source per looted corpse", out[4],
         "  npc #449, unknown map - drops: 1, 50.0% per looted corpse (upper bound)")
-    check("rank footer", out[5], "Ranked by item level, then quality; stats are not considered")
+    check("rank footer", out[5], "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("rank line count", #out, 5)
 
     out = ctx.run("rank |cff0070dd|Hitem:2::::::::::::::|h[Mail Robe]|h|r")
-    check("rank by link", out[1], built(2, GREEN) .. " (upgrade): rank 4 of 5 for Chest")
+    check("rank by link", out[1], built(2, GREEN) .. " (upgrade) (no stats): rank 4 of 5 for Chest")
     check("rank shipped source without a name", out[2], "  npc #500, Elwynn Forest - drops: 1")
     check("rank by a link inside text", ctx.run("rank this |Hitem:2:0|h one")[1], out[1])
 
@@ -2260,10 +2727,10 @@ do
 
     ctx.equipped[5] = "|Hitem:1:|h"
     check("rank marks the equipped item", ctx.run("rank 1")[1],
-        built(1, BLUE) .. " (equipped): rank 1 of 5 for Chest")
+        built(1, BLUE) .. " (equipped) (no stats): rank 1 of 5 for Chest")
 
     out = ctx.run("rank 11")
-    check("rank sourceless item", out[1], built(11, "ff8000") .. " (upgrade): rank 1 of 6 for Chest")
+    check("rank sourceless item", out[1], built(11, "ff8000") .. " (upgrade) (no stats): rank 1 of 6 for Chest")
     check("rank sourceless item says so", out[2], "  no known source")
     out = ctx.run("rank 9")
     check("rank unranked slot", out[1], built(9, "ffffff") .. " does not go in a ranked slot")
@@ -2273,7 +2740,7 @@ do
     ctx.equipped[5] = nil
     ctx.level = 30
     out = ctx.run("rank 1")
-    check("rank too low gives no upgrade mark", out[1], built(1, BLUE) .. ": rank 1 of 5 for Chest")
+    check("rank too low gives no upgrade mark", out[1], built(1, BLUE) .. " (no stats): rank 1 of 5 for Chest")
     check("rank too low", out[2], "  you cannot use it: level 40 required")
     ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
     check("rank wrong class", ctx.run("rank 1")[2], "  your class cannot use it")
@@ -2349,7 +2816,7 @@ do
 end
 
 do
-    local ctx = loadGear("enUS", { schemaVersion = 4, items = "new format" }, nil)
+    local ctx = loadGear("enUS", { schemaVersion = 5, items = "new format" }, nil)
     local out = ctx.run("export")
     check("export on a newer db", out[1],
         "Tandem export: 0 loot entries, 0 npc names, 0 items, 0 kills, 0 looted corpses")
@@ -2378,15 +2845,15 @@ do
     local out = ctx.run("gear chest")
     check("zhTW gear chest header", out[1], "最佳胸部（40 級戰士）：")
     check("zhTW gear chest equipped", out[2], "已裝備：無")
-    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（升級）")
-    check("zhTW gear footer", out[#out], "依物品等級、再依品質排名；未考慮屬性")
+    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（升級）（無屬性）")
+    check("zhTW gear footer", out[#out], "依屬性分數、再依物品等級與品質排名；標示（無屬性）的物品排在最後")
     out = ctx.run("gear")
     check("zhTW gear overview header", out[1], "40 級戰士的最佳已知裝備：")
     check("zhTW gear overview none", out[2], "頭部：無已知物品")
     check("zhTW gear overview all", ctx.run("gear all")[16],
-        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（升級）（來源未知）")
+        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（升級）（無屬性）（來源未知）")
     out = ctx.run("rank 1")
-    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（升級）：排名第 1／5（胸部）")
+    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（升級）（無屬性）：排名第 1／5（胸部）")
     check("zhTW rank per kill", out[2], "  霍格，Elwynn Forest：掉落 1 次，每次擊殺 25.0%")
     check("zhTW rank per corpse", out[3], "  NPC #449，未知地圖：掉落 1 次，每具拾取屍體 50.0%（上限）")
     check("zhTW rank sourceless", ctx.run("rank 11")[2], "  來源未知")
@@ -2414,24 +2881,24 @@ do
     ctx.equipped[16] = "|Hitem:15:|h"
     local out = ctx.run("gear offhand")
     check("gear offhand behind a cached two-hander has no upgrade mark", out[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
     ctx.equipped[16] = "|Hitem:780:|h"
     ctx.instant[780] = "INVTYPE_2HWEAPON"
     check("gear offhand behind a client two-hander has no upgrade mark", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
     ctx.equipped[16] = "|Hitem:7:|h"
     check("gear offhand behind a one-hander is an upgrade over nothing", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (upgrade)")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (upgrade) (no stats)")
     ctx.equipped[16] = secret()
     check("gear offhand behind a secret main hand has no upgrade mark", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20")
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
 
     ctx.equipped[16] = "|Hitem:7:|h"
     ctx.equipped[17] = "|Hitem:779:|h"
     ctx.cache[779] = { "Big Shield", "|Hitem:779:|h", 4, 60 }
     out = ctx.run("gear twohand all")
     check("gear twohand compares with the main hand only", out[3],
-        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (upgrade) (no known source)")
+        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (upgrade) (no stats) (no known source)")
     check("gear twohand lists only the main hand", out[2], "Equipped: " .. built(7, GREEN) .. ", ilvl 25")
 end
 
@@ -2461,7 +2928,7 @@ end
 
 do
     local ui = { window = { point = "TOPLEFT", x = 120.5, y = -40 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
     local w = env.TandemDB.ui.window
     check("ui: a valid position is kept", w.point .. " " .. w.x .. " " .. w.y, "TOPLEFT 120.5 -40")
     check("ui: a valid position prints only the load line", #printed, 1)
@@ -2490,7 +2957,7 @@ do
 end
 
 do
-    local _, _, env = loadWithDB({ schemaVersion = 3 })
+    local _, _, env = loadWithDB({ schemaVersion = 4 })
     check("ui: a fresh db has no position", env.TandemDB.ui, nil)
     check("ui: a db without ui is current", isCurrent(env.TandemDB), true)
 end
@@ -2502,27 +2969,27 @@ for name, ui in pairs({
     ["NaN y"] = { window = { point = "TOP", x = 0, y = 0 / 0 } }, ["missing y"] = { window = { point = "TOP", x = 0 } },
     ["unknown relativePoint"] = { window = { point = "TOP", relativePoint = "UP", x = 0, y = 0 } },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
     check("ui: drops a position with " .. name, env.TandemDB.ui, nil)
     check("ui: counts a position with " .. name .. " as dropped", printed[2], "Tandem: dropped 1 invalid saved entries")
     check("ui: UIPosition after dropping " .. name, addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { point = "TOP", x = 1, y = 2, extra = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { point = "TOP", x = 1, y = 2, extra = true } })
     check("ui: keys outside window and minimap are not kept", env.TandemDB.ui, nil)
     check("ui: keys outside window and minimap are not counted", #printed, 1)
     check("ui: no position from top-level keys", addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = 5, y = 6 } } })
+    local addon = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = 5, y = 6 } } })
     check("ui: a newer db still gives a valid position", addon.Store.UIPosition().y, 6)
     check("ui: a newer db is not written", addon.Store.SetUIPosition("TOP", "TOP", 1, 1), false)
     check("ui: a newer db keeps its position", addon.Store.db.ui.window.x, 5)
-    addon = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = "5", y = 6 } } })
+    addon = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = "5", y = 6 } } })
     check("ui: a newer db with a bad position gives none", addon.Store.UIPosition(), nil)
-    addon = loadWithDB({ schemaVersion = 4, ui = "junk" })
+    addon = loadWithDB({ schemaVersion = 5, ui = "junk" })
     check("ui: a newer db with a junk ui gives no position", addon.Store.UIPosition(), nil)
     check("ui: a newer db with a junk ui gives no angle", addon.Store.MinimapAngle(), nil)
 end
@@ -2831,16 +3298,18 @@ do
     check("browse row: icon from the client", b[1].icon.texture, 135000)
     check("browse row: icon fallback", b[2].icon.texture, "Interface\\Icons\\INV_Misc_QuestionMark")
     check("browse row: name before the item loads", b[1].name:GetText(),
-        "|cffff8000item #11|r" .. GREY .. " (upgrade) (no known source)|r")
+        "|cffff8000item #11|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
     check("browse row: asks the client to load the item", ctx.requested[11], true)
     check("browse row: ilvl", b[1].ilvl:GetText(), "99")
+    check("browse row: no score without stats", b[1].score:GetText(), "")
     check("browse row: level", b[1].level:GetText(), "1")
     check("browse row: usable is opaque", b[1].alpha, 1)
-    check("browse row: unusable item has no upgrade mark", b[2].name:GetText(), "|cff0070dditem #1|r")
+    check("browse row: unusable item has no upgrade mark", b[2].name:GetText(),
+        "|cff0070dditem #1|r" .. GREY .. " (no stats)|r")
     check("browse row: unusable item is faded", b[2].alpha, 0.5)
     check("browse row: needed level in red", b[2].level:GetText(), "|cffff202040|r")
-    check("browse row: equipped mark", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped)|r")
-    check("browse row: no marks", b[4].name:GetText(), "|cff0070dditem #4|r")
+    check("browse row: equipped mark", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped) (no stats)|r")
+    check("browse row: no marks", b[4].name:GetText(), "|cff0070dditem #4|r" .. GREY .. " (no stats)|r")
 
     b[1].scripts.OnEnter(b[1])
     check("browse row: tooltip item", ctx.ui.tooltip, 11)
@@ -2859,8 +3328,9 @@ do
     local provider = win.box.provider
     ctx.tick()
     check("browse refresh: name after the item loads", b[1].name:GetText(),
-        "|cffff8000GM Robe|r" .. GREY .. " (upgrade) (no known source)|r")
-    check("browse refresh: second item too", b[3].name:GetText(), "|cff0070ddLeather Vest|r" .. GREY .. " (equipped)|r")
+        "|cffff8000GM Robe|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
+    check("browse refresh: second item too", b[3].name:GetText(),
+        "|cff0070ddLeather Vest|r" .. GREY .. " (equipped) (no stats)|r")
     check("browse refresh: rows are not listed again", win.box.provider, provider)
     ctx.fire("GET_ITEM_INFO_RECEIVED", 999, true)
     check("browse refresh: an item not in the rows is ignored", #ctx.ui.timers, 0)
@@ -2896,19 +3366,22 @@ do
     local win = ctx.win()
     local b = win.box.buttons
     check("browse gear change: listens for it", ctx.frame.registered.PLAYER_EQUIPMENT_CHANGED, true)
-    check("browse gear change: worn item marked", b[3].name:GetText(), "|cff0070dditem #3|r" .. GREY .. " (equipped)|r")
+    check("browse gear change: worn item marked", b[3].name:GetText(),
+        "|cff0070dditem #3|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.equipped[5] = "|Hitem:4:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, false)
-    check("browse gear change: old item no longer marked", b[3].name:GetText(), "|cff0070dditem #3|r")
-    check("browse gear change: new item marked", b[4].name:GetText(), "|cff0070dditem #4|r" .. GREY .. " (equipped)|r")
+    check("browse gear change: old item no longer marked", b[3].name:GetText(),
+        "|cff0070dditem #3|r" .. GREY .. " (no stats)|r")
+    check("browse gear change: new item marked", b[4].name:GetText(),
+        "|cff0070dditem #4|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.run("browse")
     ctx.equipped[5] = nil
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 5, true)
     check("browse gear change: nothing redrawn while hidden", b[4].name:GetText(),
-        "|cff0070dditem #4|r" .. GREY .. " (equipped)|r")
+        "|cff0070dditem #4|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.run("browse chest")
     check("browse gear change: showing again reads the gear", b[4].name:GetText(),
-        "|cff0070dditem #4|r" .. GREY .. " (upgrade)|r")
+        "|cff0070dditem #4|r" .. GREY .. " (upgrade) (no stats)|r")
 end
 
 do
@@ -3082,7 +3555,7 @@ end
 -- Store: minimap button angle in TandemDB.ui (unit 7).
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3,
+    local addon, printed, env = loadWithDB({ schemaVersion = 4,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 90.5 } })
     check("minimap: a valid angle is kept", env.TandemDB.ui.minimap, 90.5)
     check("minimap: kept with the position", addon.Store.UIPosition().point, "TOP")
@@ -3102,11 +3575,11 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimap = 200 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimap = 200 } })
     check("minimap: an angle without a position is kept", env.TandemDB.ui.minimap, 200)
     check("minimap: no position from an angle alone", addon.Store.UIPosition(), nil)
     check("minimap: an angle alone prints only the load line", #printed, 1)
-    local fresh = loadWithDB({ schemaVersion = 3 })
+    local fresh = loadWithDB({ schemaVersion = 4 })
     check("minimap: a fresh db has no angle", fresh.Store.MinimapAngle(), nil)
     check("minimap: SetMinimapAngle on a fresh db", fresh.Store.SetMinimapAngle(45) and fresh.Store.db.ui.minimap, 45)
     check("minimap: no position from SetMinimapAngle", fresh.Store.UIPosition(), nil)
@@ -3118,7 +3591,7 @@ for name, case in pairs({
     ["NaN"] = { ui = { minimap = 0 / 0 }, dropped = 1 },
     ["a bad position too"] = { ui = { window = { point = "UP", x = 0, y = 0 }, minimap = -5 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = case.ui })
     check("minimap: drops an angle of " .. name, env.TandemDB.ui, nil)
     check("minimap: counts an angle of " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3126,7 +3599,7 @@ for name, case in pairs({
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3,
+    local addon, printed, env = loadWithDB({ schemaVersion = 4,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 400 } })
     local ui = env.TandemDB.ui
     check("minimap: a bad angle keeps a good position", ui.window.point .. " " .. tostring(ui.minimap), "TOP nil")
@@ -3135,10 +3608,10 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 4, ui = { minimap = 10 } })
+    local addon = loadWithDB({ schemaVersion = 5, ui = { minimap = 10 } })
     check("minimap: a newer db still gives its angle", addon.Store.MinimapAngle(), 10)
     check("minimap: a newer db is not written", addon.Store.SetMinimapAngle(20), false)
-    addon = loadWithDB({ schemaVersion = 4, ui = { minimap = "10" } })
+    addon = loadWithDB({ schemaVersion = 5, ui = { minimap = "10" } })
     check("minimap: a newer db with a bad angle gives none", addon.Store.MinimapAngle(), nil)
 end
 
@@ -3415,7 +3888,7 @@ end
 
 do
     local db, shipped = gearData()
-    db.schemaVersion = 4
+    db.schemaVersion = 5
     db.ui = { minimap = 10 }
     local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
     ctx.fire("PLAYER_LOGIN")
@@ -3427,7 +3900,7 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimapHidden = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = true } })
     check("minimapHidden: kept alone", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: prints only the load line", #printed, 1)
     check("minimapHidden: MinimapHidden", addon.Store.MinimapHidden(), true)
@@ -3445,7 +3918,7 @@ do
     end
     check("minimapHidden: a rejected value keeps the old one", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: not a record", addon.Store.unsaved, 0)
-    local fresh = loadWithDB({ schemaVersion = 3 })
+    local fresh = loadWithDB({ schemaVersion = 4 })
     check("minimapHidden: a fresh db shows the button", fresh.Store.MinimapHidden(), false)
 end
 
@@ -3455,7 +3928,7 @@ for name, case in pairs({
     ["a number"] = { ui = { minimapHidden = 1 }, dropped = 1 },
     ["a bad angle too"] = { ui = { minimapHidden = {}, minimap = 400 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = case.ui })
     check("minimapHidden: drops " .. name, env.TandemDB.ui, nil)
     check("minimapHidden: counts " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3463,14 +3936,14 @@ for name, case in pairs({
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 3, ui = { minimap = 45, minimapHidden = "no" } })
+    local _, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimap = 45, minimapHidden = "no" } })
     check("minimapHidden: a bad flag keeps a good angle", env.TandemDB.ui.minimap .. " "
         .. tostring(env.TandemDB.ui.minimapHidden), "45 nil")
     check("minimapHidden: a bad flag alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
-    local newer = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = true } })
+    local newer = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = true } })
     check("minimapHidden: a newer db still gives its flag", newer.Store.MinimapHidden(), true)
     check("minimapHidden: a newer db is not written", newer.Store.SetMinimapHidden(false), false)
-    newer = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = "yes" } })
+    newer = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = "yes" } })
     check("minimapHidden: a newer db with a bad flag shows the button", newer.Store.MinimapHidden(), false)
 end
 
@@ -3673,7 +4146,7 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 3, items = { [5] = GEAR[5], [7] = GEAR[7] } })
+    local addon = loadWithDB({ schemaVersion = 4, items = { [5] = GEAR[5], [7] = GEAR[7] } })
     check("ItemCount: counted on load", addon.Store.ItemCount(), 2)
     addon.Store.AddItem(9, 1, 1, 1, "INVTYPE_BODY", 4, 0)
     check("ItemCount: AddItem counts", addon.Store.ItemCount(), 3)
@@ -3682,7 +4155,7 @@ do
     check("ItemCount: a repeated or invalid item is not counted", addon.Store.ItemCount(), 3)
     check("ItemCount: matches Counts", addon.Store.Counts().items, 3)
     check("ScanCursor: a fresh scan starts at 1", addon.Store.ScanCursor(), 1)
-    addon = loadWithDB({ schemaVersion = 4, items = "junk", scan = { cursor = 2.5 } })
+    addon = loadWithDB({ schemaVersion = 5, items = "junk", scan = { cursor = 2.5 } })
     check("ItemCount: a newer db with junk items", addon.Store.ItemCount(), 0)
     check("ScanCursor: a fractional cursor gives none", addon.Store.ScanCursor(), nil)
 end
@@ -3690,7 +4163,7 @@ end
 for name, scan in pairs({ ["no scan table"] = false, ["no cursor"] = {}, ["a fractional cursor"] = { cursor = 1.5 },
                           ["a string cursor"] = { cursor = "7" } }) do
     local db, shipped = gearData()
-    db.schemaVersion = 4
+    db.schemaVersion = 5
     db.scan = scan or nil
     local ctx = loadBrowse("enUS", db, shipped)
     ctx.run("browse")
@@ -3831,7 +4304,7 @@ do
         [3] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, true }, [4] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 2 },
         [5] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1, "extra" },
     }
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, items = items })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, items = items })
     local db = env.TandemDB
     check("deprecated: a 7th field of 1 is kept", db.items[1][7], 1)
     check("deprecated: a string 7th field is stripped", #db.items[2], 6)
@@ -3839,7 +4312,7 @@ do
     check("deprecated: another number is stripped", #db.items[4], 6)
     check("deprecated: fields after the flag are stripped", #db.items[5] .. " " .. db.items[5][7], "7 1")
     check("deprecated: a stripped flag is not a drop", #printed, 1)
-    check("deprecated: the schema stays 3", db.schemaVersion, 3)
+    check("deprecated: the schema stays 4", db.schemaVersion, 4)
     check("deprecated: Advisor reads a flagged record", addon.Advisor.Item(1) ~= nil, true)
     check("deprecated: IsDeprecated of a flagged record", addon.Advisor.IsDeprecated(1), true)
     check("deprecated: IsDeprecated of a stripped record", addon.Advisor.IsDeprecated(2), false)
@@ -3858,7 +4331,7 @@ do
 end
 
 do
-    local addon, _, env = loadWithDB({ schemaVersion = 3 })
+    local addon, _, env = loadWithDB({ schemaVersion = 4 })
     local Store = addon.Store
     check("revision: a fresh load starts at 0", Store.revision, 0)
     Store.AddItem(1, 10, 5, 2, "INVTYPE_HEAD", 4, 1, true)
@@ -3883,7 +4356,7 @@ do
     Store.SetUIPosition("TOP", "TOP", 1, 2)
     Store.SetMinimapAngle(10)
     check("revision: ui settings are not records", Store.revision, rev + 4)
-    Store.Load({ schemaVersion = 3 })
+    Store.Load({ schemaVersion = 4 })
     check("revision: Load resets it", Store.revision, 0)
 end
 
@@ -3911,7 +4384,7 @@ do
     check("MarkDeprecated: an invalid id", Store.MarkDeprecated(0, addon.Advisor.Item(4)), false)
     check("MarkDeprecated: nothing stored for refusals", env.TandemDB.items[999], nil)
 
-    local newer = loadWithDB({ schemaVersion = 4, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
+    local newer = loadWithDB({ schemaVersion = 5, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
     check("MarkDeprecated: a newer db is not written", newer.MarkDeprecated(1, { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }),
         false)
     check("MarkDeprecated: a newer db keeps its record", newer.db.items[1][7], nil)
@@ -4021,15 +4494,141 @@ do
         A.Rank(2, "PALADIN", 40)
         return calls > 2
     end)(), true)
-    Store.Load({ schemaVersion = 3 })
+    Store.Load({ schemaVersion = 4 })
     check("rank memo: a new db walks again", A.Rank(2, "WARRIOR", 40).total, 3)
+end
+
+-- Advisor: stat-weighted ranking (stage 7, decision 3).
+
+-- gearData() with stats: own strength mail chest 12 (ilvl 20), own caster cloth robe 4 (ilvl 30, which the shipped
+-- strength copy loses to); 1 and 2 have none.
+local function statData()
+    local db, shipped = gearData()
+    db.stats = { [4] = { int = 15, sp = 20 }, [12] = { str = 10 } }
+    shipped.stats = { [4] = { str = 100 } }
+    return db, shipped
+end
+
+local PLAYER_ENV = { UnitName = function() return "Tank" end, GetRealmName = function() return "Realm" end }
+
+do
+    local A = loadAdvisor(statData())
+    check("score: a strength item ranks above a caster item for a warrior", ids(A.Best("chest", "WARRIOR", 40)),
+        "12,4,1,3,2")
+    local rows = A.List("chest", "WARRIOR", 40)
+    check("score: List rows carry the score", rows[1].score .. " " .. rows[2].score, "10 0")
+    check("score: an item without stats has no score", tostring(rows[3].score), "nil")
+    check("score: own stats win over shipped ones", A.Place(4, "WARRIOR", 40).score, 0)
+    check("score: Place carries the score", A.Place(12, "WARRIOR", 40).score, 10)
+    check("score: PlaceRecord without an id has no score", A.PlaceRecord(A.Item(12), "WARRIOR", 40).score, nil)
+    local r = A.Rank(4, "WARRIOR", 40)
+    check("score: Rank of a zero-score item is among the scored", r.rank .. "/" .. r.total .. " " .. r.score, "2/5 0")
+    r = A.Rank(1, "WARRIOR", 40)
+    check("score: Rank of a stat-less item comes after the scored",
+        r.rank .. "/" .. r.total .. " " .. tostring(r.score), "3/5 nil")
+    check("score: a mage ranks the caster robe by its stats", A.Best("chest", "MAGE", 60)[1].score, 20 + 15 * 0.45)
+    check("score: stat-less items keep the item level order", ids(A.List("chest", "WARRIOR", 40, { quality = 3 })),
+        "4,1,3")
+
+    local db, shipped = gearData()
+    shipped.stats = { [12] = { str = 1 } }
+    A = loadAdvisor(db, shipped)
+    check("score: shipped stats score when own has none", ids(A.Best("chest", "WARRIOR", 40)), "12,1,3,4,2")
+    A = loadAdvisor(gearData())
+    check("score: without any stats the order is by item level", ids(A.Best("chest", "WARRIOR", 40)), "1,3,4,2,12")
+end
+
+do
+    local db, shipped = statData()
+    local addon = loadWithDB(db, "enUS", { shipped = shipped, env = PLAYER_ENV })
+    local A, W = addon.Advisor, addon.Weights
+    local function rank(id)
+        local r = A.Rank(id, "WARRIOR", 40)
+        return r.rank .. "/" .. r.total
+    end
+    check("score memo: before a weight change", rank(4), "2/5")
+    check("score memo: SetOverride saves", W.SetOverride("int", 5, "WARRIOR", 40), true)
+    check("score memo: a weight change ranks again", rank(4) .. " " .. rank(12), "1/5 2/5")
+    check("score memo: List follows the weight change", ids(A.Best("chest", "WARRIOR", 40)), "4,12,1,3,2")
+    check("score memo: SetSpec saves", W.SetSpec(3), true)
+    check("score memo: a spec change ranks again", rank(4) .. " " .. rank(12), "2/5 1/5")
+    W.SetSpec("auto")
+    check("score memo: back to auto ranks with the override again", rank(4), "1/5")
+    W.Reset("WARRIOR", 40)
+    check("score memo: a reset ranks again", rank(4), "2/5")
+    W.SetOverride("str", 2, "WARRIOR", 40)
+    local stats = { str = 10, int = 3, sta = 4 }
+    check("score: a passed weights table scores as Score builds it",
+        W.Score(stats, "WARRIOR", 1, W.Effective("WARRIOR", 1)), W.Score(stats, "WARRIOR", 1))
+    check("score: the passed weights table is used", W.Score(stats, "WARRIOR", 1, { int = 1 }), 3)
+end
+
+do
+    local db, shipped = statData()
+    db.stats[1] = { str = 5 }
+    local ctx = loadGear("enUS", db, shipped)
+    ctx.equipped[5] = "|Hitem:12:|h"
+    local out = ctx.run("gear chest")
+    check("score upgrade: the worn item is equipped", out[3],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 (equipped)")
+    check("score upgrade: a lower score is no upgrade", out[4], "2. " .. built(1, BLUE) .. ", ilvl 45, level 40")
+    check("score upgrade: higher ilvl but lower score is no upgrade", out[5],
+        "3. " .. built(4, BLUE) .. ", ilvl 30, level 25")
+    check("score upgrade: a stat-less item falls back to item level", out[6],
+        "4. " .. built(3, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
+    ctx.equipped[5] = "|Hitem:4:|h"
+    out = ctx.run("gear chest")
+    check("score upgrade: a higher score is an upgrade at a lower ilvl", out[3],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 (upgrade)")
+    ctx.equipped[5] = "|Hitem:2:|h"
+    out = ctx.run("gear chest")
+    check("score upgrade: a stat-less worn item compares by item level", out[3] .. " / " .. out[4],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 / 2. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade)")
+    check("score upgrade: the footer explains the order", out[#out],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
+    local View = ctx.addon.View
+    check("score upgrade: equal scores are no upgrade",
+        View.IsUpgrade({ ilvl = 50, score = 5, usable = true }, { score = 5, ilvl = 1 }), false)
+    check("score upgrade: an unusable item never is",
+        View.IsUpgrade({ ilvl = 50, score = 9, usable = false }, { score = 5, ilvl = 1 }), false)
+    check("score upgrade: an empty slot has no score", View.Equipped("back").score, nil)
+end
+
+do
+    local db, shipped = statData()
+    local ctx = loadBrowse("enUS", db, shipped, { env = PLAYER_ENV })
+    ctx.run("browse chest")
+    local win = ctx.win()
+    check("score browse: rows sort as Advisor ranks", rowIDs(win), "12,4,11,1,3,2")
+    local b = win.box.buttons
+    check("score browse: the score column", b[1].score:GetText() .. "|" .. b[2].score:GetText() .. "|"
+        .. b[3].score:GetText(), "10.0|0.0|")
+    check("score browse: no (no stats) mark on a scored row", b[1].name:GetText():find("(no stats)", 1, true), nil)
+    ctx.addon.Weights.SetOverride("int", 5, "WARRIOR", 40)
+    ctx.run("browse")
+    ctx.run("browse chest")
+    check("score browse: a weight change re-sorts", rowIDs(win), "4,12,11,1,3,2")
+    check("score browse: and rescoring shows", win.box.buttons[1].score:GetText(), "75.0")
+end
+
+do
+    local ctx = loadBrowse("zhTW")
+    ctx.run("browse")
+    local h = ctx.win().headings
+    check("zhTW browse headings", h.score:GetText() .. " " .. h.ilvl:GetText() .. " " .. h.level:GetText(),
+        "分數 裝等 需求")
+end
+
+do
+    local ctx = loadGear("zhTW", statData())
+    check("zhTW (no stats) mark", ctx.run("gear chest")[5]:sub(-15), "（無屬性）")
 end
 
 -- Commands: deprecated items in /tandem rank and /tandem gear.
 
 for locale, want in pairs({
-    enUS = { built(3, BLUE) .. " (upgrade): rank 2 of 5 for Chest", "  this item is deprecated" },
-    zhTW = { built(3, BLUE, "物品 #3") .. "（升級）：排名第 2／5（胸部）", "  此物品已棄用" },
+    enUS = { built(3, BLUE) .. " (upgrade) (no stats): rank 2 of 5 for Chest", "  this item is deprecated" },
+    zhTW = { built(3, BLUE, "物品 #3") .. "（升級）（無屬性）：排名第 2／5（胸部）", "  此物品已棄用" },
 }) do
     local db, shipped = gearData()
     db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
@@ -4046,8 +4645,8 @@ do
     local ctx = loadGear("enUS", db, shipped)
     local out = ctx.run("gear chest")
     check("gear chest skips a deprecated item", out[3] .. " / " .. out[4],
-        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade) / 2. " .. built(4, BLUE)
-            .. ", ilvl 30, level 25 (upgrade)")
+        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade) (no stats) / 2. " .. built(4, BLUE)
+            .. ", ilvl 30, level 25 (upgrade) (no stats)")
     check("gear chest without the deprecated item", #out, 7)
     check("rank of an unranked deprecated item says so", ctx.run("rank 9")[2], "  this item is deprecated")
     check("rank of a plain item says nothing more", ctx.run("rank 1")[2]:find("deprecated", 1, true), nil)
@@ -4057,7 +4656,7 @@ end
 
 do
     local ui = { window = { point = "TOP", x = 1, y = 2, width = 700, height = 600.5 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
     local Store = addon.Store
     check("ui size: a valid size is kept", env.TandemDB.ui.window.width .. "x" .. env.TandemDB.ui.window.height,
         "700x600.5")
@@ -4081,12 +4680,12 @@ do
 end
 
 do
-    local Store = loadWithDB({ schemaVersion = 3 }).Store
+    local Store = loadWithDB({ schemaVersion = 4 }).Store
     check("ui size: SetUISize without a position", Store.SetUISize(800, 600), false)
     check("ui size: nothing saved without a position", Store.UISize(), nil)
     Store.SetUIPosition("TOP", "TOP", 0, 0)
     check("ui size: no size until one is saved", Store.UISize(), nil)
-    local newer = loadWithDB({ schemaVersion = 4, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
+    local newer = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
                                                                     height = 700 } } }).Store
     check("ui size: a newer db still gives a valid size", table.concat({ newer.UISize() }, "x"), "900x700")
     check("ui size: a newer db is not written", newer.SetUISize(800, 600), false)
@@ -4099,7 +4698,7 @@ for name, window in pairs({
     ["string height"] = { point = "TOP", x = 1, y = 2, width = 700, height = "700" },
     ["far width"] = { point = "TOP", x = 1, y = 2, width = 10001, height = 700 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 3, ui = { window = window } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { window = window } })
     local w = env.TandemDB.ui and env.TandemDB.ui.window
     check("ui size: " .. name .. " keeps the position", w and w.point .. " " .. w.x .. " " .. w.y, "TOP 1 2")
     check("ui size: " .. name .. " is stripped", tostring(w and w.width) .. " " .. tostring(w and w.height), "nil nil")
@@ -4125,33 +4724,39 @@ do
     ctx.run("browse")
     local win = ctx.win()
     local sword = "|cff1eff00item #7|r"
-    check("hands: beats the weaker hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade)|r")
+    check("hands: beats the weaker hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade) (no stats)|r")
     ctx.run("browse mainhand")
-    check("hands: the main hand view compares with the main hand only", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: the main hand view compares with the main hand only", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
     ctx.run("browse")
     ctx.run("browse")
 
     ctx.equipped[17] = "|Hitem:7:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 17, false)
-    check("hands: equipped in the off hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (equipped)|r")
+    check("hands: equipped in the off hand", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (equipped) (no stats)|r")
 
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:15:|h", nil
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: the off hand behind a two-hander is ignored", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: the off hand behind a two-hander is ignored", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     ctx.equipped[16] = "|Hitem:781:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: an empty off hand is beaten", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade)|r")
+    check("hands: an empty off hand is beaten", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (upgrade) (no stats)|r")
 
     ctx.equipped[16] = secret()
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: no hand ilvl known gives no upgrade", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: no hand ilvl known gives no upgrade", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     ctx.equipped[16] = "|Hitem:781:|h"
     ctx.class, ctx.className = "PALADIN", "Paladin"
     ctx.run("browse")
     ctx.run("browse")
-    check("hands: a non-dual-wielder compares with the main hand only", buttonFor(win, 7).name:GetText(), sword)
+    check("hands: a non-dual-wielder compares with the main hand only", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     local hands = ctx.addon.View.EquippedHands()
     local worn = {}
@@ -4184,9 +4789,9 @@ do
     check("browse deprecated: unticking lists them", rowIDs(win), "11,1,3,4,2,12")
     local b = win.box.buttons
     check("browse deprecated: a flagged row is marked", b[3].name:GetText(),
-        "|cff0070dditem #3|r" .. GREY .. " (deprecated)|r")
+        "|cff0070dditem #3|r" .. GREY .. " (no stats) (deprecated)|r")
     check("browse deprecated: a named flagged row is marked", b[4].name:GetText(),
-        "|cff0070ddDeprecated Robe|r" .. GREY .. " (deprecated)|r")
+        "|cff0070ddDeprecated Robe|r" .. GREY .. " (no stats) (deprecated)|r")
 
     win.deprecated:SetChecked(true)
     win.deprecated:GetScript("OnClick")(win.deprecated)
@@ -4196,7 +4801,7 @@ do
     check("browse deprecated: a name loaded while shown flags the item", ctx.env.TandemDB.items[2][7], 1)
     check("browse deprecated: the row stays until the next listing", rowIDs(win), "11,1,2,12")
     check("browse deprecated: the row is marked", win.box.buttons[3].name:GetText(),
-        "|cff1eff00Deprecated Mail|r" .. GREY .. " (deprecated)|r")
+        "|cff1eff00Deprecated Mail|r" .. GREY .. " (no stats) (deprecated)|r")
     ctx.run("browse chest")
     check("browse deprecated: the next listing hides it", rowIDs(win), "11,1,12")
 
@@ -4283,7 +4888,7 @@ do
     local win = ctx.win()
     check("browse size: wider default", win.width .. "x" .. win.height, "640x620")
     check("browse size: resizable", win.resizable, true)
-    check("browse size: bounds", table.concat(win.bounds, ","), "520,480,1200,1000")
+    check("browse size: bounds", table.concat(win.bounds, ","), "600,520,1200,1000")
     local grip = win.grip
     check("browse size: a grip", grip and grip.kind .. " " .. grip.width .. "x" .. grip.height, "Button 16x16")
     check("browse size: the grip sits at the bottom-right corner", point(grip),
@@ -4322,18 +4927,27 @@ do
     check("browse layout: the usable label clicks its box", table.concat(win.usable.hitInsets, " "),
         "0 " .. -(2 + 6 * #"Usable only") .. " 0 0")
     check("browse layout: the list stretches with the window", point(win.box) .. " / " .. point(win.box, 2),
-        "TOPLEFT TandemBrowseFrame TOPLEFT 12 -138 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
+        "TOPLEFT TandemBrowseFrame TOPLEFT 12 -198 / BOTTOMRIGHT TandemBrowseFrame BOTTOMRIGHT -26 118")
+    check("browse layout: the level heading sits over the list's right edge", point(win.headings.level),
+        "BOTTOMRIGHT Frame TOPRIGHT -4 2")
+    check("browse layout: the item level heading left of it",
+        point(win.headings.ilvl) .. " " .. tostring(win.headings.ilvl.points[1][2] == win.headings.level),
+        "BOTTOMRIGHT FontString BOTTOMLEFT -4 0 true")
+    check("browse layout: the score heading left of that",
+        tostring(win.headings.score.points[1][2] == win.headings.ilvl), "true")
+    check("browse layout: heading texts", win.headings.score:GetText() .. " " .. win.headings.ilvl:GetText() .. " "
+        .. win.headings.level:GetText(), "Score iLvl Req")
 
-    local again = loadBrowse("enUS", { schemaVersion = 3, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
+    local again = loadBrowse("enUS", { schemaVersion = 4, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
     again.run("browse")
     check("browse size: restores the saved size", again.win().width .. "x" .. again.win().height, "800x700")
 end
 
 for name, case in pairs({
     ["too large"] = { 2000, 1500, nil, "1200x1000" },
-    ["too small"] = { 100, 50, nil, "520x480" },
+    ["too small"] = { 100, 50, nil, "600x520" },
     ["larger than the screen"] = { 1100, 900, { 1000, 700 }, "1000x700" },
-    ["a screen below the minimum"] = { 600, 500, { 400, 300 }, "520x480" },
+    ["a screen below the minimum"] = { 650, 560, { 400, 300 }, "600x520" },
 }) do
     local db, shipped = gearData()
     db.ui = { window = { point = "TOP", x = 0, y = 0, width = case[1], height = case[2] } }
@@ -4353,7 +4967,7 @@ do
     ctx.run("browse")
     local win = ctx.win()
     check("browse size: min and max without SetResizeBounds",
-        table.concat(win.minResize, ",") .. " " .. table.concat(win.maxResize, ","), "520,480 1200,1000")
+        table.concat(win.minResize, ",") .. " " .. table.concat(win.maxResize, ","), "600,520 1200,1000")
 
     local db, shipped = gearData()
     db.ui = { window = { point = "TOP", x = 0, y = 0, width = 900, height = 700 } }
@@ -4385,7 +4999,7 @@ do
     win.deprecated:SetChecked(false)
     win.deprecated:GetScript("OnClick")(win.deprecated)
     check("zhTW browse deprecated mark", win.box.buttons[3].name:GetText(),
-        "|cff0070dd物品 #3|r" .. GREY .. "（已棄用）|r")
+        "|cff0070dd物品 #3|r" .. GREY .. "（無屬性）（已棄用）|r")
 end
 
 -- Cached-name peeks never ask the server: only ids IsItemDataCachedByID knows, each once per session.
@@ -4431,7 +5045,7 @@ do
     local win = ctx.win()
     check("browse peek: without IsItemDataCachedByID a deprecated name is not peeked", rowIDs(win), "11,1,3,4,2,12")
     check("browse peek: drawing the row still flags and marks it", win.box.buttons[4].name:GetText(),
-        "|cff0070ddDeprecated Robe|r" .. GREY .. " (deprecated)|r")
+        "|cff0070ddDeprecated Robe|r" .. GREY .. " (no stats) (deprecated)|r")
     ctx.run("browse chest")
     check("browse peek: the next listing hides it", rowIDs(win), "11,1,3,2,12")
 end
@@ -4529,31 +5143,34 @@ do
 
     local t = ctx.hover({ id = 1 })
     check("tooltip: rank, upgrade and kill-rate source", texts(t),
-        "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+        "Tandem: rank 1 of 5 for Chest (upgrade) (no stats)"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: rank line is blue", colour(t.lines[1]), "0.4,0.8,1")
     check("tooltip: source line is grey-white", colour(t.lines[2]), "0.8,0.8,0.8")
     check("tooltip: lines do not wrap", t.lines[1].wrap, false)
 
     check("tooltip: corpse-rate source with more", ctx.text(3),
-        "Tandem: rank 2 of 5 for Chest (upgrade) / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
+        "Tandem: rank 2 of 5 for Chest (upgrade) (no stats)"
+            .. " / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
     check("tooltip: source without a rate", ctx.text(2),
-        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 4 of 5 for Chest (upgrade) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
     check("tooltip: unsourced item has only the rank line", ctx.text(11),
-        "Tandem: rank 1 of 6 for Chest (upgrade) (no known source)")
+        "Tandem: rank 1 of 6 for Chest (upgrade) (no stats) (no known source)")
     check("tooltip: no ranked slot shows only the source", ctx.text(9),
         "Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: ItemRefTooltip gets the lines too", ctx.text(2, ctx.env.ItemRefTooltip),
-        "Tandem: rank 4 of 5 for Chest (upgrade) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 4 of 5 for Chest (upgrade) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
 
     ctx.equipped[5] = "|Hitem:1:|h"
     check("tooltip: equipped mark", ctx.text(1),
-        "Tandem: rank 1 of 5 for Chest (equipped) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
+        "Tandem: rank 1 of 5 for Chest (equipped) (no stats)"
+            .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     ctx.equipped[5] = nil
 
     ctx.level = 30
     t = ctx.hover({ id = 1 })
     check("tooltip: too low a level gives no upgrade and a red line", texts(t),
-        "Tandem: rank 1 of 5 for Chest / Tandem: you cannot use it: level 40 required"
+        "Tandem: rank 1 of 5 for Chest (no stats) / Tandem: you cannot use it: level 40 required"
             .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: unusable line is red", colour(t.lines[2]), "1,0.25,0.25")
     ctx.class, ctx.className, ctx.level = "MAGE", "Mage", 60
@@ -4619,10 +5236,10 @@ do
     ctx.equipped[16] = "|Hitem:778:|h"
     ctx.equipped[17] = "|Hitem:779:|h"
     local line = ctx.hover({ id = 7 }).lines[1].text
-    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%)$") ~= nil, true)
+    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%) %(no stats%)$") ~= nil, true)
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:779:|h", "|Hitem:7:|h"
     line = ctx.hover({ id = 7 }).lines[1].text
-    check("tooltip hands: equipped in the off hand", line:match("%(equipped%)$") ~= nil, true)
+    check("tooltip hands: equipped in the off hand", line:match("%(equipped%) %(no stats%)$") ~= nil, true)
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:778:|h", "|Hitem:779:|h"
     ctx.class, ctx.className = "PALADIN", "Paladin"
     line = ctx.hover({ id = 7 }).lines[1].text
@@ -4660,11 +5277,11 @@ do
     check("tooltip memo: still one walk", counts(), "1/1")
     ctx.addon.Store.AddItem(50, 60, 30, 4, "INVTYPE_CHEST", 4, 4)
     check("tooltip memo: AddItem invalidates it", ctx.text(2),
-        "Tandem: rank 5 of 6 for Chest (equipped) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 5 of 6 for Chest (equipped) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
     check("tooltip memo: AddItem walks again", counts(), "2/2")
     ctx.addon.Store.AddLoot(2, "c", 448, 1429)
     check("tooltip memo: AddLoot invalidates it", ctx.text(2),
-        "Tandem: rank 5 of 6 for Chest (equipped)"
+        "Tandem: rank 5 of 6 for Chest (equipped) (no stats)"
             .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill) (+1 more)")
     check("tooltip memo: AddLoot walks again", counts(), "3/3")
     ctx.level = 41
@@ -4674,12 +5291,33 @@ do
     check("tooltip memo: another item has its own entry", counts(), "5/5")
 end
 
+do
+    local db, shipped = statData()
+    local ctx = loadTooltip("enUS", db, shipped)
+    ctx.env.UnitName, ctx.env.GetRealmName = PLAYER_ENV.UnitName, PLAYER_ENV.GetRealmName
+    check("tooltip score: the rank line shows the score", ctx.hover({ id = 12 }).lines[1].text,
+        "Tandem: rank 1 of 5 for Chest, score 10.0 (upgrade)")
+    check("tooltip score: a zero score still shows", ctx.hover({ id = 4 }).lines[1].text,
+        "Tandem: rank 2 of 5 for Chest, score 0.0 (upgrade)")
+    check("tooltip score: a stat-less item has no score", ctx.hover({ id = 1 }).lines[1].text,
+        "Tandem: rank 3 of 5 for Chest (upgrade) (no stats)")
+    ctx.addon.Weights.SetOverride("int", 5, "WARRIOR", 40)
+    check("tooltip memo: a weight change ranks and scores again", ctx.hover({ id = 4 }).lines[1].text,
+        "Tandem: rank 1 of 5 for Chest, score 75.0 (upgrade)")
+    ctx.addon.Weights.SetSpec(3)
+    check("tooltip memo: a spec change ranks again", ctx.hover({ id = 4 }).lines[1].text,
+        "Tandem: rank 2 of 5 for Chest, score 0.0 (upgrade)")
+    local zh = loadTooltip("zhTW", statData())
+    check("zhTW tooltip score", zh.hover({ id = 12 }).lines[1].text, "Tandem：排名第 1／5（胸部），分數 10.0（升級）")
+end
+
 for locale, want in pairs({
-    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
+    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) (no stats)"
+                 .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
              "Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)",
              "Tandem: you cannot use it: level 40 required", "Tandem: your class cannot use it",
              "Tandem: deprecated item" },
-    zhTW = { "Tandem：排名第 1／5（胸部）（升級） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
+    zhTW = { "Tandem：排名第 1／5（胸部）（升級）（無屬性） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
              "Tandem：掉落自 NPC #449，Elwynn Forest（最高 50.0%）（另有 1 個來源）",
              "Tandem：你無法使用：需要等級 40", "Tandem：你的職業無法使用", "Tandem：已棄用的物品" },
 }) do
@@ -4700,7 +5338,7 @@ end
 -- quest 101 (no factions), vendor 201 (Alliance) and quest 102 (an invalid factions mask).
 local function questVendorData()
     local db = {
-        schemaVersion = 3,
+        schemaVersion = 4,
         npcs = { [200] = "Vendor Bob", [448] = "Hogger" },
         quests = { [100] = "Own Quest" },
         loot = {
@@ -4754,7 +5392,7 @@ do
     A = loadAdvisor(nil, { loot = { { 4, "v", 201, 1429, 2 } } })
     check("q/v sources: shipped data without factions", sourceRows(A.Sources(4, 2)), "v201:2:nil:nil:nil")
 
-    local own = { schemaVersion = 3, loot = {
+    local own = { schemaVersion = 4, loot = {
         ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, coords = { { 1, 1 } },
                              factions = 1 },
     } }
@@ -4860,6 +5498,7 @@ local function checkAPIs()
         GetInventoryItemLink = fn,
         C_Item = { GetItemStats = fn },
         C_TooltipInfo = { GetItemByID = fn },
+        C_SpecializationInfo = { GetSpecialization = fn },
     }
 end
 
@@ -4878,7 +5517,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: nine features", #addon.Check.FEATURES, 9)
+    check("check: ten features", #addon.Check.FEATURES, 10)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -4886,7 +5525,7 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
-        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search" }) do
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -4946,7 +5585,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out - 1], "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#out - 2],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -5353,6 +5992,24 @@ do
 end
 
 do
+    local ctx = loadQuest({ 1, 3, 12 })
+    local stats = ctx.env.TandemDB.stats
+    stats[1], stats[3], stats[12] = { str = 2 }, { str = 1 }, { str = 9 }
+    ctx.complete()
+    check("quest pick score: every choice scored picks the highest score", ctx.marked(), "3")
+    stats[3] = { str = 9 }
+    ctx.complete()
+    check("quest pick score: a tie on score marks none, whatever the item level", ctx.marked(), "")
+    stats[3] = nil
+    ctx.complete()
+    check("quest pick score: a stat-less choice falls back to item level", ctx.marked(), "1")
+    ctx.quest.choices = { 12, 8 }
+    stats[8] = nil
+    ctx.complete()
+    check("quest pick score: an unusable stat-less choice does not stop the score pick", ctx.marked(), "1")
+end
+
+do
     local ctx = loadQuest({ 1, 13 })
     ctx.level = 10
     ctx.complete()
@@ -5587,6 +6244,33 @@ for _, api in ipairs({ "global", "none" }) do
 end
 
 do
+    local ctx = loadUpgrade()
+    local stats = ctx.env.TandemDB.stats
+    stats[3], stats[1], stats[12], stats[13] = { str = 10 }, { str = 5 }, { str = 12 }, { str = 1 }
+    ctx.bagUpdate()
+    check("upgrade score: a lower score is no upgrade at a higher item level", #ctx.loot(1), 0)
+    check("upgrade score: a higher score is an upgrade at a lower item level", ctx.loot(12)[1],
+        ("Tandem: upgrade for Chest: %s (score 12.0 over 10.0)"):format(built(12, GREEN)))
+    check("upgrade score: an empty slot has no score, so item level decides", ctx.loot(13)[1],
+        upgradeLine("Legs", 13, BLUE, 50, 0))
+    stats[3] = nil
+    check("upgrade score: a stat-less worn item compares by item level", ctx.loot(4, 2)[1], nil)
+    ctx.equipped[5] = "|Hitem:2:|h"
+    ctx.bags[0] = {}
+    ctx.bagUpdate()
+    stats[2] = { str = 50 }
+    check("upgrade score: equal scores are no upgrade", #ctx.loot(), 0)
+end
+
+do
+    local ctx = loadUpgrade({ locale = "zhTW" })
+    ctx.env.TandemDB.stats[3], ctx.env.TandemDB.stats[12] = { str = 1 }, { str = 2 }
+    ctx.bagUpdate()
+    check("zhTW upgrade alert score line", ctx.loot(12)[1],
+        ("Tandem：胸部的升級：%s（分數 2.0，高於 1.0）"):format(built(12, GREEN, "物品 #12")))
+end
+
+do
     local ctx = loadUpgrade({ locale = "zhTW" })
     ctx.bagUpdate()
     check("zhTW upgrade alert line", ctx.loot(1)[1],
@@ -5635,7 +6319,7 @@ local function chestTips(ctx)
 end
 
 local function searchRow(i, id, hex, ilvl, level, line)
-    return ("%d. %s, ilvl %d, level %d (upgrade): %s"):format(i, built(id, hex), ilvl, level, line)
+    return ("%d. %s, ilvl %d, level %d (upgrade) (no stats): %s"):format(i, built(id, hex), ilvl, level, line)
 end
 
 do
@@ -5712,9 +6396,9 @@ do
     local out = ctx.run("gear chest +體力")
     check("zhTW gear search header", out[1], "最佳胸部（40 級Warrior，符合「+體力」）：")
     check("zhTW gear search best first", out[2],
-        ("1. %s，物品等級 30，需求等級 25（升級）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
+        ("1. %s，物品等級 30，需求等級 25（升級）（無屬性）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
     check("zhTW gear search second", out[3],
-        ("2. %s，物品等級 45，需求等級 40（升級）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
+        ("2. %s，物品等級 45，需求等級 40（升級）（無屬性）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
     check("zhTW gear search footer", out[4], "依符合的提示行上的數字排序，再依物品等級與品質")
     out = ctx.run("gear chest +法術暴擊")
     check("zhTW gear search spell crit by value", out[2]:match("^1%. .-(%d)%%。$") .. out[3]:match("^2%. .-(%d)%%。$"),
@@ -5748,9 +6432,10 @@ do
     ctx.tip(11, { "GM Robe", "+99 Stamina" })
     out = ctx.run("gear chest all +stamina")
     check("gear search with all includes sourceless items", out[2],
-        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no known source): +99 Stamina")
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no stats) (no known source): +99 Stamina")
     out = ctx.run("gear chest all")
-    check("gear chest all alone still ranks", out[#out], "Ranked by item level, then quality; stats are not considered")
+    check("gear chest all alone still ranks", out[#out],
+        "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     out = ctx.run("gear chest nothing")
     check("gear search no match", out[2], 'No known Chest you can use matches "nothing"')
     check("gear search no match line count", #out, 3)
@@ -5776,63 +6461,418 @@ do
         "Tandem: stat search is not available on this client; see /tandem check")
     check("gear search without the API prints one line", #out, 1)
     check("gear without a query works without the API", ctx.run("gear chest")[1], "Best Chest for level 40 Warrior:")
-    ctx.run("browse chest")
-    local win = ctx.win()
-    check("browse search box disabled without the API", win.search:IsEnabled(), false)
-    check("browse search label says why", win.searchLabel:GetText(), "Stat search: not on this client")
-    check("browse search box has no text handler without the API", win.search.scripts.OnTextChanged, nil)
-    win.search:SetText("stamina")
-    ctx.addon.Browse.Refresh()
-    check("browse ignores typed text without the API", rowIDs(win), "11,1,3,4,2,12")
+end
+
+-- Browse stat boxes (stage 7, unit 8): an item is listed only when it has every ticked stat above 0.
+local function statBoxData()
+    local db, shipped = gearData()
+    db.stats = { [1] = { sta = 5, str = 3 }, [3] = { sta = 10, int = 4 }, [11] = { int = 7 },
+                 [2] = { sta = 0, int = 6 } }
+    shipped.stats = { [4] = { sta = 2, int = 3 }, [12] = { str = 4 }, [2] = { sta = 9, int = 9 } }
+    return db, shipped
+end
+
+local function tick(win, key, on)
+    win.stats[key]:SetChecked(on)
+    win.stats[key]:GetScript("OnClick")(win.stats[key])
 end
 
 do
-    local ctx = loadSearch()
-    chestTips(ctx)
-    ctx.tip(11, { "GM Robe", "+99 Stamina" })
+    local ctx = loadBrowse("enUS", statBoxData())
     ctx.run("browse chest")
     local win = ctx.win()
-    check("browse search box enabled", win.search:IsEnabled() ~= false, true)
-    check("browse search label", win.searchLabel:GetText(), "Stat search")
-    check("browse search box takes a long query", win.search.maxLetters, 60)
-    check("browse before search", rowIDs(win), "11,1,3,4,2,12")
-    win.search:SetText("+stamina")
-    win.search.scripts.OnTextChanged(win.search, true)
-    check("browse search filters and sorts by value", rowIDs(win), "11,3,1,4")
-    check("browse search count says what is loading", win.count:GetText(), "4 items, 1 loading")
-    win.search:SetFocus()
-    win.search.scripts.OnEscapePressed(win.search)
-    check("browse search Escape drops the focus", win.search.focused, false)
-    ctx.cache[2] = { "Item 2" }
-    ctx.fire("GET_ITEM_INFO_RECEIVED", 2, true)
-    check("browse search waits for the redraw", rowIDs(win), "11,3,1,4")
-    ctx.tick()
-    check("browse search a late item appears", rowIDs(win), "11,3,2,1,4")
-    check("browse search count after the late item", win.count:GetText(), "5 items")
-    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
-    check("browse search ignores other items", #ctx.ui.timers, 0)
+    local keys = { "str", "agi", "sta", "int", "spi", "sp", "heal", "hit", "crit", "ap", "mp5", "def" }
+    local labels = {}
+    for i, key in ipairs(keys) do
+        local box = win.stats[key]
+        local row, col = math.floor((i - 1) / 6), (i - 1) % 6
+        check("stat boxes: " .. key .. " sits in its grid cell", point(box),
+            ("TOPLEFT TandemBrowseFrame TOPLEFT %d %d"):format(12 + col * 96, -132 - row * 24))
+        check("stat boxes: " .. key .. " starts unticked", box:GetChecked(), false)
+        check("stat boxes: " .. key .. " sits above the window", box.level, win:GetFrameLevel() + 5)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.kind == "FontString" and w.points[1] and w.points[1][2] == box then
+                labels[#labels + 1] = w.text
+                check("stat boxes: the " .. key .. " label clicks its box", table.concat(box.hitInsets, " "),
+                    "0 " .. -(2 + 6 * #w.text) .. " 0 0")
+            end
+        end
+    end
+    check("stat boxes: labels", table.concat(labels, ","),
+        "Strength,Agility,Stamina,Intellect,Spirit,Spell power,Healing,Hit,Crit,Attack power,MP5,Defense")
+    check("stat boxes: the list starts below them", point(win.box), "TOPLEFT TandemBrowseFrame TOPLEFT 12 -198")
+    check("stat boxes: nothing ticked lists everything", rowIDs(win), "1,3,12,4,11,2")
+    tick(win, "sta", true)
+    check("stat boxes: STA lists the items with stamina, stat-less and zero ones hidden", rowIDs(win), "1,3,4")
+    check("stat boxes: the count follows", win.count:GetText(), "3 items")
+    tick(win, "int", true)
+    check("stat boxes: STA and INT lists only items with both", rowIDs(win), "3,4")
+    tick(win, "sta", false)
+    check("stat boxes: own stats win over shipped ones", rowIDs(win), "3,4,11,2")
+    tick(win, "def", true)
+    check("stat boxes: no item has every ticked stat", rowIDs(win) .. " " .. win.count:GetText(), " 0 items")
+    tick(win, "def", false)
+    tick(win, "int", false)
+    check("stat boxes: unticking all restores the list", rowIDs(win), "1,3,12,4,11,2")
+    tick(win, "str", true)
     ctx.level = 30
     ctx.addon.Browse.Refresh()
-    check("browse search keeps the other filters", rowIDs(win), "11,3,2,4")
-    ctx.level = 40
-    win.search:SetText("strength")
-    win.search.scripts.OnTextChanged(win.search, true)
-    check("browse search another stat", rowIDs(win), "12,1")
-    check("browse search count", win.count:GetText(), "2 items")
-    win.search:SetText("")
-    win.search.scripts.OnTextChanged(win.search, true)
-    check("browse search cleared lists all", rowIDs(win), "11,1,3,4,2,12")
-    win.search:SetText("stamina")
-    ctx.cursor = { "item", 12 }
+    check("stat boxes: the other filters still apply", rowIDs(win), "12")
+    ctx.cursor = { "item", 11 }
     win.scripts.OnReceiveDrag(win)
-    check("browse drop clears the search", win.search:GetText(), "")
-    check("browse drop shows the dropped item", rowIDs(win):find("12", 1, true) ~= nil, true)
+    check("stat boxes: a drop unticks them", win.stats.str:GetChecked(), false)
+    check("stat boxes: a drop shows the dropped item", rowIDs(win):find("11", 1, true) ~= nil, true)
+    check("stat boxes: no text search box", win.search, nil)
+end
+
+do
+    local ctx = loadBrowse("zhTW", statBoxData())
+    ctx.run("browse chest")
+    local win = ctx.win()
+    local labels = {}
+    for _, w in ipairs(ctx.ui.widgets) do
+        for _, key in ipairs({ "str", "sp", "heal", "crit", "ap", "mp5", "def" }) do
+            if w.kind == "FontString" and w.points[1] and w.points[1][2] == win.stats[key] then
+                labels[#labels + 1] = w.text
+            end
+        end
+    end
+    check("zhTW stat box labels", table.concat(labels, ","), "力量,法術能量,治療,致命一擊,攻擊強度,法力恢復,防禦")
 end
 
 do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
-    check("zhTW check: stat search line", out[#out], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+    check("zhTW check: stat search line", out[#out - 1], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+end
+
+-- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
+
+-- Loads the addon for "Tom-Realm" (ctx.name renames) with opts.talents as the talent API: "old" (name, icon,
+-- points), "new" (id, name, description, icon, points) over ctx.points, "spec" (C_SpecializationInfo over ctx.spec)
+-- or nil for none. opts.db is TandemDB. Returns addon, ctx, env.
+local function weightsData(opts)
+    opts = opts or {}
+    local ctx = { points = { 0, 0, 0 } }
+    local env = {
+        UnitName = function()
+            return ctx.name or "Tom"
+        end,
+        GetRealmName = function()
+            return "Realm"
+        end,
+        UnitLevel = function()
+            return 60
+        end,
+    }
+    if opts.talents == "old" or opts.talents == "new" then
+        env.GetNumTalentTabs = function()
+            return 3
+        end
+        env.GetTalentTabInfo = function(i)
+            if opts.talents == "old" then
+                return "Tree" .. i, "icon", ctx.points[i], "bg"
+            end
+            return 100 + i, "Tree" .. i, "desc", "icon", ctx.points[i], "bg", 0, true
+        end
+    elseif opts.talents == "spec" then
+        env.C_SpecializationInfo = { GetSpecialization = function()
+            return ctx.spec
+        end }
+    end
+    local addon, _, e = loadWithDB(opts.db, "enUS", { env = env })
+    return addon, ctx, e
+end
+
+do
+    local W = weightsData().Weights
+    local classes, trees, badKeys, badDefault = 0, 0, 0, 0
+    local isKey = {}
+    for _, key in ipairs(W.KEYS) do
+        isKey[key] = true
+    end
+    for class, specs in pairs(W.DEFAULTS) do
+        classes = classes + 1
+        trees = trees + #specs
+        for _, weights in ipairs(specs) do
+            for key, w in pairs(weights) do
+                if not isKey[key] or type(w) ~= "number" then
+                    badKeys = badKeys + 1
+                end
+            end
+        end
+        local d = W.DEFAULT_SPEC[class]
+        if not (d and specs[d] and #W.SPECS[class] == 3) then
+            badDefault = badDefault + 1
+        end
+    end
+    check("weights: nine classes", classes, 9)
+    check("weights: three trees each", trees, 27)
+    check("weights: built-ins use only the stored stat keys", badKeys, 0)
+    check("weights: each class has a default tree", badDefault, 0)
+    check("weights: twenty-one stat keys", #W.KEYS, 21)
+end
+
+do
+    local W = weightsData().Weights
+    check("weights: Score of nil stats is nil", W.Score(nil, "WARRIOR", 1), nil)
+    check("weights: Score is the weighted sum", W.Score({ str = 10, sta = 5 }, "WARRIOR", 1), 12.5)
+    check("weights: Score ignores unweighted stats", W.Score({ str = 10, sp = 30 }, "WARRIOR", 1), 10)
+    check("weights: Score of no stats is 0", W.Score({}, "WARRIOR", 1), 0)
+    check("weights: Score for an unknown class is 0", W.Score({ str = 10 }, "MONK", 1), 0)
+    check("weights: Score without a spec uses the active one", W.Score({ str = 10, sta = 5 }, "WARRIOR"), 12.5)
+    check("weights: a caster item scores below a strength item for a warrior",
+        W.Score({ sp = 20, int = 10 }, "WARRIOR", 1) < W.Score({ str = 10 }, "WARRIOR", 1), true)
+    check("weights: a caster item scores above a strength item for a mage",
+        W.Score({ sp = 20, int = 10 }, "MAGE", 3) > W.Score({ str = 10 }, "MAGE", 3), true)
+    check("weights: healing counts for a holy priest", W.Score({ heal = 10 }, "PRIEST", 2), 10)
+    check("weights: healing does not count for a shadow priest", W.Score({ heal = 10 }, "PRIEST", 3), 0)
+    local e = W.Effective("WARRIOR", 1)
+    e.str = 99
+    check("weights: Effective returns a copy", W.DEFAULTS.WARRIOR[1].str, 1)
+    check("weights: Effective of an unknown spec is empty", next(W.Effective("WARRIOR", 4)), nil)
+end
+
+do
+    local addon = weightsData()
+    local W = addon.Weights
+    check("weights: no talent API is not ready", addon.Check.Ready("Talent spec"), false)
+    check("weights: no talent API detects nothing", W.DetectSpec(60), nil)
+    local spec, auto = W.Active("PRIEST", 60)
+    check("weights: no talent API falls back to the class default", spec, 3)
+    check("weights: the fallback is auto", auto, true)
+    check("weights: a class without built-ins has no active spec", (W.Active("MONK", 60)), nil)
+end
+
+for _, style in ipairs({ "old", "new" }) do
+    local addon, ctx = weightsData({ talents = style })
+    local W = addon.Weights
+    check(("weights %s: talent tabs are ready"):format(style), addon.Check.Ready("Talent spec"), true)
+    check(("weights %s: nothing spent detects nothing"):format(style), W.DetectSpec(60), nil)
+    check(("weights %s: nothing spent falls back to the default"):format(style), (W.Active("WARRIOR", 60)), 1)
+    ctx.points = { 5, 0, 31 }
+    check(("weights %s: the tree with most points"):format(style), W.DetectSpec(60), 3)
+    check(("weights %s: Active follows the talents"):format(style), (W.Active("WARRIOR", 60)), 3)
+    check(("weights %s: below level 10 uses the default"):format(style), (W.Active("WARRIOR", 9)), 1)
+    ctx.points = { 10, 10, 0 }
+    check(("weights %s: a tie picks the first tree"):format(style), W.DetectSpec(60), 1)
+end
+
+do
+    local addon, ctx = weightsData({ talents = "spec" })
+    local W = addon.Weights
+    check("weights spec: the specialization API is ready", addon.Check.Ready("Talent spec"), true)
+    ctx.spec = 2
+    check("weights spec: reads the specialization", W.DetectSpec(60), 2)
+    ctx.spec = 5
+    check("weights spec: an out-of-range spec falls back", (W.Active("DRUID", 60)), 2)
+    ctx.spec = nil
+    check("weights spec: no specialization falls back", (W.Active("MAGE", 60)), 3)
+end
+
+do
+    local addon, _, env = weightsData({ talents = "old" })
+    local W = addon.Weights
+    check("weights: a db without weights reads the built-ins", W.Effective("WARRIOR", 1).str, 1)
+    check("weights: set an override", W.SetOverride("str", 2, "WARRIOR", 60), true)
+    check("weights: the weights table is created lazily", type(env.TandemDB.weights), "table")
+    check("weights: the override is saved per character and spec",
+        env.TandemDB.weights["Tom-Realm"].overrides[1].str, 2)
+    check("weights: Effective applies the override", W.Effective("WARRIOR", 1).str, 2)
+    check("weights: Score uses the override", W.Score({ str = 10 }, "WARRIOR", 1), 20)
+    check("weights: an override does not touch the built-ins", W.DEFAULTS.WARRIOR[1].str, 1)
+    check("weights: 0 is a valid override", W.SetOverride("sta", 0, "WARRIOR", 60), true)
+    check("weights: a 0 override ignores the stat", W.Score({ sta = 10 }, "WARRIOR", 1), 0)
+    check("weights: an override may add a stat",
+        W.SetOverride("sp", 0.5, "WARRIOR", 60) and W.Score({ sp = 10 }, "WARRIOR", 1), 5)
+    check("weights: an unknown stat is refused", W.SetOverride("fire", 1, "WARRIOR", 60), false)
+    check("weights: a non-number is refused", W.SetOverride("str", "2", "WARRIOR", 60), false)
+    check("weights: NaN is refused", W.SetOverride("str", 0 / 0, "WARRIOR", 60), false)
+    check("weights: a class without built-ins is refused", W.SetOverride("str", 1, "MONK", 60), false)
+    check("weights: overrides are not records", addon.Store.unsaved, 0)
+
+    check("weights: set spec 2", W.SetSpec(2), true)
+    local spec, auto = W.Active("WARRIOR", 60)
+    check("weights: a chosen spec is active", spec, 2)
+    check("weights: a chosen spec is not auto", auto, false)
+    check("weights: the other spec's overrides do not apply", W.Effective("WARRIOR", 2).str, 1)
+    check("weights: set an override on spec 2", W.SetOverride("agi", 3, "WARRIOR", 60), true)
+    check("weights: reset drops the active spec's overrides", W.Reset("WARRIOR", 60), true)
+    check("weights: reset spec 2 restores its built-ins", W.Effective("WARRIOR", 2).agi, 0.7)
+    check("weights: reset keeps the other spec's overrides", W.Effective("WARRIOR", 1).str, 2)
+    check("weights: spec 4 is refused", W.SetSpec(4), false)
+    check("weights: spec 1.5 is refused", W.SetSpec(1.5), false)
+    check("weights: a refused spec keeps the choice", (W.Active("WARRIOR", 60)), 2)
+    check("weights: set spec auto", W.SetSpec("auto"), true)
+    spec, auto = W.Active("WARRIOR", 60)
+    check("weights: auto returns to the detected or default spec", spec, 1)
+    check("weights: auto is auto", auto, true)
+    check("weights: auto clears the saved spec", env.TandemDB.weights["Tom-Realm"].spec, nil)
+end
+
+do
+    local addon, ctx, env = weightsData()
+    local W = addon.Weights
+    env.TandemDB.weights = { ["Tom-Realm"] = "bad", ["Ann-Realm"] = { spec = 7, overrides = {
+        [1] = { str = "x", fire = 3, agi = 2 }, [3] = "bad" } } }
+    check("weights: a garbled entry reads as none", W.Effective("WARRIOR", 1).str, 1)
+    check("weights: a garbled entry is replaced on write",
+        W.SetSpec(3) and env.TandemDB.weights["Tom-Realm"].spec, 3)
+    ctx.name = "Ann"
+    check("weights: an invalid saved spec is auto", select(2, W.Active("WARRIOR", 60)), true)
+    local e = W.Effective("WARRIOR", 1)
+    check("weights: a non-number override is skipped", e.str, 1)
+    check("weights: an unknown key override is skipped", e.fire, nil)
+    check("weights: a valid override beside bad ones applies", e.agi, 2)
+    check("weights: a non-table spec override is skipped", W.Effective("WARRIOR", 3).sta, 1)
+    check("weights: an override replaces a non-table spec entry",
+        W.SetSpec(3) and W.SetOverride("sta", 2, "WARRIOR", 60) and W.Effective("WARRIOR", 3).sta, 2)
+    ctx.name = ""
+    check("weights: an unknown character cannot save", W.SetSpec(1), false)
+    check("weights: an unknown character reads the built-ins", W.Effective("WARRIOR", 3).sta, 1)
+end
+
+do
+    local addon, _, env = weightsData({ db = { schemaVersion = 99, items = {} } })
+    local W = addon.Weights
+    check("weights: a newer db is read-only", addon.Store.readOnly, true)
+    check("weights: read-only refuses a spec", W.SetSpec(2), false)
+    check("weights: read-only refuses an override", W.SetOverride("str", 2, "WARRIOR", 60), false)
+    check("weights: read-only refuses a reset", W.Reset("WARRIOR", 60), false)
+    check("weights: read-only leaves the db alone", env.TandemDB.weights, nil)
+end
+
+do
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    local byName = runCheck(addon, printed)
+    check("check: talent spec lists its alternatives", byName["Talent spec"],
+        "Talent spec: ok (GetTalentTabInfo missing, C_SpecializationInfo.GetSpecialization ok, "
+            .. "GetSpecialization missing)")
+    local zh, zhPrinted = loadWithDB(nil, "zhTW")
+    local out = run(zh, zhPrinted, "check")
+    check("zhTW check: talent spec line", out[#out]:match("^天賦專精："), "天賦專精：")
+end
+
+-- /tandem weights (stage 7, unit 6): show, spec, set and reset.
+
+-- Loads the addon as a level 60 Tom-Realm warrior with no talent API; ctx.class, ctx.className, ctx.level,
+-- ctx.combat and ctx.name change the player. Returns ctx with ctx.run(msg) -> printed lines.
+local function loadWeights(locale, db)
+    local ctx = { class = "WARRIOR", className = "Warrior", level = 60, name = "Tom" }
+    local addon, printed, env = loadWithDB(db, locale or "enUS", { env = {
+        UnitClass = function()
+            return ctx.className, ctx.class
+        end,
+        UnitLevel = function()
+            return ctx.level
+        end,
+        UnitName = function()
+            return ctx.name
+        end,
+        GetRealmName = function()
+            return "Realm"
+        end,
+        InCombatLockdown = function()
+            return ctx.combat == true
+        end,
+    } })
+    ctx.addon, ctx.env = addon, env
+    function ctx.run(msg)
+        return run(addon, printed, msg)
+    end
+    return ctx
+end
+
+local ARMS = "str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10"
+
+do
+    local ctx = loadWeights()
+    local out = ctx.run("weights")
+    check("weights: shows the active tree", out[1], "Tandem: Arms Warrior weights, tree 1 (auto)")
+    check("weights: lists the weights in stat key order", out[2], ARMS)
+    check("weights: no own weight, no legend", #out, 2)
+    check("weights: the command writes nothing", ctx.env.TandemDB.weights["Tom-Realm"], nil)
+
+    out = ctx.run("weights spec 2")
+    check("weights spec 2: confirms", out[1], "Tandem: weights use tree 2")
+    check("weights spec 2: shows the chosen tree", out[2], "Tandem: Fury Warrior weights, tree 2 (manual)")
+    check("weights spec 2: saves the spec", ctx.env.TandemDB.weights["Tom-Realm"].spec, 2)
+
+    out = ctx.run("weights set hit 20")
+    check("weights set: confirms", out[1], "Tandem: hit weight set to 20")
+    check("weights set: marks the own weight", out[3],
+        "str 1, agi 0.7, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 20*, crit 11")
+    check("weights set: prints the legend", out[4], "  * your own weight; /tandem weights reset drops them")
+    check("weights set: saves on the active tree", ctx.env.TandemDB.weights["Tom-Realm"].overrides[2].hit, 20)
+    out = ctx.run("weights set sta 0")
+    check("weights set 0: shows the ignored stat", out[3]:match("sta [^,]*"), "sta 0*")
+    out = ctx.run("weights set sp 0.25")
+    check("weights set: a stat without a built-in is added", out[3]:match("sp [^,]*"), "sp 0.25*")
+    check("weights set: a negative number", ctx.run("weights set spi -1")[1], "Tandem: spi weight set to -1")
+    check("weights set: a leading point", ctx.run("weights set int .5")[1], "Tandem: int weight set to 0.5")
+
+    out = ctx.run("weights reset")
+    check("weights reset: confirms", out[1], "Tandem: own weights for tree 2 dropped")
+    check("weights reset: shows the built-ins", out[3],
+        "str 1, agi 0.7, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 12, crit 11")
+    check("weights reset: no legend", #out, 3)
+
+    out = ctx.run("weights spec auto")
+    check("weights spec auto: confirms", out[1], "Tandem: weights follow your talents")
+    check("weights spec auto: back to the default tree", out[2], "Tandem: Arms Warrior weights, tree 1 (auto)")
+    check("weights spec auto: clears the saved spec", ctx.env.TandemDB.weights["Tom-Realm"].spec, nil)
+    check("weights: SPECS names the trees", ctx.addon.Weights.SPECS.WARRIOR[1], "Arms")
+
+    local before = ctx.run("weights")
+    for _, msg in ipairs({ "weights spec", "weights spec 0", "weights spec 4", "weights spec x", "weights spec 1 2",
+                           "weights set", "weights set str", "weights set str x", "weights set str 1 2",
+                           "weights set str 1e3", "weights set str 0x10", "weights reset now", "weights dance" }) do
+        out = ctx.run(msg)
+        check(("%q prints the weights usage"):format(msg), out[1] .. "|" .. #out,
+            "Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]|1")
+    end
+    out = ctx.run("weights set fire 2")
+    check("weights set: an unknown stat is named", out[1], "Tandem: unknown stat fire; use one of: "
+        .. table.concat(ctx.addon.Store.STAT_KEYS, " "))
+    check("weights set: an unknown stat prints one line", #out, 1)
+    check("weights: refusals change nothing", table.concat(ctx.run("weights"), "|"), table.concat(before, "|"))
+
+    ctx.combat = true
+    for _, msg in ipairs({ "weights", "weights spec 2", "weights set str 2", "weights reset", "weights x" }) do
+        out = ctx.run(msg)
+        check(("%q refuses in combat"):format(msg), out[1] .. "|" .. #out, "Tandem: not available in combat|1")
+    end
+    check("weights in combat: nothing saved", ctx.env.TandemDB.weights["Tom-Realm"].spec, nil)
+    ctx.combat = false
+
+    ctx.class, ctx.className = "MONK", "Monk"
+    check("weights: a class without built-ins", ctx.run("weights")[1], "Tandem: no built-in weights for Monk")
+    ctx.class = nil
+    check("weights: an unknown class", ctx.run("weights spec 2")[1],
+        "Tandem: your class or level is not known yet; try again in a moment")
+    ctx.class, ctx.className, ctx.name = "MAGE", "Mage", ""
+    out = ctx.run("weights spec 1")
+    check("weights: an unknown character cannot save", out[1] .. "|" .. #out,
+        "Tandem: weights cannot be saved: recording is off or your character is not known yet|1")
+    check("weights: an unknown character still sees the built-ins", ctx.run("weights")[1],
+        "Tandem: Frost Mage weights, tree 3 (auto)")
+end
+
+do
+    local ctx = loadWeights("enUS", { schemaVersion = 99 })
+    check("weights on a newer db: set is refused", ctx.run("weights set str 2")[1],
+        "Tandem: weights cannot be saved: recording is off or your character is not known yet")
+    check("weights on a newer db: the db is untouched", ctx.env.TandemDB.weights, nil)
+end
+
+do
+    local ctx = loadWeights("zhTW")
+    local out = ctx.run("weights set str 2")
+    check("zhTW weights set line", out[1], "Tandem：str 的權重設為 2")
+    check("zhTW weights header", out[2], "Tandem：武器Warrior的屬性權重，第 1 系（自動）")
+    check("zhTW weights legend", out[4], "  * 你自訂的權重；/tandem weights reset 可刪除")
+    check("zhTW weights usage", ctx.run("weights x")[1],
+        "Tandem：用法 /tandem weights [spec <1|2|3|auto> | set <屬性> <數字> | reset]")
 end
 
 if failures > 0 then

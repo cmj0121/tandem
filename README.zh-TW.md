@@ -75,24 +75,29 @@ make install MODE=copy
 /tandem count
 ```
 
-| 指令                                  | 作用                                                              |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `/tandem`                             | 印出指令列表；任何未知的子指令也一樣                              |
-| `/tandem count`                       | 印出目前收集到的資料                                              |
-| `/tandem scan [<n>/s\|<n>/m] [<cap>]` | 從掃描位置往上掃描 `<cap>` 個物品 ID，速率為每秒或每分鐘 `<n>` 個 |
-| `/tandem scan from <id>`              | 把掃描位置設為 `<id>`；不會開始掃描                               |
-| `/tandem scan stop`                   | 停止進行中的掃描並印出摘要                                        |
-| `/tandem gear [<slot>] [all]`         | 列出你能使用的最佳已知裝備，可列出所有部位或單一部位              |
-| `/tandem gear <slot> [all] <words>`   | 列出某部位中提示框同一行含有這些字詞的裝備                        |
-| `/tandem rank <item link\|id>`        | 列出物品在其部位中的排名，以及到哪裡取得                          |
-| `/tandem export`                      | 顯示 `make import` 會從這個帳號收集哪些資料                       |
-| `/tandem browse [<slot>]`             | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
-| `/tandem minimap [on\|off]`           | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
-| `/tandem check`                       | 逐項功能列出它需要的用戶端 API 是否存在                           |
-| `/tandem map <item link\|id>`         | 開啟世界地圖，並在物品的每個已知位置放上標記                      |
-| `/tandem map clear`                   | 移除地圖標記                                                      |
+| 指令                                   | 作用                                                              |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `/tandem`                              | 印出指令列表；任何未知的子指令也一樣                              |
+| `/tandem count`                        | 印出目前收集到的資料                                              |
+| `/tandem scan [<n>/s\|<n>/m] [<cap>]`  | 從掃描位置往上掃描 `<cap>` 個物品 ID，速率為每秒或每分鐘 `<n>` 個 |
+| `/tandem scan from <id>`               | 把掃描位置設為 `<id>`；不會開始掃描                               |
+| `/tandem scan stop`                    | 停止進行中的掃描並印出摘要                                        |
+| `/tandem gear [<slot>] [all]`          | 列出你能使用的最佳已知裝備，可列出所有部位或單一部位              |
+| `/tandem gear <slot> [all] <words>`    | 列出某部位中提示框同一行含有這些字詞的裝備                        |
+| `/tandem rank <item link\|id>`         | 列出物品在其部位中的排名，以及到哪裡取得                          |
+| `/tandem export`                       | 顯示 `make import` 會從這個帳號收集哪些資料                       |
+| `/tandem browse [<slot>]`              | 開啟或關閉一個視窗，列出所有部位或單一部位的所有已知裝備          |
+| `/tandem minimap [on\|off]`            | 顯示或隱藏小地圖按鈕；不加參數時切換顯示                          |
+| `/tandem check`                        | 逐項功能列出它需要的用戶端 API 是否存在                           |
+| `/tandem map <item link\|id>`          | 開啟世界地圖，並在物品的每個已知位置放上標記                      |
+| `/tandem map clear`                    | 移除地圖標記                                                      |
+| `/tandem forget <from> <to>`           | 刪除你自己在某個物品 ID 範圍內的物品、屬性與掉落紀錄              |
+| `/tandem weights`                      | 顯示你的天賦系的屬性權重                                          |
+| `/tandem weights spec <1\|2\|3\|auto>` | 選擇權重所用的天賦系，或依天賦自動判斷                            |
+| `/tandem weights set <stat> <number>`  | 自訂目前天賦系某項屬性的權重；0 表示忽略                          |
+| `/tandem weights reset`                | 刪除目前天賦系的自訂權重                                          |
 
-戰鬥中執行 `gear`、`rank`、`export`、`browse`、`check` 與 `map` 時，只會印出 `Tandem: not available in combat`，不做任何事。
+戰鬥中執行 `gear`、`rank`、`export`、`browse`、`check`、`map`、`forget` 與 `weights` 時，只會印出 `Tandem: not available in combat`，不做任何事。
 `minimap` 在戰鬥中也能使用。
 
 ### `/tandem scan`
@@ -100,8 +105,13 @@ make install MODE=copy
 速率預設為 `10/s`，必須介於 `1/m` 與 `50/s` 之間。上限預設為 `100` 個 ID，最多 `100000`。兩個參數順序不拘，因此
 `/tandem scan 500 5/s` 與 `/tandem scan 5/s 500` 相同。參數無效或重複時會印出指令列表，不會開始掃描。
 
-掃描會從上次停下的位置繼續：每查詢一個 ID，掃描位置就往上加一，沒有上限。已在快取中的 ID 會略過。速率是上限：
+掃描會從上次停下的位置繼續：每查詢一個 ID，掃描位置就往上加一，沒有上限。速率是上限：
 有 10 個查詢還在等伺服器回覆時，掃描會等待；超過 5 秒沒有回覆的查詢算作逾時。戰鬥中掃描會暫停，戰鬥結束後自動繼續。
+
+當 `/tandem check` 顯示「屬性搜尋」可用時，英文（`enUS`、`enGB`）或繁體中文（`zhTW`）用戶端的掃描也會從物品說明讀取屬性
+（力量、法術能量、命中、護甲、武器 DPS 等）；其他語言的用戶端不讀取屬性，物品維持未讀取，而不會記為沒有屬性。已在快取中的 ID 會略過，除非它的屬性從未讀取，或是由較舊版本的 Tandem 讀取：這時掃描會重新
+讀取（補讀）。補讀不算新物品：不計入命中，也不計入略過，摘要會多一行 `已讀取 <n> 個已快取物品的屬性`。說明尚未載入的
+物品會和其他延後的查詢一樣等待並重試；逾時的話，屬性留待下次掃描再讀。沒有「屬性搜尋」時，快取中的 ID 會略過，也不讀取屬性。
 
 ```text
 Tandem: scanning 100 IDs from ID 1
@@ -151,7 +161,7 @@ Best known gear for level 12 Warrior:
 Head: none known
 Chest: [Tough Leather Armor], ilvl 14 (upgrade)
 ...
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 `/tandem gear <slot>` 會印出你在該部位穿戴的物品，接著列出最多 10 件物品及其需求等級：
@@ -161,7 +171,7 @@ Best Chest for level 12 Warrior:
 Equipped: [Recruit's Vest], ilvl 5
 1. [Tough Leather Armor], ilvl 14, level 9 (upgrade)
 2. [Rough Leather Vest], ilvl 10, level 5 (upgrade)
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 物品與數字僅為範例；`zhTW` 用戶端會印出中文。物品以物品連結印出：點擊即可看到遊戲的提示框，包含圖示與屬性。用戶端
@@ -189,7 +199,7 @@ ranged`。不論用戶端語言，參數一律使用英文；印出的部位名�
   Corina Steele, Elwynn Forest - vendor
   Kobold Miner, Elwynn Forest - drops: 3, 4.2% per looted corpse (upper bound)
   Defias Thug, Elwynn Forest - drops: 1
-Ranked by item level, then quality; stats are not considered
+Ranked by stat score, then item level and quality; items marked (no stats) come last
 ```
 
 任務獎勵顯示為 `<quest>, <map> - quest reward`，商人物品顯示為 `<npc>, <map> - vendor`，不附掉落次數或掉落率。它們
@@ -232,8 +242,8 @@ Ranked by item level, then quality; stats are not considered
 
 - 部位下拉選單：`All slots`，接著是各部位名稱。選擇 `All slots` 時，每件物品只列出一次，歸在它的第一個部位，因此單手
   武器只會以主手武器出現一次。你的職業在目前等級能雙持時，這類單手武器在這裡會同時與兩隻手比較：任一手穿戴著它時
-  標示 `(equipped)`；它的物品等級高於兩手中（已知物品等級者）較低的那一手時標示 `(upgrade)`。在 `Main hand` 與
-  `Off hand` 部位中，則只與該手比較。
+  標示 `(equipped)`；依[裝備如何排名](#裝備如何排名)的分數或物品等級勝過兩手中較弱的那一手時標示 `(upgrade)`。在
+  `Main hand` 與 `Off hand` 部位中，則只與該手比較。
 - 品質下拉選單：`All qualities`，接著是 `Poor`、`Common`、`Uncommon`、`Rare`、`Epic` 與 `Legendary`，各以其品質顏色
   顯示。選擇一種品質後，只列出該品質的物品。
 - 列出的物品數量，顯示為 `<n> items`。
@@ -256,9 +266,28 @@ Ranked by item level, then quality; stats are not considered
   不會關閉視窗。輸入的內容會保留到 `/reload` 或登出為止，但不會存檔；之後輸入框會再次顯示 `10/s` 與 `100`。
 - `Start`：以這些數值從掃描位置開始掃描。掃描進行中時，不論是從這裡還是以 `/tandem scan` 開始，按鈕都會顯示
   `Stop`，點擊後會像 `/tandem scan stop` 一樣停止掃描。
-- 該列最後的 `Stat search`（屬性搜尋）輸入框；見[屬性搜尋](#屬性搜尋)。
 - 狀態列。掃描進行中顯示 `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>`，視窗開啟期間每秒更新；
   其他時候顯示 `<n> known items, next scan from ID <id>`。
+
+掃描列下方有兩排、共十二個屬性勾選框，依屬性篩選清單（zhTW 用戶端顯示中文名稱）：
+
+```text
+[ ] Strength  [ ] Agility  [ ] Stamina  [ ] Intellect     [ ] Spirit  [ ] Spell power
+[ ] Healing   [ ] Hit      [ ] Crit     [ ] Attack power  [ ] MP5     [ ] Defense
+[ ] 力量      [ ] 敏捷     [ ] 耐力     [ ] 智力          [ ] 精神    [ ] 法術能量
+[ ] 治療      [ ] 命中     [ ] 致命一擊 [ ] 攻擊強度      [ ] 法力恢復 [ ] 防禦
+```
+
+- 勾選一個框時，只列出有該屬性（大於 0）的物品。勾選多個時，物品必須全部都有：勾選 `耐力` 與 `智力` 只列出兩者都有的
+  物品。清單維持分數順序，數量也跟著更新。
+- 屬性是掃描時讀到的（見 [`/tandem scan`](#tandem-scan)）：先用你自己的，沒有時才用隨附資料。勾選任何框時，標示
+  `(no stats)` 的物品都會隱藏，因為不知道它們的屬性。
+- `法術能量` 是「傷害與治療」那一行，`治療` 是只有治療的那一行，`命中` 與 `致命一擊` 是物理的那兩項；法術命中與法術
+  致命一擊沒有勾選框。護甲與武器傷害也沒有，因為幾乎每件物品都有。
+- 取消所有勾選即可再次列出所有物品。勾選框一開始都未勾選，在用戶端執行期間保留，但不會存檔。把物品拖到視窗上會取消
+  所有勾選，讓該物品顯示出來。
+- 它們使用已儲存的屬性，不需要提示框 API。要搜尋提示框文字，請用 `/tandem gear <slot> <words>`；見
+  [屬性搜尋](#屬性搜尋)。
 
 從掃描列開始的掃描會印出與指令相同的聊天訊息，例如 `Tandem: scanning <n> IDs from ID <id>` 與摘要。數值無效時會印出
 指令的用法說明，不會開始掃描：
@@ -270,11 +299,16 @@ Ranked by item level, then quality; stats are not considered
 戰鬥中，`Start` 與 `Stop` 只會印出 `Tandem: not available in combat`，不做任何事。掃描結束時（達到上限或被停止），
 已開啟的視窗會重新列出物品，因此掃描找到的物品不必重新開啟視窗就會出現。
 
-每一列顯示：
+清單依[裝備如何排名](#裝備如何排名)的順序排列：有分數的物品依分數排序，接著是標示 `(no stats)` 的物品，依物品等級
+排序。清單右上方以灰色標題 `Score`、`iLvl` 與 `Req`（zhTW 為 `分數`、`裝等` 與 `需求`）標出三欄數字。每一列顯示：
 
 - 物品圖示；用戶端沒有提供時顯示問號。
-- 以品質顏色顯示的物品名稱，後面以灰色接著[裝備如何排名](#裝備如何排名)中的標示：`(equipped)`、`(upgrade)` 或
-  `(no known source)`。與 `gear ... all` 一樣，視窗也會列出沒有已知來源的物品。半透明的物品絕不會標示 `(upgrade)`。
+- 以品質顏色顯示的物品名稱，後面以灰色接著[裝備如何排名](#裝備如何排名)中的標示：`(equipped)`、`(upgrade)`、
+  `(no stats)` 或 `(no known source)`。與 `gear ... all` 一樣，視窗也會列出沒有已知來源的物品。半透明的物品絕不會
+  標示 `(upgrade)`。
+- 依你的職業與天賦樹算出的屬性分數，取一位小數，例如 `12.5`；標示 `(no stats)` 的物品這一欄空白。以
+  [`/tandem weights`](#tandem-weights) 變更權重或天賦樹後，下次重新列出清單時（例如變更篩選條件或重新開啟視窗）就會
+  反映。
 - 物品等級，接著是一個等級。通常是物品的需求等級。你的等級不足以使用該物品時，改以紅色顯示你從幾級起可以使用：取
   物品需求等級與你的職業學會該護甲或武器類型的等級中較高者，例如獵人看鎖甲會顯示 `40`。你的職業完全無法使用的物品
   只會以半透明顯示，不會變紅。
@@ -301,7 +335,7 @@ Ranked by item level, then quality; stats are not considered
 開始時關閉，之後也不會自動重新開啟。按 Escape 也能關閉視窗。用滑鼠左鍵拖曳即可移動視窗。視窗位置存在
 `TandemDB.ui`，`/reload` 或下次登入後會還原；在你第一次移動它之前，視窗會在畫面中央開啟。
 
-視窗開啟時寬 640、高 620。拖曳右下角的拖曳點即可調整大小，範圍從 520 × 480 到 1200 × 1000；畫面較小時，上限為畫面
+視窗開啟時寬 640、高 620。拖曳右下角的拖曳點即可調整大小，範圍從 600 × 520 到 1200 × 1000；畫面較小時，上限為畫面
 大小。清單與物品名稱會隨視窗變寬，窗格則留在底部。每次移動視窗或調整大小時，大小都會與位置一起存在 `TandemDB.ui`，
 `/reload` 或下次登入後會還原，並限制在上述範圍內。用戶端無法調整框架大小時，不會有拖曳點，視窗維持預設大小。
 
@@ -328,7 +362,7 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
-`Quest reward pick`、`Upgrade alert`、`Item stats` 與 `Stat search`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search` 與 `Talent spec`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 
 ### `/tandem map`
 
@@ -352,12 +386,70 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 `zhTW` 用戶端的這些訊息與按鈕文字會顯示為中文。
 
+### `/tandem forget`
+
+`/tandem forget <from> <to>` 會刪除這個帳號自己記錄的、物品 ID 從 `<from>` 到 `<to>`（含兩端）的物品紀錄、物品屬性與
+掉落紀錄（掉落、任務獎勵與商人販售）。可用來清掉一段意義已經改變的 ID，例如測試版的物品，再重新掃描：
+
+```text
+/tandem forget 277000 277999
+Tandem: forgot 12 items, 12 stats and 3 loot rows with IDs 277000-277999
+```
+
+之後 `/tandem count` 的物品與掉落紀錄數會相應減少；範圍外的 ID 不受影響。每刪除一筆紀錄都算一筆未儲存紀錄，因此
+會在 `/reload` 或登出時儲存。NPC 與任務名稱、擊殺數與拾取屍體數會保留。[隨附資料](#隨附資料)不會被修改：其中的物品
+會一直顯示，直到 `make import` 寫出新的 `Loot.lua`。
+
+`<from>` 與 `<to>` 必須是 1 以上的整數，且 `<from>` 不大於 `<to>`；否則印出
+`Tandem: usage /tandem forget <from> <to>`，不刪除任何資料。存檔資料使用較新的結構版本時，印出
+`Recording is off: saved data uses a newer schema`。`zhTW` 用戶端的這些訊息會顯示為中文。
+
+### `/tandem weights`
+
+每個職業的三個天賦系各有一組內建的屬性權重。`/tandem weights` 顯示目前使用的權重：
+
+```text
+/tandem weights
+Tandem: Arms Warrior weights, tree 1 (auto)
+str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10
+```
+
+第一行列出目前的天賦系與它在天賦頁中的編號，接著是 `auto`（依你的天賦判斷）或 `manual`（你自己選的）。`auto` 時
+使用投入點數最多的天賦系；低於 10 級、尚未投入點數，或 [`/tandem check`](#tandem-check) 的 `Talent spec` 這行為
+`missing` 時，使用該職業常見的練功天賦系。第二行依下列順序，以屬性代碼列出每項有權重的屬性：
+`str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block blockvalue`。
+`sp` 是法術傷害與治療，`heal` 只有治療，`dps` 是武器的每秒傷害；命中與致命一擊的權重以每 1% 計。
+
+- `/tandem weights spec <1|2|3>` 選擇天賦系；`/tandem weights spec auto` 恢復依天賦判斷。會印出
+  `Tandem: weights use tree <n>` 或 `Tandem: weights follow your talents`。
+- `/tandem weights set <stat> <number>` 自訂目前天賦系某項屬性的權重，並印出 `Tandem: <stat> weight set to <number>`。
+  `0` 表示忽略該屬性；天賦系原本沒有權重的屬性會被加入。數字可以帶正負號與小數點，例如 `-1` 或 `0.5`。自訂的權重
+  標有 `*`，並接著一行 `* your own weight; /tandem weights reset drops them`。
+- `/tandem weights reset` 刪除目前天賦系的自訂權重，並印出 `Tandem: own weights for tree <n> dropped`。其他天賦系的
+  自訂權重保留。
+
+每次變更後都會顯示目前的權重。你的選擇依角色（`Name-Realm`）與天賦系分別儲存，因此切換天賦後仍會保留；它們不算紀錄，
+也不計入未儲存紀錄。其他訊息：
+
+- 其他任何輸入：`Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]`，不做任何變更。
+- 不在上列的屬性代碼：`Tandem: unknown stat <stat>; use one of: <keys>`。
+- 沒有內建權重的職業：`Tandem: no built-in weights for <class>`。
+- 存檔資料使用較新的結構版本，或用戶端尚未提供你的名字與伺服器時：
+  `Tandem: weights cannot be saved: recording is off or your character is not known yet`。
+
+`zhTW` 用戶端的這些訊息與天賦系名稱會顯示為中文。
+
 ## 裝備建議
 
 ### 裝備如何排名
 
-物品依物品等級排序，其次是品質，最後是物品 ID。不考慮屬性，因此法系物品也可能在戰士的排名中名列前茅。每個會排名的
-指令都會在最後一行說明這點。
+物品依屬性分數排序：物品上的每項屬性乘以你的職業與天賦樹對它的權重後加總。天賦樹是投入最多天賦點數的那一系；
+低於 10 級或讀不到天賦時，採用該職業常見的練功天賦（武器、懲戒、野獸控制、戰鬥、暗影、增強、冰霜、痛苦、野性戰鬥）。
+因此即使物品等級較低，力量物品在戰士的排名中仍會高於法系物品。分數相同時依物品等級、再依品質、最後依物品 ID 排序。
+分數為 0（屬性全都不在你的權重中）的物品仍算有分數。
+
+屬性先取自你自己的掃描，沒有時才用隨附資料。從未讀取過屬性的物品排在所有有分數的物品之後，依物品等級、品質、物品
+ID 排序，並標示 `(no stats)`；重新掃描即可讀取。每個會排名的指令都會在最後一行說明這點。
 
 `gear` 只列出、`rank` 只拿來比較的，都是你的職業與等級能使用的物品；勾選 `Usable only` 時，瀏覽視窗也一樣。物品可使用的條件：
 
@@ -371,8 +463,9 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 物品後的標示：
 
 - `(equipped)`：你正穿戴著它。
-- `(upgrade)`：它的物品等級高於你在該部位穿戴的物品；空部位視為物品等級 0。用戶端不提供你穿戴的物品時不會標示，
-  手持雙手武器時 `offhand` 也不會標示。
+- `(upgrade)`：它的分數高於你在該部位穿戴的物品；任一方沒有屬性時改比物品等級，空部位視為物品等級 0。用戶端不
+  提供你穿戴的物品時不會標示，手持雙手武器時 `offhand` 也不會標示。
+- `(no stats)`：尚未讀取它的屬性，因此排在有分數的物品之後。
 - `(no known source)`：沒有它的掉落、任務獎勵或商人紀錄（只出現在 `gear ... all` 與瀏覽視窗）。
 
 ### 物品提示框
@@ -381,8 +474,10 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 例如背包、角色資訊視窗與瀏覽視窗中的物品，以及在聊天視窗點擊物品連結時開啟的提示框。顯示你穿戴物品的比較提示框則
 不會加上任何內容。
 
-- 以 Tandem 藍色顯示 `Tandem: rank <n> of <total> for <slot>`，後面接著[裝備如何排名](#裝備如何排名)中的標示：
-  `(equipped)`、`(upgrade)` 或 `(no known source)`。排名與 `/tandem rank` 印出的相同。單手武器以主手武器排名；你的
+- 以 Tandem 藍色顯示 `Tandem: rank <n> of <total> for <slot>, score <score>`，後面接著[裝備如何排名](#裝備如何排名)
+  中的標示：`(equipped)`、`(upgrade)`、`(no stats)` 或 `(no known source)`。分數取一位小數；從未讀取屬性的物品沒有
+  `, score` 這段，並標示 `(no stats)`。排名與 `/tandem rank` 印出的相同；以 [`/tandem weights`](#tandem-weights)
+  變更權重或天賦樹後，下次滑鼠移上去時就會反映。單手武器以主手武器排名；你的
   職業在目前等級能雙持時，會像瀏覽視窗的 `All slots` 一樣同時與兩隻手比較。沒有排名部位的物品（例如襯衣）沒有排名
   這一行。
 - 你無法使用該物品時，以紅色顯示 `Tandem: you cannot use it: level <n> required` 或
@@ -398,7 +493,7 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 例如：
 
 ```text
-Tandem: rank 2 of 14 for Chest (upgrade)
+Tandem: rank 2 of 14 for Chest, score 24.5 (upgrade)
 Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 ```
 
@@ -449,11 +544,12 @@ Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 ### 任務獎勵建議
 
 交回可以從兩件以上獎勵中選擇一件的任務時（`QUEST_COMPLETE`），Tandem 會在最佳選擇的按鈕右上角放一個小小的 Tandem
-圖示。最佳選擇是你的職業與等級可以使用、且物品等級（相同時比品質）勝過其他每一件可用選擇的那一件，與
-[裝備如何排名](#裝備如何排名)相同。它不會與你身上的裝備比較：滑鼠移到該選擇上，可在[物品提示框](#物品提示框)看到它的
+圖示。最佳選擇是你的職業與等級可以使用、且勝過其他每一件可用選擇的那一件。每件可用選擇都有屬性時，只比屬性分數，與
+[裝備如何排名](#裝備如何排名)相同；任何一件標示 `(no stats)` 時，所有選擇都改比物品等級，相同時再比品質。它不會與你身上的裝備比較：滑鼠移到該選擇上，可在[物品提示框](#物品提示框)看到它的
 排名與 `(upgrade)` 標記。
 
-- 兩件可用選擇的物品等級與品質都相同而並列最佳、沒有任何可用選擇，或任務只提供一件選擇時，不會顯示圖示。
+- 兩件可用選擇的分數相同（沒有屬性時為物品等級與品質都相同）而並列最佳、沒有任何可用選擇，或任務只提供一件選擇時，
+  不會顯示圖示。
 - 用戶端尚未載入的選擇會向用戶端要求資料；所有選擇都送達後，只要獎勵視窗仍開著，就會顯示圖示。
 - 圖示只是建議：Tandem 絕不會替你選擇獎勵，仍要由你點選想要的那一件。
 - 獎勵視窗關閉時（`QUEST_FINISHED`）圖示會消失。
@@ -462,15 +558,17 @@ Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 
 ### 升級提醒
 
-當你的職業與等級可以使用、且物品等級高於該部位身上裝備的物品進入背包時（`BAG_UPDATE_DELAYED`，背包 0 到 4），聊天
-視窗會顯示一行：
+當你的職業與等級可以使用、且勝過該部位身上裝備的物品進入背包時（`BAG_UPDATE_DELAYED`，背包 0 到 4），聊天視窗會
+顯示一行。新物品與身上的物品都有屬性時比屬性分數，否則比物品等級：
 
 ```text
+Tandem：胸部的升級：[Plate Chest]（分數 24.5，高於 18.0）
 Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 ```
 
-規則與 [`/tandem gear`](#tandem-gear) 的 `(upgrade)` 標記相同：空的部位視為物品等級 0，戒指與飾品與身上較弱的那件比較，
-可雙持的單手武器與較弱的那隻手比較，正在使用雙手武器時副手物品不會提醒。不考慮屬性。
+規則與 [`/tandem gear`](#tandem-gear) 的 `(upgrade)` 標記相同：空的部位沒有屬性，視為物品等級 0，戒指與飾品與身上較弱
+的那件比較，可雙持的單手武器與較弱的那隻手比較，正在使用雙手武器時副手物品不會提醒。分數依你的職業與天賦樹，並套用你的
+[`/tandem weights`](#tandem-weights)。
 
 - 每件物品每次登入最多提醒一次，且只在它新進入背包時：登入時背包裡的物品會被靜默記下，在背包之間移動物品也不會提醒。
 - 用戶端尚未載入的物品會向用戶端要求資料，送達時（`GET_ITEM_INFO_RECEIVED`）若仍在背包裡就會判斷。
@@ -481,8 +579,8 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 
 ### 屬性搜尋
 
-依提示框上的文字找裝備，例如耐力或法術致命一擊。在瀏覽視窗的 `Stat search` 輸入框中輸入字詞，或接在
-`/tandem gear` 的部位後面：
+依提示框上的文字找裝備，例如耐力或法術致命一擊。把字詞接在 `/tandem gear` 的部位後面。瀏覽視窗則改用屬性勾選框
+篩選；見 [`/tandem browse`](#tandem-browse)。
 
 ```text
 /tandem gear chest 耐力
@@ -497,12 +595,10 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
   `裝備：使你的法術造成致命一擊的機率提高1%。`，因此要搜尋 `耐力` 或 `法術 致命一擊`。zhTW 上有幾個常用字詞會自動換成
   提示框的寫法：`體力` 搜尋 `耐力`，`暴擊` 搜尋 `致命一擊`，`法術暴擊` 搜尋 `法術 致命一擊`，所以 `+體力` 與
   `+法術暴擊` 也可以用。其他字詞必須與提示框的寫法相同。
-- 只搜尋通過其他篩選的物品：視窗中是部位與品質下拉選單、`Usable only` 與 `Hide deprecated`；指令中是部位、可使用的物品，
-  以及沒有 `all` 時只限有已知來源的物品。
-- 視窗會隨著輸入列出符合的物品，數量也跟著更新。用戶端尚未載入的物品視為不符合，並會向用戶端要求資料：數量顯示
-  `<n> items, <m> loading`，物品送達時就會加入清單。指令則改為印出
+- 只搜尋通過其他篩選的物品：部位、可使用的物品，以及沒有 `all` 時只限有已知來源的物品。
+- 用戶端尚未載入的物品視為不符合，並會向用戶端要求資料；指令會印出
   `<m> items are still loading; run the command again in a moment`。
-- 每件物品的提示框每次登入只讀取一次。把物品拖到視窗上會清空搜尋，讓該物品顯示出來。
+- 每件物品的提示框每次登入只讀取一次。
 - `/tandem gear <slot> <words>` 印出最多 10 件符合的物品，每件附上符合的那一行，最後印出
   `Sorted by the number on the matching tooltip line, then item level and quality`。字詞需要接在部位後面：單獨的 `all`
   是 [`/tandem gear`](#tandem-gear) 的參數，`/tandem gear all <words>` 會被當作未知的部位。
@@ -514,9 +610,9 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 依符合的提示行上的數字排序，再依物品等級與品質
 ```
 
-搜尋使用 `C_TooltipInfo.GetItemByID`。[`/tandem check`](#tandem-check) 的 `Stat search` 這行為 `missing` 時，輸入框會
-變灰，標籤顯示 `Stat search: not on this client`（zhTW 為 `屬性搜尋：此用戶端不支援`），指令則印出
-`Tandem: stat search is not available on this client; see /tandem check`。
+搜尋使用 `C_TooltipInfo.GetItemByID`。[`/tandem check`](#tandem-check) 的 `Stat search` 這行為 `missing` 時，指令會印出
+`Tandem: stat search is not available on this client; see /tandem check`；瀏覽視窗的屬性勾選框仍可使用，因為它們讀的是
+已儲存的屬性。
 
 ### 已棄用的物品
 
@@ -551,7 +647,8 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 ### 隨附資料
 
 addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/` 底下的所有貢獻合併而成：掉落紀錄（掉落、
-任務獎勵與商人物品）、依語系分組的 NPC 與任務名稱、看過每筆任務獎勵與商人物品的陣營、擊殺數、拾取屍體數與物品快取。
+任務獎勵與商人物品）、依語系分組的 NPC 與任務名稱、看過每筆任務獎勵與商人物品的陣營、擊殺數、拾取屍體數、物品快取，
+以及從物品提示框讀出的每件物品屬性（你為每個角色設定的屬性權重不會隨附）。
 指令會把它與你自己的 `TandemDB` 一起使用。每筆掉落紀錄的掉落次數取你的
 數值與隨附數值中較大者，因為你的資料可能已經包含在隨附檔案中。擊殺數與拾取屍體數不這樣混用：掉落率的掉落次數與分母
 取自同一份資料，詳見[掉落率](#掉落率)。兩邊都有的任務獎勵或商人物品會合併成一個來源，帶有兩邊的陣營。物品紀錄則以
@@ -573,6 +670,8 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 | `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
 | `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
 | `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
+| `stats`   | 每個物品 ID：屬性鍵對應數值，例如 `str = 5`；讀過但沒有屬性時為 `{}`，尚未讀取時不存在                |
+| `weights` | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`      |
 
 - 存在但不可裝備的物品只計入 `scan.nonEquippable`，不會儲存。
 - `scan.lastRun` 保存上次掃描的開始時間、ID 範圍、速率、經過秒數，以及摘要印出的各項計數。
@@ -587,8 +686,12 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
   或調整大小時儲存，`minimapHidden` 只在按鈕隱藏時存在。它不計入 `Unsaved records`，無效的位置、角度或旗標會在載入時
   捨棄。無效的大小只會單獨捨棄，位置仍會保留。
 
-`TandemDB.schemaVersion` 為 `3`。schema 2 的存檔資料會在載入時遷移，並新增空的 `quests`。較新 schema 的存檔資料會
-原樣保留，在 addon 更新之前不會記錄任何資料。
+- 屬性鍵為 `str`、`agi`、`sta`、`int`、`spi`、`armor`、`dps`、`ap`、`rap`、`sp`、`heal`、`hit`、`crit`、
+  `spellhit`、`spellcrit`、`mp5`、`def`、`dodge`、`parry`、`block` 與 `blockvalue`：`sp` 為法術傷害與治療，
+  `heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
+
+`TandemDB.schemaVersion` 為 `4`。schema 2 或 3 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，兩者都會新增
+空的 `stats` 與 `weights`。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會記錄任何資料。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。當機或強制結束會遺失上次存檔後收集的所有資料；`/tandem count`
 會顯示有多少筆紀錄尚未儲存。長時間掃描後請執行 `/reload`。
@@ -695,7 +798,7 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
     勾選框會取消勾選，該列以半透明顯示。
 17. 放上一件不在快取中的物品，例如任務物品：窗格顯示 `Tandem: item <id> is not known; scan or loot it first`。
 18. 從法術書拿起一個法術放到視窗上：什麼都不會改變，法術仍留在游標上。
-19. 拖曳右下角的拖曳點：視窗會放大縮小，但不會小於 520 × 480 或大於 1200 × 1000，清單與物品名稱隨寬度變化。把視窗
+19. 拖曳右下角的拖曳點：視窗會放大縮小，但不會小於 600 × 520 或大於 1200 × 1000，清單與物品名稱隨寬度變化。把視窗
     拉寬、移動它，輸入 `/reload`，再執行 `/tandem browse`：視窗以相同的位置與大小開啟。
 20. 在品質下拉選單選擇 `Rare`：只列出藍色（精良）的物品，數量減少。再選回 `All qualities`。選擇 `Rare` 時放上
     一件普通品質的物品：下拉選單顯示 `All qualities`。
@@ -705,15 +808,19 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
     那把時標示 `(upgrade)`。
 23. 以一件已棄用物品的 ID 執行 `/tandem gear` 與 `/tandem rank <id>`：`gear` 絕不會列出它，`rank` 會在排名那一行之後
     印出 `this item is deprecated`。
+24. 選擇 `Chest`。三欄數字上方有灰色的 `分數`、`裝等` 與 `需求` 標題。有分數的列排在前面，分數高的在前；標示
+    `(no stats)` 的列接在後面，分數欄空白。執行 `/tandem weights set sta 5` 後再選一次 `Chest`：有耐力的物品往前移，
+    分數也變大。之後執行 `/tandem weights reset`。
 
-請回報捲軸是否出現、步驟 2 捲動的感覺、步驟 11 收納選單與小地圖按鈕是否都有出現、步驟 19 是否有拖曳點、任何 Lua
-錯誤，以及任何在視窗中放不下的文字（視窗最小時也一樣）。
+請回報捲軸是否出現、步驟 2 捲動的感覺、步驟 11 收納選單與小地圖按鈕是否都有出現、步驟 19 是否有拖曳點、步驟 24 的
+標題是否對齊各欄、任何 Lua 錯誤，以及任何在視窗中放不下的文字（視窗最小時也一樣）。
 
 ### 檢查物品提示框
 
 1. 在戰鬥外，滑鼠移到背包中一件 Tandem 認得、且有排名部位的物品上。在遊戲的說明文字下方，一行藍色文字顯示
-   `Tandem: rank <n> of <total> for <slot>`，並帶有與瀏覽視窗中同一件物品相同的 `(equipped)`、`(upgrade)` 或
-   `(no known source)`。
+   `Tandem: rank <n> of <total> for <slot>, score <score>`，並帶有與瀏覽視窗中同一件物品相同的 `(equipped)`、
+   `(upgrade)` 或 `(no known source)`，分數也與瀏覽視窗那一列相同。標示 `(no stats)` 的物品沒有 `, score` 這段。執行
+   `/tandem weights set sta 5` 後再移上去一次：分數跟著變。之後執行 `/tandem weights reset`。
 2. 滑鼠移到一件你無法使用的物品上：一行紅色文字顯示 `Tandem: you cannot use it: level <n> required` 或
    `Tandem: your class cannot use it`。
 3. 滑鼠移到一件你從怪物身上拾取的物品上：一行灰色文字顯示 `Tandem: drops from <source>, <map>`，已知掉落率時附上
@@ -735,9 +842,9 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 物品提示框、任務與商人來源、地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與九行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十行，分別是 `Item tooltip`、
    `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert`、
-   `Item stats` 與 `Stat search`，每行後面接著 `ok` 或 `missing` 以及它的 API。
+   `Item stats`、`Stat search` 與 `Talent spec`，每行後面接著 `ok` 或 `missing` 以及它的 API。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -747,9 +854,10 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    為 `ok`，請進行[檢查資料收集](#檢查資料收集)的步驟 8 與提示框檢查的步驟 4。若 `Map pins` 為 `ok`，請進行
    [檢查地圖標記](#檢查地圖標記)。若步驟 2 中 `Quest reward pick` 為 `ok`，請進行[檢查任務獎勵建議](#檢查任務獎勵建議)。
    若 `Upgrade alert` 為 `ok`，請進行[檢查升級提醒](#檢查升級提醒)。若 `Stat search` 為 `ok`，請進行
-   [檢查屬性搜尋](#檢查屬性搜尋)。
+   [檢查屬性搜尋](#檢查屬性搜尋)。若 `Talent spec` 為 `ok`，在 10 級以上的角色執行 `/tandem weights`：第一行列出投入
+   點數最多的天賦系，後面接著 `(auto)`。
 
-請回報步驟 1 與 2 印出的每一行，以及任何 Lua 錯誤。
+請回報步驟 1 與 2 印出的每一行、步驟 5 中 `/tandem weights` 的第一行，以及任何 Lua 錯誤。
 
 ### 檢查地圖標記
 
@@ -772,43 +880,46 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 
 1. 在戰鬥外，交回一個提供兩件以上獎勵可選、且至少一件是你的職業可用的任務。獎勵視窗中，其中一件選擇的按鈕右上角
    有一個小小的 Tandem 圖示。聊天視窗不會印出任何訊息，也不會選取任何獎勵。
-2. 滑鼠移到每一件選擇上：有標記的那件，是你可用的選擇中物品等級最高的，或物品等級相同但品質較好的。記下每件選擇的
-   物品等級與品質。
+2. 滑鼠移到每一件選擇上：你可用的每件選擇的 Tandem 那一行都有 `, score` 時，有標記的那件分數最高；否則是其中物品等級
+   最高的，或物品等級相同但品質較好的。記下每件選擇的分數、物品等級與品質。
 3. 不選擇就關閉獎勵視窗，再與任務發布者對話一次：圖示再次出現在同一件選擇上。
-4. 對可用選擇的物品等級與品質都相同、或沒有任何你的職業可用選擇的任務：不會顯示圖示。
+4. 對可用選擇並列最佳分數（沒有屬性時為物品等級與品質都相同）、或沒有任何你的職業可用選擇的任務：不會顯示圖示。
 5. 若可以，在戰鬥中開啟獎勵視窗：不會顯示圖示，也不會印出任何訊息。
 
-請回報任務、各選擇的物品等級與品質、被標記的是哪一件、圖示在按鈕上的位置是否恰當或遮住了按鈕的一部分，以及任何
+請回報任務、各選擇的分數、物品等級與品質、被標記的是哪一件、圖示在按鈕上的位置是否恰當或遮住了按鈕的一部分，以及任何
 Lua 錯誤。
 
 ### 檢查升級提醒
 
 1. 背包裡放著一些裝備時登入或執行 `/reload`：不會出現 `Tandem：…的升級` 這行。
-2. 在戰鬥外，拾取、購買或從信箱取出一件你的職業可用、且物品等級高於該部位身上裝備的物品（或空部位的任何可用物品）。
-   聊天視窗顯示一行 `Tandem：<部位>的升級：<物品連結>（物品等級 <n>，高於 <m>）`，且不會裝備任何東西。
+2. 在戰鬥外，拾取、購買或從信箱取出一件你的職業可用、且提示框標示 `(upgrade)` 的物品（或空部位的任何可用物品）。
+   聊天視窗顯示一行，且不會裝備任何東西：兩件物品的提示框都有分數時為
+   `Tandem：<部位>的升級：<物品連結>（分數 <n>，高於 <m>）`，否則為
+   `Tandem：<部位>的升級：<物品連結>（物品等級 <n>，高於 <m>）`。
 3. 把該物品移到另一個背包、賣掉再買回，或丟棄後再拾取：本次登入不會再提醒它。
 4. 取得一件你無法使用、或不比身上裝備好的物品：不會提醒。
 5. 在戰鬥中拾取一件升級：戰鬥中不會顯示；戰鬥結束時才顯示那一行。
 6. 若可以，拾取一件用戶端從未顯示過的升級（新的掉落）：那一行可能在物品載入後稍晚才出現。
 
-請回報印出的每一行與當時身上裝備的物品等級、沒有提醒的升級或提醒了不是升級的物品，以及任何 Lua 錯誤。
+請回報印出的每一行與當時身上裝備的分數與物品等級、沒有提醒的升級或提醒了不是升級的物品，以及任何 Lua 錯誤。
 
 ### 檢查屬性搜尋
 
-1. 在戰鬥外執行 `/tandem browse chest`，或其他你掃描過的部位。掃描列最後有一個 `Stat search` 輸入框。
-2. 輸入 `耐力`（英文用戶端輸入 `+stamina`）。清單縮小為有耐力的物品，耐力最高的在最前面，數量也跟著更新。滑鼠移到
-   前幾列：每個提示框都有一行耐力，數字不低於下面的列。
-3. 輸入 `法術 致命一擊` 或 `+法術暴擊`（英文用戶端輸入 `spell critical`）：列出提示框有法術致命一擊裝備效果的物品，
-   百分比最高的在前。輸入 `體力`：清單與 `耐力` 相同。
-4. 若數量顯示 `<n> items, <m> loading`，稍等一下：物品會加入清單，載入中的部分會消失。
-5. 在輸入框中按 Escape：游標離開輸入框，視窗仍開著。清空輸入框：所有物品再次列出。
-6. 輸入框中有字詞時取消勾選 `Usable only` 或選擇一種品質：搜尋會跟著篩選。
-7. 執行 `/tandem gear chest 耐力` 與 `/tandem gear chest all 耐力`：聊天視窗列出符合的物品與其提示框那一行，數字最高的
-   在前，最後印出排序說明。
-8. 記下在 `All slots` 且取消勾選 `Usable only` 時第一次搜尋花了多久，以及遊戲是否卡住。
+1. 在戰鬥外執行 `/tandem browse chest`，或其他你掃描過的部位。掃描列下方有兩排未勾選的框，`力量` 到 `法術能量` 與
+   `治療` 到 `防禦`（英文用戶端為 `Strength` 到 `Spell power` 與 `Healing` 到 `Defense`），各欄上下對齊。點擊標籤：
+   它的框會切換，與點擊框本身相同。
+2. 勾選 `耐力`。清單縮小為有耐力的物品，仍依分數排序，數量也跟著更新；沒有任何一列標示 `(no stats)`。滑鼠移到幾列上：
+   每個提示框都有一行耐力。
+3. 再勾選 `智力`：只留下同時有耐力與智力的物品。取消勾選 `耐力`：清單列出有智力的物品。取消所有勾選：所有物品再次列出。
+4. 勾選 `耐力` 時取消勾選 `Usable only` 或選擇一種品質：屬性篩選會跟著其他篩選。從背包拖一件物品到視窗上：勾選全部
+   取消，該物品顯示出來。
+5. 執行 `/tandem gear chest 耐力` 與 `/tandem gear chest all 耐力`：聊天視窗列出符合的物品與其提示框那一行，數字最高的
+   在前，最後印出排序說明。執行 `/tandem gear chest 法術 致命一擊` 或 `+法術暴擊`：列出提示框有法術致命一擊裝備效果的
+   物品，百分比最高的在前。
+6. 記下在 `All slots` 且取消勾選 `Usable only` 時，勾選一個框後清單多久才變化，以及遊戲是否卡住。
 
-請回報搜尋字詞、前幾列與其提示框顯示的那一行、應該符合卻沒有符合的物品（附上用戶端寫的那一行）、步驟 8 的卡頓情形，
-以及任何 Lua 錯誤。
+請回報任何放不進欄位或與下一個框重疊的標籤、列在勾選屬性下但提示框沒有該屬性（或有卻沒列出）的物品、步驟 6 的卡頓
+情形，以及任何 Lua 錯誤。
 
 ## Interface number
 
@@ -856,29 +967,32 @@ make import
 ```
 
 ```text
-wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 15 kills, 12 looted corpses)
+wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 95 item stats, 15 kills, 12 looted corpses)
 wrote Tandem/Data/Loot.lua (1 contributors, 120 items, 42 loot rows)
 ```
 
 ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一個
 `<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua`，並寫入：
 
-| 檔案                          | 內容                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses` 及其語系，每次匯入都會覆寫 |
-| `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                               |
+| 檔案                          | 內容                                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses`、`stats` 與語系，匯入時覆寫 |
+| `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                                |
 
 合併檔會加總掉落次數、擊殺數與拾取屍體數，每筆掉落紀錄保留最多 5 個座標，NPC 與任務名稱依語系分組，物品快取則取
 聯集。任務獎勵或商人物品不論各份貢獻在哪張地圖看到，都合併成一列：保留最小的地圖 ID 與該地圖的座標，加總計數（因此
 計數就是看過它的貢獻者人數），並把陣營合併到 `S.factions`，key 為 `"<item>:<kind>:<id>:<map>"`；兩份
-貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。它也以 `contributors` 記錄合併了多少份貢獻。舊版的
-`data/loot.lua` 不再寫入。在匯入擊殺、屍體、物品與任務之前寫成的貢獻檔仍可讀取。
+貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。物品
+屬性 `S.stats[<item>] = { <stat> = <number>, ... }`（提示框沒有屬性行時為 `{}`）整份取自單一貢獻，不會混用：有該物品
+屬性的貢獻勝過沒有的，屬性項目最多的那份為準，數量相同時以檔名排序在前的那份為準。它也以 `contributors` 記錄合併了
+多少份貢獻。舊版的 `data/loot.lua` 不再寫入。在匯入擊殺、屍體、物品、任務與屬性之前寫成的貢獻檔仍可讀取。
 
 - `<id>` 是帳號資料夾名稱 SHA-256 的前 12 個十六進位字元。資料夾名稱，也就是帳號號碼，絕不會被寫入或印出；同一個
   帳號永遠得到相同的 ID。
 - 語系取自 `WTF/Config.wtf` 的 `SET textLocale` 這一行，沒有時為 `enUS`。NPC 名稱與任務名稱以用戶端語言儲存，因此
   `Tandem/Data/Loot.lua` 把它們分別放在 `names[<locale>]` 與 `questNames[<locale>]` 底下。
-- `scan` 與 `ui` 只留在本機。`items` 會匯入，因為只在自己掃描的幾百件物品之間排名意義不大。
+- `scan`、`ui`、`weights` 與 `statsVersion` 只留在本機：屬性權重屬於單一角色。`items` 與 `stats` 會匯入，因為只在
+  自己掃描的幾百件物品之間排名意義不大。
 - 重複執行是安全的：每個帳號的貢獻都是完整的快照，會取代上一份，因此掉落次數不會重複加總，相同的輸入也會產生逐位元組
   相同的檔案。
 - 每個 SavedVariables 檔案都在空的環境中執行，沒有任何函式可呼叫，執行時間也有上限；它的 `TandemDB` 會以 addon

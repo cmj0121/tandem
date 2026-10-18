@@ -1,8 +1,9 @@
 local _, ns = ...
 
 -- Says in chat when an item new in the bags beats what the player wears (decision 4): one line per item, at most once
--- per item per session, by the View.Marks rule. Advises only: nothing is equipped, and a line due in combat waits
--- until combat ends. The first bag snapshot after login is taken silently.
+-- per item per session, by View.IsUpgrade: stat score when both sides have stats, else item level. Advises only:
+-- nothing is equipped, and a line due in combat waits until combat ends. The first bag snapshot after login is taken
+-- silently.
 local Upgrade = {}
 ns.Upgrade = Upgrade
 
@@ -59,17 +60,23 @@ local function judge(id)
     if not r or not class then
         return
     end
-    local place = ns.Advisor.PlaceRecord(r, class, level)
+    local View = ns.View
+    local place = ns.Advisor.PlaceRecord(r, class, level, id)
     if not (place.slot and place.usable) then
         return
     end
-    local worn = place.offhand and ns.View.EquippedHands() or ns.View.Equipped(place.slot)
-    if worn.ids[id] or not worn.ilvl or r[1] <= worn.ilvl then
+    local worn = place.offhand and View.EquippedHands() or View.Equipped(place.slot)
+    if worn.ids[id] or not View.IsUpgrade({ ilvl = r[1], score = place.score, usable = true }, worn) then
         return
     end
     alerted[id] = true
-    say(L["Tandem: upgrade for %s: %s (item level %d over %d)"]:format(ns.View.SlotLabel(place.slot),
-        ns.View.ItemLink(id, r[3]), r[1], worn.ilvl))
+    local slot, link = View.SlotLabel(place.slot), View.ItemLink(id, r[3])
+    if place.score and worn.score then
+        say(L["Tandem: upgrade for %s: %s (score %s over %s)"]:format(slot, link, View.ScoreText(place.score),
+            View.ScoreText(worn.score)))
+    else
+        say(L["Tandem: upgrade for %s: %s (item level %d over %d)"]:format(slot, link, r[1], worn.ilvl))
+    end
 end
 
 -- BAG_UPDATE_DELAYED: judges the item ids not in the last snapshot.

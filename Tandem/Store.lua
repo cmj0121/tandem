@@ -5,8 +5,20 @@ local _, ns = ...
 local Store = { unsaved = 0, revision = 0, readOnly = false, itemCount = 0 }
 ns.Store = Store
 
-local SCHEMA = 3
+local SCHEMA = 4
 Store.SCHEMA = SCHEMA
+-- Locale-independent stat keys a stats record may carry: sp is spell damage and healing, heal healing only, dps a
+-- weapon's damage per second.
+local STAT_KEYS = {
+    "str", "agi", "sta", "int", "spi", "armor", "dps", "ap", "rap", "sp", "heal", "hit", "crit", "spellhit",
+    "spellcrit", "mp5", "def", "dodge", "parry", "block", "blockvalue",
+}
+Store.STAT_KEYS = STAT_KEYS
+local IS_STAT = {}
+for _, key in ipairs(STAT_KEYS) do
+    IS_STAT[key] = true
+end
+local MAX_SPEC = 3
 local MAX_COORDS = 5
 -- c creature, o object, ? unknown: drops counted per loot. q quest (id = questID), v vendor (id = merchant npcID):
 -- sources recorded once with the first sighting's map and coords, and a factions bitmask.
@@ -86,6 +98,8 @@ local function newDB()
         loot = {},
         kills = {},
         corpses = {},
+        stats = {},
+        weights = {},
     }
 end
 
@@ -120,6 +134,54 @@ local function copyLoot(v)
     end
     return { item = v.item, kind = v.kind, id = v.id, map = v.map, count = once and 1 or v.count, coords = coords,
              factions = once and v.factions or nil }
+end
+
+-- Returns a clean copy of a { statKey = number } table, dropping (and calling drop for) each invalid entry; nil
+-- when v is not a table.
+local function copyStats(v, drop)
+    if type(v) ~= "table" then
+        return nil
+    end
+    local out = {}
+    for key, n in pairs(v) do
+        if IS_STAT[key] and isNum(n) then
+            out[key] = n
+        else
+            drop()
+        end
+    end
+    return out
+end
+
+local function isSpec(v)
+    return isInt(v, 1) and v <= MAX_SPEC
+end
+
+-- Returns a clean copy of a character's weights { spec = n|nil, overrides = { [spec] = { statKey = w } } }, or nil
+-- when v is not a table; drop is called once for each invalid field or entry inside it.
+local function copyWeights(v, drop)
+    if type(v) ~= "table" then
+        return nil
+    end
+    local out = { overrides = {} }
+    if isSpec(v.spec) then
+        out.spec = v.spec
+    elseif v.spec ~= nil then
+        drop()
+    end
+    if type(v.overrides) == "table" then
+        for spec, w in pairs(v.overrides) do
+            local clean = isSpec(spec) and copyStats(w, drop)
+            if clean then
+                out.overrides[spec] = clean
+            else
+                drop()
+            end
+        end
+    elseif v.overrides ~= nil then
+        drop()
+    end
+    return out
 end
 
 -- Fills sources from db.loot.
@@ -301,6 +363,29 @@ local function migrate(raw, report)
         end
     end
 
+    for id, v in pairs(entries(raw.stats)) do
+        local stats = isInt(id, 1) and copyStats(v, drop)
+        if stats then
+            db.stats[id] = stats
+        else
+            drop()
+        end
+    end
+    if isInt(raw.statsVersion, 1) then
+        db.statsVersion = raw.statsVersion
+    elseif raw.statsVersion ~= nil then
+        drop()
+    end
+
+    for name, v in pairs(entries(raw.weights)) do
+        local weights = type(name) == "string" and name ~= "" and copyWeights(v, drop)
+        if weights then
+            db.weights[name] = weights
+        else
+            drop()
+        end
+    end
+
     if raw.ui ~= nil then
         db.ui = copyUI(raw.ui, drop)
     end
@@ -458,6 +543,103 @@ function Store.AddSource(item, kind, id, map, x, y, faction)
     sources[skey] = key
     changed()
     return true
+end
+
+-- Store.SetStats(id, stats) -> changed
+-- Records an item's parsed stats as { statKey = number } (an empty table: parsed, none found), replacing any saved
+-- ones. False when unchanged, when id or any key or value is invalid, or read-only.
+function Store.SetStats(id, stats)
+    if Store.readOnly or not isInt(id, 1) or type(stats) ~= "table" then
+        return false
+    end
+    local valid = true
+    local clean = copyStats(stats, function()
+        valid = false
+    end)
+    if not valid then
+        return false
+    end
+    local old = Store.db.stats[id]
+    if old and count(old) == count(clean) then
+        local same = true
+        for key, n in pairs(clean) do
+            same = same and old[key] == n
+        end
+        if same then
+            return false
+        end
+    end
+    Store.db.stats[id] = clean
+    changed()
+    return true
+end
+
+-- Returns an item's saved stats { statKey = number }, or nil when not parsed yet or the db is newer (kept raw).
+function Store.Stats(id)
+    if not Store.readOnly then
+        return Store.db.stats[id]
+    end
+end
+
+-- Drops every saved stats record (read by an older parser, to be read again); false when none or read-only.
+function Store.ClearStats()
+    if Store.readOnly or next(Store.db.stats) == nil then
+        return false
+    end
+    Store.db.stats = {}
+    changed()
+    return true
+end
+
+-- Records the stat parser version the saved stats were read with; false when unchanged, invalid or read-only. Not a
+-- record.
+function Store.SetStatsVersion(version)
+    if Store.readOnly or not isInt(version, 1) or Store.db.statsVersion == version then
+        return false
+    end
+    Store.db.statsVersion = version
+    return true
+end
+
+-- Returns the saved stat parser version, or nil; nil too for a newer db (kept raw).
+function Store.StatsVersion()
+    if not Store.readOnly then
+        return Store.db.statsVersion
+    end
+end
+
+-- Store.Forget(from, to) -> { items = n, stats = n, loot = n }
+-- Drops the own item records, stats and loot rows (every kind) of item IDs from..to inclusive; each one dropped is a
+-- record change. Nil when from or to is not a whole number >= 1, from > to, or read-only.
+function Store.Forget(from, to)
+    if Store.readOnly or not isInt(from, 1) or not isInt(to, from) then
+        return nil
+    end
+    local db, gone = Store.db, { items = 0, stats = 0, loot = 0 }
+    local function inRange(id)
+        return id >= from and id <= to
+    end
+    for _, field in ipairs({ "items", "stats" }) do
+        for id in pairs(db[field]) do
+            if inRange(id) then
+                db[field][id] = nil
+                gone[field] = gone[field] + 1
+                changed()
+            end
+        end
+    end
+    Store.itemCount = Store.itemCount - gone.items
+    for key, entry in pairs(db.loot) do
+        if inRange(entry.item) then
+            db.loot[key] = nil
+            if SET_ONCE[entry.kind] then
+                sources[sourceKey(entry.item, entry.kind, entry.id)] = nil
+            end
+            gone.loot = gone.loot + 1
+            changed()
+        end
+    end
+    return gone
 end
 
 -- Records a quest name; false when unchanged, invalid or read-only.

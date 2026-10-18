@@ -1,7 +1,7 @@
 local _, ns = ...
 
--- Adds Tandem lines to item tooltips out of combat: where the item ranks in its slot, whether the player can use
--- it, and where it drops most.
+-- Adds Tandem lines to item tooltips out of combat: where the item ranks in its slot and its stat score, whether
+-- the player can use it, and where it drops most.
 local Tooltip = {}
 ns.Tooltip = Tooltip
 
@@ -16,11 +16,13 @@ local RED = { 1, 0.25, 0.25 }
 local LIGHT = { 0.8, 0.8, 0.8 }
 local GREY = { 0.5, 0.5, 0.5 }
 
--- Per-item results for one class:level:Store.revision over one own db and one shipped table, as Advisor's rank memo.
+-- Per-item results for one class:level:spec:Store.revision:Weights.revision over one own db and one shipped table,
+-- as Advisor's rank memo: a weight or spec change ranks again.
 local memo = {}
 
 local function entries(class, level)
-    local key = class .. ":" .. level .. ":" .. Store.revision
+    local key = class .. ":" .. level .. ":" .. tostring(ns.Weights.Active(class, level)) .. ":" .. Store.revision
+        .. ":" .. ns.Weights.revision
     if memo.key ~= key or memo.db ~= Store.db or memo.shipped ~= ns.Shipped then
         memo = { key = key, db = Store.db, shipped = ns.Shipped, items = {} }
     end
@@ -94,10 +96,16 @@ function Tooltip.OnItem(tooltip, data)
     end
     local r = e.rank
     if r.slot then
-        local row = { id = id, ilvl = record[1], sourced = r.sourced, usable = r.usable }
+        local row = { id = id, ilvl = record[1], score = r.score, sourced = r.sourced, usable = r.usable }
         local worn = r.offhand and View.EquippedHands() or View.Equipped(r.slot)
-        addLine(tooltip, L["Tandem: rank %d of %d for %s"]:format(r.rank, r.total, View.SlotLabel(r.slot))
-            .. View.Marks(row, worn), BLUE)
+        local text
+        if r.score then
+            text = L["Tandem: rank %d of %d for %s, score %s"]:format(r.rank, r.total, View.SlotLabel(r.slot),
+                View.ScoreText(r.score))
+        else
+            text = L["Tandem: rank %d of %d for %s"]:format(r.rank, r.total, View.SlotLabel(r.slot))
+        end
+        addLine(tooltip, text .. View.Marks(row, worn), BLUE)
     end
     if r.reason == "level" then
         addLine(tooltip, L["Tandem: you cannot use it: level %d required"]:format(r.needLevel), RED)

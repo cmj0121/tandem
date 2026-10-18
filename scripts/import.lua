@@ -1,5 +1,5 @@
--- Imports TandemDB loot (drops, quest rewards, vendor items), npc and quest names, kills, looted corpses and items
--- from saved-variables files into the repo.
+-- Imports TandemDB loot (drops, quest rewards, vendor items), npc and quest names, kills, looted corpses, items and
+-- item stats from saved-variables files into the repo. Stat weights are per character and stay out.
 -- Usage: lua scripts/import.lua <data-dir> <out-file> [<locale> <contributor-id> <saved-variables-file> ...]
 -- Each file overwrites <data-dir>/contributions/<id>.lua; <out-file> (the addon's Data/Loot.lua) is then rebuilt
 -- from every contribution. With no saved-variables files, only <out-file> is rebuilt.
@@ -80,7 +80,7 @@ end
 local function clean(c)
     local db, report = Store.Load({
         schemaVersion = Store.SCHEMA, loot = c.loot, npcs = c.npcs, quests = c.quests, items = c.items,
-        kills = c.kills, corpses = c.corpses,
+        kills = c.kills, corpses = c.corpses, stats = c.stats,
     })
     return db, report.dropped
 end
@@ -152,6 +152,17 @@ local function lootEntry(e)
     return "{ " .. table.concat(parts, ", ") .. " }"
 end
 
+-- { statKey = number } in Store.STAT_KEYS order, so the output does not depend on table order.
+local function statsEntry(s)
+    local parts = {}
+    for _, k in ipairs(Store.STAT_KEYS) do
+        if s[k] then
+            parts[#parts + 1] = k .. " = " .. scalar(s[k])
+        end
+    end
+    return #parts > 0 and "{ " .. table.concat(parts, ", ") .. " }" or "{}"
+end
+
 local function block(out, indent, name, t, format)
     out[#out + 1] = indent .. name .. " = {"
     for _, k in ipairs(sortedKeys(t)) do
@@ -188,6 +199,7 @@ local function writeContribution(path, locale, db)
     block(out, "    ", "items", db.items, list)
     block(out, "    ", "kills", db.kills, scalar)
     block(out, "    ", "corpses", db.corpses, scalar)
+    block(out, "    ", "stats", db.stats, statsEntry)
     out[#out + 1] = "}"
     return writeFile(path, out)
 end
@@ -238,7 +250,7 @@ end
 -- items and loot rows, or nil when it cannot be written.
 local function rebuild(dataDir, outFile)
     local dir = dataDir .. "/contributions"
-    local loot, names, questNames, items, kills, corpses, contributors = {}, {}, {}, {}, {}, {}, 0
+    local loot, names, questNames, items, kills, corpses, stats, contributors = {}, {}, {}, {}, {}, {}, {}, 0
     for _, name in ipairs(contributionFiles(dir)) do
         local _, c = sandbox(dir .. "/" .. name)
         if type(c) ~= "table" or type(c.locale) ~= "string" or not c.locale:match("^%a%a%a%a$") then
@@ -288,6 +300,13 @@ local function rebuild(dataDir, outFile)
             end
             sumInto(kills, db.kills)
             sumInto(corpses, db.corpses)
+            -- An item's stats come whole from one contribution: the one with the most stat keys, the lexically first
+            -- on a tie (files are read sorted). {} (parsed, none found) still beats no record.
+            for id, s in pairs(db.stats) do
+                if not stats[id] or count(s) > count(stats[id]) then
+                    stats[id] = s
+                end
+            end
         end
     end
 
@@ -319,7 +338,8 @@ local function rebuild(dataDir, outFile)
         "-- Rows are filled in functions of " .. CHUNK_ROWS .. " so no function exceeds Lua's constant limit.",
         "local _, ns = ...",
         "local S = { contributors = " .. scalar(contributors)
-            .. ", items = {}, loot = {}, factions = {}, kills = {}, corpses = {}, names = {}, questNames = {} }",
+            .. ", items = {}, loot = {}, factions = {}, kills = {}, corpses = {}, stats = {}, names = {},"
+            .. " questNames = {} }",
         "ns.Shipped = S",
     }
     -- Appends `target[key] = value` lines for each { key, value } pair, CHUNK_ROWS per local function.
@@ -356,6 +376,8 @@ local function rebuild(dataDir, outFile)
     emit("S.factions", keyed(factions, scalar))
     emit("S.kills", keyed(kills, scalar))
     emit("S.corpses", keyed(corpses, scalar))
+    out[#out + 1] = "-- S.stats[itemID] = { statKey = number }: tooltip stats, {} when the item has none"
+    emit("S.stats", keyed(stats, statsEntry))
     for _, locale in ipairs(sortedKeys(names)) do
         out[#out + 1] = "S.names" .. key(locale) .. " = {}"
         emit("S.names" .. key(locale), keyed(names[locale], scalar))
@@ -412,9 +434,9 @@ local function import(dataDir, locale, id, path)
     end
     local counts = Store.Counts()
     -- Kills and corpses are sums of hostile values, so they print through scalar rather than %d.
-    print(("wrote %s (%s: %d loot entries, %d npc names, %d quest names, %d items, %s kills, %s looted corpses)")
-        :format(dest, locale, counts.loot, counts.npcs, count(db.quests), counts.items, scalar(counts.kills),
-            scalar(counts.corpses)))
+    print(("wrote %s (%s: %d loot entries, %d npc names, %d quest names, %d items, %d item stats, %s kills, %s looted"
+        .. " corpses)"):format(dest, locale, counts.loot, counts.npcs, count(db.quests), counts.items, count(db.stats),
+            scalar(counts.kills), scalar(counts.corpses)))
     return true
 end
 
