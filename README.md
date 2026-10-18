@@ -724,18 +724,19 @@ Without the file, the commands use your own data only.
 Everything goes into one account-wide table, `TandemDB`, saved as
 `<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`.
 
-| Key       | Content                                                                                                           |
-| --------- | ----------------------------------------------------------------------------------------------------------------- |
-| `items`   | Per equippable item ID: item level, required level, quality, equip slot, class, subclass; a 7th `1` if deprecated |
-| `scan`    | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run                                  |
-| `loot`    | Per item, source and map: npc, object, quest or merchant ID, map ID, drops, up to 5 positions; factions           |
-| `npcs`    | Npc names by npc ID, merchants included                                                                           |
-| `quests`  | Quest titles by quest ID                                                                                          |
-| `kills`   | Per npc ID: your character's killing blows on that npc                                                            |
-| `corpses` | Per npc ID: distinct corpses of that npc you looted                                                               |
-| `ui`      | `window`: anchor, relative point, x, y, width, height; `minimap`: button angle; `minimapHidden`: `true` if hidden |
-| `stats`   | Per item ID: stat key to value, such as `str = 5`; `{}` when read with no stats, absent when not read yet         |
-| `weights` | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec             |
+| Key        | Content                                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `items`    | Per equippable item ID: item level, required level, quality, equip slot, class, subclass; 7th `1` if deprecated |
+| `scan`     | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run                                |
+| `loot`     | Per item, source and map: npc, object, quest or merchant ID, map ID, drops, up to 5 positions; factions         |
+| `npcs`     | Npc names by npc ID, merchants included                                                                         |
+| `quests`   | Quest titles by quest ID                                                                                        |
+| `kills`    | Per npc ID: your character's killing blows on that npc                                                          |
+| `corpses`  | Per npc ID: distinct corpses of that npc you looted                                                             |
+| `ui`       | `window`: anchor, relative point, x, y, width, height; `minimap`: button angle; `minimapHidden`: true if hidden |
+| `stats`    | Per item ID: stat key to value, such as `str = 5`; `{}` when read with no stats, absent when not read yet       |
+| `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec           |
+| `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none)  |
 
 - Items that exist but cannot be equipped are counted in `scan.nonEquippable`, not stored.
 - `scan.lastRun` holds the last run's start time, ID range, rate, elapsed seconds and the counts the summary prints.
@@ -759,10 +760,12 @@ Everything goes into one account-wide table, `TandemDB`, saved as
   `statsVersion` is the version of the reader the saved stats were read with. On load, an unknown stat key or a value
   that is not a number is dropped alone, as is an invalid `spec` or override; an item's or character's entry that is
   not a table is dropped.
+- A `trainers` class key is an uppercase class token such as `MAGE`. On load, a spell ID or entry that is not valid
+  is dropped alone, and a class key that is not a token, or whose spells are not a table, is dropped.
 
-`TandemDB.schemaVersion` is `4`. Saved data from schema 2 or 3 is migrated on load: schema 2 gains an empty `quests`,
-and both gain empty `stats` and `weights`. Saved data from a newer schema is kept as it is, and nothing is recorded
-until the addon is updated.
+`TandemDB.schemaVersion` is `5`. Saved data from schema 2, 3 or 4 is migrated on load: schema 2 gains an empty
+`quests`, schemas 2 and 3 gain empty `stats` and `weights`, and all three gain an empty `trainers`. Saved data from
+a newer schema is kept as it is, and nothing is recorded until the addon is updated.
 
 The client writes `Tandem.lua` only on logout or `/reload`. A crash or a forced quit loses everything collected since
 the last save; `/tandem count` shows how many records are waiting. `/reload` after a long scan.

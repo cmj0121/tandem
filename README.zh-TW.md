@@ -660,18 +660,19 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 所有資料都存在一個帳號共用的表 `TandemDB`，存檔位置為
 `<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
-| Key       | 內容                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------- |
-| `items`   | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class、subclass；已棄用時第七個欄位為 `1`      |
-| `scan`    | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描                     |
-| `loot`    | 依物品、來源與地圖分組：NPC、物件、任務或商人 ID、地圖 ID、掉落次數、最多 5 個不同的座標；陣營        |
-| `npcs`    | 以 NPC ID 對應的 NPC 名稱，包含商人                                                                   |
-| `quests`  | 以任務 ID 對應的任務名稱                                                                              |
-| `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
-| `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
-| `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
-| `stats`   | 每個物品 ID：屬性鍵對應數值，例如 `str = 5`；讀過但沒有屬性時為 `{}`，尚未讀取時不存在                |
-| `weights` | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`      |
+| Key        | 內容                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------- |
+| `items`    | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class、subclass；已棄用時第七個欄位為 `1`      |
+| `scan`     | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描                     |
+| `loot`     | 依物品、來源與地圖分組：NPC、物件、任務或商人 ID、地圖 ID、掉落次數、最多 5 個不同的座標；陣營        |
+| `npcs`     | 以 NPC ID 對應的 NPC 名稱，包含商人                                                                   |
+| `quests`   | 以任務 ID 對應的任務名稱                                                                              |
+| `kills`    | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
+| `corpses`  | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
+| `ui`       | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
+| `stats`    | 每個物品 ID：屬性鍵對應數值，例如 `str = 5`；讀過但沒有屬性時為 `{}`，尚未讀取時不存在                |
+| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`      |
+| `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在）   |
 
 - 存在但不可裝備的物品只計入 `scan.nonEquippable`，不會儲存。
 - `scan.lastRun` 保存上次掃描的開始時間、ID 範圍、速率、經過秒數，以及摘要印出的各項計數。
@@ -689,9 +690,12 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 - 屬性鍵為 `str`、`agi`、`sta`、`int`、`spi`、`armor`、`dps`、`ap`、`rap`、`sp`、`heal`、`hit`、`crit`、
   `spellhit`、`spellcrit`、`mp5`、`def`、`dodge`、`parry`、`block` 與 `blockvalue`：`sp` 為法術傷害與治療，
   `heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
+- `trainers` 的職業鍵是大寫的職業代號，例如 `MAGE`。載入時，無效的法術 ID 或項目會單獨捨棄；不是職業代號的鍵，
+  或法術不是表的職業，會被捨棄。
 
-`TandemDB.schemaVersion` 為 `4`。schema 2 或 3 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，兩者都會新增
-空的 `stats` 與 `weights`。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會記錄任何資料。
+`TandemDB.schemaVersion` 為 `5`。schema 2、3 或 4 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，
+schema 2 與 3 會新增空的 `stats` 與 `weights`，三者都會新增空的 `trainers`。較新 schema 的存檔資料會原樣保留，
+在 addon 更新之前不會記錄任何資料。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。當機或強制結束會遺失上次存檔後收集的所有資料；`/tandem count`
 會顯示有多少筆紀錄尚未儲存。長時間掃描後請執行 `/reload`。
