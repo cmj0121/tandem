@@ -1,5 +1,6 @@
--- Imports TandemDB loot (drops, quest rewards, vendor items), npc and quest names, kills, looted corpses, items and
--- item stats from saved-variables files into the repo. Stat weights are per character and stay out.
+-- Imports TandemDB loot (drops, quest rewards, vendor items), npc and quest names, kills, looted corpses, items,
+-- item stats and class trainer spells from saved-variables files into the repo. Stat weights are per character and
+-- stay out.
 -- Usage: lua scripts/import.lua <data-dir> <out-file> [<locale> <contributor-id> <saved-variables-file> ...]
 -- Each file overwrites <data-dir>/contributions/<id>.lua; <out-file> (the addon's Data/Loot.lua) is then rebuilt
 -- from every contribution. With no saved-variables files, only <out-file> is rebuilt.
@@ -80,7 +81,7 @@ end
 local function clean(c)
     local db, report = Store.Load({
         schemaVersion = Store.SCHEMA, loot = c.loot, npcs = c.npcs, quests = c.quests, items = c.items,
-        kills = c.kills, corpses = c.corpses, stats = c.stats,
+        kills = c.kills, corpses = c.corpses, stats = c.stats, trainers = c.trainers,
     })
     return db, report.dropped
 end
@@ -163,6 +164,10 @@ local function statsEntry(s)
     return #parts > 0 and "{ " .. table.concat(parts, ", ") .. " }" or "{}"
 end
 
+local function trainerEntry(e)
+    return "{ level = " .. scalar(e.level) .. (e.rank and ", rank = " .. scalar(e.rank) or "") .. " }"
+end
+
 local function block(out, indent, name, t, format)
     out[#out + 1] = indent .. name .. " = {"
     for _, k in ipairs(sortedKeys(t)) do
@@ -200,6 +205,11 @@ local function writeContribution(path, locale, db)
     block(out, "    ", "kills", db.kills, scalar)
     block(out, "    ", "corpses", db.corpses, scalar)
     block(out, "    ", "stats", db.stats, statsEntry)
+    out[#out + 1] = "    trainers = {"
+    for _, classFile in ipairs(sortedKeys(db.trainers)) do
+        block(out, "        ", key(classFile), db.trainers[classFile], trainerEntry)
+    end
+    out[#out + 1] = "    },"
     out[#out + 1] = "}"
     return writeFile(path, out)
 end
@@ -250,7 +260,8 @@ end
 -- items and loot rows, or nil when it cannot be written.
 local function rebuild(dataDir, outFile)
     local dir = dataDir .. "/contributions"
-    local loot, names, questNames, items, kills, corpses, stats, contributors = {}, {}, {}, {}, {}, {}, {}, 0
+    local loot, names, questNames, items, kills, corpses, stats, trainers = {}, {}, {}, {}, {}, {}, {}, {}
+    local contributors = 0
     for _, name in ipairs(contributionFiles(dir)) do
         local _, c = sandbox(dir .. "/" .. name)
         if type(c) ~= "table" or type(c.locale) ~= "string" or not c.locale:match("^%a%a%a%a$") then
@@ -307,6 +318,22 @@ local function rebuild(dataDir, outFile)
                     stats[id] = s
                 end
             end
+            -- Trainer spells are a union per class. On the same spell the lower level wins, keeping its rank, and a
+            -- rank fills a missing one; at equal levels the lexically first file's rank stays.
+            for classFile, spells in pairs(db.trainers) do
+                local t = trainers[classFile] or {}
+                trainers[classFile] = t
+                for spellID, e in pairs(spells) do
+                    local have = t[spellID]
+                    if not have then
+                        t[spellID] = { level = e.level, rank = e.rank }
+                    elseif e.level < have.level then
+                        t[spellID] = { level = e.level, rank = e.rank or have.rank }
+                    else
+                        have.rank = have.rank or e.rank
+                    end
+                end
+            end
         end
     end
 
@@ -338,8 +365,8 @@ local function rebuild(dataDir, outFile)
         "-- Rows are filled in functions of " .. CHUNK_ROWS .. " so no function exceeds Lua's constant limit.",
         "local _, ns = ...",
         "local S = { contributors = " .. scalar(contributors)
-            .. ", items = {}, loot = {}, factions = {}, kills = {}, corpses = {}, stats = {}, names = {},"
-            .. " questNames = {} }",
+            .. ", items = {}, loot = {}, factions = {}, kills = {}, corpses = {}, stats = {}, trainers = {},"
+            .. " names = {}, questNames = {} }",
         "ns.Shipped = S",
     }
     -- Appends `target[key] = value` lines for each { key, value } pair, CHUNK_ROWS per local function.
@@ -378,6 +405,11 @@ local function rebuild(dataDir, outFile)
     emit("S.corpses", keyed(corpses, scalar))
     out[#out + 1] = "-- S.stats[itemID] = { statKey = number }: tooltip stats, {} when the item has none"
     emit("S.stats", keyed(stats, statsEntry))
+    out[#out + 1] = '-- S.trainers["CLASS"][spellID] = { level = n, rank = r|nil }: class trainer spells'
+    for _, classFile in ipairs(sortedKeys(trainers)) do
+        out[#out + 1] = "S.trainers" .. key(classFile) .. " = {}"
+        emit("S.trainers" .. key(classFile), keyed(trainers[classFile], trainerEntry))
+    end
     for _, locale in ipairs(sortedKeys(names)) do
         out[#out + 1] = "S.names" .. key(locale) .. " = {}"
         emit("S.names" .. key(locale), keyed(names[locale], scalar))

@@ -5,7 +5,7 @@ local _, ns = ...
 local Store = { unsaved = 0, revision = 0, readOnly = false, itemCount = 0 }
 ns.Store = Store
 
-local SCHEMA = 4
+local SCHEMA = 5
 Store.SCHEMA = SCHEMA
 -- Locale-independent stat keys a stats record may carry: sp is spell damage and healing, heal healing only, dps a
 -- weapon's damage per second.
@@ -100,6 +100,7 @@ local function newDB()
         corpses = {},
         stats = {},
         weights = {},
+        trainers = {},
     }
 end
 
@@ -151,6 +152,18 @@ local function copyStats(v, drop)
         end
     end
     return out
+end
+
+-- A class key is an uppercase class token such as "MAGE".
+local function isClass(v)
+    return type(v) == "string" and v:match("^[A-Z]+$") ~= nil
+end
+
+-- Returns a clean copy of a trainer entry { level = n, rank = r|nil }, or nil.
+local function copyTrainerSpell(v)
+    if type(v) == "table" and isInt(v.level, 1) and (v.rank == nil or isInt(v.rank, 1)) then
+        return { level = v.level, rank = v.rank }
+    end
 end
 
 local function isSpec(v)
@@ -381,6 +394,23 @@ local function migrate(raw, report)
         local weights = type(name) == "string" and name ~= "" and copyWeights(v, drop)
         if weights then
             db.weights[name] = weights
+        else
+            drop()
+        end
+    end
+
+    for classFile, spells in pairs(entries(raw.trainers)) do
+        if isClass(classFile) and type(spells) == "table" then
+            local clean = {}
+            for spellID, v in pairs(spells) do
+                local entry = isInt(spellID, 1) and copyTrainerSpell(v)
+                if entry then
+                    clean[spellID] = entry
+                else
+                    drop()
+                end
+            end
+            db.trainers[classFile] = clean
         else
             drop()
         end
@@ -640,6 +670,43 @@ function Store.Forget(from, to)
         end
     end
     return gone
+end
+
+-- Store.SetTrainerSpell(classFile, spellID, level, rank) -> changed
+-- Records that a classFile trainer teaches spellID (rank r or nil) from level. A spell already recorded keeps the
+-- lower level and its rank when rank is nil. False when invalid, read-only or unchanged.
+function Store.SetTrainerSpell(classFile, spellID, level, rank)
+    if Store.readOnly or not isClass(classFile) or not isInt(spellID, 1) then
+        return false
+    end
+    local entry = copyTrainerSpell({ level = level, rank = rank })
+    if not entry then
+        return false
+    end
+    local spells = Store.db.trainers[classFile]
+    local old = spells and spells[spellID]
+    if old then
+        entry.level = math.min(old.level, entry.level)
+        entry.rank = entry.rank or old.rank
+        if entry.level == old.level and entry.rank == old.rank then
+            return false
+        end
+    end
+    if not spells then
+        spells = {}
+        Store.db.trainers[classFile] = spells
+    end
+    spells[spellID] = entry
+    changed()
+    return true
+end
+
+-- Returns a class's recorded trainer spells { [spellID] = { level = n, rank = r|nil } }, or nil when none or the db
+-- is newer (kept raw).
+function Store.TrainerSpells(classFile)
+    if not Store.readOnly then
+        return Store.db.trainers[classFile]
+    end
 end
 
 -- Records a quest name; false when unchanged, invalid or read-only.

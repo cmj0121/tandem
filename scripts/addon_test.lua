@@ -143,24 +143,25 @@ local function loadWithDB(db, locale, opts)
 end
 
 local function isCurrent(db)
-    return type(db) == "table" and db.schemaVersion == 4 and type(db.items) == "table"
+    return type(db) == "table" and db.schemaVersion == 5 and type(db.items) == "table"
         and type(db.scan) == "table" and db.scan.cursor == 1 and db.scan.nonEquippable == 0
         and type(db.scan.blocks) == "table" and type(db.npcs) == "table" and type(db.quests) == "table"
         and type(db.loot) == "table"
         and type(db.kills) == "table" and type(db.corpses) == "table"
         and type(db.stats) == "table" and type(db.weights) == "table"
+        and type(db.trainers) == "table" and next(db.trainers) == nil
 end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v4 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v5 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
 end
 
 do
     local _, printed, env = loadWithDB("garbage")
-    check("garbage db becomes a fresh v4 table", isCurrent(env.TandemDB), true)
+    check("garbage db becomes a fresh v5 table", isCurrent(env.TandemDB), true)
     check("garbage db prints a reset line", printed[2], "Tandem: saved data was unreadable and has been reset")
 end
 
@@ -184,7 +185,7 @@ do
         unknownTop = true,
     })
     local db = env.TandemDB
-    check("old db is migrated to v4", db.schemaVersion, 4)
+    check("old db is migrated to v5", db.schemaVersion, 5)
     check("old db keeps a valid item", db.items[25] and db.items[25][4], "INVTYPE_HEAD")
     check("old db strips extra item fields", db.items[25] and #db.items[25], 6)
     check("old db drops an invalid item", db.items[26], nil)
@@ -214,26 +215,26 @@ do
     local _, printed, env = loadWithDB({ schemaVersion = 1, items = { [7] = { 1, 1, 1, "INVTYPE_FEET", 4, 2 } } })
     check("v1 db keeps its items", env.TandemDB.items[7][4], "INVTYPE_FEET")
     check("v1 db fills missing sections", isCurrent(env.TandemDB), true)
-    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 4")
+    check("v1 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 1 to 5")
     check("v1 db prints nothing else", #printed, 2)
 end
 
 for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
     local _, printed, env = loadWithDB({ schemaVersion = bad })
-    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 4)
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 5)
     check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
     local _, printed = loadWithDB({ schemaVersion = 1 }, "zhTW")
-    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 4")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 1 升級到 5")
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 4, kills = { [448] = 2 }, corpses = { [448] = 5 } })
-    check("v4 db keeps kills", env.TandemDB.kills[448], 2)
-    check("v4 db keeps corpses", env.TandemDB.corpses[448], 5)
-    check("valid v4 db prints only the load line", #printed, 1)
+    local _, printed, env = loadWithDB({ schemaVersion = 5, kills = { [448] = 2 }, corpses = { [448] = 5 } })
+    check("v5 db keeps kills", env.TandemDB.kills[448], 2)
+    check("v5 db keeps corpses", env.TandemDB.corpses[448], 5)
+    check("valid v5 db prints only the load line", #printed, 1)
 end
 
 -- Schema 3: a v2 db migrates losslessly (decision 8); schema 4: so does a v3 db (stage 7, decision 6).
@@ -285,26 +286,26 @@ do
     local want = deep(v2)
     local _, printed, env = loadWithDB(v2)
     local db = env.TandemDB
-    check("v2 db migrates to v4", db.schemaVersion, 4)
+    check("v2 db migrates to v5", db.schemaVersion, 5)
     check("v2 db gains an empty quests table", type(db.quests) == "table" and next(db.quests) == nil, true)
-    db.schemaVersion, db.quests, db.stats, db.weights, want.schemaVersion = nil, nil, nil, nil, nil
+    db.schemaVersion, db.quests, db.stats, db.weights, db.trainers, want.schemaVersion = nil, nil, nil, nil, nil, nil
     check("v2 db keeps every other field", same(db, want), true)
     check("v2 db prints only the upgrade line", printed[2] .. " #" .. #printed,
-        "Tandem: saved data upgraded from schema 2 to 4 #2")
+        "Tandem: saved data upgraded from schema 2 to 5 #2")
 
     local v3 = deep(v2)
     v3.schemaVersion, v3.quests = 3, { [176] = "Wanted: Hogger" }
     want = deep(v3)
     _, printed, env = loadWithDB(v3)
     db = env.TandemDB
-    check("v3 db migrates to v4", db.schemaVersion, 4)
+    check("v3 db migrates to v5", db.schemaVersion, 5)
     check("v3 db gains an empty stats table", type(db.stats) == "table" and next(db.stats) == nil, true)
     check("v3 db gains an empty weights table", type(db.weights) == "table" and next(db.weights) == nil, true)
     check("v3 db has no stats version", db.statsVersion, nil)
-    db.schemaVersion, db.stats, db.weights, want.schemaVersion = nil, nil, nil, nil
+    db.schemaVersion, db.stats, db.weights, db.trainers, want.schemaVersion = nil, nil, nil, nil, nil
     check("v3 db keeps every other field", same(db, want), true)
     check("v3 db prints only the upgrade line", printed[2] .. " #" .. #printed,
-        "Tandem: saved data upgraded from schema 3 to 4 #2")
+        "Tandem: saved data upgraded from schema 3 to 5 #2")
 
     v3 = deep(v2)
     v3.schemaVersion, v3.quests, v3.stats = 3, { [176] = "Wanted: Hogger" }, "bad"
@@ -313,15 +314,29 @@ do
     db = env.TandemDB
     check("v3 db with a bad stats field gets an empty one", type(db.stats) == "table" and next(db.stats) == nil,
         true)
-    db.schemaVersion, db.stats, db.weights, want.schemaVersion, want.stats = nil, nil, nil, nil, nil
+    db.schemaVersion, db.stats, db.weights, db.trainers, want.schemaVersion, want.stats = nil, nil, nil, nil, nil, nil
     check("v3 db with a bad stats field keeps its records", same(db, want), true)
     check("v3 db with a bad stats field counts it dropped", printed[3], "Tandem: dropped 1 invalid saved entries")
+
+    local v4 = deep(v2)
+    v4.schemaVersion, v4.quests = 4, { [176] = "Wanted: Hogger" }
+    v4.stats, v4.statsVersion = { [25] = { str = 5 }, [26] = {} }, 2
+    v4.weights = { ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5 } } } }
+    want = deep(v4)
+    _, printed, env = loadWithDB(v4)
+    db = env.TandemDB
+    check("v4 db migrates to v5", db.schemaVersion, 5)
+    check("v4 db gains an empty trainers table", type(db.trainers) == "table" and next(db.trainers) == nil, true)
+    db.schemaVersion, db.trainers, want.schemaVersion = nil, nil, nil
+    check("v4 db keeps every other field", same(db, want), true)
+    check("v4 db prints only the upgrade line", printed[2] .. " #" .. #printed,
+        "Tandem: saved data upgraded from schema 4 to 5 #2")
 end
 
 -- Store: item stats and weights (stage 7, decisions 6-8).
 do
     local addon, printed, env = loadWithDB({
-        schemaVersion = 4,
+        schemaVersion = 5,
         stats = {
             [10] = { str = 5, sta = 3, dps = 12.5 },
             [11] = {},
@@ -405,17 +420,82 @@ do
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 4, statsVersion = 1.5, weights = "bad" })
+    local _, printed, env = loadWithDB({ schemaVersion = 5, statsVersion = 1.5, weights = "bad" })
     check("stats: a fractional statsVersion is dropped", env.TandemDB.statsVersion, nil)
     check("weights: a non-table weights becomes empty", type(env.TandemDB.weights) == "table", true)
     check("stats: a bad version and weights count as dropped", printed[2], "Tandem: dropped 2 invalid saved entries")
+end
+
+-- Store: class trainer spells (stage 8, decision 4).
+do
+    local addon, printed, env = loadWithDB({
+        schemaVersion = 5,
+        trainers = {
+            MAGE = { [116] = { level = 4, rank = 1 }, [205] = { level = 8, rank = 2, extra = true },
+                     [1459] = { level = 1 }, [0] = { level = 1 }, [10] = { level = 0 }, [11] = { level = 2.5 },
+                     [12] = { level = 2, rank = 0 }, [13] = { level = 2, rank = "1" }, [14] = "bad",
+                     ["15"] = { level = 2 } },
+            WARRIOR = {},
+            mage = { [116] = { level = 4 } },
+            [""] = { [116] = { level = 4 } },
+            [7] = { [116] = { level = 4 } },
+            PRIEST = "bad",
+        },
+    })
+    local db, Store = env.TandemDB, addon.Store
+    local mage = db.trainers.MAGE
+    check("trainers: a valid entry is kept", mage[116].level .. " " .. mage[116].rank, "4 1")
+    check("trainers: extra entry fields are stripped", mage[205].level .. " " .. mage[205].rank .. " "
+        .. tostring(mage[205].extra), "8 2 nil")
+    check("trainers: a rankless entry is kept", mage[1459].level .. " " .. tostring(mage[1459].rank), "1 nil")
+    check("trainers: bad spellIDs and entries are dropped alone",
+        tostring(mage[0]) .. tostring(mage[10]) .. tostring(mage[11]) .. tostring(mage[12]) .. tostring(mage[13])
+        .. tostring(mage[14]) .. tostring(mage["15"]), "nilnilnilnilnilnilnil")
+    check("trainers: an empty class is kept", type(db.trainers.WARRIOR) == "table", true)
+    check("trainers: bad class keys are dropped", tostring(db.trainers.mage) .. tostring(db.trainers[""])
+        .. tostring(db.trainers[7]) .. tostring(db.trainers.PRIEST), "nilnilnilnil")
+    -- MAGE 0, 10, 11, 12, 13, 14, "15"; mage, "", 7, PRIEST
+    check("trainers: invalid entries are counted", printed[2], "Tandem: dropped 11 invalid saved entries")
+
+    check("TrainerSpells reads a class", Store.TrainerSpells("MAGE")[116].level, 4)
+    check("TrainerSpells is nil for an unseen class", Store.TrainerSpells("ROGUE"), nil)
+    local before = Store.revision
+    check("SetTrainerSpell records a spell", Store.SetTrainerSpell("ROGUE", 1752, 1, 1), true)
+    check("SetTrainerSpell writes TandemDB", db.trainers.ROGUE[1752].level .. " " .. db.trainers.ROGUE[1752].rank,
+        "1 1")
+    check("SetTrainerSpell is a record change", Store.revision .. " " .. Store.unsaved, (before + 1) .. " 1")
+    check("SetTrainerSpell skips an unchanged spell", Store.SetTrainerSpell("ROGUE", 1752, 1, 1), false)
+    check("SetTrainerSpell records a rankless spell", Store.SetTrainerSpell("ROGUE", 2983, 8), true)
+    check("SetTrainerSpell rankless has no rank", db.trainers.ROGUE[2983].rank, nil)
+    check("SetTrainerSpell keeps the lower level on a higher one", Store.SetTrainerSpell("MAGE", 116, 6, 1), false)
+    check("SetTrainerSpell lower level unchanged", mage[116].level, 4)
+    check("SetTrainerSpell takes a lower level", Store.SetTrainerSpell("MAGE", 116, 3, 1), true)
+    check("SetTrainerSpell lower level written", mage[116].level, 3)
+    check("SetTrainerSpell keeps the rank when given none", Store.SetTrainerSpell("MAGE", 116, 3), false)
+    check("SetTrainerSpell adds a rank to a rankless spell", Store.SetTrainerSpell("MAGE", 1459, 1, 1), true)
+    check("SetTrainerSpell rank added", mage[1459].rank, 1)
+    before = Store.unsaved
+    for name, args in pairs({
+        ["a lowercase class"] = { "mage", 1, 1 }, ["an empty class"] = { "", 1, 1 }, ["a number class"] = { 7, 1, 1 },
+        ["spell 0"] = { "MAGE", 0, 1 }, ["a fractional spell"] = { "MAGE", 1.5, 1 },
+        ["a string spell"] = { "MAGE", "1", 1 }, ["level 0"] = { "MAGE", 1, 0 }, ["nil level"] = { "MAGE", 1 },
+        ["a NaN level"] = { "MAGE", 1, 0 / 0 }, ["rank 0"] = { "MAGE", 1, 1, 0 },
+        ["a fractional rank"] = { "MAGE", 1, 1, 1.5 }, ["a string rank"] = { "MAGE", 1, 1, "1" },
+    }) do
+        check("SetTrainerSpell rejects " .. name, Store.SetTrainerSpell(args[1], args[2], args[3], args[4]), false)
+    end
+    check("SetTrainerSpell rejections write nothing", tostring(mage[1]) .. " " .. Store.unsaved, "nil " .. before)
+
+    local newer = loadWithDB({ schemaVersion = 6, trainers = { MAGE = { [116] = { level = 4 } } } }).Store
+    check("newer db blocks SetTrainerSpell", newer.SetTrainerSpell("MAGE", 1, 1, 1), false)
+    check("newer db reads no trainer spells", newer.TrainerSpells("MAGE"), nil)
 end
 
 -- Store.Forget and /tandem forget (unit F): drop own records of an item ID range.
 local function forgetDB()
     local item = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 }
     return {
-        schemaVersion = 4,
+        schemaVersion = 5,
         items = { [276999] = item, [277000] = item, [277500] = item, [277999] = item, [278000] = item },
         stats = { [277000] = { str = 1 }, [277001] = {}, [278000] = { sta = 2 } },
         loot = {
@@ -463,14 +543,14 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 5, items = { [5] = {} } })
+    local addon = loadWithDB({ schemaVersion = 6, items = { [5] = {} } })
     check("newer db blocks Forget", addon.Store.Forget(1, 10), nil)
 end
 
 -- Store: quest and vendor sources (stage 5, unit 1).
 do
     local addon, printed, env = loadWithDB({
-        schemaVersion = 4,
+        schemaVersion = 5,
         quests = { [176] = "Wanted: Hogger", [0] = "zero", [177] = "", [178] = 5 },
         loot = {
             a = { item = 1, kind = "q", id = 176, map = 1429, count = 3, coords = { { 1, 2 }, { 3, 4 } },
@@ -543,12 +623,12 @@ do
 end
 
 do
-    local newer = { schemaVersion = 5, items = "new format" }
+    local newer = { schemaVersion = 6, items = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items, "new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 5; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 6; recording is off until the addon is updated")
     check("newer db blocks AddItem", addon.Store.AddItem(1, 1, 1, 1, "INVTYPE_HEAD", 4, 1), false)
     check("newer db blocks AddLoot", addon.Store.AddLoot(1, "c", 1, 1), false)
     check("newer db blocks SetNpcName", addon.Store.SetNpcName(1, "x"), false)
@@ -698,7 +778,7 @@ do
 end
 
 do
-    local addon, printed = loadWithDB({ schemaVersion = 5 })
+    local addon, printed = loadWithDB({ schemaVersion = 6 })
     check("forget on a newer db says read-only", run(addon, printed, "forget 1 2")[1],
         "Recording is off: saved data uses a newer schema")
 end
@@ -837,7 +917,7 @@ do
 end
 
 do
-    local addon, printed = loadWithDB({ schemaVersion = 5, items = "new format" })
+    local addon, printed = loadWithDB({ schemaVersion = 6, items = "new format" })
     local out = run(addon, printed, "count")
     check("count on a newer db does not fail", out[1], "Tandem: 0 known items, ? non-equippable")
     check("count on a newer db says read-only", out[#out],
@@ -1101,7 +1181,7 @@ do
 end
 
 do
-    local ctx = loadScanner({}, { schemaVersion = 5, scan = { cursor = 9 } })
+    local ctx = loadScanner({}, { schemaVersion = 6, scan = { cursor = 9 } })
     local mark = #ctx.printed
     ctx.Scanner.Start({ rate = 10, cap = 5 })
     check("read-only start is refused", ctx.since(mark)[1], "Recording is off: saved data uses a newer schema")
@@ -1257,7 +1337,7 @@ end
 do
     -- backfill: a cached item without stats is read, one with current stats is skipped
     local ctx = withTips(loadScanner({ [4] = equip, [5] = equip, [6] = equip }, {
-        schemaVersion = 4, statsVersion = 1, scan = { cursor = 4 },
+        schemaVersion = 5, statsVersion = 1, scan = { cursor = 4 },
         items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 },
                   [6] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
         stats = { [5] = { sta = 1 }, [6] = {} },
@@ -1281,7 +1361,7 @@ end
 do
     -- a newer parser reads every cached item again and drops stats it has not re-read
     local ctx = withTips(loadScanner({ [5] = equip }, {
-        schemaVersion = 4, statsVersion = 1, scan = { cursor = 5 },
+        schemaVersion = 5, statsVersion = 1, scan = { cursor = 5 },
         items = { [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [7] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
         stats = { [5] = { sta = 1 }, [7] = { sta = 1 } },
     }), { [5] = { "Helm", "+2 Stamina", "+1 Strength" } })
@@ -1299,7 +1379,7 @@ do
     -- pending: an unloaded tooltip is retried, never stored as {}, and times out like an item query
     local tips = {}
     local ctx = withTips(loadScanner({ [4] = equip, [5] = equip }, {
-        schemaVersion = 4, scan = { cursor = 4 },
+        schemaVersion = 5, scan = { cursor = 4 },
         items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }, [5] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
     }), tips)
     ctx.Scanner.Start({ rate = 10, cap = 2 })
@@ -1342,7 +1422,7 @@ end
 do
     -- without the tooltip API a cached item is skipped and no stats are written
     local ctx = loadScanner({ [1] = equip, [4] = equip }, {
-        schemaVersion = 4, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+        schemaVersion = 5, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
     })
     ctx.Scanner.SetCursor(4)
     ctx.Scanner.Start({ rate = 10, cap = 1 })
@@ -1369,7 +1449,7 @@ end
 do
     -- a client without stat patterns caches items but leaves them unparsed, never saved as stat-less
     local ctx = withTips(loadScanner({ [1] = equip, [4] = equip }, {
-        schemaVersion = 4, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
+        schemaVersion = 5, scan = { cursor = 1 }, items = { [4] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } },
     }, "deDE"), { [1] = { "Helm", "+4 Ausdauer" }, [4] = { "Helm", "+2 Ausdauer" } })
     check("deDE: no stat patterns", ctx.addon.StatPatterns, nil)
     ctx.Scanner.Start({ rate = 10, cap = 1 })
@@ -1602,7 +1682,7 @@ do
 end
 
 do
-    local ctx = loadLoot({ schemaVersion = 5, loot = {} })
+    local ctx = loadLoot({ schemaVersion = 6, loot = {} })
     ctx.slots = { { link(25), sources = { HOGGER, 1 } } }
     ctx.loot()
     check("loot: read-only db is not written", next(ctx.env.TandemDB.loot), nil)
@@ -1745,7 +1825,7 @@ local MERCHANT = "Creature-0-1-0-12-1250-0000CAFE"
 -- (ctx.merchant = {guid, name, items = {links}}) and items ({[id] = {equipLoc, loaded = bool}}); the player is
 -- Alliance at map 1429, 0.4123/0.6789.
 local function loadSources(items)
-    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 4 })
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 5 })
     local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
                   faction = "Alliance", quest = { id = 0, choices = {}, rewards = {} },
                   merchant = { items = {} }, requested = {} }
@@ -1978,6 +2058,119 @@ do
     check("sources: a secret quest ID records nothing", ctx.loots(), 0)
 end
 
+-- Trainer: class trainer services recorded with stubbed trainer and tooltip APIs (stage 8, unit 2).
+
+-- Loads the addon with a trainer window of ctx.services ({ name, rank, kind, level, id }); the player is a mage out of
+-- combat at a class trainer. ctx.tradeskill makes it a tradeskill trainer.
+local function loadTrainer()
+    local addon, printed, env, fire, frame = loadWithDB({ schemaVersion = 5 })
+    local ctx = { addon = addon, printed = printed, env = env, fire = fire, frame = frame, combat = false,
+                  tradeskill = false, services = {
+                      { "Frost", nil, "header" },
+                      { "Frostbolt", "Rank 2", "available", 8, 205 },
+                      { "Ice Armor", "", "unavailable", 30, 7302 },
+                  } }
+    env.InCombatLockdown = function()
+        return ctx.combat
+    end
+    env.UnitClass = function(unit)
+        if unit == "player" then
+            return "Mage", "MAGE", 8
+        end
+    end
+    env.IsTradeskillTrainer = function()
+        return ctx.tradeskill
+    end
+    env.GetNumTrainerServices = function()
+        return #ctx.services
+    end
+    env.GetTrainerServiceInfo = function(i)
+        local s = ctx.services[i]
+        return s[1], s[2], s[3]
+    end
+    env.GetTrainerServiceLevelReq = function(i)
+        return ctx.services[i][4]
+    end
+    env.C_TooltipInfo = {
+        GetTrainerService = function(i)
+            local s = ctx.services[i]
+            if s[3] ~= "header" then
+                return { id = s[5], lines = {} }
+            end
+        end,
+    }
+    function ctx.spells()
+        local out = {}
+        for id, e in pairs(env.TandemDB.trainers.MAGE or {}) do
+            out[#out + 1] = ("%s=%d/%s"):format(tostring(id), e.level, tostring(e.rank))
+        end
+        table.sort(out)
+        return table.concat(out, " ")
+    end
+    return ctx
+end
+
+do
+    local ctx = loadTrainer()
+    for _, ev in ipairs({ "TRAINER_SHOW", "TRAINER_UPDATE" }) do
+        check("trainer: registers " .. ev, ctx.frame.registered[ev], true)
+    end
+    ctx.fire("TRAINER_SHOW")
+    check("trainer: records ranked and rankless services, skips the header", ctx.spells(), "205=8/2 7302=30/nil")
+    check("trainer: one record per service", ctx.addon.Store.unsaved, 2)
+    ctx.fire("TRAINER_UPDATE")
+    check("trainer: TRAINER_UPDATE records nothing twice", ctx.addon.Store.unsaved, 2)
+    ctx.services[4] = { "Fire Ward", "Rank 1", "used", 20, "543" }
+    ctx.services[5] = { "Frostbolt", "Rank 3", "unavailable", 14, 837 }
+    ctx.services[6] = { "Blink", nil, "available", 20 }
+    ctx.fire("TRAINER_UPDATE")
+    check("trainer: TRAINER_UPDATE records a new service, skips missing and non-numeric ids", ctx.spells(),
+        "205=8/2 7302=30/nil 837=14/3")
+end
+
+for name, setup in pairs({
+    ["in combat"] = function(ctx)
+        ctx.combat = true
+    end,
+    ["while read-only"] = function(ctx)
+        ctx.addon.Store.readOnly = true
+    end,
+    ["at a tradeskill trainer"] = function(ctx)
+        ctx.tradeskill = true
+    end,
+    ["without GetNumTrainerServices"] = function(ctx)
+        ctx.env.GetNumTrainerServices = nil
+    end,
+    ["without GetTrainerServiceInfo"] = function(ctx)
+        ctx.env.GetTrainerServiceInfo = nil
+    end,
+    ["without GetTrainerServiceLevelReq"] = function(ctx)
+        ctx.env.GetTrainerServiceLevelReq = nil
+    end,
+    ["without C_TooltipInfo.GetTrainerService"] = function(ctx)
+        ctx.env.C_TooltipInfo = {}
+    end,
+    ["without UnitClass"] = function(ctx)
+        ctx.env.UnitClass = nil
+    end,
+}) do
+    local ctx = loadTrainer()
+    setup(ctx)
+    ctx.fire("TRAINER_SHOW")
+    ctx.fire("TRAINER_UPDATE")
+    check("trainer: nothing recorded " .. name, ctx.env.TandemDB.trainers.MAGE, nil)
+end
+
+do
+    local ctx = loadTrainer()
+    ctx.env.IsTradeskillTrainer = nil
+    ctx.env.issecretvalue = function(v)
+        return v == 205
+    end
+    ctx.fire("TRAINER_SHOW")
+    check("trainer: a secret spell id is skipped", ctx.spells(), "7302=30/nil")
+end
+
 -- Kills: player's PARTY_KILLs from the combat log.
 
 local PLAYER = "Player-1-00000001"
@@ -2002,7 +2195,7 @@ local function loadKills(opts)
             return spread(ctx.cleu)
         end
     end
-    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 4 }, "enUS",
+    local addon, printed, e, fire, frame = loadWithDB(opts.db or { schemaVersion = 5 }, "enUS",
         { env = env, blockCLEU = opts.blockCLEU })
     ctx.addon, ctx.printed, ctx.env, ctx.fire, ctx.frame = addon, printed, e, fire, frame
     -- Fires one combat log event: timestamp, sub, hideCaster, src, srcName, srcFlags, srcRaidFlags, dst.
@@ -2112,7 +2305,7 @@ do
 end
 
 do
-    local ctx = loadKills({ db = { schemaVersion = 5 } })
+    local ctx = loadKills({ db = { schemaVersion = 6 } })
     ctx.log("PARTY_KILL", PLAYER, HOGGER)
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("kills: read-only db is not written", ctx.env.TandemDB.kills, nil)
@@ -2150,7 +2343,7 @@ local function gearData()
             shippedItems[id] = r
         end
     end
-    local db = { schemaVersion = 4, items = ownItems, loot = {
+    local db = { schemaVersion = 5, items = ownItems, loot = {
         ["1:c:448:1429"] = { item = 1, kind = "c", id = 448, map = 1429, count = 1 },
         ["3:o:77:1429"] = { item = 3, kind = "o", id = 77, map = 1429, count = 1 },
     } }
@@ -2185,7 +2378,7 @@ do
     for i, loc in ipairs(LOCS) do
         items[100 + i], idOf[loc] = { 10, 1, 1, loc, 4, 1 }, 100 + i
     end
-    local A = loadAdvisor({ schemaVersion = 4, items = items })
+    local A = loadAdvisor({ schemaVersion = 5, items = items })
     local function slots(equipLoc, class, level)
         local id, out = idOf[equipLoc], {}
         for _, slot in ipairs(A.SLOTS) do
@@ -2392,7 +2585,7 @@ for name, shipped in pairs({
 end
 
 do
-    local A = loadAdvisor({ schemaVersion = 5, items = "new format", loot = 4 }, select(2, gearData()))
+    local A = loadAdvisor({ schemaVersion = 6, items = "new format", loot = 4 }, select(2, gearData()))
     check("advisor: newer own db is ignored", ids(A.Best("chest", "WARRIOR", 40)), "4,2,12")
     check("advisor: newer own db Sources", #A.Sources(2), 1)
 end
@@ -2407,7 +2600,7 @@ end
 -- Sources: own + shipped merged by max (decision 13), rate per npc (decision 16).
 do
     local db = {
-        schemaVersion = 4,
+        schemaVersion = 5,
         npcs = { [448] = "Hogger" },
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 3, coords = { { 1, 1 } } },
@@ -2467,7 +2660,7 @@ end
 
 do
     local db = {
-        schemaVersion = 4,
+        schemaVersion = 5,
         loot = {
             ["4:c:448:1429"] = { item = 4, kind = "c", id = 448, map = 1429, count = 1 },
             ["4:c:449:1429"] = { item = 4, kind = "c", id = 449, map = 1429, count = 1 },
@@ -2816,7 +3009,7 @@ do
 end
 
 do
-    local ctx = loadGear("enUS", { schemaVersion = 5, items = "new format" }, nil)
+    local ctx = loadGear("enUS", { schemaVersion = 6, items = "new format" }, nil)
     local out = ctx.run("export")
     check("export on a newer db", out[1],
         "Tandem export: 0 loot entries, 0 npc names, 0 items, 0 kills, 0 looted corpses")
@@ -2928,7 +3121,7 @@ end
 
 do
     local ui = { window = { point = "TOPLEFT", x = 120.5, y = -40 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = ui })
     local w = env.TandemDB.ui.window
     check("ui: a valid position is kept", w.point .. " " .. w.x .. " " .. w.y, "TOPLEFT 120.5 -40")
     check("ui: a valid position prints only the load line", #printed, 1)
@@ -2957,7 +3150,7 @@ do
 end
 
 do
-    local _, _, env = loadWithDB({ schemaVersion = 4 })
+    local _, _, env = loadWithDB({ schemaVersion = 5 })
     check("ui: a fresh db has no position", env.TandemDB.ui, nil)
     check("ui: a db without ui is current", isCurrent(env.TandemDB), true)
 end
@@ -2969,27 +3162,27 @@ for name, ui in pairs({
     ["NaN y"] = { window = { point = "TOP", x = 0, y = 0 / 0 } }, ["missing y"] = { window = { point = "TOP", x = 0 } },
     ["unknown relativePoint"] = { window = { point = "TOP", relativePoint = "UP", x = 0, y = 0 } },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = ui })
     check("ui: drops a position with " .. name, env.TandemDB.ui, nil)
     check("ui: counts a position with " .. name .. " as dropped", printed[2], "Tandem: dropped 1 invalid saved entries")
     check("ui: UIPosition after dropping " .. name, addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { point = "TOP", x = 1, y = 2, extra = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = { point = "TOP", x = 1, y = 2, extra = true } })
     check("ui: keys outside window and minimap are not kept", env.TandemDB.ui, nil)
     check("ui: keys outside window and minimap are not counted", #printed, 1)
     check("ui: no position from top-level keys", addon.Store.UIPosition(), nil)
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = 5, y = 6 } } })
+    local addon = loadWithDB({ schemaVersion = 6, ui = { window = { point = "TOP", x = 5, y = 6 } } })
     check("ui: a newer db still gives a valid position", addon.Store.UIPosition().y, 6)
     check("ui: a newer db is not written", addon.Store.SetUIPosition("TOP", "TOP", 1, 1), false)
     check("ui: a newer db keeps its position", addon.Store.db.ui.window.x, 5)
-    addon = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = "5", y = 6 } } })
+    addon = loadWithDB({ schemaVersion = 6, ui = { window = { point = "TOP", x = "5", y = 6 } } })
     check("ui: a newer db with a bad position gives none", addon.Store.UIPosition(), nil)
-    addon = loadWithDB({ schemaVersion = 5, ui = "junk" })
+    addon = loadWithDB({ schemaVersion = 6, ui = "junk" })
     check("ui: a newer db with a junk ui gives no position", addon.Store.UIPosition(), nil)
     check("ui: a newer db with a junk ui gives no angle", addon.Store.MinimapAngle(), nil)
 end
@@ -3555,7 +3748,7 @@ end
 -- Store: minimap button angle in TandemDB.ui (unit 7).
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4,
+    local addon, printed, env = loadWithDB({ schemaVersion = 5,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 90.5 } })
     check("minimap: a valid angle is kept", env.TandemDB.ui.minimap, 90.5)
     check("minimap: kept with the position", addon.Store.UIPosition().point, "TOP")
@@ -3575,11 +3768,11 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimap = 200 } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = { minimap = 200 } })
     check("minimap: an angle without a position is kept", env.TandemDB.ui.minimap, 200)
     check("minimap: no position from an angle alone", addon.Store.UIPosition(), nil)
     check("minimap: an angle alone prints only the load line", #printed, 1)
-    local fresh = loadWithDB({ schemaVersion = 4 })
+    local fresh = loadWithDB({ schemaVersion = 5 })
     check("minimap: a fresh db has no angle", fresh.Store.MinimapAngle(), nil)
     check("minimap: SetMinimapAngle on a fresh db", fresh.Store.SetMinimapAngle(45) and fresh.Store.db.ui.minimap, 45)
     check("minimap: no position from SetMinimapAngle", fresh.Store.UIPosition(), nil)
@@ -3591,7 +3784,7 @@ for name, case in pairs({
     ["NaN"] = { ui = { minimap = 0 / 0 }, dropped = 1 },
     ["a bad position too"] = { ui = { window = { point = "UP", x = 0, y = 0 }, minimap = -5 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = case.ui })
     check("minimap: drops an angle of " .. name, env.TandemDB.ui, nil)
     check("minimap: counts an angle of " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3599,7 +3792,7 @@ for name, case in pairs({
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4,
+    local addon, printed, env = loadWithDB({ schemaVersion = 5,
                                              ui = { window = { point = "TOP", x = 1, y = 2 }, minimap = 400 } })
     local ui = env.TandemDB.ui
     check("minimap: a bad angle keeps a good position", ui.window.point .. " " .. tostring(ui.minimap), "TOP nil")
@@ -3608,10 +3801,10 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 5, ui = { minimap = 10 } })
+    local addon = loadWithDB({ schemaVersion = 6, ui = { minimap = 10 } })
     check("minimap: a newer db still gives its angle", addon.Store.MinimapAngle(), 10)
     check("minimap: a newer db is not written", addon.Store.SetMinimapAngle(20), false)
-    addon = loadWithDB({ schemaVersion = 5, ui = { minimap = "10" } })
+    addon = loadWithDB({ schemaVersion = 6, ui = { minimap = "10" } })
     check("minimap: a newer db with a bad angle gives none", addon.Store.MinimapAngle(), nil)
 end
 
@@ -3888,7 +4081,7 @@ end
 
 do
     local db, shipped = gearData()
-    db.schemaVersion = 5
+    db.schemaVersion = 6
     db.ui = { minimap = 10 }
     local ctx = loadBrowse("enUS", db, shipped, { env = { Minimap = fakeMinimap() } })
     ctx.fire("PLAYER_LOGIN")
@@ -3900,7 +4093,7 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimapHidden = true } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = true } })
     check("minimapHidden: kept alone", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: prints only the load line", #printed, 1)
     check("minimapHidden: MinimapHidden", addon.Store.MinimapHidden(), true)
@@ -3918,7 +4111,7 @@ do
     end
     check("minimapHidden: a rejected value keeps the old one", env.TandemDB.ui.minimapHidden, true)
     check("minimapHidden: not a record", addon.Store.unsaved, 0)
-    local fresh = loadWithDB({ schemaVersion = 4 })
+    local fresh = loadWithDB({ schemaVersion = 5 })
     check("minimapHidden: a fresh db shows the button", fresh.Store.MinimapHidden(), false)
 end
 
@@ -3928,7 +4121,7 @@ for name, case in pairs({
     ["a number"] = { ui = { minimapHidden = 1 }, dropped = 1 },
     ["a bad angle too"] = { ui = { minimapHidden = {}, minimap = 400 }, dropped = 2 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = case.ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = case.ui })
     check("minimapHidden: drops " .. name, env.TandemDB.ui, nil)
     check("minimapHidden: counts " .. name, printed[2],
         ("Tandem: dropped %d invalid saved entries"):format(case.dropped))
@@ -3936,14 +4129,14 @@ for name, case in pairs({
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 4, ui = { minimap = 45, minimapHidden = "no" } })
+    local _, printed, env = loadWithDB({ schemaVersion = 5, ui = { minimap = 45, minimapHidden = "no" } })
     check("minimapHidden: a bad flag keeps a good angle", env.TandemDB.ui.minimap .. " "
         .. tostring(env.TandemDB.ui.minimapHidden), "45 nil")
     check("minimapHidden: a bad flag alone is one drop", printed[2], "Tandem: dropped 1 invalid saved entries")
-    local newer = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = true } })
+    local newer = loadWithDB({ schemaVersion = 6, ui = { minimapHidden = true } })
     check("minimapHidden: a newer db still gives its flag", newer.Store.MinimapHidden(), true)
     check("minimapHidden: a newer db is not written", newer.Store.SetMinimapHidden(false), false)
-    newer = loadWithDB({ schemaVersion = 5, ui = { minimapHidden = "yes" } })
+    newer = loadWithDB({ schemaVersion = 6, ui = { minimapHidden = "yes" } })
     check("minimapHidden: a newer db with a bad flag shows the button", newer.Store.MinimapHidden(), false)
 end
 
@@ -4146,7 +4339,7 @@ do
 end
 
 do
-    local addon = loadWithDB({ schemaVersion = 4, items = { [5] = GEAR[5], [7] = GEAR[7] } })
+    local addon = loadWithDB({ schemaVersion = 5, items = { [5] = GEAR[5], [7] = GEAR[7] } })
     check("ItemCount: counted on load", addon.Store.ItemCount(), 2)
     addon.Store.AddItem(9, 1, 1, 1, "INVTYPE_BODY", 4, 0)
     check("ItemCount: AddItem counts", addon.Store.ItemCount(), 3)
@@ -4155,7 +4348,7 @@ do
     check("ItemCount: a repeated or invalid item is not counted", addon.Store.ItemCount(), 3)
     check("ItemCount: matches Counts", addon.Store.Counts().items, 3)
     check("ScanCursor: a fresh scan starts at 1", addon.Store.ScanCursor(), 1)
-    addon = loadWithDB({ schemaVersion = 5, items = "junk", scan = { cursor = 2.5 } })
+    addon = loadWithDB({ schemaVersion = 6, items = "junk", scan = { cursor = 2.5 } })
     check("ItemCount: a newer db with junk items", addon.Store.ItemCount(), 0)
     check("ScanCursor: a fractional cursor gives none", addon.Store.ScanCursor(), nil)
 end
@@ -4163,7 +4356,7 @@ end
 for name, scan in pairs({ ["no scan table"] = false, ["no cursor"] = {}, ["a fractional cursor"] = { cursor = 1.5 },
                           ["a string cursor"] = { cursor = "7" } }) do
     local db, shipped = gearData()
-    db.schemaVersion = 5
+    db.schemaVersion = 6
     db.scan = scan or nil
     local ctx = loadBrowse("enUS", db, shipped)
     ctx.run("browse")
@@ -4304,7 +4497,7 @@ do
         [3] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, true }, [4] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 2 },
         [5] = { 10, 5, 2, "INVTYPE_HEAD", 4, 1, 1, "extra" },
     }
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, items = items })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, items = items })
     local db = env.TandemDB
     check("deprecated: a 7th field of 1 is kept", db.items[1][7], 1)
     check("deprecated: a string 7th field is stripped", #db.items[2], 6)
@@ -4312,7 +4505,7 @@ do
     check("deprecated: another number is stripped", #db.items[4], 6)
     check("deprecated: fields after the flag are stripped", #db.items[5] .. " " .. db.items[5][7], "7 1")
     check("deprecated: a stripped flag is not a drop", #printed, 1)
-    check("deprecated: the schema stays 4", db.schemaVersion, 4)
+    check("deprecated: the schema stays 4", db.schemaVersion, 5)
     check("deprecated: Advisor reads a flagged record", addon.Advisor.Item(1) ~= nil, true)
     check("deprecated: IsDeprecated of a flagged record", addon.Advisor.IsDeprecated(1), true)
     check("deprecated: IsDeprecated of a stripped record", addon.Advisor.IsDeprecated(2), false)
@@ -4331,7 +4524,7 @@ do
 end
 
 do
-    local addon, _, env = loadWithDB({ schemaVersion = 4 })
+    local addon, _, env = loadWithDB({ schemaVersion = 5 })
     local Store = addon.Store
     check("revision: a fresh load starts at 0", Store.revision, 0)
     Store.AddItem(1, 10, 5, 2, "INVTYPE_HEAD", 4, 1, true)
@@ -4356,7 +4549,7 @@ do
     Store.SetUIPosition("TOP", "TOP", 1, 2)
     Store.SetMinimapAngle(10)
     check("revision: ui settings are not records", Store.revision, rev + 4)
-    Store.Load({ schemaVersion = 4 })
+    Store.Load({ schemaVersion = 5 })
     check("revision: Load resets it", Store.revision, 0)
 end
 
@@ -4384,7 +4577,7 @@ do
     check("MarkDeprecated: an invalid id", Store.MarkDeprecated(0, addon.Advisor.Item(4)), false)
     check("MarkDeprecated: nothing stored for refusals", env.TandemDB.items[999], nil)
 
-    local newer = loadWithDB({ schemaVersion = 5, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
+    local newer = loadWithDB({ schemaVersion = 6, items = { [1] = { 1, 1, 1, "INVTYPE_HEAD", 4, 1 } } }).Store
     check("MarkDeprecated: a newer db is not written", newer.MarkDeprecated(1, { 1, 1, 1, "INVTYPE_HEAD", 4, 1 }),
         false)
     check("MarkDeprecated: a newer db keeps its record", newer.db.items[1][7], nil)
@@ -4494,7 +4687,7 @@ do
         A.Rank(2, "PALADIN", 40)
         return calls > 2
     end)(), true)
-    Store.Load({ schemaVersion = 4 })
+    Store.Load({ schemaVersion = 5 })
     check("rank memo: a new db walks again", A.Rank(2, "WARRIOR", 40).total, 3)
 end
 
@@ -4656,7 +4849,7 @@ end
 
 do
     local ui = { window = { point = "TOP", x = 1, y = 2, width = 700, height = 600.5 } }
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = ui })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = ui })
     local Store = addon.Store
     check("ui size: a valid size is kept", env.TandemDB.ui.window.width .. "x" .. env.TandemDB.ui.window.height,
         "700x600.5")
@@ -4680,12 +4873,12 @@ do
 end
 
 do
-    local Store = loadWithDB({ schemaVersion = 4 }).Store
+    local Store = loadWithDB({ schemaVersion = 5 }).Store
     check("ui size: SetUISize without a position", Store.SetUISize(800, 600), false)
     check("ui size: nothing saved without a position", Store.UISize(), nil)
     Store.SetUIPosition("TOP", "TOP", 0, 0)
     check("ui size: no size until one is saved", Store.UISize(), nil)
-    local newer = loadWithDB({ schemaVersion = 5, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
+    local newer = loadWithDB({ schemaVersion = 6, ui = { window = { point = "TOP", x = 0, y = 0, width = 900,
                                                                     height = 700 } } }).Store
     check("ui size: a newer db still gives a valid size", table.concat({ newer.UISize() }, "x"), "900x700")
     check("ui size: a newer db is not written", newer.SetUISize(800, 600), false)
@@ -4698,7 +4891,7 @@ for name, window in pairs({
     ["string height"] = { point = "TOP", x = 1, y = 2, width = 700, height = "700" },
     ["far width"] = { point = "TOP", x = 1, y = 2, width = 10001, height = 700 },
 }) do
-    local addon, printed, env = loadWithDB({ schemaVersion = 4, ui = { window = window } })
+    local addon, printed, env = loadWithDB({ schemaVersion = 5, ui = { window = window } })
     local w = env.TandemDB.ui and env.TandemDB.ui.window
     check("ui size: " .. name .. " keeps the position", w and w.point .. " " .. w.x .. " " .. w.y, "TOP 1 2")
     check("ui size: " .. name .. " is stripped", tostring(w and w.width) .. " " .. tostring(w and w.height), "nil nil")
@@ -4938,7 +5131,7 @@ do
     check("browse layout: heading texts", win.headings.score:GetText() .. " " .. win.headings.ilvl:GetText() .. " "
         .. win.headings.level:GetText(), "Score iLvl Req")
 
-    local again = loadBrowse("enUS", { schemaVersion = 4, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
+    local again = loadBrowse("enUS", { schemaVersion = 5, ui = ctx.env.TandemDB.ui }, select(2, gearData()))
     again.run("browse")
     check("browse size: restores the saved size", again.win().width .. "x" .. again.win().height, "800x700")
 end
@@ -5338,7 +5531,7 @@ end
 -- quest 101 (no factions), vendor 201 (Alliance) and quest 102 (an invalid factions mask).
 local function questVendorData()
     local db = {
-        schemaVersion = 4,
+        schemaVersion = 5,
         npcs = { [200] = "Vendor Bob", [448] = "Hogger" },
         quests = { [100] = "Own Quest" },
         loot = {
@@ -5392,7 +5585,7 @@ do
     A = loadAdvisor(nil, { loot = { { 4, "v", 201, 1429, 2 } } })
     check("q/v sources: shipped data without factions", sourceRows(A.Sources(4, 2)), "v201:2:nil:nil:nil")
 
-    local own = { schemaVersion = 4, loot = {
+    local own = { schemaVersion = 5, loot = {
         ["4:q:100:1429"] = { item = 4, kind = "q", id = 100, map = 1429, count = 1, coords = { { 1, 1 } },
                              factions = 1 },
     } }
@@ -5497,8 +5690,10 @@ local function checkAPIs()
         C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn },
         GetInventoryItemLink = fn,
         C_Item = { GetItemStats = fn },
-        C_TooltipInfo = { GetItemByID = fn },
+        C_TooltipInfo = { GetItemByID = fn, GetTrainerService = fn },
         C_SpecializationInfo = { GetSpecialization = fn },
+        GetNumTrainerServices = fn, GetTrainerServiceInfo = fn, GetTrainerServiceLevelReq = fn,
+        GetActionInfo = fn, C_Spell = { GetSpellInfo = fn }, IsSpellKnown = fn, ActionButton1 = {},
     }
 end
 
@@ -5517,7 +5712,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: ten features", #addon.Check.FEATURES, 10)
+    check("check: twelve features", #addon.Check.FEATURES, 12)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -5525,7 +5720,8 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
-        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec" }) do
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec", "Trainer record",
+        "Action bar borders" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -5585,7 +5781,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out - 2],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#out - 4],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -6543,7 +6739,7 @@ end
 do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
-    check("zhTW check: stat search line", out[#out - 1], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+    check("zhTW check: stat search line", out[#out - 3], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
 end
 
 -- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
@@ -6750,7 +6946,11 @@ do
             .. "GetSpecialization missing)")
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
-    check("zhTW check: talent spec line", out[#out]:match("^天賦專精："), "天賦專精：")
+    check("zhTW check: talent spec line", out[#out - 2]:match("^天賦專精："), "天賦專精：")
+    check("zhTW check: trainer record line", out[#out - 1], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
+        .. "GetTrainerServiceInfo 缺少, GetTrainerServiceLevelReq 缺少, C_TooltipInfo.GetTrainerService 缺少）")
+    check("zhTW check: action bar borders line", out[#out], "快捷列邊框：缺少（GetActionInfo 缺少, GetSpellInfo 缺少, "
+        .. "C_Spell.GetSpellInfo 缺少, IsSpellKnown 缺少, IsPlayerSpell 缺少, ActionButton1 缺少）")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
@@ -6873,6 +7073,441 @@ do
     check("zhTW weights legend", out[4], "  * 你自訂的權重；/tandem weights reset 可刪除")
     check("zhTW weights usage", ctx.run("weights x")[1],
         "Tandem：用法 /tandem weights [spec <1|2|3|auto> | set <屬性> <數字> | reset]")
+end
+
+-- SpellRanks: red/yellow state per action slot from spellbook ranks and trainer data.
+
+local RANKED = {
+    [116] = { "Frostbolt", 1 }, [205] = { "Frostbolt", 2 }, [837] = { "Frostbolt", 3 },
+    [133] = { "Fireball", 1 }, [143] = { "Fireball", 2 },
+    [1459] = { "Arcane Intellect" }, [2139] = { "Counterspell" },
+}
+
+-- Loads the addon as a mage with ctx.known[spellID] learned (all in the spellbook), ctx.bar[slot] = { kind, id }
+-- for GetActionInfo and ctx.level. opts.book: "modern" (C_SpellBook, default), "legacy" (GetNumSpellTabs) or "none";
+-- opts.legacySpell uses GetSpellInfo/GetSpellSubtext instead of C_Spell; opts.shipped and opts.widgets go to loadAddon,
+-- opts.env adds globals. ctx.env and ctx.fire are loadAddon's.
+local function loadSpellRanks(opts)
+    opts = opts or {}
+    local ctx = { known = {}, bar = {}, level = 60 }
+    local function book()
+        local ranked = {}
+        for id in pairs(RANKED) do
+            ranked[#ranked + 1] = id
+        end
+        table.sort(ranked)
+        local learned = {}
+        for _, id in ipairs(ranked) do
+            if ctx.known[id] then
+                learned[#learned + 1] = id
+            end
+        end
+        return learned
+    end
+    local function subtext(id)
+        local s = RANKED[id]
+        return s and (s[2] and ("Rank " .. s[2]) or "") or nil
+    end
+    local env = {
+        UnitClass = function()
+            return "Mage", "MAGE"
+        end,
+        UnitLevel = function()
+            return ctx.level
+        end,
+        GetActionInfo = function(slot)
+            local a = ctx.bar[slot]
+            if a then
+                return a[1], a[2]
+            end
+        end,
+        IsSpellKnown = function(id)
+            return ctx.known[id] == true
+        end,
+    }
+    if opts.legacySpell then
+        env.GetSpellInfo = function(id)
+            return RANKED[id] and RANKED[id][1]
+        end
+        env.GetSpellSubtext = subtext
+    else
+        env.C_Spell = {
+            GetSpellInfo = function(id)
+                return RANKED[id] and { name = RANKED[id][1] }
+            end,
+            GetSpellSubtext = subtext,
+        }
+    end
+    if (opts.book or "modern") == "modern" then
+        env.Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1, FutureSpell = 2 } }
+        env.C_SpellBook = {
+            GetNumSpellBookSkillLines = function()
+                return 2
+            end,
+            GetSpellBookSkillLineInfo = function(line)
+                return line == 1 and { itemIndexOffset = 0, numSpellBookItems = 0 }
+                    or { itemIndexOffset = 0, numSpellBookItems = #book() + 1 }
+            end,
+            GetSpellBookItemInfo = function(index)
+                local id = book()[index]
+                if id then
+                    return { itemType = 1, spellID = id }
+                end
+                return { itemType = 2, spellID = 837 }
+            end,
+        }
+    elseif opts.book == "legacy" then
+        env.BOOKTYPE_SPELL = "spell"
+        env.GetNumSpellTabs = function()
+            return 1
+        end
+        env.GetSpellTabInfo = function()
+            return "General", "icon", 0, #book() + 1
+        end
+        env.GetSpellBookItemInfo = function(index, bank)
+            local id = book()[index]
+            if bank ~= "spell" then
+                return nil
+            end
+            if id then
+                return "SPELL", id
+            end
+            return "FUTURESPELL", 837
+        end
+    end
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    local addon, _, fullEnv, fire = loadWithDB(nil, "enUS",
+        { env = env, shipped = opts.shipped, widgets = opts.widgets })
+    ctx.addon, ctx.Store, ctx.env, ctx.fire = addon, addon.Store, fullEnv, fire
+    function ctx.state(slot)
+        addon.SpellRanks.Invalidate()
+        return tostring(addon.SpellRanks.State(slot))
+    end
+    return ctx
+end
+
+do
+    local ctx = loadSpellRanks()
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1], ctx.bar[2] = { "spell", 116 }, { "spell", 205 }
+    check("spell ranks: a lower rank with a higher one known is red", ctx.state(1), "red")
+    check("spell ranks: the highest known rank without trainer data is none", ctx.state(2), "nil")
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.level = 14
+    check("spell ranks: the next rank trainable at the player's level is yellow", ctx.state(2), "yellow")
+    ctx.level = 13
+    check("spell ranks: the next rank above the player's level is none", ctx.state(2), "nil")
+    ctx.level = 14
+    check("spell ranks: red wins over yellow", ctx.state(1), "red")
+    ctx.known[837] = true
+    check("spell ranks: a learned next rank is not yellow", ctx.state(2), "red")
+    ctx.bar[3] = { "spell", 837 }
+    check("spell ranks: the highest rank learned is none", ctx.state(3), "nil")
+    ctx.bar[4], ctx.bar[5], ctx.bar[6] = { "macro", 1 }, { "item", 2589 }, nil
+    check("spell ranks: a macro is none", ctx.state(4), "nil")
+    check("spell ranks: an item is none", ctx.state(5), "nil")
+    check("spell ranks: an empty slot is none", ctx.state(6), "nil")
+    ctx.bar[7] = { "spell", "21CB4" }
+    check("spell ranks: a non-numeric id is none", ctx.state(7), "nil")
+    ctx.bar[8] = { "spell", secret() }
+    check("spell ranks: a secret id is none", ctx.state(8), "nil")
+    ctx.known[1459] = true
+    ctx.bar[9] = { "spell", 1459 }
+    check("spell ranks: a rankless spell without a trainer next rank is none", ctx.state(9), "nil")
+    ctx.known[133] = true
+    ctx.Store.SetTrainerSpell("MAGE", 143, 6)
+    ctx.bar[10] = { "spell", 133 }
+    check("spell ranks: a trainer spell without a recorded rank uses its subtext", ctx.state(10), "yellow")
+end
+
+do
+    local ctx = loadSpellRanks()
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.addon.SpellRanks.Invalidate()
+    check("spell ranks: state is cached until invalidated", tostring(ctx.addon.SpellRanks.State(1)), "nil")
+    ctx.known[205] = true
+    check("spell ranks: the cache keeps the old ranks", tostring(ctx.addon.SpellRanks.State(1)), "nil")
+    ctx.addon.SpellRanks.Invalidate()
+    check("spell ranks: invalidating reads the new ranks", tostring(ctx.addon.SpellRanks.State(1)), "red")
+end
+
+do
+    local ctx = loadSpellRanks({ shipped = { trainers = { MAGE = { [205] = { level = 8, rank = 2 } } } } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    check("spell ranks: shipped-only trainer data makes yellow", ctx.state(1), "yellow")
+    ctx.Store.SetTrainerSpell("MAGE", 205, 20, 2)
+    ctx.level = 10
+    check("spell ranks: own and shipped trainer data keep the lower level", ctx.state(1), "yellow")
+end
+
+do
+    local ctx = loadSpellRanks({ shipped = { trainers = { WARRIOR = { [205] = { level = 8, rank = 2 } } } } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    check("spell ranks: another class's trainer data is none", ctx.state(1), "nil")
+    check("spell ranks: shipped data without trainers is none",
+        loadSpellRanks({ shipped = { contributors = 1 } }).state(1), "nil")
+end
+
+do
+    local ctx = loadSpellRanks({ book = "legacy", legacySpell = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    check("spell ranks: the legacy spellbook and spell API make red", ctx.state(1), "red")
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.bar[2] = { "spell", 205 }
+    check("spell ranks: the legacy spellbook makes yellow", ctx.state(2), "yellow")
+end
+
+do
+    local ctx = loadSpellRanks({ book = "none" })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.bar[1], ctx.bar[2] = { "spell", 116 }, { "spell", 205 }
+    local ok, got = pcall(ctx.state, 1)
+    check("spell ranks: no spellbook API is none without errors", tostring(ok) .. " " .. got, "true nil")
+    ok, got = pcall(ctx.state, 2)
+    check("spell ranks: no spellbook API is never yellow", tostring(ok) .. " " .. got, "true nil")
+end
+
+do
+    local ctx = loadSpellRanks({ shipped = { trainers = { MAGE = { [205] = { level = 8, rank = 2 } } } },
+        env = { UnitClass = function()
+            return "Mage", secret()
+        end, issecretvalue = function(v)
+            return getmetatable(v) == SECRET_MT
+        end } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    local ok, got = pcall(ctx.state, 1)
+    check("spell ranks: a secret class token is none without errors", tostring(ok) .. " " .. tostring(got), "true nil")
+end
+
+-- ActionBorders: red/yellow borders on fake default action buttons from SpellRanks state (stage 8, unit 5).
+
+function WIDGET.SetVertexColor(w, r, g, b) w.color = { r, g, b } end
+function WIDGET.SetBlendMode(w, mode) w.blend = mode end
+
+-- Loads loadSpellRanks with fake buttons: ActionButton1-12 (button.action = i), MultiBarBottomLeftButton1-12 (slot
+-- from ActionButton_GetPagedID, 60 + i) and MultiBarRightButton1-12 (slot from button:GetPagedID(), 24 + i).
+-- opts.multi5 adds MultiBar5Button1-12 (slot 72 + i); opts.noAPI drops GetActionInfo; opts.timer adds a C_Timer
+-- whose After calls wait in ctx.timers until ctx.nextFrame() runs them; ctx.combat drives InCombatLockdown.
+-- ctx.border(name) returns "red", "yellow", "hidden" or "none" for a button; ctx.refreshes counts Refresh runs.
+local function loadBorders(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local ctx
+    local buttons = {}
+    local env = {
+        InCombatLockdown = function()
+            return ctx.combat
+        end,
+        ActionButton_GetPagedID = function(button)
+            return button.paged
+        end,
+    }
+    local function add(name, fill)
+        for i = 1, 12 do
+            local b = newWidget(ui, "CheckButton", name .. i)
+            fill(b, i)
+            buttons[name .. i] = b
+            env[name .. i] = b
+        end
+    end
+    add("ActionButton", function(b, i) b.action = i end)
+    add("MultiBarBottomLeftButton", function(b, i) b.paged = 60 + i end)
+    add("MultiBarRightButton", function(b, i)
+        b.GetPagedID = function()
+            return 24 + i
+        end
+    end)
+    if opts.multi5 then
+        add("MultiBar5Button", function(b, i) b.action = 72 + i end)
+    end
+    local timers = {}
+    if opts.timer then
+        env.C_Timer = { After = function(_, fn)
+            timers[#timers + 1] = fn
+        end }
+    end
+    local spellOpts = { env = env, widgets = function(kind, name, parent, template)
+        return newWidget(ui, kind, name, parent, template)
+    end }
+    ctx = loadSpellRanks(spellOpts)
+    if opts.noAPI then
+        ctx.env.GetActionInfo = nil
+    end
+    ctx.buttons, ctx.ui, ctx.timers, ctx.refreshes = buttons, ui, timers, 0
+    local refresh = ctx.addon.ActionBorders.Refresh
+    ctx.addon.ActionBorders.Refresh = function()
+        ctx.refreshes = ctx.refreshes + 1
+        refresh()
+    end
+    function ctx.nextFrame()
+        local due = {}
+        for i = #timers, 1, -1 do
+            due[i], timers[i] = timers[i], nil
+        end
+        for _, fn in ipairs(due) do
+            fn()
+        end
+    end
+    function ctx.border(name)
+        local border = buttons[name].tandemBorder
+        if not border then
+            return "none"
+        elseif not border.shown then
+            return "hidden"
+        end
+        local c = border.texture.color
+        return (c[1] == 1 and c[2] == 0.15 and c[3] == 0.15 and "red")
+            or (c[1] == 1 and c[2] == 0.82 and c[3] == 0 and "yellow") or "other"
+    end
+    return ctx
+end
+
+do
+    local ctx = loadBorders()
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.level = 14
+    ctx.bar[1], ctx.bar[2], ctx.bar[3] = { "spell", 116 }, { "spell", 205 }, { "macro", 1 }
+    ctx.bar[61], ctx.bar[25] = { "spell", 116 }, { "spell", 205 }
+    ctx.fire("PLAYER_LOGIN")
+    check("borders: a red slot gets a red border", ctx.border("ActionButton1"), "red")
+    check("borders: a yellow slot gets a yellow border", ctx.border("ActionButton2"), "yellow")
+    check("borders: a macro slot gets no border frame", ctx.border("ActionButton3"), "none")
+    check("borders: ActionButton_GetPagedID gives the slot", ctx.border("MultiBarBottomLeftButton1"), "red")
+    check("borders: button:GetPagedID gives the slot", ctx.border("MultiBarRightButton1"), "yellow")
+    local border = ctx.buttons.ActionButton1.tandemBorder
+    check("borders: the border is a child of the button", border.parent, ctx.buttons.ActionButton1)
+    check("borders: the border uses the action button glow", border.texture.texture,
+        "Interface\\Buttons\\UI-ActionButton-Border")
+    check("borders: the glow is additive", border.texture.blend, "ADD")
+    check("borders: the button's action is unchanged", ctx.buttons.ActionButton1.action, 1)
+
+    ctx.bar[1] = { "spell", 837 }
+    ctx.known[837] = true
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 1)
+    check("borders: a slot change to the top rank hides the border", ctx.border("ActionButton1"), "hidden")
+    check("borders: a slot change refreshes the others", ctx.border("ActionButton2"), "red")
+    local frames = #ctx.ui.widgets
+    ctx.fire("SPELLS_CHANGED")
+    check("borders: a refresh reuses the border frames", #ctx.ui.widgets, frames)
+
+    ctx.combat = true
+    ctx.bar[3] = { "spell", 116 }
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 3)
+    check("borders: in combat a new red slot stays bare", ctx.border("ActionButton3"), "none")
+    check("borders: in combat a border stays as it is", ctx.border("ActionButton2"), "red")
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("borders: combat end refreshes the borders", ctx.border("ActionButton3"), "red")
+
+    ctx.known[837] = nil
+    ctx.level = 20
+    ctx.fire("PLAYER_LEVEL_UP", 20)
+    check("borders: a level up refreshes the borders", ctx.border("ActionButton2"), "yellow")
+end
+
+do
+    local ctx = loadBorders({ noAPI = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    local ok = pcall(ctx.fire, "PLAYER_LOGIN")
+    check("borders: missing API raises nothing", ok, true)
+    check("borders: missing API leaves buttons untouched", ctx.border("ActionButton1"), "none")
+    check("borders: missing API makes no frames", #ctx.ui.widgets, 36)
+end
+
+do
+    local ctx = loadBorders()
+    ctx.env.ActionButton1 = nil
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[2] = { "spell", 116 }
+    ctx.fire("PLAYER_ENTERING_WORLD")
+    check("borders: no ActionButton1 leaves the bars untouched", ctx.border("ActionButton2"), "none")
+end
+
+do
+    local ctx = loadBorders({ multi5 = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[73] = { "spell", 116 }
+    ctx.fire("ACTIONBAR_PAGE_CHANGED")
+    check("borders: MultiBar5 buttons get borders when present", ctx.border("MultiBar5Button1"), "red")
+    local bare = loadBorders()
+    bare.known[116], bare.known[205] = true, true
+    bare.bar[1] = { "spell", 116 }
+    local ok = pcall(bare.fire, "UPDATE_BONUS_ACTIONBAR")
+    check("borders: absent MultiBar5-7 raise nothing", ok, true)
+    check("borders: absent MultiBar5-7 still draw the others", bare.border("ActionButton1"), "red")
+end
+
+do
+    local ctx = loadBorders()
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.fire("PLAYER_LOGIN")
+    check("borders: no next rank known, no border", ctx.border("ActionButton1"), "none")
+    ctx.Store.SetTrainerSpell("MAGE", 205, 4, 2)
+    ctx.fire("TRAINER_UPDATE")
+    check("borders: trainer data refreshes to yellow", ctx.border("ActionButton1"), "yellow")
+    ctx.known[205] = true
+    ctx.fire("LEARNED_SPELL_IN_TAB")
+    check("borders: learning the rank turns it red", ctx.border("ActionButton1"), "red")
+    ctx.buttons.ActionButton4.action = nil
+    ctx.fire("SPELLS_CHANGED")
+    check("borders: a button without a slot is skipped", ctx.border("ActionButton4"), "none")
+end
+
+do
+    local ctx = loadBorders({ timer = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    for slot = 1, 20 do
+        ctx.fire("ACTIONBAR_SLOT_CHANGED", slot)
+    end
+    check("borders: slot changes wait for the next frame", ctx.refreshes, 0)
+    check("borders: twenty slot changes queue one timer", #ctx.timers, 1)
+    check("borders: nothing is drawn before the next frame", ctx.border("ActionButton1"), "none")
+    ctx.nextFrame()
+    check("borders: twenty slot changes in one frame refresh once", ctx.refreshes, 1)
+    check("borders: the deferred refresh draws", ctx.border("ActionButton1"), "red")
+
+    ctx.fire("ACTIONBAR_PAGE_CHANGED")
+    for i = 1, 12 do
+        ctx.buttons["ActionButton" .. i].action = 12 + i
+    end
+    ctx.bar[13], ctx.bar[1] = nil, nil
+    ctx.bar[14] = { "spell", 116 }
+    ctx.nextFrame()
+    check("borders: a page change paints the new page's slots", ctx.border("ActionButton2"), "red")
+    check("borders: a page change clears the old page's border", ctx.border("ActionButton1"), "hidden")
+
+    ctx.fire("SPELLS_CHANGED")
+    ctx.combat = true
+    ctx.bar[15] = { "spell", 116 }
+    ctx.nextFrame()
+    check("borders: a refresh that lands in combat leaves borders untouched", ctx.border("ActionButton3"), "none")
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    ctx.nextFrame()
+    check("borders: combat end picks up the missed refresh", ctx.border("ActionButton3"), "red")
+    ctx.fire("PLAYER_LEVEL_UP", 60)
+    check("borders: a new event after the run schedules again", #ctx.timers, 1)
+end
+
+do
+    local ctx = loadBorders()
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 1)
+    check("borders: no C_Timer refreshes at once", ctx.refreshes, 1)
+    check("borders: no C_Timer draws at once", ctx.border("ActionButton1"), "red")
 end
 
 if failures > 0 then

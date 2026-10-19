@@ -362,7 +362,8 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
-`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search` 與 `Talent spec`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record` 與
+`Action bar borders`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 
 ### `/tandem map`
 
@@ -648,30 +649,49 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 
 addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/` 底下的所有貢獻合併而成：掉落紀錄（掉落、
 任務獎勵與商人物品）、依語系分組的 NPC 與任務名稱、看過每筆任務獎勵與商人物品的陣營、擊殺數、拾取屍體數、物品快取，
-以及從物品提示框讀出的每件物品屬性（你為每個角色設定的屬性權重不會隨附）。
+從物品提示框讀出的每件物品屬性（你為每個角色設定的屬性權重不會隨附），以及各職業訓練師教授的法術與各自的需求等級和
+法術等級。
 指令會把它與你自己的 `TandemDB` 一起使用。每筆掉落紀錄的掉落次數取你的
 數值與隨附數值中較大者，因為你的資料可能已經包含在隨附檔案中。擊殺數與拾取屍體數不這樣混用：掉落率的掉落次數與分母
 取自同一份資料，詳見[掉落率](#掉落率)。兩邊都有的任務獎勵或商人物品會合併成一個來源，帶有兩邊的陣營。物品紀錄則以
 你自己的快取為準。沒有這個
 檔案時，指令只使用你自己的資料。
 
+## 快捷列邊框
+
+預設快捷列上的法術，等級過時時按鈕會加上彩色邊框：
+
+- **紅色**：按鈕放的是較低等級，而你已學會同一法術更高的等級。從法術書把較高等級拖到快捷列上。
+- **黃色**：有比你已學會的更高等級，在你目前等級或以下就能學，而你還沒學。去找你的職業訓練師。
+
+兩者都符合時顯示紅色。巨集、物品、空格與沒有等級的法術不加邊框。
+
+- 黃色需要知道你的職業訓練師教什麼：開啟職業訓練師視窗時 Tandem 會記錄下來（見[收集的資料](#收集的資料)），
+  或由隨附資料提供。兩者都還沒有你職業的訓練師時，只會顯示紅色邊框。
+- 只有 Blizzard 預設快捷列會加邊框：主快捷列、左下與右下、右側快捷列，以及用戶端有的話，快捷列 5 到 7。其他插件的
+  快捷列不會。
+- 在戰鬥外，邊框會隨快捷列、頁面、法術、等級與訓練師的變化更新。戰鬥中邊框維持原樣，戰鬥結束後才更新。
+- [`/tandem check`](#tandem-check) 的 `Action bar borders` 這行為 `missing` 時不會畫任何邊框。Tandem 只在按鈕上
+  畫框，從不改變按鈕施放的內容。
+
 ## 收集的資料
 
 所有資料都存在一個帳號共用的表 `TandemDB`，存檔位置為
 `<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
-| Key       | 內容                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------- |
-| `items`   | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class、subclass；已棄用時第七個欄位為 `1`      |
-| `scan`    | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描                     |
-| `loot`    | 依物品、來源與地圖分組：NPC、物件、任務或商人 ID、地圖 ID、掉落次數、最多 5 個不同的座標；陣營        |
-| `npcs`    | 以 NPC ID 對應的 NPC 名稱，包含商人                                                                   |
-| `quests`  | 以任務 ID 對應的任務名稱                                                                              |
-| `kills`   | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
-| `corpses` | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
-| `ui`      | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
-| `stats`   | 每個物品 ID：屬性鍵對應數值，例如 `str = 5`；讀過但沒有屬性時為 `{}`，尚未讀取時不存在                |
-| `weights` | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`      |
+| Key        | 內容                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------- |
+| `items`    | 每個可裝備物品 ID：物品等級、需求等級、品質、裝備部位、class、subclass；已棄用時第七個欄位為 `1`      |
+| `scan`     | 掃描位置、不可裝備數量、找到的最小與最大 ID、每 1000 個 ID 區塊的命中數、上次掃描                     |
+| `loot`     | 依物品、來源與地圖分組：NPC、物件、任務或商人 ID、地圖 ID、掉落次數、最多 5 個不同的座標；陣營        |
+| `npcs`     | 以 NPC ID 對應的 NPC 名稱，包含商人                                                                   |
+| `quests`   | 以任務 ID 對應的任務名稱                                                                              |
+| `kills`    | 依 NPC ID：你的角色對該 NPC 的最後一擊次數                                                            |
+| `corpses`  | 依 NPC ID：你拾取過的該 NPC 不同屍體數                                                                |
+| `ui`       | `window`：瀏覽視窗錨點、相對錨點、x、y、寬、高；`minimap`：按鈕角度；`minimapHidden`：隱藏時為 `true` |
+| `stats`    | 每個物品 ID：屬性鍵對應數值，例如 `str = 5`；讀過但沒有屬性時為 `{}`，尚未讀取時不存在                |
+| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`      |
+| `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在）   |
 
 - 存在但不可裝備的物品只計入 `scan.nonEquippable`，不會儲存。
 - `scan.lastRun` 保存上次掃描的開始時間、ID 範圍、速率、經過秒數，以及摘要印出的各項計數。
@@ -689,9 +709,16 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 - 屬性鍵為 `str`、`agi`、`sta`、`int`、`spi`、`armor`、`dps`、`ap`、`rap`、`sp`、`heal`、`hit`、`crit`、
   `spellhit`、`spellcrit`、`mp5`、`def`、`dodge`、`parry`、`block` 與 `blockvalue`：`sp` 為法術傷害與治療，
   `heal` 只有治療，`dps` 為武器每秒傷害。`statsVersion` 是讀取已存屬性時所用讀取器的版本。載入時，未知的屬性鍵或不是數字的值會單獨捨棄，無效的 `spec` 或 override 也是；物品或角色的項目若不是表則會捨棄。
+- `trainers` 的職業鍵是大寫的職業代號，例如 `MAGE`。載入時，無效的法術 ID 或項目會單獨捨棄；不是職業代號的鍵，
+  或法術不是表的職業，會被捨棄。
+- 每次在戰鬥外開啟或更新職業訓練師視窗時，都會以你角色的職業記錄它的法術：列出的每個法術（不論是否已學會）、需求
+  等級，以及法術等級文字中的數字（`等級 3` 記為 `3`）。分類標題、專業技能訓練師，以及用戶端沒有提供法術 ID 的法術會
+  略過；[`/tandem check`](#tandem-check) 的 `Trainer record` 這行為 `missing` 時不會記錄。再次看到同一個法術時保留
+  較低的等級。
 
-`TandemDB.schemaVersion` 為 `4`。schema 2 或 3 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，兩者都會新增
-空的 `stats` 與 `weights`。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會記錄任何資料。
+`TandemDB.schemaVersion` 為 `5`。schema 2、3 或 4 的存檔資料會在載入時遷移：schema 2 會新增空的 `quests`，
+schema 2 與 3 會新增空的 `stats` 與 `weights`，三者都會新增空的 `trainers`。較新 schema 的存檔資料會原樣保留，
+在 addon 更新之前不會記錄任何資料。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。當機或強制結束會遺失上次存檔後收集的所有資料；`/tandem count`
 會顯示有多少筆紀錄尚未儲存。長時間掃描後請執行 `/reload`。
@@ -842,9 +869,10 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 物品提示框、任務與商人來源、地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十二行，分別是 `Item tooltip`、
    `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert`、
-   `Item stats`、`Stat search` 與 `Talent spec`，每行後面接著 `ok` 或 `missing` 以及它的 API。
+   `Item stats`、`Stat search`、`Talent spec`、`Trainer record` 與 `Action bar borders`，每行後面接著 `ok` 或
+   `missing` 以及它的 API。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -855,7 +883,7 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    [檢查地圖標記](#檢查地圖標記)。若步驟 2 中 `Quest reward pick` 為 `ok`，請進行[檢查任務獎勵建議](#檢查任務獎勵建議)。
    若 `Upgrade alert` 為 `ok`，請進行[檢查升級提醒](#檢查升級提醒)。若 `Stat search` 為 `ok`，請進行
    [檢查屬性搜尋](#檢查屬性搜尋)。若 `Talent spec` 為 `ok`，在 10 級以上的角色執行 `/tandem weights`：第一行列出投入
-   點數最多的天賦系，後面接著 `(auto)`。
+   點數最多的天賦系，後面接著 `(auto)`。若 `Action bar borders` 為 `ok`，請進行[檢查快捷列邊框](#檢查快捷列邊框)。
 
 請回報步驟 1 與 2 印出的每一行、步驟 5 中 `/tandem weights` 的第一行，以及任何 Lua 錯誤。
 
@@ -921,6 +949,19 @@ Lua 錯誤。
 請回報任何放不進欄位或與下一個框重疊的標籤、列在勾選屬性下但提示框沒有該屬性（或有卻沒列出）的物品、步驟 6 的卡頓
 情形，以及任何 Lua 錯誤。
 
+### 檢查快捷列邊框
+
+1. 在戰鬥外，把一個你已學會更高等級的法術的較低等級放到主快捷列（勾選 `顯示所有法術等級` 後從法術書拖曳，或從它的
+   等級清單選取）。它的按鈕出現紅色邊框；同一法術的最高等級沒有邊框。快捷列上的巨集或物品沒有邊框。
+2. 把同一個較低等級放到左下快捷列與一條右側快捷列：這些按鈕也是紅色。若開啟了快捷列 5 到 7，也在那裡試一次。
+3. 把紅色按鈕換成最高等級：邊框立刻消失。
+4. 用一個職業訓練師有你目前等級可學新等級的角色，開啟訓練師視窗再關閉，看快捷列上該法術已學會的最高等級：邊框是
+   黃色。學會這個等級：舊按鈕變成紅色。
+5. 切換快捷列頁面（Shift 加滑鼠滾輪，或主快捷列旁的箭頭）：邊框跟著新頁面上的法術變化。
+6. 開始戰鬥，在戰鬥中把紅色按鈕換成最高等級：邊框維持紅色。戰鬥結束後消失。
+
+請回報任何無故變紅或變黃、或應該變色卻沒有的按鈕，完全沒有邊框的快捷列，以及任何 Lua 錯誤。
+
 ## Interface number
 
 `Tandem/Tandem.toc` 宣告了 `## Interface: 16001`，已在用戶端 `1.60.1` 的遊戲中確認。用戶端更新後若這個數字改變，
@@ -976,7 +1017,7 @@ ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一
 
 | 檔案                          | 內容                                                                                         |
 | ----------------------------- | -------------------------------------------------------------------------------------------- |
-| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses`、`stats` 與語系，匯入時覆寫 |
+| `data/contributions/<id>.lua` | 單一帳號的 `loot`、`npcs`、`quests`、`items`、`kills`、`corpses`、`stats`、`trainers` 與語系 |
 | `Tandem/Data/Loot.lua`        | 由所有貢獻合併，由 addon 載入                                                                |
 
 合併檔會加總掉落次數、擊殺數與拾取屍體數，每筆掉落紀錄保留最多 5 個座標，NPC 與任務名稱依語系分組，物品快取則取
@@ -984,15 +1025,18 @@ ID 與數字僅為範例。`make import` 會讀取偵測到的用戶端中每一
 計數就是看過它的貢獻者人數），並把陣營合併到 `S.factions`，key 為 `"<item>:<kind>:<id>:<map>"`；兩份
 貢獻對同一件物品的紀錄不同時，以檔名排序在前的那份為準；但只要任何一份貢獻把該物品標記為已棄用，它就會被標記。物品
 屬性 `S.stats[<item>] = { <stat> = <number>, ... }`（提示框沒有屬性行時為 `{}`）整份取自單一貢獻，不會混用：有該物品
-屬性的貢獻勝過沒有的，屬性項目最多的那份為準，數量相同時以檔名排序在前的那份為準。它也以 `contributors` 記錄合併了
-多少份貢獻。舊版的 `data/loot.lua` 不再寫入。在匯入擊殺、屍體、物品、任務與屬性之前寫成的貢獻檔仍可讀取。
+屬性的貢獻勝過沒有的，屬性項目最多的那份為準，數量相同時以檔名排序在前的那份為準。訓練師法術
+`S.trainers[<class>][<spell>] = { level = <n>, rank = <r> }`（訓練師沒有顯示法術等級時沒有 `rank`）取所有貢獻的聯集：
+兩份貢獻列出同一職業的同一法術時，需求等級較低的為準，缺少的法術等級由另一份補上；需求等級相同而法術等級不同時，以
+檔名排序在前的那份為準。它也以 `contributors` 記錄合併了多少份貢獻。舊版的 `data/loot.lua` 不再寫入。在匯入擊殺、
+屍體、物品、任務、屬性與訓練師之前寫成的貢獻檔仍可讀取。
 
 - `<id>` 是帳號資料夾名稱 SHA-256 的前 12 個十六進位字元。資料夾名稱，也就是帳號號碼，絕不會被寫入或印出；同一個
   帳號永遠得到相同的 ID。
 - 語系取自 `WTF/Config.wtf` 的 `SET textLocale` 這一行，沒有時為 `enUS`。NPC 名稱與任務名稱以用戶端語言儲存，因此
   `Tandem/Data/Loot.lua` 把它們分別放在 `names[<locale>]` 與 `questNames[<locale>]` 底下。
 - `scan`、`ui`、`weights` 與 `statsVersion` 只留在本機：屬性權重屬於單一角色。`items` 與 `stats` 會匯入，因為只在
-  自己掃描的幾百件物品之間排名意義不大。
+  自己掃描的幾百件物品之間排名意義不大。`trainers` 會匯入，讓還沒拜訪過某職業訓練師的玩家也能用到那份資料。
 - 重複執行是安全的：每個帳號的貢獻都是完整的快照，會取代上一份，因此掉落次數不會重複加總，相同的輸入也會產生逐位元組
   相同的檔案。
 - 每個 SavedVariables 檔案都在空的環境中執行，沒有任何函式可呼叫，執行時間也有上限；它的 `TandemDB` 會以 addon
