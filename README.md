@@ -394,7 +394,8 @@ Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats`,
-`Stat search`, `Talent spec` and `Trainer record`. A feature whose API is missing stays off instead of raising an error.
+`Stat search`, `Talent spec`, `Trainer record` and `Action bar borders`. A feature whose API is missing stays off
+instead of raising an error.
 
 ### `/tandem map`
 
@@ -720,6 +721,27 @@ count from one dataset, as described under [Drop rates](#drop-rates). A quest re
 becomes one source with the factions of both. For an item record, your own cache wins.
 Without the file, the commands use your own data only.
 
+## Action bar borders
+
+A spell on the default action bars gets a coloured border when its rank is out of date:
+
+- **Red**: the button holds a lower rank of a spell you already know at a higher rank. Drag the higher rank from the
+  spellbook onto the bar.
+- **Yellow**: a higher rank than any you know is taught at your level or below, and you have not learned it. Visit
+  your class trainer.
+
+Red wins when both apply. Macros, items, empty slots and spells without ranks get no border.
+
+- Yellow needs to know what your class trainer teaches: Tandem records it when you open a class trainer's window (see
+  [What is collected](#what-is-collected)), or it comes with the shipped data. Until either has your class's trainer,
+  only red borders show.
+- Only the default Blizzard bars get borders: the main bar, the bottom left and right, the right bars and, when the
+  client has them, action bars 5 to 7. Bars from other addons do not.
+- Borders follow bar, page, spell, level and trainer changes outside combat. In combat they stay as they are and are
+  brought up to date when combat ends.
+- Nothing is drawn when the `Action bar borders` line of [`/tandem check`](#tandem-check) is `missing`. Tandem only
+  draws over the buttons and never changes what they cast.
+
 ## What is collected
 
 Everything goes into one account-wide table, `TandemDB`, saved as
@@ -940,9 +962,10 @@ tooltip in step 5, and any Lua error.
 The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
 not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and eleven lines, one each for `Item tooltip`,
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twelve lines, one each for `Item tooltip`,
    `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
-   `Item stats`, `Stat search`, `Talent spec` and `Trainer record`, each followed by `ok` or `missing` and its APIs.
+   `Item stats`, `Stat search`, `Talent spec`, `Trainer record` and `Action bar borders`, each followed by `ok` or
+   `missing` and its APIs.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -956,7 +979,8 @@ not verified on Forever. One pass of `/tandem check` tells which of them the cli
    2, run [Check the quest reward pick](#check-the-quest-reward-pick). If `Upgrade alert` is `ok`, run
    [Check the upgrade alert](#check-the-upgrade-alert). If `Stat search` is `ok`, run
    [Check the stat search](#check-the-stat-search). If `Talent spec` is `ok`, run `/tandem weights` on a character
-   level 10 or more: its first line names the tree with the most talent points, followed by `(auto)`.
+   level 10 or more: its first line names the tree with the most talent points, followed by `(auto)`. If
+   `Action bar borders` is `ok`, run [Check the action bar borders](#check-the-action-bar-borders).
 
 Report back every line of steps 1 and 2 as printed, the first line of `/tandem weights` from step 5, and any Lua
 error.
@@ -1035,6 +1059,24 @@ item that is not an upgrade, and any Lua error.
 
 Report back any label that does not fit its column or overlaps the next box, any item listed under a ticked stat its
 tooltip does not show (or missing though it does), the stall in step 6, and any Lua error.
+
+### Check the action bar borders
+
+1. Out of combat, put a lower rank of a spell you know at a higher rank on the main bar (drag it from the spellbook
+   with `Show all spell ranks` ticked, or pick it from its rank list). Its button gets a red border; the highest rank
+   of the same spell has none. A macro or an item on the bar has none.
+2. Put the same lower rank on the bottom left bar and on a right bar: those buttons are red too. If action bars 5 to 7
+   are on, do the same there.
+3. Swap the red button for the highest rank: the border goes at once.
+4. On a character whose class trainer has a rank ready at your level, open the trainer, close it, and look at the
+   spell's highest learned rank on the bar: its border is yellow. Learn the rank: the old button turns red.
+5. Switch bar pages (Shift and the mouse wheel, or the arrows by the main bar): borders follow the spells on the new
+   page.
+6. Start a fight and, in combat, swap a red button for the highest rank: the border stays red. When combat ends, it
+   goes.
+
+Report back any button that is red or yellow without reason, or not when it should be, which bars got no borders at
+all, and any Lua error.
 
 ## Interface number
 

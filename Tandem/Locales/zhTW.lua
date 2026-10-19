@@ -97,6 +97,7 @@ L["Item stats"] = "物品屬性"
 L["Stat search"] = "屬性搜尋"
 L["Talent spec"] = "天賦專精"
 L["Trainer record"] = "訓練師紀錄"
+L["Action bar borders"] = "快捷列邊框"
 L["  /tandem gear <slot> [all] <words> - gear whose tooltip has the words on one line"] =
     "  /tandem gear <部位> [all] <字詞> - 滑鼠提示同一行含有這些字詞的裝備"
 L["Tandem: stat search is not available on this client; see /tandem check"] =

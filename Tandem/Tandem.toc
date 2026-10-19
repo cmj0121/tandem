@@ -17,6 +17,7 @@ Data\Loot.lua
 Store.lua
 Weights.lua
 SpellRanks.lua
+ActionBorders.lua
 Scanner.lua
 Loot.lua
 Sources.lua

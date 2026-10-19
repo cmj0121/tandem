@@ -107,6 +107,7 @@ local function build()
         end
     end)
     local _, classFile = UnitClass("player")
+    classFile = Safe(classFile)
     local level = Safe(UnitLevel("player"))
     if type(classFile) == "string" and type(level) == "number" then
         for id, entry in pairs(trainerSpells(classFile)) do
