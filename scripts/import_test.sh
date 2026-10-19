@@ -231,6 +231,79 @@ import "$st" "$st/Loot.lua" enUS aaaa "$tmp/st-a.lua" enUS bbbb "$tmp/st-b.lua"
 cmp -s "$st/Loot.lua" "$tmp/st1"
 check "argument order does not change the shipped stats" "$?" "0"
 
+# Trainer spells (schema 5): carried into contributions and S.trainers; merged as a union per class, the lower level
+# winning on the same spell and a rank filling a missing one.
+sv tr-a.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 5,
+	trainers = {
+		MAGE = {
+			[143] = { level = 6, rank = 2 },
+			[133] = { level = 1, rank = 1 },
+			[205] = { level = 10 },
+			[116] = { level = 8 },
+			[120] = { level = 26, rank = 1 },
+			[0] = { level = 1 },
+			[300] = { level = "x" },
+		},
+		WARRIOR = { [100] = { level = 4, rank = 1 } },
+		mage = { [133] = { level = 1 } },
+	},
+}
+EOF
+sv tr-b.lua <<'EOF'
+TandemDB = {
+	schemaVersion = 5,
+	trainers = {
+		MAGE = {
+			[143] = { level = 8, rank = 3 },
+			[205] = { level = 12, rank = 3 },
+			[116] = { level = 4, rank = 1 },
+			[120] = { level = 26, rank = 2 },
+			[122] = { level = 10 },
+		},
+		PRIEST = { [585] = { level = 1, rank = 1 } },
+	},
+}
+EOF
+tr="$tmp/tr"
+import "$tr" "$tr/Loot.lua" enUS bbbb "$tmp/tr-b.lua" enUS aaaa "$tmp/tr-a.lua"
+check "trainers import" "$?" "0"
+contains "a bad trainer entry is reported" "$tmp/err" "tr-a.lua: 3 invalid entries ignored"
+contains "contribution writes a rankless trainer spell" "$tr/contributions/aaaa.lua" '            [116] = { level = 8 },'
+contains "contribution writes trainer fields in order" "$tr/contributions/aaaa.lua" \
+	'            [120] = { level = 26, rank = 1 },'
+check "contribution trainer classes are sorted" "$(grep -o '^        \["[A-Z]*"\] = {' "$tr/contributions/aaaa.lua" | tr -d ' \n')" \
+	'["MAGE"]={["WARRIOR"]={'
+check "contribution trainer spells are sorted" "$(grep -o '^            \[[0-9]*\]' "$tr/contributions/aaaa.lua" | tr -d ' \n')" \
+	'[116][120][133][143][205][100]'
+contains "contribution keeps another class" "$tr/contributions/aaaa.lua" '        ["WARRIOR"] = {'
+check "contribution drops a bad class and spells" "$(grep -c -e '"mage"' -e '\[0\] = { level' -e '\[300\]' "$tr/contributions/aaaa.lua")" "0"
+contains "out file fills S.trainers per class in chunks" "$tr/Loot.lua" 'fill(S.trainers["MAGE"])'
+contains "out file starts S with trainers" "$tr/Loot.lua" 'trainers = {},'
+check "shipped classes are sorted" "$(grep -o '^S.trainers\[[^]]*\] = {}' "$tr/Loot.lua" | tr '\n' ' ')" \
+	'S.trainers["MAGE"] = {} S.trainers["PRIEST"] = {} S.trainers["WARRIOR"] = {} '
+contains "shipped trainer spells are one per line" "$tr/Loot.lua" 't[143] = { level = 6, rank = 2 }'
+shipped "trainers round-trip and merge" "$tr/Loot.lua" '
+local m = S.trainers.MAGE
+assert(m[133].level == 1 and m[133].rank == 1, "a single-source spell is kept")
+assert(m[143].level == 6 and m[143].rank == 2, "the lower level wins with its rank")
+assert(m[205].level == 10 and m[205].rank == 3, "the lower level wins and a rank fills its missing one")
+assert(m[116].level == 4 and m[116].rank == 1, "the lower level wins whatever the file order")
+assert(m[120].level == 26 and m[120].rank == 1, "at equal levels the first file keeps its rank")
+assert(m[122].level == 10 and m[122].rank == nil, "a spell without a rank stays without one")
+assert(m[0] == nil and m[300] == nil and S.trainers.mage == nil)
+assert(S.trainers.WARRIOR[100].level == 4 and S.trainers.PRIEST[585].rank == 1, "classes are a union")'
+cp "$tr/Loot.lua" "$tmp/tr1"
+import "$tr" "$tr/Loot.lua"
+cmp -s "$tr/Loot.lua" "$tmp/tr1"
+check "a trainers rebuild is byte-identical" "$?" "0"
+import "$tr" "$tr/Loot.lua" enUS aaaa "$tmp/tr-a.lua" enUS bbbb "$tmp/tr-b.lua"
+cmp -s "$tr/Loot.lua" "$tmp/tr1"
+check "argument order does not change the shipped trainers" "$?" "0"
+shipped "an out file without trainer data ships an empty S.trainers" "$st/Loot.lua" '
+assert(type(S.trainers) == "table" and next(S.trainers) == nil)'
+
 # Quest rewards (q) and vendor items (v): counts are summed, factions ORed into S.factions, quest names merged per
 # locale into S.questNames; a bad q/v row drops only that row.
 sv qa.lua <<'EOF'
