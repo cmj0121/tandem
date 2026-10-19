@@ -5693,6 +5693,7 @@ local function checkAPIs()
         C_TooltipInfo = { GetItemByID = fn, GetTrainerService = fn },
         C_SpecializationInfo = { GetSpecialization = fn },
         GetNumTrainerServices = fn, GetTrainerServiceInfo = fn, GetTrainerServiceLevelReq = fn,
+        GetActionInfo = fn, C_Spell = { GetSpellInfo = fn }, IsSpellKnown = fn, ActionButton1 = {},
     }
 end
 
@@ -5711,7 +5712,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: eleven features", #addon.Check.FEATURES, 11)
+    check("check: twelve features", #addon.Check.FEATURES, 12)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -5719,7 +5720,8 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
-        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec", "Trainer record" }) do
+        "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec", "Trainer record",
+        "Action bar borders" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -5779,7 +5781,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out - 3],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#out - 4],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -6737,7 +6739,7 @@ end
 do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
-    check("zhTW check: stat search line", out[#out - 2], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+    check("zhTW check: stat search line", out[#out - 3], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
 end
 
 -- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
@@ -6944,9 +6946,11 @@ do
             .. "GetSpecialization missing)")
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
-    check("zhTW check: talent spec line", out[#out - 1]:match("^天賦專精："), "天賦專精：")
-    check("zhTW check: trainer record line", out[#out], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
+    check("zhTW check: talent spec line", out[#out - 2]:match("^天賦專精："), "天賦專精：")
+    check("zhTW check: trainer record line", out[#out - 1], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
         .. "GetTrainerServiceInfo 缺少, GetTrainerServiceLevelReq 缺少, C_TooltipInfo.GetTrainerService 缺少）")
+    check("zhTW check: action bar borders line", out[#out], "快捷列邊框：缺少（GetActionInfo 缺少, GetSpellInfo 缺少, "
+        .. "C_Spell.GetSpellInfo 缺少, IsSpellKnown 缺少, IsPlayerSpell 缺少, ActionButton1 缺少）")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
@@ -7081,7 +7085,8 @@ local RANKED = {
 
 -- Loads the addon as a mage with ctx.known[spellID] learned (all in the spellbook), ctx.bar[slot] = { kind, id }
 -- for GetActionInfo and ctx.level. opts.book: "modern" (C_SpellBook, default), "legacy" (GetNumSpellTabs) or "none";
--- opts.legacySpell uses GetSpellInfo/GetSpellSubtext instead of C_Spell; opts.shipped goes to loadAddon.
+-- opts.legacySpell uses GetSpellInfo/GetSpellSubtext instead of C_Spell; opts.shipped and opts.widgets go to loadAddon,
+-- opts.env adds globals. ctx.env and ctx.fire are loadAddon's.
 local function loadSpellRanks(opts)
     opts = opts or {}
     local ctx = { known = {}, bar = {}, level = 60 }
@@ -7170,8 +7175,12 @@ local function loadSpellRanks(opts)
             return "FUTURESPELL", 837
         end
     end
-    local addon = loadWithDB(nil, "enUS", { env = env, shipped = opts.shipped })
-    ctx.addon, ctx.Store = addon, addon.Store
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    local addon, _, fullEnv, fire = loadWithDB(nil, "enUS",
+        { env = env, shipped = opts.shipped, widgets = opts.widgets })
+    ctx.addon, ctx.Store, ctx.env, ctx.fire = addon, addon.Store, fullEnv, fire
     function ctx.state(slot)
         addon.SpellRanks.Invalidate()
         return tostring(addon.SpellRanks.State(slot))
@@ -7263,6 +7272,242 @@ do
     check("spell ranks: no spellbook API is none without errors", tostring(ok) .. " " .. got, "true nil")
     ok, got = pcall(ctx.state, 2)
     check("spell ranks: no spellbook API is never yellow", tostring(ok) .. " " .. got, "true nil")
+end
+
+do
+    local ctx = loadSpellRanks({ shipped = { trainers = { MAGE = { [205] = { level = 8, rank = 2 } } } },
+        env = { UnitClass = function()
+            return "Mage", secret()
+        end, issecretvalue = function(v)
+            return getmetatable(v) == SECRET_MT
+        end } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    local ok, got = pcall(ctx.state, 1)
+    check("spell ranks: a secret class token is none without errors", tostring(ok) .. " " .. tostring(got), "true nil")
+end
+
+-- ActionBorders: red/yellow borders on fake default action buttons from SpellRanks state (stage 8, unit 5).
+
+function WIDGET.SetVertexColor(w, r, g, b) w.color = { r, g, b } end
+function WIDGET.SetBlendMode(w, mode) w.blend = mode end
+
+-- Loads loadSpellRanks with fake buttons: ActionButton1-12 (button.action = i), MultiBarBottomLeftButton1-12 (slot
+-- from ActionButton_GetPagedID, 60 + i) and MultiBarRightButton1-12 (slot from button:GetPagedID(), 24 + i).
+-- opts.multi5 adds MultiBar5Button1-12 (slot 72 + i); opts.noAPI drops GetActionInfo; opts.timer adds a C_Timer
+-- whose After calls wait in ctx.timers until ctx.nextFrame() runs them; ctx.combat drives InCombatLockdown.
+-- ctx.border(name) returns "red", "yellow", "hidden" or "none" for a button; ctx.refreshes counts Refresh runs.
+local function loadBorders(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local ctx
+    local buttons = {}
+    local env = {
+        InCombatLockdown = function()
+            return ctx.combat
+        end,
+        ActionButton_GetPagedID = function(button)
+            return button.paged
+        end,
+    }
+    local function add(name, fill)
+        for i = 1, 12 do
+            local b = newWidget(ui, "CheckButton", name .. i)
+            fill(b, i)
+            buttons[name .. i] = b
+            env[name .. i] = b
+        end
+    end
+    add("ActionButton", function(b, i) b.action = i end)
+    add("MultiBarBottomLeftButton", function(b, i) b.paged = 60 + i end)
+    add("MultiBarRightButton", function(b, i)
+        b.GetPagedID = function()
+            return 24 + i
+        end
+    end)
+    if opts.multi5 then
+        add("MultiBar5Button", function(b, i) b.action = 72 + i end)
+    end
+    local timers = {}
+    if opts.timer then
+        env.C_Timer = { After = function(_, fn)
+            timers[#timers + 1] = fn
+        end }
+    end
+    local spellOpts = { env = env, widgets = function(kind, name, parent, template)
+        return newWidget(ui, kind, name, parent, template)
+    end }
+    ctx = loadSpellRanks(spellOpts)
+    if opts.noAPI then
+        ctx.env.GetActionInfo = nil
+    end
+    ctx.buttons, ctx.ui, ctx.timers, ctx.refreshes = buttons, ui, timers, 0
+    local refresh = ctx.addon.ActionBorders.Refresh
+    ctx.addon.ActionBorders.Refresh = function()
+        ctx.refreshes = ctx.refreshes + 1
+        refresh()
+    end
+    function ctx.nextFrame()
+        local due = {}
+        for i = #timers, 1, -1 do
+            due[i], timers[i] = timers[i], nil
+        end
+        for _, fn in ipairs(due) do
+            fn()
+        end
+    end
+    function ctx.border(name)
+        local border = buttons[name].tandemBorder
+        if not border then
+            return "none"
+        elseif not border.shown then
+            return "hidden"
+        end
+        local c = border.texture.color
+        return (c[1] == 1 and c[2] == 0.15 and c[3] == 0.15 and "red")
+            or (c[1] == 1 and c[2] == 0.82 and c[3] == 0 and "yellow") or "other"
+    end
+    return ctx
+end
+
+do
+    local ctx = loadBorders()
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.Store.SetTrainerSpell("MAGE", 837, 14, 3)
+    ctx.level = 14
+    ctx.bar[1], ctx.bar[2], ctx.bar[3] = { "spell", 116 }, { "spell", 205 }, { "macro", 1 }
+    ctx.bar[61], ctx.bar[25] = { "spell", 116 }, { "spell", 205 }
+    ctx.fire("PLAYER_LOGIN")
+    check("borders: a red slot gets a red border", ctx.border("ActionButton1"), "red")
+    check("borders: a yellow slot gets a yellow border", ctx.border("ActionButton2"), "yellow")
+    check("borders: a macro slot gets no border frame", ctx.border("ActionButton3"), "none")
+    check("borders: ActionButton_GetPagedID gives the slot", ctx.border("MultiBarBottomLeftButton1"), "red")
+    check("borders: button:GetPagedID gives the slot", ctx.border("MultiBarRightButton1"), "yellow")
+    local border = ctx.buttons.ActionButton1.tandemBorder
+    check("borders: the border is a child of the button", border.parent, ctx.buttons.ActionButton1)
+    check("borders: the border uses the action button glow", border.texture.texture,
+        "Interface\\Buttons\\UI-ActionButton-Border")
+    check("borders: the glow is additive", border.texture.blend, "ADD")
+    check("borders: the button's action is unchanged", ctx.buttons.ActionButton1.action, 1)
+
+    ctx.bar[1] = { "spell", 837 }
+    ctx.known[837] = true
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 1)
+    check("borders: a slot change to the top rank hides the border", ctx.border("ActionButton1"), "hidden")
+    check("borders: a slot change refreshes the others", ctx.border("ActionButton2"), "red")
+    local frames = #ctx.ui.widgets
+    ctx.fire("SPELLS_CHANGED")
+    check("borders: a refresh reuses the border frames", #ctx.ui.widgets, frames)
+
+    ctx.combat = true
+    ctx.bar[3] = { "spell", 116 }
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 3)
+    check("borders: in combat a new red slot stays bare", ctx.border("ActionButton3"), "none")
+    check("borders: in combat a border stays as it is", ctx.border("ActionButton2"), "red")
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("borders: combat end refreshes the borders", ctx.border("ActionButton3"), "red")
+
+    ctx.known[837] = nil
+    ctx.level = 20
+    ctx.fire("PLAYER_LEVEL_UP", 20)
+    check("borders: a level up refreshes the borders", ctx.border("ActionButton2"), "yellow")
+end
+
+do
+    local ctx = loadBorders({ noAPI = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    local ok = pcall(ctx.fire, "PLAYER_LOGIN")
+    check("borders: missing API raises nothing", ok, true)
+    check("borders: missing API leaves buttons untouched", ctx.border("ActionButton1"), "none")
+    check("borders: missing API makes no frames", #ctx.ui.widgets, 36)
+end
+
+do
+    local ctx = loadBorders()
+    ctx.env.ActionButton1 = nil
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[2] = { "spell", 116 }
+    ctx.fire("PLAYER_ENTERING_WORLD")
+    check("borders: no ActionButton1 leaves the bars untouched", ctx.border("ActionButton2"), "none")
+end
+
+do
+    local ctx = loadBorders({ multi5 = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[73] = { "spell", 116 }
+    ctx.fire("ACTIONBAR_PAGE_CHANGED")
+    check("borders: MultiBar5 buttons get borders when present", ctx.border("MultiBar5Button1"), "red")
+    local bare = loadBorders()
+    bare.known[116], bare.known[205] = true, true
+    bare.bar[1] = { "spell", 116 }
+    local ok = pcall(bare.fire, "UPDATE_BONUS_ACTIONBAR")
+    check("borders: absent MultiBar5-7 raise nothing", ok, true)
+    check("borders: absent MultiBar5-7 still draw the others", bare.border("ActionButton1"), "red")
+end
+
+do
+    local ctx = loadBorders()
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.fire("PLAYER_LOGIN")
+    check("borders: no next rank known, no border", ctx.border("ActionButton1"), "none")
+    ctx.Store.SetTrainerSpell("MAGE", 205, 4, 2)
+    ctx.fire("TRAINER_UPDATE")
+    check("borders: trainer data refreshes to yellow", ctx.border("ActionButton1"), "yellow")
+    ctx.known[205] = true
+    ctx.fire("LEARNED_SPELL_IN_TAB")
+    check("borders: learning the rank turns it red", ctx.border("ActionButton1"), "red")
+    ctx.buttons.ActionButton4.action = nil
+    ctx.fire("SPELLS_CHANGED")
+    check("borders: a button without a slot is skipped", ctx.border("ActionButton4"), "none")
+end
+
+do
+    local ctx = loadBorders({ timer = true })
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    for slot = 1, 20 do
+        ctx.fire("ACTIONBAR_SLOT_CHANGED", slot)
+    end
+    check("borders: slot changes wait for the next frame", ctx.refreshes, 0)
+    check("borders: twenty slot changes queue one timer", #ctx.timers, 1)
+    check("borders: nothing is drawn before the next frame", ctx.border("ActionButton1"), "none")
+    ctx.nextFrame()
+    check("borders: twenty slot changes in one frame refresh once", ctx.refreshes, 1)
+    check("borders: the deferred refresh draws", ctx.border("ActionButton1"), "red")
+
+    ctx.fire("ACTIONBAR_PAGE_CHANGED")
+    for i = 1, 12 do
+        ctx.buttons["ActionButton" .. i].action = 12 + i
+    end
+    ctx.bar[13], ctx.bar[1] = nil, nil
+    ctx.bar[14] = { "spell", 116 }
+    ctx.nextFrame()
+    check("borders: a page change paints the new page's slots", ctx.border("ActionButton2"), "red")
+    check("borders: a page change clears the old page's border", ctx.border("ActionButton1"), "hidden")
+
+    ctx.fire("SPELLS_CHANGED")
+    ctx.combat = true
+    ctx.bar[15] = { "spell", 116 }
+    ctx.nextFrame()
+    check("borders: a refresh that lands in combat leaves borders untouched", ctx.border("ActionButton3"), "none")
+    ctx.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    ctx.nextFrame()
+    check("borders: combat end picks up the missed refresh", ctx.border("ActionButton3"), "red")
+    ctx.fire("PLAYER_LEVEL_UP", 60)
+    check("borders: a new event after the run schedules again", #ctx.timers, 1)
+end
+
+do
+    local ctx = loadBorders()
+    ctx.known[116], ctx.known[205] = true, true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 1)
+    check("borders: no C_Timer refreshes at once", ctx.refreshes, 1)
+    check("borders: no C_Timer draws at once", ctx.border("ActionButton1"), "red")
 end
 
 if failures > 0 then

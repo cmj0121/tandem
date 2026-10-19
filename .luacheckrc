@@ -16,6 +16,7 @@ globals = {
 
 -- WoW API used by the addon; add new ones here as the addon grows.
 read_globals = {
+    "ActionButton_GetPagedID",
     "AddonCompartmentFrame",
     "BOOKTYPE_SPELL",
     "C_Spell",
