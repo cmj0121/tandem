@@ -47,7 +47,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Browse.OnItemInfo(...)
         ns.Sources.OnItemInfo(...)
         ns.QuestPick.OnItemInfo(...)
-        ns.Upgrade.OnItemInfo(...)
+        if ns.Upgrade.OnItemInfo(...) then
+            ns.ItemBorders.Schedule()
+        end
     elseif event == "LOOT_READY" then
         ns.Loot.OnLootReady()
     elseif event == "LOOT_CLOSED" then
@@ -68,12 +70,15 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Browse.OnCombat()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         ns.Upgrade.Invalidate()
+        ns.ItemBorders.Schedule()
         ns.Browse.OnEquipmentChanged()
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Upgrade.OnBagUpdate()
+        ns.ItemBorders.Schedule()
     elseif event == "PLAYER_LOGIN" then
         ns.Launcher.OnLogin()
         ns.ActionBorders.Schedule()
+        ns.ItemBorders.OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then

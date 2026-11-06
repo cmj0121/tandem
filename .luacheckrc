@@ -38,6 +38,7 @@ read_globals = {
     "C_SpecializationInfo",
     "C_SuperTrack",
     "C_Timer",
+    "ContainerFrameCombinedBags",
     "C_TooltipInfo",
     "ClearCursor",
     "CombatLogGetCurrentEventInfo",
