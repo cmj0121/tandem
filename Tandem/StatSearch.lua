@@ -79,6 +79,45 @@ function StatSearch.Lines(id)
     return lines
 end
 
+local function red(color)
+    if type(color) ~= "table" then
+        return false
+    end
+    local r, g, b = Safe(color.r), Safe(color.g), Safe(color.b)
+    return type(r) == "number" and type(g) == "number" and type(b) == "number" and r > 0.9 and g < 0.2 and b < 0.2
+end
+
+-- StatSearch.Blocked(id) -> true | false | nil
+-- True when a line of the item's tooltip is in the client's red "requirement not met" colour (a class, skill, level or
+-- reputation the player lacks); nil while the item is not loaded (it is then asked for); false without the tooltip
+-- API. Read fresh each time, since skills and level change.
+function StatSearch.Blocked(id)
+    if not (C_TooltipInfo and C_TooltipInfo.GetItemByID) then
+        return false
+    end
+    if C_Item and C_Item.IsItemDataCachedByID and Safe(C_Item.IsItemDataCachedByID(id)) ~= true then
+        ns.View.RequestItem(id)
+        return nil
+    end
+    local data = Safe(C_TooltipInfo.GetItemByID(id))
+    local raw = type(data) == "table" and Safe(data.lines)
+    if type(raw) ~= "table" or #raw == 0 then
+        ns.View.RequestItem(id)
+        return nil
+    end
+    for _, line in ipairs(raw) do
+        if type(line) == "table" then
+            if line.leftColor == nil and line.rightColor == nil and TooltipUtil and TooltipUtil.SurfaceArgs then
+                pcall(TooltipUtil.SurfaceArgs, line)
+            end
+            if red(Safe(line.leftColor)) or red(Safe(line.rightColor)) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- StatSearch.Match(id, terms) -> value, line | nil, pending
 -- Returns the first number on the first tooltip line holding every term (0 when it has none) and that line as shown;
 -- nil when no line matches, with pending true while the item's tooltip is not loaded yet.

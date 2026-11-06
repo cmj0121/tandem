@@ -9,7 +9,7 @@ for _, event in ipairs({
     "PLAYER_REGEN_DISABLED", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED",
     "PLAYER_ENTERING_WORLD",
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
-    "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP",
+    "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
@@ -72,6 +72,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.ActionBorders.Schedule()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Browse.OnCombat()
+    elseif event == "SKILL_LINES_CHANGED" then
+        if ns.Upgrade.OnSkillLines() then
+            ns.ItemBorders.Schedule()
+        end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         ns.Upgrade.Invalidate()
         ns.ItemBorders.Schedule()
@@ -86,6 +90,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
+        if event == "PLAYER_LEVEL_UP" then
+            ns.Upgrade.Invalidate()
+            ns.ItemBorders.Schedule()
+        end
         ns.ActionBorders.Schedule()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         ns.Kills.OnCombatLog()

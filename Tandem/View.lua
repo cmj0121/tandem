@@ -207,7 +207,7 @@ end
 
 -- Returns what the player wears in a slot token: { ids = {[id] = true}, list = { {id, ilvl, score} | {ilvl = 0} |
 -- {unknown} }, ilvl, score } where ilvl is the one to beat (the lower of a pair, 0 when a slot is empty) or nil when
--- unknown, and score the lower stat score of the pair, nil unless every worn item has stats (an empty slot has none).
+-- unknown, and score the lower stat score of the pair (0 for an empty slot), nil unless every worn item has stats.
 -- An off hand behind a two-hander, or behind a main hand the client does not reveal, has nothing to beat.
 function View.Equipped(slot)
     local out = { ids = {}, list = {}, ilvl = math.huge, score = math.huge }
@@ -220,7 +220,7 @@ function View.Equipped(slot)
             e.score = classFile and ns.Advisor.Score(id, classFile, level) or nil
             out.ids[id] = true
         elseif id == false then
-            e.ilvl = 0
+            e.ilvl, e.score = 0, 0
         else
             e.unknown = true
         end
@@ -272,16 +272,10 @@ function View.EquippedHands()
     return out
 end
 
--- Returns true when a row { ilvl, score, usable } beats what is worn (decision 3): by score when both sides have
--- stats, else by item level; an item the player cannot use never does.
+-- Returns true when a row { score, usable } beats what is worn (decision D6): only when both sides have a stat score
+-- and the row's is higher, never by item level; an item the player cannot use never does.
 function View.IsUpgrade(row, worn)
-    if not row.usable then
-        return false
-    end
-    if row.score and worn.score then
-        return row.score > worn.score
-    end
-    return worn.ilvl ~= nil and row.ilvl > worn.ilvl
+    return row.usable and row.score ~= nil and worn.score ~= nil and row.score > worn.score or false
 end
 
 -- Returns a stat score as shown beside an item, one decimal; "" for an item without stats (nil).
