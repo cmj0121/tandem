@@ -921,3 +921,8 @@ function Store.Safe(v)
     end
     return v
 end
+
+-- Registers event on frame; returns false, registering nothing, when the client rejects the name.
+function Store.RegisterEvent(frame, event)
+    return (pcall(frame.RegisterEvent, frame, event))
+end

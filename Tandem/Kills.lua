@@ -26,15 +26,14 @@ end
 -- Registers the combat log under pcall (it may be forbidden) and the events that flush the buffer.
 function Kills.Register(f)
     frame = f
-    f:RegisterEvent("PLAYER_REGEN_ENABLED")
-    f:RegisterEvent("PLAYER_LOGOUT")
+    ns.Store.RegisterEvent(f, "PLAYER_REGEN_ENABLED")
+    ns.Store.RegisterEvent(f, "PLAYER_LOGOUT")
     player()
     if not CombatLogGetCurrentEventInfo then
         status = "unavailable"
         return
     end
-    local ok = pcall(f.RegisterEvent, f, CLEU)
-    status = ok and "on" or "blocked"
+    status = ns.Store.RegisterEvent(f, CLEU) and "on" or "blocked"
 end
 
 function Kills.OnCombatLog()
