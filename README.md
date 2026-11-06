@@ -20,7 +20,7 @@ make install
 ```
 
 This links the repository's `Tandem/` folder into the client as
-`<World of Warcraft>/_classic_beta_/Interface/AddOns/Tandem`, so edits to Lua files take effect after `/reload` in game.
+`<World of Warcraft>/_forever_/Interface/AddOns/Tandem`, so edits to Lua files take effect after `/reload` in game.
 Running it again when the link is already in place does nothing.
 
 To remove it:
@@ -42,13 +42,13 @@ If nothing qualifies, the script exits with an error that lists every place it s
 
 ### Overrides
 
-| Variable  | Default                | Meaning                                                                           |
-| --------- | ---------------------- | --------------------------------------------------------------------------------- |
-| `WOW_DIR` | auto-detected          | The `World of Warcraft` folder that contains `_classic_beta_`, not the flavor dir |
-| `FLAVOR`  | `_classic_beta_`       | The client flavor folder inside `WOW_DIR`                                         |
-| `MODE`    | `link`                 | `copy` copies the addon instead of linking it                                     |
-| `DATA`    | `data`                 | The folder `make import` writes contributions to                                  |
-| `OUT`     | `Tandem/Data/Loot.lua` | The merged file `make import` writes for the addon                                |
+| Variable  | Default                | Meaning                                                                             |
+| --------- | ---------------------- | ----------------------------------------------------------------------------------- |
+| `WOW_DIR` | auto-detected          | The `World of Warcraft` folder that contains `_forever_`, not the flavor dir        |
+| `FLAVOR`  | `_forever_`            | The client flavor folder inside `WOW_DIR`; `_classic_beta_` targets the beta client |
+| `MODE`    | `link`                 | `copy` copies the addon instead of linking it                                       |
+| `DATA`    | `data`                 | The folder `make import` writes contributions to                                    |
+| `OUT`     | `Tandem/Data/Loot.lua` | The merged file `make import` writes for the addon                                  |
 
 `WOW_DIR` and `FLAVOR` apply to `make install`, `make uninstall` and `make import`; `MODE` only to the first two.
 
@@ -745,7 +745,7 @@ Red wins when both apply. Macros, items, empty slots and spells without ranks ge
 ## What is collected
 
 Everything goes into one account-wide table, `TandemDB`, saved as
-`<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`.
+`<World of Warcraft>/_forever_/WTF/Account/<account>/SavedVariables/Tandem.lua`.
 
 | Key        | Content                                                                                                         |
 | ---------- | --------------------------------------------------------------------------------------------------------------- |

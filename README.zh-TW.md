@@ -18,7 +18,7 @@ make install
 ```
 
 這會把儲存庫的 `Tandem/` 資料夾連結到用戶端，成為
-`<World of Warcraft>/_classic_beta_/Interface/AddOns/Tandem`，因此修改 Lua 檔案後，在遊戲中執行 `/reload` 即可生效。
+`<World of Warcraft>/_forever_/Interface/AddOns/Tandem`，因此修改 Lua 檔案後，在遊戲中執行 `/reload` 即可生效。
 連結已存在時再次執行不會有任何動作。
 
 移除方式：
@@ -40,13 +40,13 @@ make uninstall
 
 ### 覆寫設定
 
-| 變數      | 預設值                 | 說明                                                                               |
-| --------- | ---------------------- | ---------------------------------------------------------------------------------- |
-| `WOW_DIR` | 自動偵測               | `World of Warcraft` 資料夾，也就是包含 `_classic_beta_` 的那層，而非 flavor 資料夾 |
-| `FLAVOR`  | `_classic_beta_`       | `WOW_DIR` 內的用戶端 flavor 資料夾                                                 |
-| `MODE`    | `link`                 | 設為 `copy` 時改為複製 addon，而非建立連結                                         |
-| `DATA`    | `data`                 | `make import` 寫入貢獻檔的資料夾                                                   |
-| `OUT`     | `Tandem/Data/Loot.lua` | `make import` 為 addon 寫入的合併檔                                                |
+| 變數      | 預設值                 | 說明                                                                          |
+| --------- | ---------------------- | ----------------------------------------------------------------------------- |
+| `WOW_DIR` | 自動偵測               | `World of Warcraft` 資料夾，也就是包含 `_forever_` 的那層，而非 flavor 資料夾 |
+| `FLAVOR`  | `_forever_`            | `WOW_DIR` 內的用戶端 flavor 資料夾；設為 `_classic_beta_` 則指向 beta 用戶端  |
+| `MODE`    | `link`                 | 設為 `copy` 時改為複製 addon，而非建立連結                                    |
+| `DATA`    | `data`                 | `make import` 寫入貢獻檔的資料夾                                              |
+| `OUT`     | `Tandem/Data/Loot.lua` | `make import` 為 addon 寫入的合併檔                                           |
 
 `WOW_DIR` 與 `FLAVOR` 適用於 `make install`、`make uninstall` 與 `make import`；`MODE` 只適用於前兩者。
 
@@ -677,7 +677,7 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 ## 收集的資料
 
 所有資料都存在一個帳號共用的表 `TandemDB`，存檔位置為
-`<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
+`<World of Warcraft>/_forever_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
 | Key        | 內容                                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------- |
