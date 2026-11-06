@@ -9,7 +9,8 @@ where each item came from: the creatures and objects it dropped from, with kill 
 the quests that reward it and the vendors that sell it. From that data, merged with what other players contributed, it
 suggests the best known gear your character can use and where to get it. It never acts for
 the player, it records nothing while you are in combat, and neither its advice commands nor its gear window are
-available in combat. Out of combat, it also adds lines to the tooltips of the items it knows.
+available in combat. Out of combat, it also adds lines to the tooltips of the items it knows, and it draws a green
+border on bag and loot items that beat what you wear.
 
 ## Install
 
@@ -260,7 +261,7 @@ Along the top of the window:
 - A slot dropdown: `All slots`, then each slot by name. `All slots` lists each item once, under its first slot, so a
   one-hand weapon appears once, as a main-hand weapon. When your class dual-wields at your level, such a one-hander is
   marked against both hands there: `(equipped)` when you wear it in either hand, and `(upgrade)` when it beats the
-  weaker of the two hands, by score or item level as in [How gear is ranked](#how-gear-is-ranked). In the `Main hand`
+  weaker of the two hands, by score as in [How gear is ranked](#how-gear-is-ranked). In the `Main hand`
   and `Off hand` views it is compared with that hand only.
 - A quality dropdown: `All qualities`, then `Poor`, `Common`, `Uncommon`, `Rare`, `Epic` and `Legendary`, each in its
   quality colour. Picking a quality lists only the items of that quality.
@@ -389,13 +390,21 @@ write anything. See [Importing loot logs](#importing-loot-logs).
 Tandem API check:
 Item tooltip: ok (TooltipDataProcessor.AddTooltipPostCall ok, Enum.TooltipDataType.Item ok)
 Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
+...
+Probe: LootButton1 present
+Probe: LootFrame.ScrollBox missing
 ```
 
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats`,
-`Stat search`, `Talent spec`, `Trainer record` and `Action bar borders`. A feature whose API is missing stays off
-instead of raising an error.
+`Stat search`, `Talent spec`, `Trainer record`, `Action bar borders` and `Upgrade borders`. A feature whose API is
+missing stays off instead of raising an error. `Upgrade borders` needs the `Upgrade alert` APIs and the default bag
+buttons, `ContainerFrame1Item1` or `ContainerFrameCombinedBags`.
+
+Then one `Probe: <path> present|missing` line each for `LootButton1`, `LootFrame.ScrollBox`, `LootFrame_Update`,
+`ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture` and `ContainerFrame1Item1.UpgradeIcon`. They
+tell which bag and loot frames the client has, and turn nothing on or off.
 
 ### `/tandem map`
 
@@ -498,13 +507,13 @@ that ranks says so on its last line.
 - Dual wield: warriors and hunters from level 20, rogues from level 10. Their one-hand weapons are listed under both
   `mainhand` and `offhand`, and only they can use off-hand-only weapons. Shields and held-in-off-hand items go in
   `offhand`.
-- Rings and trinkets are each one slot, compared against the lower item level of the two you wear.
+- Rings and trinkets are each one slot, compared against the lower score of the two you wear.
 
 Marks after an item:
 
 - `(equipped)`: you wear it.
-- `(upgrade)`: its score is above that of what you wear in that slot; when either has no stats, its item level is
-  above instead, and an empty slot counts as item level 0. No mark is given when the client does not reveal what you
+- `(upgrade)`: its stat score is above that of what you wear in that slot, and an empty slot scores 0. Item level
+  never counts: no mark is given when the item or what you wear has no stats, when the client does not reveal what you
   wear, and none in `offhand` while you wield a two-hand weapon.
 - `(no stats)`: its stats have not been read, so it is ranked after the scored items.
 - `(no known source)`: no drop, quest reward or vendor entry for it (`gear ... all` and the browse window only).
@@ -610,19 +619,27 @@ compared with what you wear: hover the choice to see its rank and `(upgrade)` ma
 
 ### Upgrade alert
 
-When an item lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4) that your class and level can use and that beats
-what you wear in its slot, chat shows one line. When both the new item and what you wear have stats, they are compared
-by stat score; otherwise by item level:
+When an item lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4) that you can equip now and whose stat score beats
+what you wear in its slot, chat shows one line:
 
 ```text
 Tandem: upgrade for Chest: [Plate Chest] (score 24.5 over 18.0)
-Tandem: upgrade for Chest: [Plate Chest] (item level 45 over 30)
 ```
 
-The rule is the `(upgrade)` mark of [`/tandem gear`](#tandem-gear): an empty slot has no stats and counts as item level
-0, a ring or trinket is compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker
-hand, and an off-hand item says nothing while you wield a two-hander. The score is for your class and talent tree, with
-your [`/tandem weights`](#tandem-weights).
+An item is better, for this alert and for the [upgrade borders](#upgrade-borders), when both hold:
+
+- You can equip it now: it goes in a slot, your class and level can use it as in
+  [How gear is ranked](#how-gear-is-ranked), and its tooltip has no red requirement line, such as a class, a weapon
+  skill you have not trained, a race, a profession or a reputation you lack.
+- Its stat score is higher than that of every item you wear in that slot. An empty slot scores 0, a ring or trinket is
+  compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker hand, and an off-hand
+  item is never better while you wield a two-hander. The score is for your class and talent tree, with your
+  [`/tandem weights`](#tandem-weights).
+
+Item level never counts. When the new item or an item you wear has no stats yet, its tooltip is read for them and
+they are saved, as a scan would (this needs the `Stat search` line of [`/tandem check`](#tandem-check)); until they
+are known, the item is not judged. Items listed only in the browse window still need a
+[`/tandem scan`](#tandem-scan) for their stats.
 
 - Each item is announced at most once per session, and only when it is new in the bags: the bags you log in with are
   read silently, and moving an item between bags says nothing.
@@ -632,6 +649,21 @@ your [`/tandem weights`](#tandem-weights).
 - The alert only advises: Tandem never equips anything.
 - Nothing happens while the client does not tell your class or level, or when the `Upgrade alert` line of
   [`/tandem check`](#tandem-check) is `missing`.
+
+### Upgrade borders
+
+An item in your bags or in the loot window that is better than what you wear, by the rule of the
+[upgrade alert](#upgrade-alert), gets a green border on its button. Hover it to see its score in the
+[item tooltip](#item-tooltip).
+
+- Only the default Blizzard bag buttons, separate or combined bags, and the default loot window's buttons get borders.
+  Bag addons such as Bagnon or AdiBags, and auto-loot, which never shows the loot window, bypass those frames, so
+  nothing is drawn there; the [upgrade alert](#upgrade-alert) in chat still tells you.
+- Borders are brought up to date when a bag or the loot window opens, when your bags, equipment, skills or level
+  change, and when the client loads an item's details. This works in combat too.
+- An item whose stats or requirements are not known yet gets no border until they are.
+- The border only advises: Tandem never equips or loots anything, and never changes what the buttons do.
+- Nothing is drawn when the `Upgrade borders` line of [`/tandem check`](#tandem-check) is `missing`.
 
 ### Stat search
 
@@ -852,7 +884,8 @@ Lua error, and the `SavedVariables/Tandem.lua` file.
 3. Run `/tandem gear`. Each slot shows an item or `none known`, and the last line is the stats note. Click an item:
    the game's tooltip opens with its icon and stats.
 4. Run `/tandem gear chest`, or another slot you wear something in. The `Equipped:` line shows your item, and items
-   with a higher item level are marked `(upgrade)`. Run `/tandem gear chest all` and look for `(no known source)`.
+   with a higher stat score are marked `(upgrade)`; an item marked `(no stats)` never is. Run
+   `/tandem gear chest all` and look for `(no known source)`.
 5. Shift-click an item you looted into `/tandem rank`. It prints a rank, its sources with drop counts and, for a
    creature, a rate per kill or per looted corpse. Try `/tandem rank` with a number too.
 6. Run `/tandem gear finger` and `/tandem gear offhand`. Check that `(upgrade)` compares with your weaker ring, and
@@ -959,13 +992,14 @@ tooltip in step 5, and any Lua error.
 
 ### Check the client APIs
 
-The tooltip, the quest and vendor sources, the map pins, the quest reward pick and the upgrade alert use APIs that are
+The tooltip, the quest and vendor sources, the map pins, the quest reward pick, the upgrade alert and the upgrade
+borders use APIs that are
 not verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twelve lines, one each for `Item tooltip`,
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and thirteen lines, one each for `Item tooltip`,
    `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
-   `Item stats`, `Stat search`, `Talent spec`, `Trainer record` and `Action bar borders`, each followed by `ok` or
-   `missing` and its APIs.
+   `Item stats`, `Stat search`, `Talent spec`, `Trainer record`, `Action bar borders` and `Upgrade borders`, each
+   followed by `ok` or `missing` and its APIs. Six `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -980,10 +1014,11 @@ not verified on Forever. One pass of `/tandem check` tells which of them the cli
    [Check the upgrade alert](#check-the-upgrade-alert). If `Stat search` is `ok`, run
    [Check the stat search](#check-the-stat-search). If `Talent spec` is `ok`, run `/tandem weights` on a character
    level 10 or more: its first line names the tree with the most talent points, followed by `(auto)`. If
-   `Action bar borders` is `ok`, run [Check the action bar borders](#check-the-action-bar-borders).
+   `Action bar borders` is `ok`, run [Check the action bar borders](#check-the-action-bar-borders). If
+   `Upgrade borders` is `ok`, run [Check the upgrade borders](#check-the-upgrade-borders).
 
-Report back every line of steps 1 and 2 as printed, the first line of `/tandem weights` from step 5, and any Lua
-error.
+Report back every line of steps 1 and 2 as printed, the `Probe:` lines included, the first line of `/tandem weights`
+from step 5, and any Lua error.
 
 ### Check the map pins
 
@@ -1026,17 +1061,17 @@ on the button or hid part of it, and any Lua error.
 
 1. Log in or run `/reload` with some gear in your bags: no `Tandem: upgrade for` line shows.
 2. Out of combat, loot, buy or take from the mail an item your class can use that is marked `(upgrade)` in its tooltip
-   (or any usable item for an empty slot). Chat shows one line, nothing is equipped, and it reads
-   `Tandem: upgrade for <slot>: <item link> (score <n> over <m>)` when both items show a score in their tooltip,
-   else `Tandem: upgrade for <slot>: <item link> (item level <n> over <m>)`.
+   (or any usable item with stats for an empty slot). Chat shows one line, nothing is equipped, and it reads
+   `Tandem: upgrade for <slot>: <item link> (score <n> over <m>)`.
 3. Move that item to another bag, sell it and buy it back, or drop and loot it again: no second line for it this
    session.
-4. Get an item you cannot use, or one no better than what you wear: no line.
+4. Get an item you cannot use, one with a red line in its tooltip (such as a weapon type you have not trained), one
+   with a higher item level but a lower score, or one no better than what you wear: no line.
 5. Loot an upgrade during a fight: nothing shows in combat; the line shows when the fight ends.
 6. If you can, loot an upgrade the client has never shown before (a fresh drop): the line may come a moment later, once
    the item has loaded.
 
-Report back each line as printed with the score and item level of what you wore, any upgrade that got no line or any line for an
+Report back each line as printed with the score of what you wore, any upgrade that got no line or any line for an
 item that is not an upgrade, and any Lua error.
 
 ### Check the stat search
@@ -1077,6 +1112,21 @@ tooltip does not show (or missing though it does), the stall in step 6, and any 
 
 Report back any button that is red or yellow without reason, or not when it should be, which bars got no borders at
 all, and any Lua error.
+
+### Check the upgrade borders
+
+1. With the default bags, open your bags while they hold an item that the [upgrade alert](#upgrade-alert) would
+   announce: its button has a green border. Items no better than what you wear, items you cannot use and items with a
+   red line in their tooltip have none.
+2. Equip the bordered item: its border goes, and the item you took off gets none.
+3. Loot a corpse that drops an upgrade with auto-loot off: the item's button in the loot window has a green border.
+   Page through a loot window of more than one page: borders follow the items, not the buttons.
+4. Level up, or learn a weapon skill at a trainer for a weapon in your bags: its border appears or goes to match.
+5. Start a fight and loot or move an upgrade in your bags: the border still shows.
+6. With a bag addon such as Bagnon or AdiBags, or with auto-loot on, no border shows; the chat alert still does.
+
+Report back the `Upgrade borders` and `Probe:` lines of `/tandem check`, any bordered item that is not an upgrade or
+upgrade without a border, whether the border sits well on the button, and any Lua error.
 
 ## Interface number
 
