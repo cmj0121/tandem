@@ -3,7 +3,7 @@
 # Order: $WOW_DIR if set -> common roots -> Spotlight (mdfind).
 set -eu
 
-FLAVOR="${FLAVOR:-_classic_beta_}"
+FLAVOR="${FLAVOR:-_forever_}"
 
 is_client() {
 	[ -d "$1/$FLAVOR/Interface/AddOns" ]

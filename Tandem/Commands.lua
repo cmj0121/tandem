@@ -368,7 +368,7 @@ local function browse(args)
     end
 end
 
--- Prints one line per feature: ok when every API it needs is present, with each API's state.
+-- Prints one line per feature: ok when every API it needs is present, with each API's state; then one line per probe.
 local function check()
     print(L["Tandem API check:"])
     for _, feature in ipairs(ns.Check.Status()) do
@@ -378,6 +378,9 @@ local function check()
         end
         print(L["%s: %s (%s)"]:format(L[feature.name], feature.ok and L["ok"] or L["missing"],
             table.concat(apis, ", ")))
+    end
+    for _, probe in ipairs(ns.Check.Probes()) do
+        print(L["Probe: %s %s"]:format(probe.path, probe.ok and L["present"] or L["missing"]))
     end
 end
 

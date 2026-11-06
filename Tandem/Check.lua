@@ -50,18 +50,34 @@ Check.FEATURES = {
         { "GetActionInfo" }, { "GetSpellInfo", "C_Spell.GetSpellInfo" }, { "IsSpellKnown", "IsPlayerSpell" },
         { "ActionButton1" },
     } },
+    { name = "Upgrade borders", needs = {
+        { "C_Container.GetContainerNumSlots", "GetContainerNumSlots" },
+        { "C_Container.GetContainerItemID", "GetContainerItemID" },
+        { "GetInventoryItemLink" },
+        { "ContainerFrame1Item1", "ContainerFrameCombinedBags" },
+    } },
+}
+
+-- Client paths /tandem check reports for in-game diagnosis; they gate nothing.
+Check.PROBES = {
+    "LootButton1", "LootFrame.ScrollBox", "LootFrame_Update", "ContainerFrame1Item1.IconBorder",
+    "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon",
 }
 
 -- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.
+-- A step that raises (an __index metamethod on a client frame) counts as missing.
 function Check.Has(path)
-    local v = _G
-    for key in path:gmatch("[^.]+") do
-        if type(v) ~= "table" then
-            return false
+    local ok, found = pcall(function()
+        local v = _G
+        for key in path:gmatch("[^.]+") do
+            if type(v) ~= "table" then
+                return false
+            end
+            v = v[key]
         end
-        v = v[key]
-    end
-    return v ~= nil
+        return v ~= nil
+    end)
+    return ok and found
 end
 
 -- Returns true when every need of the named feature is met; a feature gates on this before touching its API.
@@ -98,6 +114,15 @@ function Check.Status()
             ok = ok and met
         end
         out[#out + 1] = { name = feature.name, ok = ok, apis = apis }
+    end
+    return out
+end
+
+-- Returns { {path, ok}, ... } in PROBES order.
+function Check.Probes()
+    local out = {}
+    for i, path in ipairs(Check.PROBES) do
+        out[i] = { path = path, ok = Check.Has(path) }
     end
     return out
 end

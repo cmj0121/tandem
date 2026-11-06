@@ -25,7 +25,8 @@ end
 -- Loads the addon as a client with the given locale would; returns its namespace,
 -- the printed lines, a function that fires ADDON_LOADED, the global environment, a function that fires any event
 -- and the event frame. opts.env sets globals before any file runs; opts.blockCLEU makes registering the combat log
--- raise, as a client that forbids it would. opts.shipped, a table, stands in for the generated Data/Loot.lua;
+-- raise, as a client that forbids it would. opts.rejectEvents, a set of names, makes registering any of them raise
+-- as a client that does not know the event would. opts.shipped, a table, stands in for the generated Data/Loot.lua;
 -- otherwise that file is skipped so tests never depend on committed data. opts.toc replaces the toc's file list;
 -- its missing files are skipped, as WoW does. A missing file the real toc lists fails the load. opts.widgets, a
 -- function(kind, name, parent, template), makes every other CreateFrame call than the event frame's.
@@ -37,6 +38,9 @@ local function loadAddon(locale, opts)
     function frame.RegisterEvent(self, ev)
         if opts.blockCLEU and ev == "COMBAT_LOG_EVENT_UNFILTERED" then
             error("forbidden")
+        end
+        if opts.rejectEvents and opts.rejectEvents[ev] then
+            error(('Attempt to register unknown event "%s"'):format(ev))
         end
         self.registered[ev] = true
     end
@@ -2803,16 +2807,16 @@ do
     local out = ctx.run("gear")
     check("gear overview header", out[1], "Best known gear for level 40 Warrior:")
     check("gear overview empty slot", out[2], "Head: none known")
-    check("gear overview chest is a link and an upgrade over nothing", out[6],
-        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (upgrade) (no stats)")
-    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (upgrade) (no stats)")
+    check("gear overview chest is a link, no mark without stats", out[6],
+        "Chest: " .. built(1, BLUE) .. ", ilvl 45 (no stats)")
+    check("gear overview off hand", out[15], "Off hand: " .. built(7, GREEN) .. ", ilvl 25 (no stats)")
     check("gear overview skips a sourceless two-hander", out[16], "Two-hand: none known")
     check("gear overview footer", out[18],
         "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     check("gear overview line count", #out, 18)
     check("gear asks the client for uncached items", ctx.requested[1], true)
     check("gear overview all shows sourceless items, marked", ctx.run("gear all")[16],
-        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (upgrade) (no stats) (no known source)")
+        "Two-hand: " .. built(15, GREEN) .. ", ilvl 30 (no stats) (no known source)")
     check("GEAR overview is case-insensitive", ctx.run("GEAR")[1], "Best known gear for level 40 Warrior:")
 end
 
@@ -2825,7 +2829,7 @@ do
     check("gear chest header", out[1], "Best Chest for level 40 Warrior:")
     check("gear chest equipped line", out[2], "Equipped: " .. built(3, BLUE) .. ", ilvl 30")
     check("gear chest uses the cached client link", out[3],
-        "1. " .. plate .. ", ilvl 45, level 40 (upgrade) (no stats)")
+        "1. " .. plate .. ", ilvl 45, level 40 (no stats)")
     check("gear chest does not request a cached item", ctx.requested[1], nil)
     check("gear chest marks the equipped item", out[4],
         "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (equipped) (no stats)")
@@ -2840,8 +2844,8 @@ do
     out = ctx.run("gear chest")
     check("gear chest ilvl of an uncached equipped item from the client", out[2],
         "Equipped: " .. ctx.equipped[5] .. ", ilvl 40")
-    check("gear chest upgrade over the client ilvl", out[3],
-        "1. " .. plate .. ", ilvl 45, level 40 (upgrade) (no stats)")
+    check("gear chest: no mark by the client ilvl alone", out[3],
+        "1. " .. plate .. ", ilvl 45, level 40 (no stats)")
     check("gear chest no upgrade below the client ilvl", out[4],
         "2. " .. built(3, BLUE) .. ", ilvl 30, level 25 (no stats)")
 
@@ -2859,13 +2863,13 @@ do
     ctx.equipped[5] = nil
     out = ctx.run("gear chest")
     check("gear chest hides sourceless items", out[3],
-        "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
+        "1. " .. built(4, BLUE) .. ", ilvl 30, level 25 (no stats)")
     check("gear chest hides sourceless items count", #out, 4)
     out = ctx.run("gear chest all")
     check("gear chest all shows sourceless items, marked", out[3],
-        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no stats) (no known source)")
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (no stats) (no known source)")
     check("gear chest all keeps sourced items", out[4],
-        "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
+        "2. " .. built(4, BLUE) .. ", ilvl 30, level 25 (no stats)")
     out = ctx.run("gear twohand")
     check("gear with nothing usable", out[3], "No known Two-hand you can use")
 end
@@ -2880,8 +2884,8 @@ do
     local out = ctx.run("gear finger")
     check("gear finger lists both rings", out[2] .. " / " .. out[3],
         "Equipped: |Hitem:778:|h, ilvl 20 / Equipped: nothing")
-    check("gear finger compares with the empty ring slot", out[4],
-        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (upgrade) (no stats)")
+    check("gear finger: no mark over the empty ring slot without stats", out[4],
+        "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (no stats)")
     ctx.equipped[12] = "|Hitem:778:|h"
     check("gear finger compares with the lower ring", ctx.run("gear finger")[4],
         "1. " .. built(21, GREEN) .. ", ilvl 15, level 10 (no stats)")
@@ -2899,7 +2903,7 @@ do
     end
     local ctx = loadGear("enUS", db, shipped)
     local out = ctx.run("rank 1")
-    check("rank by id", out[1], built(1, BLUE) .. " (upgrade) (no stats): rank 1 of 5 for Chest")
+    check("rank by id", out[1], built(1, BLUE) .. " (no stats): rank 1 of 5 for Chest")
     check("rank unknown source", out[2], "  unknown source, unknown map - drops: 1")
     check("rank source per kill", out[3], "  Hogger, Elwynn Forest - drops: 1, 25.0% per kill")
     check("rank source per looted corpse", out[4],
@@ -2908,7 +2912,7 @@ do
     check("rank line count", #out, 5)
 
     out = ctx.run("rank |cff0070dd|Hitem:2::::::::::::::|h[Mail Robe]|h|r")
-    check("rank by link", out[1], built(2, GREEN) .. " (upgrade) (no stats): rank 4 of 5 for Chest")
+    check("rank by link", out[1], built(2, GREEN) .. " (no stats): rank 4 of 5 for Chest")
     check("rank shipped source without a name", out[2], "  npc #500, Elwynn Forest - drops: 1")
     check("rank by a link inside text", ctx.run("rank this |Hitem:2:0|h one")[1], out[1])
 
@@ -2923,7 +2927,7 @@ do
         built(1, BLUE) .. " (equipped) (no stats): rank 1 of 5 for Chest")
 
     out = ctx.run("rank 11")
-    check("rank sourceless item", out[1], built(11, "ff8000") .. " (upgrade) (no stats): rank 1 of 6 for Chest")
+    check("rank sourceless item", out[1], built(11, "ff8000") .. " (no stats): rank 1 of 6 for Chest")
     check("rank sourceless item says so", out[2], "  no known source")
     out = ctx.run("rank 9")
     check("rank unranked slot", out[1], built(9, "ffffff") .. " does not go in a ranked slot")
@@ -3038,15 +3042,15 @@ do
     local out = ctx.run("gear chest")
     check("zhTW gear chest header", out[1], "最佳胸部（40 級戰士）：")
     check("zhTW gear chest equipped", out[2], "已裝備：無")
-    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（升級）（無屬性）")
+    check("zhTW gear chest row", out[3], "1. " .. built(1, BLUE, "物品 #1") .. "，物品等級 45，需求等級 40（無屬性）")
     check("zhTW gear footer", out[#out], "依屬性分數、再依物品等級與品質排名；標示（無屬性）的物品排在最後")
     out = ctx.run("gear")
     check("zhTW gear overview header", out[1], "40 級戰士的最佳已知裝備：")
     check("zhTW gear overview none", out[2], "頭部：無已知物品")
     check("zhTW gear overview all", ctx.run("gear all")[16],
-        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（升級）（無屬性）（來源未知）")
+        "雙手：" .. built(15, GREEN, "物品 #15") .. "，物品等級 30（無屬性）（來源未知）")
     out = ctx.run("rank 1")
-    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（升級）（無屬性）：排名第 1／5（胸部）")
+    check("zhTW rank", out[1], built(1, BLUE, "物品 #1") .. "（無屬性）：排名第 1／5（胸部）")
     check("zhTW rank per kill", out[2], "  霍格，Elwynn Forest：掉落 1 次，每次擊殺 25.0%")
     check("zhTW rank per corpse", out[3], "  NPC #449，未知地圖：掉落 1 次，每具拾取屍體 50.0%（上限）")
     check("zhTW rank sourceless", ctx.run("rank 11")[2], "  來源未知")
@@ -3080,8 +3084,8 @@ do
     check("gear offhand behind a client two-hander has no upgrade mark", ctx.run("gear offhand")[3],
         "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
     ctx.equipped[16] = "|Hitem:7:|h"
-    check("gear offhand behind a one-hander is an upgrade over nothing", ctx.run("gear offhand")[3],
-        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (upgrade) (no stats)")
+    check("gear offhand behind a one-hander: no mark without stats", ctx.run("gear offhand")[3],
+        "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
     ctx.equipped[16] = secret()
     check("gear offhand behind a secret main hand has no upgrade mark", ctx.run("gear offhand")[3],
         "1. " .. built(7, GREEN) .. ", ilvl 25, level 20 (no stats)")
@@ -3091,7 +3095,7 @@ do
     ctx.cache[779] = { "Big Shield", "|Hitem:779:|h", 4, 60 }
     out = ctx.run("gear twohand all")
     check("gear twohand compares with the main hand only", out[3],
-        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (upgrade) (no stats) (no known source)")
+        "1. " .. built(15, GREEN) .. ", ilvl 30, level 20 (no stats) (no known source)")
     check("gear twohand lists only the main hand", out[2], "Equipped: " .. built(7, GREEN) .. ", ilvl 25")
 end
 
@@ -3491,7 +3495,7 @@ do
     check("browse row: icon from the client", b[1].icon.texture, 135000)
     check("browse row: icon fallback", b[2].icon.texture, "Interface\\Icons\\INV_Misc_QuestionMark")
     check("browse row: name before the item loads", b[1].name:GetText(),
-        "|cffff8000item #11|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
+        "|cffff8000item #11|r" .. GREY .. " (no stats) (no known source)|r")
     check("browse row: asks the client to load the item", ctx.requested[11], true)
     check("browse row: ilvl", b[1].ilvl:GetText(), "99")
     check("browse row: no score without stats", b[1].score:GetText(), "")
@@ -3521,7 +3525,7 @@ do
     local provider = win.box.provider
     ctx.tick()
     check("browse refresh: name after the item loads", b[1].name:GetText(),
-        "|cffff8000GM Robe|r" .. GREY .. " (upgrade) (no stats) (no known source)|r")
+        "|cffff8000GM Robe|r" .. GREY .. " (no stats) (no known source)|r")
     check("browse refresh: second item too", b[3].name:GetText(),
         "|cff0070ddLeather Vest|r" .. GREY .. " (equipped) (no stats)|r")
     check("browse refresh: rows are not listed again", win.box.provider, provider)
@@ -3574,7 +3578,7 @@ do
         "|cff0070dditem #4|r" .. GREY .. " (equipped) (no stats)|r")
     ctx.run("browse chest")
     check("browse gear change: showing again reads the gear", b[4].name:GetText(),
-        "|cff0070dditem #4|r" .. GREY .. " (upgrade) (no stats)|r")
+        "|cff0070dditem #4|r" .. GREY .. " (no stats)|r")
 end
 
 do
@@ -4767,16 +4771,16 @@ do
     check("score upgrade: a lower score is no upgrade", out[4], "2. " .. built(1, BLUE) .. ", ilvl 45, level 40")
     check("score upgrade: higher ilvl but lower score is no upgrade", out[5],
         "3. " .. built(4, BLUE) .. ", ilvl 30, level 25")
-    check("score upgrade: a stat-less item falls back to item level", out[6],
-        "4. " .. built(3, BLUE) .. ", ilvl 30, level 25 (upgrade) (no stats)")
+    check("score upgrade: a stat-less item gets no mark by item level", out[6],
+        "4. " .. built(3, BLUE) .. ", ilvl 30, level 25 (no stats)")
     ctx.equipped[5] = "|Hitem:4:|h"
     out = ctx.run("gear chest")
     check("score upgrade: a higher score is an upgrade at a lower ilvl", out[3],
         "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 (upgrade)")
     ctx.equipped[5] = "|Hitem:2:|h"
     out = ctx.run("gear chest")
-    check("score upgrade: a stat-less worn item compares by item level", out[3] .. " / " .. out[4],
-        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 / 2. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade)")
+    check("score upgrade: a stat-less worn item gives no marks", out[3] .. " / " .. out[4],
+        "1. " .. built(12, GREEN) .. ", ilvl 20, level 10 / 2. " .. built(1, BLUE) .. ", ilvl 45, level 40")
     check("score upgrade: the footer explains the order", out[#out],
         "Ranked by stat score, then item level and quality; items marked (no stats) come last")
     local View = ctx.addon.View
@@ -4784,7 +4788,13 @@ do
         View.IsUpgrade({ ilvl = 50, score = 5, usable = true }, { score = 5, ilvl = 1 }), false)
     check("score upgrade: an unusable item never is",
         View.IsUpgrade({ ilvl = 50, score = 9, usable = false }, { score = 5, ilvl = 1 }), false)
-    check("score upgrade: an empty slot has no score", View.Equipped("back").score, nil)
+    check("score upgrade: higher ilvl without a score on either side is no upgrade",
+        View.IsUpgrade({ ilvl = 50, usable = true }, { ilvl = 1 }), false)
+    check("score upgrade: higher ilvl over a stat-less worn item is no upgrade",
+        View.IsUpgrade({ ilvl = 50, score = 9, usable = true }, { ilvl = 1 }), false)
+    check("score upgrade: a higher score at a lower ilvl is an upgrade",
+        View.IsUpgrade({ ilvl = 1, score = 9, usable = true }, { score = 5, ilvl = 50 }), true)
+    check("score upgrade: an empty slot scores 0", View.Equipped("back").score, 0)
 end
 
 do
@@ -4820,8 +4830,8 @@ end
 -- Commands: deprecated items in /tandem rank and /tandem gear.
 
 for locale, want in pairs({
-    enUS = { built(3, BLUE) .. " (upgrade) (no stats): rank 2 of 5 for Chest", "  this item is deprecated" },
-    zhTW = { built(3, BLUE, "物品 #3") .. "（升級）（無屬性）：排名第 2／5（胸部）", "  此物品已棄用" },
+    enUS = { built(3, BLUE) .. " (no stats): rank 2 of 5 for Chest", "  this item is deprecated" },
+    zhTW = { built(3, BLUE, "物品 #3") .. "（無屬性）：排名第 2／5（胸部）", "  此物品已棄用" },
 }) do
     local db, shipped = gearData()
     db.items[3] = { 30, 25, 3, "INVTYPE_CHEST", 4, 2, 1 }
@@ -4838,8 +4848,8 @@ do
     local ctx = loadGear("enUS", db, shipped)
     local out = ctx.run("gear chest")
     check("gear chest skips a deprecated item", out[3] .. " / " .. out[4],
-        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (upgrade) (no stats) / 2. " .. built(4, BLUE)
-            .. ", ilvl 30, level 25 (upgrade) (no stats)")
+        "1. " .. built(1, BLUE) .. ", ilvl 45, level 40 (no stats) / 2. " .. built(4, BLUE)
+            .. ", ilvl 30, level 25 (no stats)")
     check("gear chest without the deprecated item", #out, 7)
     check("rank of an unranked deprecated item says so", ctx.run("rank 9")[2], "  this item is deprecated")
     check("rank of a plain item says nothing more", ctx.run("rank 1")[2]:find("deprecated", 1, true), nil)
@@ -4917,7 +4927,8 @@ do
     ctx.run("browse")
     local win = ctx.win()
     local sword = "|cff1eff00item #7|r"
-    check("hands: beats the weaker hand", buttonFor(win, 7).name:GetText(), sword .. GREY .. " (upgrade) (no stats)|r")
+    check("hands: no mark over the weaker hand without stats", buttonFor(win, 7).name:GetText(),
+        sword .. GREY .. " (no stats)|r")
     ctx.run("browse mainhand")
     check("hands: the main hand view compares with the main hand only", buttonFor(win,
         7).name:GetText(), sword .. GREY .. " (no stats)|r")
@@ -4936,8 +4947,8 @@ do
 
     ctx.equipped[16] = "|Hitem:781:|h"
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
-    check("hands: an empty off hand is beaten", buttonFor(win,
-        7).name:GetText(), sword .. GREY .. " (upgrade) (no stats)|r")
+    check("hands: no mark over an empty off hand without stats", buttonFor(win,
+        7).name:GetText(), sword .. GREY .. " (no stats)|r")
 
     ctx.equipped[16] = secret()
     ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
@@ -5336,23 +5347,23 @@ do
 
     local t = ctx.hover({ id = 1 })
     check("tooltip: rank, upgrade and kill-rate source", texts(t),
-        "Tandem: rank 1 of 5 for Chest (upgrade) (no stats)"
+        "Tandem: rank 1 of 5 for Chest (no stats)"
             .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: rank line is blue", colour(t.lines[1]), "0.4,0.8,1")
     check("tooltip: source line is grey-white", colour(t.lines[2]), "0.8,0.8,0.8")
     check("tooltip: lines do not wrap", t.lines[1].wrap, false)
 
     check("tooltip: corpse-rate source with more", ctx.text(3),
-        "Tandem: rank 2 of 5 for Chest (upgrade) (no stats)"
+        "Tandem: rank 2 of 5 for Chest (no stats)"
             .. " / Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)")
     check("tooltip: source without a rate", ctx.text(2),
-        "Tandem: rank 4 of 5 for Chest (upgrade) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 4 of 5 for Chest (no stats) / Tandem: drops from npc #500, Elwynn Forest")
     check("tooltip: unsourced item has only the rank line", ctx.text(11),
-        "Tandem: rank 1 of 6 for Chest (upgrade) (no stats) (no known source)")
+        "Tandem: rank 1 of 6 for Chest (no stats) (no known source)")
     check("tooltip: no ranked slot shows only the source", ctx.text(9),
         "Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)")
     check("tooltip: ItemRefTooltip gets the lines too", ctx.text(2, ctx.env.ItemRefTooltip),
-        "Tandem: rank 4 of 5 for Chest (upgrade) (no stats) / Tandem: drops from npc #500, Elwynn Forest")
+        "Tandem: rank 4 of 5 for Chest (no stats) / Tandem: drops from npc #500, Elwynn Forest")
 
     ctx.equipped[5] = "|Hitem:1:|h"
     check("tooltip: equipped mark", ctx.text(1),
@@ -5429,7 +5440,8 @@ do
     ctx.equipped[16] = "|Hitem:778:|h"
     ctx.equipped[17] = "|Hitem:779:|h"
     local line = ctx.hover({ id = 7 }).lines[1].text
-    check("tooltip hands: beats the weaker hand", line:match("%(upgrade%) %(no stats%)$") ~= nil, true)
+    check("tooltip hands: no upgrade mark without stats", line:match(" %(no stats%)$") ~= nil
+        and not line:find("(upgrade)", 1, true), true)
     ctx.equipped[16], ctx.equipped[17] = "|Hitem:779:|h", "|Hitem:7:|h"
     line = ctx.hover({ id = 7 }).lines[1].text
     check("tooltip hands: equipped in the off hand", line:match("%(equipped%) %(no stats%)$") ~= nil, true)
@@ -5491,26 +5503,26 @@ do
     check("tooltip score: the rank line shows the score", ctx.hover({ id = 12 }).lines[1].text,
         "Tandem: rank 1 of 5 for Chest, score 10.0 (upgrade)")
     check("tooltip score: a zero score still shows", ctx.hover({ id = 4 }).lines[1].text,
-        "Tandem: rank 2 of 5 for Chest, score 0.0 (upgrade)")
+        "Tandem: rank 2 of 5 for Chest, score 0.0")
     check("tooltip score: a stat-less item has no score", ctx.hover({ id = 1 }).lines[1].text,
-        "Tandem: rank 3 of 5 for Chest (upgrade) (no stats)")
+        "Tandem: rank 3 of 5 for Chest (no stats)")
     ctx.addon.Weights.SetOverride("int", 5, "WARRIOR", 40)
     check("tooltip memo: a weight change ranks and scores again", ctx.hover({ id = 4 }).lines[1].text,
         "Tandem: rank 1 of 5 for Chest, score 75.0 (upgrade)")
     ctx.addon.Weights.SetSpec(3)
     check("tooltip memo: a spec change ranks again", ctx.hover({ id = 4 }).lines[1].text,
-        "Tandem: rank 2 of 5 for Chest, score 0.0 (upgrade)")
+        "Tandem: rank 2 of 5 for Chest, score 0.0")
     local zh = loadTooltip("zhTW", statData())
     check("zhTW tooltip score", zh.hover({ id = 12 }).lines[1].text, "Tandem：排名第 1／5（胸部），分數 10.0（升級）")
 end
 
 for locale, want in pairs({
-    enUS = { "Tandem: rank 1 of 5 for Chest (upgrade) (no stats)"
+    enUS = { "Tandem: rank 1 of 5 for Chest (no stats)"
                  .. " / Tandem: drops from Hogger, Elwynn Forest (25.0% per kill)",
              "Tandem: drops from npc #449, Elwynn Forest (up to 50.0%) (+1 more)",
              "Tandem: you cannot use it: level 40 required", "Tandem: your class cannot use it",
              "Tandem: deprecated item" },
-    zhTW = { "Tandem：排名第 1／5（胸部）（升級）（無屬性） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
+    zhTW = { "Tandem：排名第 1／5（胸部）（無屬性） / Tandem：掉落自 Hogger，Elwynn Forest（每次擊殺 25.0%）",
              "Tandem：掉落自 NPC #449，Elwynn Forest（最高 50.0%）（另有 1 個來源）",
              "Tandem：你無法使用：需要等級 40", "Tandem：你的職業無法使用", "Tandem：已棄用的物品" },
 }) do
@@ -5694,6 +5706,7 @@ local function checkAPIs()
         C_SpecializationInfo = { GetSpecialization = fn },
         GetNumTrainerServices = fn, GetTrainerServiceInfo = fn, GetTrainerServiceLevelReq = fn,
         GetActionInfo = fn, C_Spell = { GetSpellInfo = fn }, IsSpellKnown = fn, ActionButton1 = {},
+        ContainerFrame1Item1 = {},
     }
 end
 
@@ -5711,8 +5724,9 @@ do
     local addon, printed = loadWithDB(nil)
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
-    check("check: one line per feature", #out, 1 + #addon.Check.FEATURES)
-    check("check: twelve features", #addon.Check.FEATURES, 12)
+    check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
+    check("check: thirteen features", #addon.Check.FEATURES, 13)
+    check("check: six probes", #addon.Check.PROBES, 6)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -5721,7 +5735,7 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest sources", "Vendor sources", "Map pins", "Map waypoint",
         "Quest reward pick", "Upgrade alert", "Item stats", "Stat search", "Talent spec", "Trainer record",
-        "Action bar borders" }) do
+        "Action bar borders", "Upgrade borders" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -5732,7 +5746,7 @@ end
 do
     local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
     local byName, out = runCheck(addon, printed)
-    for i = 2, #out do
+    for i = 2, 1 + #addon.Check.FEATURES do
         check(("check: %s ok with every API"):format(out[i]:match("^(.-):")), out[i]:match("^[^:]*: (%a+)"), "ok")
     end
     check("check: an ok line lists the APIs", byName["Map waypoint"],
@@ -5781,7 +5795,8 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#out - 4],"物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: feature line", out[#addon.Check.FEATURES - 4],
+        "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
 -- Map pins (stage 6, unit 3): browse "Show on map" and /tandem map over a stubbed world map.
@@ -6279,7 +6294,7 @@ end
 -- Loads gearData() with bags read through opts.api: "container" (C_Container, default), "global" (the old global bag
 -- functions) or "none". ctx.bags[bag] lists the item ids in a bag (0..5); ctx.bagUpdate() changes nothing but fires
 -- BAG_UPDATE_DELAYED. ctx.slotCalls[bag] counts the slot lookups per bag. Item 900 is a plate chest of item level 60
--- the client has not loaded until ctx.cache[900] is set.
+-- the client has not loaded until ctx.cache[900] is set. opts.env adds globals; opts.widgets goes to loadAddon.
 local function loadUpgrade(opts)
     opts = opts or {}
     local bags, slotCalls = { [0] = {} }, {}
@@ -6296,7 +6311,10 @@ local function loadUpgrade(opts)
     elseif opts.api == "global" then
         env.GetContainerNumSlots, env.GetContainerItemID = numSlots, itemID
     end
-    local ctx = loadGear(opts.locale or "enUS", nil, nil, { env = env })
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    local ctx = loadGear(opts.locale or "enUS", nil, nil, { env = env, widgets = opts.widgets })
     local instant = ctx.env.C_Item.GetItemInfoInstant
     ctx.env.C_Item.GetItemInfoInstant = function(id)
         if id == 900 then
@@ -6318,11 +6336,20 @@ local function loadUpgrade(opts)
         return ctx.since(from)
     end
     ctx.equipped[5] = "|cff0070dd|Hitem:3::::::::::::::|h[Leather Vest]|h|r"
+    -- Every record's stats score its item level (Strength weighs 1 for a level 40 warrior); 900 scores 60.
+    local stats = ctx.env.TandemDB.stats
+    for id = 1, 30 do
+        local r = ctx.addon.Advisor.Item(id)
+        if r then
+            stats[id] = { str = r[1] }
+        end
+    end
+    stats[900] = { str = 60 }
     return ctx
 end
 
-local function upgradeLine(slot, id, hex, ilvl, over)
-    return ("Tandem: upgrade for %s: %s (item level %d over %d)"):format(slot, built(id, hex), ilvl, over)
+local function upgradeLine(slot, id, hex, score, over)
+    return ("Tandem: upgrade for %s: %s (score %.1f over %.1f)"):format(slot, built(id, hex), score, over)
 end
 
 do
@@ -6338,7 +6365,7 @@ do
     ctx.bagUpdate()
     local out = ctx.loot(1)
     check("upgrade: one line for a new upgrade", #out, 1)
-    check("upgrade: the line names the slot, link and item levels", out[1], upgradeLine("Chest", 1, BLUE, 45, 30))
+    check("upgrade: the line names the slot, link and scores", out[1], upgradeLine("Chest", 1, BLUE, 45, 30))
     ctx.bags[0] = {}
     ctx.bagUpdate()
     check("upgrade: the same item again prints nothing", #ctx.loot(1), 0)
@@ -6347,7 +6374,7 @@ do
     check("upgrade: an item with no ranked slot prints nothing", #ctx.loot(9), 0)
     check("upgrade: the worn item itself prints nothing", #ctx.loot(3), 0)
     out = ctx.loot(13, 2)
-    check("upgrade: an empty slot counts as item level 0", out[1], upgradeLine("Legs", 13, BLUE, 50, 0))
+    check("upgrade: an empty slot counts as score 0", out[1], upgradeLine("Legs", 13, BLUE, 50, 0))
     check("upgrade: only the upgrades of a batch print", #out, 1)
     check("upgrade: an unchanged bag prints nothing", #ctx.loot(), 0)
     check("upgrade: reads bags 0 to 4 only", ctx.slotCalls[5], nil)
@@ -6361,6 +6388,8 @@ do
     local loop = "|cff1eff00|Hitem:18::::|h[Loop]|h|r"
     ctx.cache[18] = { "Loop", loop, 2, 15 }
     ctx.equipped[12] = "|cff1eff00|Hitem:17::::::::::::::|h[Band]|h|r"
+    local stats = ctx.env.TandemDB.stats
+    stats[16], stats[17], stats[18] = { str = 20 }, { str = 10 }, { str = 15 }
     local instant = ctx.env.C_Item.GetItemInfoInstant
     ctx.env.C_Item.GetItemInfoInstant = function(id)
         if id == 18 then
@@ -6371,7 +6400,7 @@ do
     ctx.bagUpdate()
     local out = ctx.loot(18)
     check("upgrade: a ring is judged against the weaker worn ring", out[1],
-        ("Tandem: upgrade for Finger: %s (item level 15 over 10)"):format(loop))
+        ("Tandem: upgrade for Finger: %s (score 15.0 over 10.0)"):format(loop))
 end
 
 do
@@ -6394,7 +6423,7 @@ do
     ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
     out = ctx.since(from)
     check("upgrade: a late item prints once it arrives", out[1],
-        "Tandem: upgrade for Chest: |cffa335ee|Hitem:900::::|h[Late Plate]|h|r (item level 60 over 30)")
+        "Tandem: upgrade for Chest: |cffa335ee|Hitem:900::::|h[Late Plate]|h|r (score 60.0 over 30.0)")
     check("upgrade: a late item prints one line", #out, 1)
     ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
     check("upgrade: its info again prints nothing", #ctx.since(from), 1)
@@ -6447,10 +6476,10 @@ do
     check("upgrade score: a lower score is no upgrade at a higher item level", #ctx.loot(1), 0)
     check("upgrade score: a higher score is an upgrade at a lower item level", ctx.loot(12)[1],
         ("Tandem: upgrade for Chest: %s (score 12.0 over 10.0)"):format(built(12, GREEN)))
-    check("upgrade score: an empty slot has no score, so item level decides", ctx.loot(13)[1],
-        upgradeLine("Legs", 13, BLUE, 50, 0))
+    check("upgrade score: an empty slot counts as score 0", ctx.loot(13)[1],
+        upgradeLine("Legs", 13, BLUE, 1, 0))
     stats[3] = nil
-    check("upgrade score: a stat-less worn item compares by item level", ctx.loot(4, 2)[1], nil)
+    check("upgrade score: a stat-less worn item gives no line", ctx.loot(4, 2)[1], nil)
     ctx.equipped[5] = "|Hitem:2:|h"
     ctx.bags[0] = {}
     ctx.bagUpdate()
@@ -6470,7 +6499,240 @@ do
     local ctx = loadUpgrade({ locale = "zhTW" })
     ctx.bagUpdate()
     check("zhTW upgrade alert line", ctx.loot(1)[1],
-        ("Tandem：胸部的升級：%s（物品等級 45，高於 30）"):format(built(1, BLUE, "物品 #1")))
+        ("Tandem：胸部的升級：%s（分數 45.0，高於 30.0）"):format(built(1, BLUE, "物品 #1")))
+end
+
+do
+    local ctx = loadUpgrade()
+    local Upgrade = ctx.addon.Upgrade
+    local from = #ctx.printed
+    check("upgrade better: an upgrade is true", Upgrade.Better(1), true)
+    check("upgrade better: no better than worn is false", Upgrade.Better(4), false)
+    check("upgrade better: not usable is false", Upgrade.Better(8), false)
+    check("upgrade better: no ranked slot is false", Upgrade.Better(9), false)
+    check("upgrade better: the worn item is false", Upgrade.Better(3), false)
+    check("upgrade better: a loading item is nil", Upgrade.Better(900), nil)
+    check("upgrade better: a loading item is asked for", ctx.requested[900], true)
+    check("upgrade better: Better prints nothing", #ctx.since(from), 0)
+    check("upgrade better: another item's info is not judged", Upgrade.OnItemInfo(77), false)
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    check("upgrade better: a waiting item's info is judged", Upgrade.OnItemInfo(900), true)
+    check("upgrade better: its info again is not judged", Upgrade.OnItemInfo(900), false)
+    check("upgrade better: the loaded item is true", Upgrade.Better(900), true)
+    check("upgrade better: an item Better asked for prints nothing", #ctx.since(from), 0)
+end
+
+do
+    local ctx = loadUpgrade()
+    local Upgrade = ctx.addon.Upgrade
+    ctx.equipped[5] = "|Hitem:900:|h"
+    ctx.env.TandemDB.stats[900] = { str = 20 }
+    check("upgrade better: a loading worn item gives nil", Upgrade.Better(1), nil)
+    ctx.cache[900] = { "Late Plate", nil, 4, 20 }
+    check("upgrade better: an answer on incomplete worn data is not kept", Upgrade.Better(1), true)
+end
+
+do
+    local ctx = loadUpgrade()
+    local Upgrade = ctx.addon.Upgrade
+    check("upgrade better: first answer", Upgrade.Better(1), true)
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    ctx.equipped[5] = "|Hitem:900:|h"
+    check("upgrade better: a kept answer is reused", Upgrade.Better(1), true)
+    Upgrade.Invalidate()
+    check("upgrade better: Invalidate recomputes", Upgrade.Better(1), false)
+    ctx.equipped[5] = "|Hitem:3:|h"
+    check("upgrade better: kept false until the key changes", Upgrade.Better(1), false)
+    ctx.level = 41
+    check("upgrade better: a level change recomputes", Upgrade.Better(1), true)
+    ctx.equipped[5] = "|Hitem:900:|h"
+    check("upgrade better: kept true at the new level", Upgrade.Better(1), true)
+    ctx.addon.Store.revision = ctx.addon.Store.revision + 1
+    check("upgrade better: a Store revision change recomputes", Upgrade.Better(1), false)
+    ctx.equipped[5] = "|Hitem:3:|h"
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    check("upgrade better: an equipment change recomputes", Upgrade.Better(1), true)
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.bags[0] = { 900 }
+    ctx.bagUpdate()
+    local from = #ctx.printed
+    check("upgrade better: a snapshot item Better asks for is nil", ctx.addon.Upgrade.Better(900), nil)
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    check("upgrade better: the snapshot item's info is judged", ctx.addon.Upgrade.OnItemInfo(900), true)
+    check("upgrade better: a snapshot item Better asked for prints nothing", #ctx.since(from), 0)
+    check("upgrade better: the snapshot item is then true", ctx.addon.Upgrade.Better(900), true)
+end
+
+-- Score-only hints (stage 10, unit 5): loadUpgrade with C_TooltipInfo over ctx.tips[id], a list of left texts or
+-- { left, right, leftColor, rightColor }; colours are { r, g, b }.
+local RED, WHITE = { r = 1, g = 0.125, b = 0.125 }, { r = 1, g = 1, b = 1 }
+
+local function loadTipUpgrade()
+    local tips = {}
+    local ctx = loadUpgrade({ env = { C_TooltipInfo = { GetItemByID = function(id)
+        if not tips[id] then
+            return nil
+        end
+        local lines = {}
+        for i, l in ipairs(tips[id]) do
+            lines[i] = type(l) == "table" and { leftText = l[1], rightText = l[2], leftColor = l[3], rightColor = l[4] }
+                or { leftText = l, leftColor = WHITE }
+        end
+        return { lines = lines }
+    end } } })
+    ctx.tips = tips
+    ctx.cache[1] = { "Plate Chest", nil, 3, 45 }
+    return ctx
+end
+
+do
+    local ctx = loadUpgrade()
+    ctx.env.TandemDB.stats[1] = { str = 10 }
+    ctx.bagUpdate()
+    check("upgrade d6: a higher ilvl with a lower score is no upgrade", ctx.addon.Upgrade.Better(1), false)
+    check("upgrade d6: a higher ilvl with a lower score prints nothing", #ctx.loot(1), 0)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    local stats = ctx.env.TandemDB.stats
+    stats[1] = nil
+    ctx.tips[1] = { "Plate Chest", "+40 Strength" }
+    check("upgrade d6: an unscanned item is judged by its tooltip's stats", ctx.addon.Upgrade.Better(1), true)
+    check("upgrade d6: the read stats are saved", stats[1] and stats[1].str, 40)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    local stats = ctx.env.TandemDB.stats
+    stats[3], stats[4] = nil, nil
+    ctx.cache[3], ctx.cache[4] = { "Leather Vest", nil, 3, 30 }, { "Robe", nil, 3, 30 }
+    ctx.tips[3] = { "Leather Vest", "+50 Strength" }
+    ctx.tips[4] = { "Robe", "+5 Strength" }
+    ctx.tips[1] = { "Plate Chest", "+45 Strength" }
+    check("upgrade d6: the worn item's stats are read before judging", ctx.addon.Upgrade.Better(1), false)
+    check("upgrade d6: the worn item's read stats are saved", stats[3] and stats[3].str, 50)
+    check("upgrade d6: Advisor.Stats never reads a tooltip", ctx.addon.Advisor.Stats(4), nil)
+    check("upgrade d6: so nothing is saved for a browsed item", stats[4], nil)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    local stats = ctx.env.TandemDB.stats
+    stats[1] = nil
+    ctx.bagUpdate()
+    check("upgrade d6: unreadable stats are nil", ctx.addon.Upgrade.Better(1), nil)
+    check("upgrade d6: unreadable stats print nothing", #ctx.loot(1), 0)
+    check("upgrade d6: unreadable stats are not saved", stats[1], nil)
+    ctx.tips[1] = { "Plate Chest", "+40 Strength" }
+    local from = #ctx.printed
+    check("upgrade d6: the item's info is judged", ctx.addon.Upgrade.OnItemInfo(1), true)
+    check("upgrade d6: readable stats then give the line", ctx.since(from)[1], upgradeLine("Chest", 1, BLUE, 40, 30))
+    check("upgrade d6: readable stats then give true", ctx.addon.Upgrade.Better(1), true)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    ctx.tips[1] = { "Plate Chest", { "Classes: Rogue", nil, RED } }
+    ctx.bagUpdate()
+    check("upgrade d7: a red requirement line is no upgrade", ctx.addon.Upgrade.Better(1), false)
+    check("upgrade d7: a red requirement line prints nothing", #ctx.loot(1), 0)
+    ctx.cache[4] = { "Robe", nil, 3, 30 }
+    ctx.env.TandemDB.stats[4] = { str = 90 }
+    ctx.tips[4] = { "Robe", { "Chest", "Cloth", WHITE, WHITE } }
+    check("upgrade d7: white lines are no block", ctx.addon.Upgrade.Better(4), true)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    ctx.tips[1] = { "Plate Chest", { "Chest", "Plate", WHITE, RED } }
+    check("upgrade d7: a red right text (untrained armor) is no upgrade", ctx.addon.Upgrade.Better(1), false)
+    ctx.tips[1] = { "Plate Chest", { "Chest", "Plate", WHITE, WHITE } }
+    check("upgrade d7: the answer is kept until skills change", ctx.addon.Upgrade.Better(1), false)
+    ctx.fire("SKILL_LINES_CHANGED")
+    check("upgrade d7: SKILL_LINES_CHANGED judges again once the line is white", ctx.addon.Upgrade.Better(1), true)
+    ctx.tips[1] = { "Plate Chest", { "Requires Level 50", nil, RED } }
+    ctx.fire("PLAYER_LEVEL_UP", 41)
+    check("upgrade d7: PLAYER_LEVEL_UP judges again", ctx.addon.Upgrade.Better(1), false)
+    check("upgrade d7: SKILL_LINES_CHANGED registered", ctx.frame.registered.SKILL_LINES_CHANGED, true)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    ctx.cache[1] = nil
+    ctx.tips[1] = { "Plate Chest" }
+    check("upgrade d7: an unloaded tooltip is nil", ctx.addon.StatSearch.Blocked(1), nil)
+    check("upgrade d7: an unloaded tooltip is asked for", ctx.requested[1], true)
+    ctx.env.C_TooltipInfo = nil
+    check("upgrade d7: no tooltip API blocks nothing", ctx.addon.StatSearch.Blocked(1), false)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    local stats, Store = ctx.env.TandemDB.stats, ctx.addon.Store
+    stats[8], stats[9] = nil, nil
+    ctx.cache[8], ctx.cache[9], ctx.cache[950] = { "Cloth" }, { "Thing" }, { "Potion", nil, 1, 5 }
+    ctx.tips[8], ctx.tips[9], ctx.tips[950] = { "Cloth", "+9 Strength" }, { "Thing", "+9 Strength" }, { "Potion" }
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        if id == 950 then
+            return 950, nil, nil, "", nil, 0, 1
+        end
+        return instant(id)
+    end
+    local revision = Store.revision
+    check("upgrade d6: a potion is no upgrade", ctx.addon.Upgrade.Better(950), false)
+    check("upgrade d6: an unusable item is no upgrade", ctx.addon.Upgrade.Better(8), false)
+    check("upgrade d6: an item without a slot is no upgrade", ctx.addon.Upgrade.Better(9), false)
+    check("upgrade d6: non-gear and unusable items' tooltips are not read for stats",
+        tostring(stats[8]) .. tostring(stats[9]) .. tostring(stats[950]), "nilnilnil")
+    check("upgrade d6: so the record revision is unchanged", Store.revision, revision)
+end
+
+do
+    local ctx = loadTipUpgrade()
+    local stats = ctx.env.TandemDB.stats
+    stats[3] = nil
+    ctx.tips[1] = { "Plate Chest", "+45 Strength" }
+    ctx.tips[3] = { "Leather Vest", "+30 Strength" }
+    ctx.bagUpdate()
+    check("upgrade d6: a worn item still loading prints nothing", #ctx.loot(1), 0)
+    check("upgrade d6: the loading worn item is asked for", ctx.requested[3], true)
+    check("upgrade d6: an unrelated item's info is not judged", ctx.addon.Upgrade.OnItemInfo(77), false)
+    ctx.cache[3] = { "Leather Vest", nil, 3, 30 }
+    local from = #ctx.printed
+    check("upgrade d6: the worn item's info is judged", ctx.addon.Upgrade.OnItemInfo(3), true)
+    check("upgrade d6: the waiting bag item then gets its line", ctx.since(from)[1],
+        upgradeLine("Chest", 1, BLUE, 45, 30))
+    check("upgrade d6: one line", #ctx.since(from), 1)
+end
+
+do
+    local skills = { { "Swords", 50 }, { "Defense", 100 } }
+    local ctx = loadTipUpgrade()
+    ctx.env.GetNumSkillLines = function()
+        return #skills
+    end
+    ctx.env.GetSkillLineInfo = function(i)
+        return skills[i][1], false, nil, skills[i][2]
+    end
+    local Upgrade = ctx.addon.Upgrade
+    ctx.tips[1] = { "Plate Chest", { "Chest", "Plate", WHITE, RED } }
+    check("upgrade d7: blocked before the skill change", Upgrade.Better(1), false)
+    ctx.fire("SKILL_LINES_CHANGED")
+    check("upgrade d7: still blocked after the first skill read", Upgrade.Better(1), false)
+    ctx.tips[1] = { "Plate Chest", { "Chest", "Plate", WHITE, WHITE } }
+    skills[1][2] = 51
+    check("upgrade d7: a skill point only does not judge again", Upgrade.OnSkillLines(), false)
+    check("upgrade d7: so the kept answer stays", Upgrade.Better(1), false)
+    table.insert(skills, { "Plate Mail", 1 })
+    check("upgrade d7: a newly learned skill judges again", Upgrade.OnSkillLines(), true)
+    check("upgrade d7: so the item is now an upgrade", Upgrade.Better(1), true)
+    ctx.env.GetNumSkillLines = nil
+    check("upgrade d7: without the skill API every change judges again", Upgrade.OnSkillLines(), true)
 end
 
 -- Stat search (stage 6, unit 6): tooltip lines that hold every term, sorted by their number.
@@ -6515,7 +6777,7 @@ local function chestTips(ctx)
 end
 
 local function searchRow(i, id, hex, ilvl, level, line)
-    return ("%d. %s, ilvl %d, level %d (upgrade) (no stats): %s"):format(i, built(id, hex), ilvl, level, line)
+    return ("%d. %s, ilvl %d, level %d (no stats): %s"):format(i, built(id, hex), ilvl, level, line)
 end
 
 do
@@ -6592,9 +6854,9 @@ do
     local out = ctx.run("gear chest +體力")
     check("zhTW gear search header", out[1], "最佳胸部（40 級Warrior，符合「+體力」）：")
     check("zhTW gear search best first", out[2],
-        ("1. %s，物品等級 30，需求等級 25（升級）（無屬性）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
+        ("1. %s，物品等級 30，需求等級 25（無屬性）：+15 耐力"):format(built(3, BLUE, "物品 #3")))
     check("zhTW gear search second", out[3],
-        ("2. %s，物品等級 45，需求等級 40（升級）（無屬性）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
+        ("2. %s，物品等級 45，需求等級 40（無屬性）：+10 耐力"):format(built(1, BLUE, "物品 #1")))
     check("zhTW gear search footer", out[4], "依符合的提示行上的數字排序，再依物品等級與品質")
     out = ctx.run("gear chest +法術暴擊")
     check("zhTW gear search spell crit by value", out[2]:match("^1%. .-(%d)%%。$") .. out[3]:match("^2%. .-(%d)%%。$"),
@@ -6628,7 +6890,7 @@ do
     ctx.tip(11, { "GM Robe", "+99 Stamina" })
     out = ctx.run("gear chest all +stamina")
     check("gear search with all includes sourceless items", out[2],
-        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (upgrade) (no stats) (no known source): +99 Stamina")
+        "1. " .. built(11, "ff8000") .. ", ilvl 99, level 1 (no stats) (no known source): +99 Stamina")
     out = ctx.run("gear chest all")
     check("gear chest all alone still ranks", out[#out],
         "Ranked by stat score, then item level and quality; items marked (no stats) come last")
@@ -6739,7 +7001,7 @@ end
 do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
-    check("zhTW check: stat search line", out[#out - 3], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
+    check("zhTW check: stat search line", out[#addon.Check.FEATURES - 3], "屬性搜尋：可用（C_TooltipInfo.GetItemByID 可用）")
 end
 
 -- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
@@ -6946,11 +7208,71 @@ do
             .. "GetSpecialization missing)")
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
-    check("zhTW check: talent spec line", out[#out - 2]:match("^天賦專精："), "天賦專精：")
-    check("zhTW check: trainer record line", out[#out - 1], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
+    local n = 1 + #zh.Check.FEATURES
+    check("zhTW check: talent spec line", out[n - 3]:match("^天賦專精："), "天賦專精：")
+    check("zhTW check: trainer record line", out[n - 2], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
         .. "GetTrainerServiceInfo 缺少, GetTrainerServiceLevelReq 缺少, C_TooltipInfo.GetTrainerService 缺少）")
-    check("zhTW check: action bar borders line", out[#out], "快捷列邊框：缺少（GetActionInfo 缺少, GetSpellInfo 缺少, "
+    check("zhTW check: action bar borders line", out[n - 1], "快捷列邊框：缺少（GetActionInfo 缺少, GetSpellInfo 缺少, "
         .. "C_Spell.GetSpellInfo 缺少, IsSpellKnown 缺少, IsPlayerSpell 缺少, ActionButton1 缺少）")
+end
+
+-- Upgrade borders and the loot/bag probes in /tandem check (stage 10, unit 4).
+
+local PROBES = {
+    "LootButton1", "LootFrame.ScrollBox", "LootFrame_Update", "ContainerFrame1Item1.IconBorder",
+    "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon",
+}
+
+do
+    local addon = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    check("upgrade borders: ready with the classic bag button", addon.Check.Ready("Upgrade borders"), true)
+    local env = checkAPIs()
+    env.ContainerFrame1Item1 = nil
+    env.ContainerFrameCombinedBags = {}
+    addon = loadWithDB(nil, "enUS", { env = env })
+    check("upgrade borders: ready with only the combined bags", addon.Check.Ready("Upgrade borders"), true)
+    env = checkAPIs()
+    env.ContainerFrame1Item1 = nil
+    addon = loadWithDB(nil, "enUS", { env = env })
+    check("upgrade borders: not ready without a bag button", addon.Check.Ready("Upgrade borders"), false)
+    check("upgrade borders: the alert alone stays ready", addon.Check.Ready("Upgrade alert"), true)
+end
+
+do
+    local addon, printed = loadWithDB(nil)
+    local out = run(addon, printed, "check")
+    local n = 1 + #addon.Check.FEATURES
+    check("check: upgrade borders line", out[n], "Upgrade borders: missing (C_Container.GetContainerNumSlots missing, "
+        .. "GetContainerNumSlots missing, C_Container.GetContainerItemID missing, GetContainerItemID missing, "
+        .. "GetInventoryItemLink missing, ContainerFrame1Item1 missing, ContainerFrameCombinedBags missing)")
+    for i, path in ipairs(PROBES) do
+        check(("probe: %s missing"):format(path), out[n + i], ("Probe: %s missing"):format(path))
+    end
+    check("probe: nothing after the probes", out[n + #PROBES + 1], nil)
+
+    local fn = function() end
+    local explode = setmetatable({}, { __index = function() error("no such key") end })
+    addon, printed = loadWithDB(nil, "enUS", { env = {
+        LootButton1 = {}, LootFrame = { ScrollBox = {} }, LootFrame_Update = fn,
+        ContainerFrame1Item1 = { IconBorder = {}, NewItemTexture = {}, UpgradeIcon = {} },
+    } })
+    out = run(addon, printed, "check")
+    for i, path in ipairs(PROBES) do
+        check(("probe: %s present"):format(path), out[n + i], ("Probe: %s present"):format(path))
+    end
+    check("probe: a present button does not ready the feature", addon.Check.Ready("Upgrade borders"), false)
+
+    addon, printed = loadWithDB(nil, "enUS", { env = { ContainerFrame1Item1 = explode } })
+    out = run(addon, printed, "check")
+    check("probe: a raising lookup is missing", out[n + 4], "Probe: ContainerFrame1Item1.IconBorder missing")
+    check("check: Has never raises", addon.Check.Has("ContainerFrame1Item1.UpgradeIcon"), false)
+
+    local zh, zhPrinted = loadWithDB(nil, "zhTW")
+    out = run(zh, zhPrinted, "check")
+    check("zhTW check: upgrade borders line", out[n]:match("^(升級邊框)："), "升級邊框")
+    check("zhTW check: probe line", out[n + 1], "探測：LootButton1 缺少")
+    zh, zhPrinted = loadWithDB(nil, "zhTW", { env = { LootButton1 = {} } })
+    check("zhTW check: present probe", run(zh, zhPrinted, "check")[n + 1], "探測：LootButton1 存在")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
@@ -7497,7 +7819,7 @@ do
     ctx.fire("PLAYER_REGEN_ENABLED")
     ctx.nextFrame()
     check("borders: combat end picks up the missed refresh", ctx.border("ActionButton3"), "red")
-    ctx.fire("PLAYER_LEVEL_UP", 60)
+    ctx.fire("ACTIONBAR_SLOT_CHANGED", 1)
     check("borders: a new event after the run schedules again", #ctx.timers, 1)
 end
 
@@ -7509,6 +7831,496 @@ do
     check("borders: no C_Timer refreshes at once", ctx.refreshes, 1)
     check("borders: no C_Timer draws at once", ctx.border("ActionButton1"), "red")
 end
+
+
+-- Event registration: a client that rejects an unknown event name must not stop the load.
+local EVENTS = {
+    "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_CLOSED", "QUEST_DETAIL", "QUEST_COMPLETE",
+    "QUEST_FINISHED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE", "PLAYER_REGEN_DISABLED",
+    "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD",
+    "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
+    "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "PLAYER_LOGOUT",
+}
+
+do
+    local ok, addon, _, fireLoaded, env, _, frame = pcall(loadAddon, "enUS",
+        { rejectEvents = { LEARNED_SPELL_IN_TAB = true } })
+    check("events: an unknown event does not abort the load", ok, true)
+    if ok then
+        check("events: the rejected event is not registered", frame.registered.LEARNED_SPELL_IN_TAB, nil)
+        fireLoaded()
+        for _, ev in ipairs(EVENTS) do
+            local want = true
+            if ev == "ADDON_LOADED" then
+                want = nil
+            end
+            check("events: still registers " .. ev, frame.registered[ev], want)
+        end
+        check("events: ADDON_LOADED was registered before it fired", frame.unregistered.ADDON_LOADED, true)
+        check("events: ADDON_LOADED initialises TandemDB", isCurrent(env.TandemDB), true)
+        check("events: Store.db set", addon.Store.db, env.TandemDB)
+    end
+end
+
+do
+    local _, _, _, _, _, frame = loadAddon("enUS", { rejectEvents = { LEARNED_SPELL_IN_SKILL_LINE = true } })
+    check("events: an older client registers LEARNED_SPELL_IN_TAB", frame.registered.LEARNED_SPELL_IN_TAB, true)
+end
+
+do
+    local ctx = loadBrowse("enUS", nil, nil, { env = { Minimap = fakeMinimap() },
+                                               rejectEvents = { LEARNED_SPELL_IN_TAB = true } })
+    ctx.fire("PLAYER_LOGIN")
+    check("events: PLAYER_LOGIN still builds the minimap button", minimapButton(ctx) ~= nil, true)
+end
+
+do
+    local ctx = loadBorders({ rejectEvents = { LEARNED_SPELL_IN_TAB = true } })
+    ctx.known[116] = true
+    ctx.bar[1] = { "spell", 116 }
+    ctx.Store.SetTrainerSpell("MAGE", 205, 4, 2)
+    ctx.fire("PLAYER_LOGIN")
+    check("events: before learning the rank the border is yellow", ctx.border("ActionButton1"), "yellow")
+    ctx.known[205] = true
+    ctx.fire("LEARNED_SPELL_IN_SKILL_LINE")
+    check("events: LEARNED_SPELL_IN_SKILL_LINE refreshes like LEARNED_SPELL_IN_TAB", ctx.border("ActionButton1"), "red")
+end
+
+
+-- ItemBorders: green border on default bag buttons whose item beats what is worn (stage 10, unit 2).
+
+-- HookScript chains after the frame's script, as on a real frame; w.hooks counts the hooks per script.
+function WIDGET.HookScript(w, name, fn)
+    local prev = w.scripts[name]
+    w.hooks = w.hooks or {}
+    w.hooks[name] = (w.hooks[name] or 0) + 1
+    w.scripts[name] = function(...)
+        if prev then
+            prev(...)
+        end
+        fn(...)
+    end
+end
+
+-- Loads loadUpgrade with fake widgets. ctx.classic(f, bag, items, n) builds ContainerFrame<f> with the classic
+-- ContainerFrame<f>Item<i> globals for slots 1..n (default #items; a nil id is an empty slot), reading bag;
+-- ctx.modern(name, list) builds a frame whose EnumerateValidItems yields one button per { bag, id } with GetBagID.
+-- Both are shown and fill ctx.bags.
+-- opts.timer adds a C_Timer whose After calls wait in ctx.timers until ctx.nextFrame(); ctx.refreshes counts
+-- ItemBorders.Bags runs. ctx.border(button) returns "green", "hidden", "none" or "other".
+local function loadItemBorders(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local timers = {}
+    local env = {}
+    if opts.timer then
+        env.C_Timer = { After = function(_, fn)
+            timers[#timers + 1] = fn
+        end }
+    end
+    local ctx = loadUpgrade({ env = env, widgets = function(kind, name, parent, template)
+        return newWidget(ui, kind, name, parent, template)
+    end })
+    ctx.ui, ctx.timers, ctx.refreshes = ui, timers, 0
+    local bags = ctx.addon.ItemBorders.Bags
+    ctx.addon.ItemBorders.Bags = function()
+        ctx.refreshes = ctx.refreshes + 1
+        bags()
+    end
+    local function button(slot, bag)
+        local b = newWidget(ui, "Button")
+        b.level = 5
+        b.GetID = function()
+            return slot
+        end
+        if bag then
+            b.GetBagID = function()
+                return bag
+            end
+        end
+        return b
+    end
+    function ctx.classic(f, bag, items, n)
+        local frame = newWidget(ui, "Frame", "ContainerFrame" .. f)
+        frame.GetID = function()
+            return bag
+        end
+        ctx.env["ContainerFrame" .. f] = frame
+        ctx.bags[bag] = {}
+        local buttons = {}
+        for i = 1, n or #items do
+            ctx.bags[bag][i] = items[i]
+            buttons[i] = button(i)
+            ctx.env["ContainerFrame" .. f .. "Item" .. i] = buttons[i]
+        end
+        return frame, buttons
+    end
+    function ctx.modern(name, list)
+        local frame = newWidget(ui, "Frame", name)
+        local buttons = {}
+        for i, e in ipairs(list) do
+            ctx.bags[e[1]] = ctx.bags[e[1]] or {}
+            local slot = #ctx.bags[e[1]] + 1
+            ctx.bags[e[1]][slot] = e[2]
+            buttons[i] = button(slot, e[1])
+        end
+        frame.EnumerateValidItems = function()
+            return ipairs(buttons)
+        end
+        ctx.env[name] = frame
+        return frame, buttons
+    end
+    function ctx.nextFrame()
+        local due = {}
+        for i = #timers, 1, -1 do
+            due[i], timers[i] = timers[i], nil
+        end
+        for _, fn in ipairs(due) do
+            fn()
+        end
+    end
+    function ctx.border(b)
+        local border = b.tandemUpgrade
+        if not border then
+            return "none"
+        elseif not border.shown then
+            return "hidden"
+        end
+        local c = border.texture.color
+        return (c[1] == 0.1 and c[2] == 1 and c[3] == 0.1) and "green" or "other"
+    end
+    return ctx
+end
+
+do
+    local ctx = loadItemBorders()
+    ctx.env.TandemDB.stats[1] = { str = 10 }
+    local _, b = ctx.classic(1, 0, { 1 }, 1)
+    ctx.bagUpdate()
+    check("item borders: a higher ilvl with a lower score gets none", ctx.border(b[1]), "none")
+end
+
+do
+    local ctx = loadItemBorders()
+    local _, b = ctx.classic(1, 0, { 1, 4, nil, 900 }, 4)
+    ctx.bagUpdate()
+    check("item borders: an upgrade in a shown bag gets a green border", ctx.border(b[1]), "green")
+    check("item borders: a non-upgrade gets none", ctx.border(b[2]), "none")
+    check("item borders: an empty slot gets none", ctx.border(b[3]), "none")
+    check("item borders: a loading item gets none", ctx.border(b[4]), "none")
+    local border = b[1].tandemUpgrade
+    check("item borders: the border is a child of the button", border.parent, b[1])
+    check("item borders: the border sits two levels over the button", border.level, 7)
+    check("item borders: the border uses the action button glow", border.texture.texture,
+        "Interface\\Buttons\\UI-ActionButton-Border")
+    check("item borders: the glow is additive", border.texture.blend, "ADD")
+    check("item borders: the button's scripts are untouched", next(b[1].scripts), nil)
+
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
+    check("item borders: another item's info leaves it bare", ctx.border(b[4]), "none")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("item borders: info arriving later shows the border", ctx.border(b[4]), "green")
+
+    local frames = #ctx.ui.widgets
+    ctx.bagUpdate()
+    check("item borders: a refresh reuses the border frames", #ctx.ui.widgets, frames)
+
+    ctx.equipped[5] = "|Hitem:900:|h"
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    check("item borders: an equip change that beats the item clears it", ctx.border(b[1]), "hidden")
+
+    ctx.bags[0][4] = nil
+    ctx.bagUpdate()
+    check("item borders: an emptied slot hides its border", ctx.border(b[4]), "hidden")
+end
+
+do
+    local ctx = loadItemBorders()
+    local frame, b = ctx.classic(1, 0, { 1 })
+    local _, m = ctx.modern("ContainerFrame2", { { 3, 1 }, { 3, 4 } })
+    local _, hidden = ctx.classic(3, 2, { 1 })
+    ctx.env.ContainerFrame3:Hide()
+    local _, c = ctx.modern("ContainerFrameCombinedBags", { { 4, 1 }, { 4, 9 } })
+    ctx.bagUpdate()
+    check("item borders: EnumerateValidItems and GetBagID give the upgrade", ctx.border(m[1]), "green")
+    check("item borders: EnumerateValidItems non-upgrade gets none", ctx.border(m[2]), "none")
+    check("item borders: a hidden bag frame is skipped", ctx.border(hidden[1]), "none")
+    check("item borders: the combined bags get the border", ctx.border(c[1]), "green")
+    check("item borders: the combined bags non-upgrade gets none", ctx.border(c[2]), "none")
+    check("item borders: the classic frame still painted", ctx.border(b[1]), "green")
+    frame:Hide()
+    ctx.equipped[5] = "|Hitem:900:|h"
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    check("item borders: a hidden frame keeps its border until shown", ctx.border(b[1]), "green")
+end
+
+do
+    local ctx = loadItemBorders()
+    local _, m = ctx.modern("ContainerFrame1", { { 0, 1 } })
+    ctx.bagUpdate()
+    check("item borders: no bag button path is not ready", ctx.addon.Check.Ready("Upgrade borders"), false)
+    check("item borders: not ready paints nothing", ctx.border(m[1]), "none")
+    ctx.env.ContainerFrameCombinedBags = newWidget(ctx.ui, "Frame")
+    ctx.env.ContainerFrameCombinedBags:Hide()
+    ctx.bagUpdate()
+    check("item borders: ready again paints", ctx.border(m[1]), "green")
+    ctx.env.ContainerFrameCombinedBags = nil
+    ctx.bagUpdate()
+    check("item borders: not ready hides the borders it made", ctx.border(m[1]), "hidden")
+end
+
+do
+    local ctx = loadItemBorders({ timer = true })
+    local frame, b = ctx.classic(1, 0, { 1 })
+    ctx.bagUpdate()
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    ctx.bagUpdate()
+    check("item borders: nothing painted before the next frame", ctx.border(b[1]), "none")
+    check("item borders: Schedule coalesces into one timer", #ctx.timers, 1)
+    ctx.nextFrame()
+    check("item borders: one refresh on the next frame", ctx.refreshes, 1)
+    check("item borders: the next frame paints", ctx.border(b[1]), "green")
+    ctx.bagUpdate()
+    check("item borders: a later event schedules again", #ctx.timers, 1)
+    ctx.nextFrame()
+
+    local combined = ctx.modern("ContainerFrameCombinedBags", {})
+    ctx.fire("PLAYER_LOGIN")
+    ctx.nextFrame()
+    ctx.fire("PLAYER_LOGIN")
+    ctx.nextFrame()
+    check("item borders: OnShow hooked once per bag frame", (frame.hooks or {}).OnShow, 1)
+    check("item borders: OnShow hooked once on the combined bags", (combined.hooks or {}).OnShow, 1)
+    local before = ctx.refreshes
+    frame:Hide()
+    frame:Show()
+    check("item borders: showing a bag frame schedules a refresh", #ctx.timers, 1)
+    ctx.nextFrame()
+    check("item borders: the shown frame is refreshed once", ctx.refreshes, before + 1)
+end
+
+
+do
+    local ctx = loadItemBorders()
+    local _, b = ctx.classic(1, 0, { 1 })
+    ctx.bagUpdate()
+    check("item borders: painted with C_Item", ctx.border(b[1]), "green")
+    ctx.env.C_Item = nil
+    ctx.addon.Upgrade.Invalidate()
+    local ok = pcall(ctx.addon.ItemBorders.Bags)
+    check("item borders: no C_Item raises nothing", ok, true)
+    check("item borders: no C_Item hides the border", ctx.border(b[1]), "hidden")
+    local _, m = ctx.modern("ContainerFrame2", { { 3, 1 } })
+    ok = pcall(ctx.addon.ItemBorders.Bags)
+    check("item borders: no C_Item paints nothing new", tostring(ok) .. " " .. ctx.border(m[1]), "true none")
+end
+
+do
+    local ctx = loadItemBorders()
+    ctx.classic(1, 0, {}, 1)
+    local raising = function()
+        error("boom")
+    end
+    local _, m = ctx.modern("ContainerFrame2", { { 3, 1 } })
+    ctx.addon.Upgrade.Better = raising
+    local ok = pcall(ctx.addon.ItemBorders.Bags)
+    check("item borders: a raising Better raises nothing", ok, true)
+    check("item borders: a raising Better counts as not better", ctx.border(m[1]), "none")
+end
+
+do
+    local ctx = loadItemBorders()
+    ctx.classic(1, 0, {}, 1)
+    local combined, c = ctx.modern("ContainerFrameCombinedBags", { { 0, 1 } })
+    combined.GetID = function()
+        return 0
+    end
+    c[1].GetBagID = nil
+    ctx.bagUpdate()
+    check("item borders: a combined-bags button without GetBagID is skipped", ctx.border(c[1]), "none")
+end
+
+
+-- ItemBorders.Loot: green border on loot window buttons (stage 10, unit 3).
+
+local function itemLink(id)
+    return "|cffffffff|Hitem:" .. id .. "::::::::60:::::|h[Item " .. id .. "]|h|r"
+end
+
+-- Loads loadItemBorders with a classic bag frame (for the gate), a shown LootFrame and GetLootSlotLink over
+-- ctx.links[slot]. opts.buttons adds LootButton1-4 (button.slot = i) and a LootFrame_Update that sets each button's
+-- slot to ctx.page * 4 + i; opts.box adds LootFrame.ScrollBox over ctx.frames (ctx.lootFrame(index) adds one whose
+-- GetSlotIndex returns frame.index) with ScrollUtil.AddInitializedFrameCallback, or with box:RegisterCallback when
+-- opts.box is "callback". ctx.hooks counts
+-- hooksecurefunc / AddInitializedFrameCallback / RegisterCallback calls; ctx.init and ctx.rangeChanged hold the hooks.
+local function loadLootBorders(opts)
+    opts = opts or {}
+    local ctx = loadItemBorders()
+    ctx.classic(1, 0, {}, 1)
+    ctx.links, ctx.hooks, ctx.page, ctx.frames = {}, { secure = 0, init = 0, callback = 0 }, 0, {}
+    local env = ctx.env
+    env.GetLootSlotLink = function(slot)
+        return ctx.links[slot]
+    end
+    env.hooksecurefunc = function(name, fn)
+        ctx.hooks.secure = ctx.hooks.secure + 1
+        local orig = env[name]
+        env[name] = function(...)
+            orig(...)
+            fn(...)
+        end
+    end
+    env.LootFrame = newWidget(ctx.ui, "Frame", "LootFrame")
+    ctx.buttons = {}
+    if opts.buttons then
+        for i = 1, 4 do
+            local b = newWidget(ctx.ui, "Button", "LootButton" .. i)
+            b.slot = i
+            ctx.buttons[i] = b
+            env["LootButton" .. i] = b
+        end
+        env.LootFrame_Update = function()
+            for i, b in ipairs(ctx.buttons) do
+                b.slot = ctx.page * 4 + i
+            end
+        end
+    end
+    if opts.box then
+        local box = { ForEachFrame = function(_, fn)
+            for _, f in ipairs(ctx.frames) do
+                fn(f)
+            end
+        end }
+        if opts.box == "callback" then
+            box.RegisterCallback = function(_, event, fn, owner)
+                ctx.hooks.callback = ctx.hooks.callback + 1
+                ctx.rangeChanged = event == "OnDataRangeChanged" and function()
+                    fn(owner)
+                end
+            end
+        else
+            env.ScrollUtil = { AddInitializedFrameCallback = function(_, fn, owner)
+                ctx.hooks.init = ctx.hooks.init + 1
+                ctx.init = function(frame)
+                    fn(owner, frame, {})
+                end
+            end }
+        end
+        env.LootFrame.ScrollBox = box
+    end
+    function ctx.lootFrame(index)
+        local f = newWidget(ctx.ui, "Button")
+        f.index = index
+        f.GetSlotIndex = function(w)
+            return w.index
+        end
+        ctx.frames[#ctx.frames + 1] = f
+        return f
+    end
+    return ctx
+end
+
+do
+    local ctx = loadLootBorders({ buttons = true })
+    local b = ctx.buttons
+    ctx.links[1], ctx.links[3], ctx.links[4] = itemLink(1), itemLink(4), itemLink(1)
+    ctx.links[2] = nil
+    b[4]:Hide()
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("LOOT_OPENED")
+    check("loot borders: LOOT_OPENED registered", ctx.frame.registered.LOOT_OPENED, true)
+    check("loot borders: an upgrade's loot button gets a green border", ctx.border(b[1]), "green")
+    check("loot borders: a coin slot gets none", ctx.border(b[2]), "none")
+    check("loot borders: a non-upgrade gets none", ctx.border(b[3]), "none")
+    check("loot borders: a hidden button is skipped", ctx.border(b[4]), "none")
+    check("loot borders: the border sits two levels over the button", b[1].tandemUpgrade.level, 3)
+    ctx.links[5], ctx.links[7] = itemLink(4), itemLink(1)
+    ctx.page = 1
+    ctx.env.LootFrame_Update()
+    check("loot borders: paging hides the border of the button's new non-upgrade", ctx.border(b[1]), "hidden")
+    check("loot borders: paging shows the border on the button's new upgrade", ctx.border(b[3]), "green")
+    ctx.fire("PLAYER_LOGIN")
+    check("loot borders: LootFrame_Update hooked once", ctx.hooks.secure, 1)
+    check("loot borders: LootFrame OnShow hooked once", (ctx.env.LootFrame.hooks or {}).OnShow, 1)
+    ctx.page = 0
+    ctx.env.LootFrame:Hide()
+    ctx.env.LootFrame_Update()
+    check("loot borders: a hidden loot window is not painted", ctx.border(b[1]), "hidden")
+    ctx.env.LootFrame:Show()
+    check("loot borders: showing the loot window repaints", ctx.border(b[1]), "green")
+    ctx.links[1] = itemLink(900)
+    ctx.fire("LOOT_READY")
+    check("loot borders: LOOT_READY repaints; a loading item gets none", ctx.border(b[1]), "hidden")
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("loot borders: info arriving later shows it", ctx.border(b[1]), "green")
+end
+
+do
+    local ctx = loadLootBorders({ box = true, buttons = true })
+    local f1, f2 = ctx.lootFrame(1), ctx.lootFrame(2)
+    ctx.links[1], ctx.links[2], ctx.links[3] = itemLink(1), itemLink(4), itemLink(1)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("LOOT_OPENED")
+    check("loot borders: a ScrollBox upgrade frame gets a border", ctx.border(f1), "green")
+    check("loot borders: a ScrollBox non-upgrade frame gets none", ctx.border(f2), "none")
+    check("loot borders: the ScrollBox wins over LootButtons", ctx.border(ctx.buttons[1]), "none")
+    f1.index = 2
+    ctx.init(f1)
+    check("loot borders: a reused frame drops the old item's border", ctx.border(f1), "hidden")
+    f2.index = 3
+    ctx.init(f2)
+    check("loot borders: a reused frame shows the new item's border", ctx.border(f2), "green")
+    f2.GetSlotIndex, f2.slot = nil, 2
+    ctx.init(f2)
+    check("loot borders: .slot stands in for GetSlotIndex", ctx.border(f2), "hidden")
+    ctx.fire("PLAYER_LOGIN")
+    check("loot borders: the element init hooked once", ctx.hooks.init, 1)
+end
+
+do
+    local ctx = loadLootBorders({ box = "callback" })
+    local f1 = ctx.lootFrame(1)
+    ctx.links[1], ctx.links[2] = itemLink(1), itemLink(4)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_LOGIN")
+    check("loot borders: OnDataRangeChanged hooked once", ctx.hooks.callback, 1)
+    ctx.rangeChanged()
+    check("loot borders: a data range change paints", ctx.border(f1), "green")
+    f1.index = 2
+    ctx.rangeChanged()
+    check("loot borders: a data range change follows the item", ctx.border(f1), "hidden")
+end
+
+do
+    local ctx = loadLootBorders({ buttons = true, box = true })
+    local f1 = ctx.lootFrame(1)
+    ctx.links[1] = itemLink(1)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.env.LootFrame_Update()
+    check("loot borders: painted while ready", ctx.border(ctx.buttons[1]), "none")
+    check("loot borders: frame painted while ready", ctx.border(f1), "green")
+    ctx.env.C_Item = nil
+    local ok = pcall(ctx.env.LootFrame_Update)
+    check("loot borders: no C_Item raises nothing", ok, true)
+    check("loot borders: no C_Item hides the border", ctx.border(f1), "hidden")
+    local f2 = ctx.lootFrame(1)
+    ok = pcall(ctx.init, f2)
+    check("loot borders: no C_Item paints no reused frame", tostring(ok) .. " " .. ctx.border(f2), "true none")
+end
+
+do
+    local ctx = loadLootBorders({ buttons = true })
+    ctx.env.ContainerFrame1Item1 = nil
+    ctx.links[1] = itemLink(1)
+    ctx.fire("PLAYER_LOGIN")
+    local ok = pcall(ctx.env.LootFrame_Update)
+    check("loot borders: gate false raises nothing", ok, true)
+    check("loot borders: gate false paints nothing", ctx.border(ctx.buttons[1]), "none")
+end
+
 
 if failures > 0 then
     os.exit(1)

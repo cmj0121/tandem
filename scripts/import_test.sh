@@ -608,15 +608,15 @@ check "a broken contribution is left out" "$?" "0"
 
 # make import: finds every account, hashes its folder name, reads the client locale.
 wow="$tmp/World of Warcraft"
-wtf="$wow/_classic_beta_/WTF"
-mkdir -p "$wow/_classic_beta_/Interface/AddOns" "$wtf/Account/ACCOUNT ONE/SavedVariables" \
+wtf="$wow/_forever_/WTF"
+mkdir -p "$wow/_forever_/Interface/AddOns" "$wtf/Account/ACCOUNT ONE/SavedVariables" \
 	"$wtf/Account/TWO#2/SavedVariables" "$wtf/Account/THREE/SavedVariables"
 cp "$tmp/a.lua" "$wtf/Account/ACCOUNT ONE/SavedVariables/Tandem.lua"
 cp "$tmp/b.lua" "$wtf/Account/TWO#2/SavedVariables/Tandem.lua"
 printf 'SET gxWindow "1"\nSET textLocale "zhTW"\n' >"$wtf/Config.wtf"
 one=$(printf %s "ACCOUNT ONE" | shasum -a 256 | cut -c1-12)
 two=$(printf %s "TWO#2" | shasum -a 256 | cut -c1-12)
-make -s -C "$here/.." import WOW_DIR="$wow" DATA="$tmp/mk" OUT="$tmp/mk/Loot.lua" >"$tmp/out" 2>"$tmp/err"
+env -u FLAVOR make -s -C "$here/.." import WOW_DIR="$wow" DATA="$tmp/mk" OUT="$tmp/mk/Loot.lua" >"$tmp/out" 2>"$tmp/err"
 check "make import succeeds" "$?" "0"
 check "make import writes one contribution per account" "$(ls "$tmp/mk/contributions" | tr '\n' ' ')" \
 	"$(printf '%s.lua\n%s.lua\n' "$one" "$two" | sort | tr '\n' ' ')"
@@ -627,11 +627,11 @@ contains "make import writes Tandem/Data/Loot.lua by default" "$tmp/out" \
 	'lua scripts/import.lua "data" "Tandem/Data/Loot.lua"'
 
 rm "$wtf/Config.wtf"
-make -s -C "$here/.." import WOW_DIR="$wow" DATA="$tmp/mk2" OUT="$tmp/mk2/Loot.lua" >"$tmp/out" 2>"$tmp/err"
+env -u FLAVOR make -s -C "$here/.." import WOW_DIR="$wow" DATA="$tmp/mk2" OUT="$tmp/mk2/Loot.lua" >"$tmp/out" 2>"$tmp/err"
 contains "make import defaults to enUS" "$tmp/mk2/contributions/$one.lua" 'locale = "enUS",'
 
 rm "$wtf/Account/ACCOUNT ONE/SavedVariables/Tandem.lua" "$wtf/Account/TWO#2/SavedVariables/Tandem.lua"
-make -s -C "$here/.." import WOW_DIR="$wow" DATA="$tmp/mk3" OUT="$tmp/mk3/Loot.lua" >"$tmp/out" 2>"$tmp/err"
+env -u FLAVOR make -s -C "$here/.." import WOW_DIR="$wow" DATA="$tmp/mk3" OUT="$tmp/mk3/Loot.lua" >"$tmp/out" 2>"$tmp/err"
 check "make import without saved variables fails" "$?" "2"
 
 [ "$fails" -eq 0 ]

@@ -7,7 +7,8 @@
 Tandem 是一個 World of Warcraft addon。它收集透過掃描物品 ID 建立的可裝備物品快取，以及每件物品的來源紀錄：掉落它的
 生物與物件（附上用來計算掉落率的擊殺數與拾取屍體數）、以它為獎勵的任務，以及販售它的商人。它把這些資料與其他玩家
 貢獻的資料合併，建議你的角色能使用的最佳已知裝備，以及到哪裡取得。它絕不會替玩家執行任何動作，戰鬥中不會記錄任何
-資料，建議類指令與裝備視窗在戰鬥中也都無法使用。在戰鬥外，它也會在它認得的物品提示框中加上幾行說明。
+資料，建議類指令與裝備視窗在戰鬥中也都無法使用。在戰鬥外，它也會在它認得的物品提示框中加上幾行說明，並在勝過身上
+裝備的背包與拾取物品上畫出綠色邊框。
 
 ## 安裝
 
@@ -18,7 +19,7 @@ make install
 ```
 
 這會把儲存庫的 `Tandem/` 資料夾連結到用戶端，成為
-`<World of Warcraft>/_classic_beta_/Interface/AddOns/Tandem`，因此修改 Lua 檔案後，在遊戲中執行 `/reload` 即可生效。
+`<World of Warcraft>/_forever_/Interface/AddOns/Tandem`，因此修改 Lua 檔案後，在遊戲中執行 `/reload` 即可生效。
 連結已存在時再次執行不會有任何動作。
 
 移除方式：
@@ -40,13 +41,13 @@ make uninstall
 
 ### 覆寫設定
 
-| 變數      | 預設值                 | 說明                                                                               |
-| --------- | ---------------------- | ---------------------------------------------------------------------------------- |
-| `WOW_DIR` | 自動偵測               | `World of Warcraft` 資料夾，也就是包含 `_classic_beta_` 的那層，而非 flavor 資料夾 |
-| `FLAVOR`  | `_classic_beta_`       | `WOW_DIR` 內的用戶端 flavor 資料夾                                                 |
-| `MODE`    | `link`                 | 設為 `copy` 時改為複製 addon，而非建立連結                                         |
-| `DATA`    | `data`                 | `make import` 寫入貢獻檔的資料夾                                                   |
-| `OUT`     | `Tandem/Data/Loot.lua` | `make import` 為 addon 寫入的合併檔                                                |
+| 變數      | 預設值                 | 說明                                                                          |
+| --------- | ---------------------- | ----------------------------------------------------------------------------- |
+| `WOW_DIR` | 自動偵測               | `World of Warcraft` 資料夾，也就是包含 `_forever_` 的那層，而非 flavor 資料夾 |
+| `FLAVOR`  | `_forever_`            | `WOW_DIR` 內的用戶端 flavor 資料夾；設為 `_classic_beta_` 則指向 beta 用戶端  |
+| `MODE`    | `link`                 | 設為 `copy` 時改為複製 addon，而非建立連結                                    |
+| `DATA`    | `data`                 | `make import` 寫入貢獻檔的資料夾                                              |
+| `OUT`     | `Tandem/Data/Loot.lua` | `make import` 為 addon 寫入的合併檔                                           |
 
 `WOW_DIR` 與 `FLAVOR` 適用於 `make install`、`make uninstall` 與 `make import`；`MODE` 只適用於前兩者。
 
@@ -242,7 +243,7 @@ Ranked by stat score, then item level and quality; items marked (no stats) come 
 
 - 部位下拉選單：`All slots`，接著是各部位名稱。選擇 `All slots` 時，每件物品只列出一次，歸在它的第一個部位，因此單手
   武器只會以主手武器出現一次。你的職業在目前等級能雙持時，這類單手武器在這裡會同時與兩隻手比較：任一手穿戴著它時
-  標示 `(equipped)`；依[裝備如何排名](#裝備如何排名)的分數或物品等級勝過兩手中較弱的那一手時標示 `(upgrade)`。在
+  標示 `(equipped)`；依[裝備如何排名](#裝備如何排名)的分數勝過兩手中較弱的那一手時標示 `(upgrade)`。在
   `Main hand` 與 `Off hand` 部位中，則只與該手比較。
 - 品質下拉選單：`All qualities`，接著是 `Poor`、`Common`、`Uncommon`、`Rare`、`Epic` 與 `Legendary`，各以其品質顏色
   顯示。選擇一種品質後，只列出該品質的物品。
@@ -358,12 +359,20 @@ To contribute: type /reload, then run make import
 Tandem API check:
 Item tooltip: ok (TooltipDataProcessor.AddTooltipPostCall ok, Enum.TooltipDataType.Item ok)
 Item stats: ok (C_Item.GetItemStats missing, GetItemStats ok)
+...
+Probe: LootButton1 present
+Probe: LootFrame.ScrollBox missing
 ```
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、
-`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record` 與
-`Action bar borders`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
+`Action bar borders` 與 `Upgrade borders`。缺少 API 的功能會保持關閉，而不會引發錯誤。`Upgrade borders` 需要
+`Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或 `ContainerFrameCombinedBags`。
+
+接著是 `LootButton1`、`LootFrame.ScrollBox`、`LootFrame_Update`、`ContainerFrame1Item1.IconBorder`、
+`ContainerFrame1Item1.NewItemTexture` 與 `ContainerFrame1Item1.UpgradeIcon` 各一行 `Probe: <path> present|missing`。
+它們顯示用戶端有哪些背包與拾取視窗元件，不會開啟或關閉任何功能。
 
 ### `/tandem map`
 
@@ -459,13 +468,13 @@ ID 排序，並標示 `(no stats)`；重新掃描即可讀取。每個會排名�
   40 級起可穿鎧甲。薩滿的雙手斧與雙手錘需要天賦，因此絕不會建議。釣魚竿也絕不會建議。
 - 雙持：戰士與獵人 20 級起，盜賊 10 級起。他們的單手武器會同時列在 `mainhand` 與 `offhand`，也只有他們能使用副手專用
   武器。盾牌與副手持握物品歸在 `offhand`。
-- 戒指與飾品各算一個部位，與你穿戴的兩件中物品等級較低的那件比較。
+- 戒指與飾品各算一個部位，與你穿戴的兩件中分數較低的那件比較。
 
 物品後的標示：
 
 - `(equipped)`：你正穿戴著它。
-- `(upgrade)`：它的分數高於你在該部位穿戴的物品；任一方沒有屬性時改比物品等級，空部位視為物品等級 0。用戶端不
-  提供你穿戴的物品時不會標示，手持雙手武器時 `offhand` 也不會標示。
+- `(upgrade)`：它的屬性分數高於你在該部位穿戴的物品，空部位的分數為 0。物品等級從不列入比較：它或你穿戴的物品
+  沒有屬性時不會標示，用戶端不提供你穿戴的物品時不會標示，手持雙手武器時 `offhand` 也不會標示。
 - `(no stats)`：尚未讀取它的屬性，因此排在有分數的物品之後。
 - `(no known source)`：沒有它的掉落、任務獎勵或商人紀錄（只出現在 `gear ... all` 與瀏覽視窗）。
 
@@ -559,17 +568,24 @@ Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
 
 ### 升級提醒
 
-當你的職業與等級可以使用、且勝過該部位身上裝備的物品進入背包時（`BAG_UPDATE_DELAYED`，背包 0 到 4），聊天視窗會
-顯示一行。新物品與身上的物品都有屬性時比屬性分數，否則比物品等級：
+當一件你現在就能裝備、且屬性分數勝過該部位身上裝備的物品進入背包時（`BAG_UPDATE_DELAYED`，背包 0 到 4），聊天視窗會
+顯示一行：
 
 ```text
 Tandem：胸部的升級：[Plate Chest]（分數 24.5，高於 18.0）
-Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 ```
 
-規則與 [`/tandem gear`](#tandem-gear) 的 `(upgrade)` 標記相同：空的部位沒有屬性，視為物品等級 0，戒指與飾品與身上較弱
-的那件比較，可雙持的單手武器與較弱的那隻手比較，正在使用雙手武器時副手物品不會提醒。分數依你的職業與天賦樹，並套用你的
-[`/tandem weights`](#tandem-weights)。
+對這個提醒與[升級邊框](#升級邊框)而言，物品同時符合以下兩點才算較好：
+
+- 你現在就能裝備它：它有對應的部位，你的職業與等級可以使用它（同[裝備如何排名](#裝備如何排名)），且它的提示框中
+  沒有紅色的需求行，例如職業、尚未訓練的武器技能、種族、專業技能或聲望不符。
+- 它的屬性分數高於你在該部位穿戴的每一件物品。空部位的分數為 0，戒指與飾品與身上較弱的那件比較，可雙持的單手武器
+  與較弱的那隻手比較，正在使用雙手武器時副手物品絕不算較好。分數依你的職業與天賦樹，並套用你的
+  [`/tandem weights`](#tandem-weights)。
+
+物品等級從不列入比較。新物品或你穿戴的物品還沒有屬性時，會從它的提示框讀取並儲存，與掃描相同（需要
+[`/tandem check`](#tandem-check) 的 `Stat search` 這行）；在屬性得知之前不會判斷該物品。只出現在瀏覽視窗中的物品，
+仍需要 [`/tandem scan`](#tandem-scan) 才能取得屬性。
 
 - 每件物品每次登入最多提醒一次，且只在它新進入背包時：登入時背包裡的物品會被靜默記下，在背包之間移動物品也不會提醒。
 - 用戶端尚未載入的物品會向用戶端要求資料，送達時（`GET_ITEM_INFO_RECEIVED`）若仍在背包裡就會判斷。
@@ -577,6 +593,18 @@ Tandem：胸部的升級：[Plate Chest]（物品等級 45，高於 30）
 - 提醒只是建議：Tandem 絕不會替你裝備任何東西。
 - 用戶端沒有提供你的職業或等級時，或 [`/tandem check`](#tandem-check) 的 `Upgrade alert` 這行為 `missing` 時，不會有
   任何動作。
+
+### 升級邊框
+
+背包或拾取視窗中，依[升級提醒](#升級提醒)的規則比你身上裝備更好的物品，其按鈕會有綠色邊框。滑鼠移到它上面，可在
+[物品提示框](#物品提示框)看到它的分數。
+
+- 只有預設 Blizzard 背包按鈕（分開或合併的背包）與預設拾取視窗的按鈕會有邊框。Bagnon、AdiBags 等背包 addon，以及
+  從不顯示拾取視窗的自動拾取，都不經過這些視窗，因此不會畫出邊框；聊天視窗的[升級提醒](#升級提醒)仍會告訴你。
+- 開啟背包或拾取視窗時、背包、裝備、技能或等級改變時，以及用戶端載入物品資料時，邊框都會更新。戰鬥中也一樣。
+- 屬性或需求尚未得知的物品，在得知之前不會有邊框。
+- 邊框只是建議：Tandem 絕不會替你裝備或拾取任何東西，也不會改變按鈕的作用。
+- [`/tandem check`](#tandem-check) 的 `Upgrade borders` 這行為 `missing` 時，不會畫出任何邊框。
 
 ### 屬性搜尋
 
@@ -677,7 +705,7 @@ addon 隨附 `Tandem/Data/Loot.lua`，由 `make import` 從 `data/contributions/
 ## 收集的資料
 
 所有資料都存在一個帳號共用的表 `TandemDB`，存檔位置為
-`<World of Warcraft>/_classic_beta_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
+`<World of Warcraft>/_forever_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
 | Key        | 內容                                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------- |
@@ -772,8 +800,8 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    若擊殺計數有開啟，擊殺數也會加一。關閉拾取視窗後再開啟同一具屍體：兩個計數都不變，掉落紀錄也不變。
 3. 執行 `/tandem gear`。每個部位顯示一件物品或 `none known`，最後一行是屬性說明。點擊一件物品：會開啟遊戲的提示框，
    顯示圖示與屬性。
-4. 執行 `/tandem gear chest`，或其他你有穿戴物品的部位。`Equipped:` 這行顯示你的物品，物品等級較高的物品標示為
-   `(upgrade)`。執行 `/tandem gear chest all`，找找看 `(no known source)`。
+4. 執行 `/tandem gear chest`，或其他你有穿戴物品的部位。`Equipped:` 這行顯示你的物品，屬性分數較高的物品標示為
+   `(upgrade)`；標示 `(no stats)` 的物品絕不會標示。執行 `/tandem gear chest all`，找找看 `(no known source)`。
 5. 把一件你拾取過的物品 Shift 點擊到 `/tandem rank` 之後。它會印出排名、來源與掉落次數；若來源是生物，還有每次擊殺
    或每具拾取屍體的掉落率。也試試在 `/tandem rank` 後接數字。
 6. 執行 `/tandem gear finger` 與 `/tandem gear offhand`。確認 `(upgrade)` 是與你較弱的戒指比較，且手持雙手武器時
@@ -866,13 +894,13 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
 
 ### 檢查用戶端 API
 
-物品提示框、任務與商人來源、地圖標記、任務獎勵建議與升級提醒，都使用尚未在 Forever 上驗證的 API。
+物品提示框、任務與商人來源、地圖標記、任務獎勵建議、升級提醒與升級邊框，都使用尚未在 Forever 上驗證的 API。
 執行一次 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十二行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十三行，分別是 `Item tooltip`、
    `Quest sources`、`Vendor sources`、`Map pins`、`Map waypoint`、`Quest reward pick`、`Upgrade alert`、
-   `Item stats`、`Stat search`、`Talent spec`、`Trainer record` 與 `Action bar borders`，每行後面接著 `ok` 或
-   `missing` 以及它的 API。
+   `Item stats`、`Stat search`、`Talent spec`、`Trainer record`、`Action bar borders` 與 `Upgrade borders`，每行
+   後面接著 `ok` 或 `missing` 以及它的 API。之後是六行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -884,8 +912,9 @@ WoW Forever 的 API 行為尚未驗證，請在遊戲中逐步確認：
    若 `Upgrade alert` 為 `ok`，請進行[檢查升級提醒](#檢查升級提醒)。若 `Stat search` 為 `ok`，請進行
    [檢查屬性搜尋](#檢查屬性搜尋)。若 `Talent spec` 為 `ok`，在 10 級以上的角色執行 `/tandem weights`：第一行列出投入
    點數最多的天賦系，後面接著 `(auto)`。若 `Action bar borders` 為 `ok`，請進行[檢查快捷列邊框](#檢查快捷列邊框)。
+   若 `Upgrade borders` 為 `ok`，請進行[檢查升級邊框](#檢查升級邊框)。
 
-請回報步驟 1 與 2 印出的每一行、步驟 5 中 `/tandem weights` 的第一行，以及任何 Lua 錯誤。
+請回報步驟 1 與 2 印出的每一行（包括 `Probe:` 行）、步驟 5 中 `/tandem weights` 的第一行，以及任何 Lua 錯誤。
 
 ### 檢查地圖標記
 
@@ -920,16 +949,15 @@ Lua 錯誤。
 ### 檢查升級提醒
 
 1. 背包裡放著一些裝備時登入或執行 `/reload`：不會出現 `Tandem：…的升級` 這行。
-2. 在戰鬥外，拾取、購買或從信箱取出一件你的職業可用、且提示框標示 `(upgrade)` 的物品（或空部位的任何可用物品）。
-   聊天視窗顯示一行，且不會裝備任何東西：兩件物品的提示框都有分數時為
-   `Tandem：<部位>的升級：<物品連結>（分數 <n>，高於 <m>）`，否則為
-   `Tandem：<部位>的升級：<物品連結>（物品等級 <n>，高於 <m>）`。
+2. 在戰鬥外，拾取、購買或從信箱取出一件你的職業可用、且提示框標示 `(upgrade)` 的物品（或空部位的任何有屬性的可用
+   物品）。聊天視窗顯示一行，且不會裝備任何東西：`Tandem：<部位>的升級：<物品連結>（分數 <n>，高於 <m>）`。
 3. 把該物品移到另一個背包、賣掉再買回，或丟棄後再拾取：本次登入不會再提醒它。
-4. 取得一件你無法使用、或不比身上裝備好的物品：不會提醒。
+4. 取得一件你無法使用的物品、提示框中有紅色行的物品（例如尚未訓練的武器類型）、物品等級較高但分數較低的物品，或
+   不比身上裝備好的物品：不會提醒。
 5. 在戰鬥中拾取一件升級：戰鬥中不會顯示；戰鬥結束時才顯示那一行。
 6. 若可以，拾取一件用戶端從未顯示過的升級（新的掉落）：那一行可能在物品載入後稍晚才出現。
 
-請回報印出的每一行與當時身上裝備的分數與物品等級、沒有提醒的升級或提醒了不是升級的物品，以及任何 Lua 錯誤。
+請回報印出的每一行與當時身上裝備的分數、沒有提醒的升級或提醒了不是升級的物品，以及任何 Lua 錯誤。
 
 ### 檢查屬性搜尋
 
@@ -961,6 +989,20 @@ Lua 錯誤。
 6. 開始戰鬥，在戰鬥中把紅色按鈕換成最高等級：邊框維持紅色。戰鬥結束後消失。
 
 請回報任何無故變紅或變黃、或應該變色卻沒有的按鈕，完全沒有邊框的快捷列，以及任何 Lua 錯誤。
+
+### 檢查升級邊框
+
+1. 使用預設背包，在背包裡有一件[升級提醒](#升級提醒)會提醒的物品時開啟背包：它的按鈕有綠色邊框。不比身上裝備好的
+   物品、你無法使用的物品，以及提示框中有紅色行的物品都沒有邊框。
+2. 裝備有邊框的物品：它的邊框消失，換下來的物品也沒有邊框。
+3. 關閉自動拾取，拾取一具掉落升級物品的屍體：拾取視窗中該物品的按鈕有綠色邊框。翻閱超過一頁的拾取視窗：邊框跟著
+   物品，而不是跟著按鈕。
+4. 升級，或在訓練師學會背包中某件武器的武器技能：它的邊框隨之出現或消失。
+5. 開始戰鬥，拾取一件升級物品或在背包中移動它：邊框仍會顯示。
+6. 使用 Bagnon 或 AdiBags 等背包 addon，或開啟自動拾取時：不會顯示邊框；聊天視窗的提醒仍會出現。
+
+請回報 `/tandem check` 的 `Upgrade borders` 與 `Probe:` 行、任何有邊框卻不是升級或是升級卻沒有邊框的物品、邊框在
+按鈕上的位置是否恰當，以及任何 Lua 錯誤。
 
 ## Interface number
 

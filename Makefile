@@ -1,6 +1,6 @@
 SUBDIR :=
 ADDON  := Tandem
-FLAVOR ?= _classic_beta_
+FLAVOR ?= _forever_
 MODE   ?= link
 DATA   ?= data
 OUT    ?= $(ADDON)/Data/Loot.lua

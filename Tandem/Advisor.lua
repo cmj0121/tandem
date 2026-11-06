@@ -206,6 +206,20 @@ end
 
 Advisor.Stats = statsOf
 
+-- Returns the item's stats, reading them from its tooltip now when none are saved or shipped (and saving them, unless
+-- read-only); nil while they cannot be read. For a few items only: each read may ask the client for the item.
+function Advisor.ReadStats(id)
+    local s = statsOf(id)
+    if s or not ns.StatPatterns or not ns.StatSearch.Ready() then
+        return s
+    end
+    s = ns.StatSearch.ReadStats(id)
+    if s then
+        Store.SetStats(id, s)
+    end
+    return s
+end
+
 -- Returns the item's weighted score for the class at the level (its active spec), or nil when it has no stats.
 function Advisor.Score(id, class, level)
     return ns.Weights.Score(statsOf(id), class, (ns.Weights.Active(class, level)))

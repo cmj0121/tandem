@@ -3,29 +3,16 @@ local addonName, ns = ...
 ns.name = addonName
 
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-frame:RegisterEvent("LOOT_READY")
-frame:RegisterEvent("LOOT_CLOSED")
-frame:RegisterEvent("QUEST_DETAIL")
-frame:RegisterEvent("QUEST_COMPLETE")
-frame:RegisterEvent("QUEST_FINISHED")
-frame:RegisterEvent("MERCHANT_SHOW")
-frame:RegisterEvent("MERCHANT_UPDATE")
-frame:RegisterEvent("TRAINER_SHOW")
-frame:RegisterEvent("TRAINER_UPDATE")
-frame:RegisterEvent("PLAYER_REGEN_DISABLED")
-frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-frame:RegisterEvent("BAG_UPDATE_DELAYED")
-frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-frame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
-frame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
-frame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
-frame:RegisterEvent("SPELLS_CHANGED")
-frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
-frame:RegisterEvent("PLAYER_LEVEL_UP")
+for _, event in ipairs({
+    "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED", "QUEST_DETAIL",
+    "QUEST_COMPLETE", "QUEST_FINISHED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
+    "PLAYER_REGEN_DISABLED", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED",
+    "PLAYER_ENTERING_WORLD",
+    "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
+    "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
+}) do
+    ns.Store.RegisterEvent(frame, event)
+end
 
 local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
@@ -61,9 +48,14 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Browse.OnItemInfo(...)
         ns.Sources.OnItemInfo(...)
         ns.QuestPick.OnItemInfo(...)
-        ns.Upgrade.OnItemInfo(...)
+        if ns.Upgrade.OnItemInfo(...) then
+            ns.ItemBorders.Schedule()
+        end
     elseif event == "LOOT_READY" then
         ns.Loot.OnLootReady()
+        ns.ItemBorders.Schedule()
+    elseif event == "LOOT_OPENED" then
+        ns.ItemBorders.Schedule()
     elseif event == "LOOT_CLOSED" then
         ns.Loot.OnLootClosed()
     elseif event == "QUEST_DETAIL" then
@@ -80,16 +72,28 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.ActionBorders.Schedule()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Browse.OnCombat()
+    elseif event == "SKILL_LINES_CHANGED" then
+        if ns.Upgrade.OnSkillLines() then
+            ns.ItemBorders.Schedule()
+        end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        ns.Upgrade.Invalidate()
+        ns.ItemBorders.Schedule()
         ns.Browse.OnEquipmentChanged()
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Upgrade.OnBagUpdate()
+        ns.ItemBorders.Schedule()
     elseif event == "PLAYER_LOGIN" then
         ns.Launcher.OnLogin()
         ns.ActionBorders.Schedule()
+        ns.ItemBorders.OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
-        or event == "PLAYER_LEVEL_UP" then
+        or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
+        if event == "PLAYER_LEVEL_UP" then
+            ns.Upgrade.Invalidate()
+            ns.ItemBorders.Schedule()
+        end
         ns.ActionBorders.Schedule()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         ns.Kills.OnCombatLog()

@@ -29,6 +29,7 @@ Check.lua
 MapPins.lua
 QuestPick.lua
 Upgrade.lua
+ItemBorders.lua
 StatSearch.lua
 Commands.lua
 Browse.lua
