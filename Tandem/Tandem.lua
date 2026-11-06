@@ -4,9 +4,10 @@ ns.name = addonName
 
 local frame = CreateFrame("Frame")
 for _, event in ipairs({
-    "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_CLOSED", "QUEST_DETAIL", "QUEST_COMPLETE",
-    "QUEST_FINISHED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE", "PLAYER_REGEN_DISABLED",
-    "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD",
+    "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED", "QUEST_DETAIL",
+    "QUEST_COMPLETE", "QUEST_FINISHED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
+    "PLAYER_REGEN_DISABLED", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED",
+    "PLAYER_ENTERING_WORLD",
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP",
 }) do
@@ -52,6 +53,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "LOOT_READY" then
         ns.Loot.OnLootReady()
+        ns.ItemBorders.Schedule()
+    elseif event == "LOOT_OPENED" then
+        ns.ItemBorders.Schedule()
     elseif event == "LOOT_CLOSED" then
         ns.Loot.OnLootClosed()
     elseif event == "QUEST_DETAIL" then

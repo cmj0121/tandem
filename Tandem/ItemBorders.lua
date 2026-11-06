@@ -1,8 +1,8 @@
 local _, ns = ...
 
--- A green border on default bag buttons whose item beats what the player wears (stage 10, decisions 1-3). Each button
--- gets one child frame with a glow texture over it; the button's own scripts, attributes and Blizzard's UpgradeIcon are
--- never touched. A non-secure child, so it is painted in combat too.
+-- A green border on default bag and loot buttons whose item beats what the player wears (stage 10, decisions 1-3).
+-- Each button gets one child frame with a glow texture over it; the button's own scripts, attributes and Blizzard's
+-- UpgradeIcon are never touched. A non-secure child, so it is painted in combat too.
 local ItemBorders = {}
 ns.ItemBorders = ItemBorders
 
@@ -11,6 +11,7 @@ local Safe = ns.Store.Safe
 local GREEN = { 0.1, 1, 0.1 }
 local BAG_FRAMES = 13
 local BAG_SLOTS = 36
+local LOOT_BUTTONS = 4
 
 -- The glow texture is drawn 62 pixels wide around a 36-pixel button, as Blizzard's equipped-item border is.
 local GLOW = 62 / 36
@@ -95,6 +96,15 @@ local function buttonsOf(frame, f)
     return list
 end
 
+-- Paints the button's border from the item's verdict; a missing item or a Better that raises leaves it bare.
+local function paintItem(button, id)
+    local ok, better = false, nil
+    if type(id) == "number" then
+        ok, better = pcall(ns.Upgrade.Better, id)
+    end
+    ItemBorders.Paint(button, ok and better == true)
+end
+
 local function paintFrame(frame, f)
     if type(frame) ~= "table" or not call(frame, "IsShown") then
         return
@@ -105,23 +115,26 @@ local function paintFrame(frame, f)
             if type(bag) ~= "number" and f then
                 bag = call(frame, "GetID")
             end
-            local id = itemID(bag, call(button, "GetID"))
-            local ok, better = false, nil
-            if type(id) == "number" then
-                ok, better = pcall(ns.Upgrade.Better, id)
-            end
-            ItemBorders.Paint(button, ok and better == true)
+            paintItem(button, itemID(bag, call(button, "GetID")))
         end
     end
 end
 
--- Paints every shown default bag frame's buttons; while the feature's client paths or the item API are missing it
--- only hides the borders it made. A combined-bags button without its own bag id is left bare.
+-- Returns true when the feature's client paths and the item API are there; otherwise hides every border it made.
+local function ready()
+    if ns.Check.Ready("Upgrade borders") and C_Item and C_Item.GetItemInfo then
+        return true
+    end
+    for button in pairs(painted) do
+        ItemBorders.Paint(button, false)
+    end
+    return false
+end
+
+-- Paints every shown default bag frame's buttons; while not ready it only hides the borders it made. A combined-bags
+-- button without its own bag id is left bare.
 function ItemBorders.Bags()
-    if not (ns.Check.Ready("Upgrade borders") and C_Item and C_Item.GetItemInfo) then
-        for button in pairs(painted) do
-            ItemBorders.Paint(button, false)
-        end
+    if not ready() then
         return
     end
     for f = 1, BAG_FRAMES do
@@ -130,14 +143,64 @@ function ItemBorders.Bags()
     paintFrame(ContainerFrameCombinedBags)
 end
 
+-- Returns the item id in a loot slot from its link, or nil for coin, an empty slot or a missing API.
+local function lootID(slot)
+    if type(slot) ~= "number" or not GetLootSlotLink then
+        return nil
+    end
+    local ok, link = pcall(GetLootSlotLink, slot)
+    link = ok and Safe(link)
+    return type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
+end
+
+local function paintLoot(button)
+    if type(button) ~= "table" then
+        return
+    end
+    local slot = call(button, "GetSlotIndex")
+    if type(slot) ~= "number" then
+        slot = Safe(button.slot)
+    end
+    paintItem(button, lootID(slot))
+end
+
+-- Returns LootFrame.ScrollBox, or nil when it is missing or looking it up raises.
+local function scrollBox()
+    local ok, box = pcall(function()
+        return LootFrame.ScrollBox
+    end)
+    return ok and type(box) == "table" and box or nil
+end
+
+-- Paints the shown loot window's buttons: the ScrollBox's frames when it has ForEachFrame, else the shown
+-- LootButton1..LOOTFRAME_NUMBUTTONS; while not ready it only hides the borders it made.
+function ItemBorders.Loot()
+    if not ready() or type(LootFrame) ~= "table" or not call(LootFrame, "IsShown") then
+        return
+    end
+    local box = scrollBox()
+    if box and type(box.ForEachFrame) == "function" then
+        pcall(box.ForEachFrame, box, paintLoot)
+        return
+    end
+    local n = type(LOOTFRAME_NUMBUTTONS) == "number" and LOOTFRAME_NUMBUTTONS or LOOT_BUTTONS
+    for i = 1, n do
+        local button = _G["LootButton" .. i]
+        if type(button) == "table" and call(button, "IsShown") then
+            paintLoot(button)
+        end
+    end
+end
+
 local function refresh()
     ItemBorders.Bags()
+    ItemBorders.Loot()
 end
 
 local pending = false
 
--- Bag, equipment and item info events and bag frames shown: runs one refresh on the next frame however many arrive
--- before it, after Blizzard has filled the buttons; at once when C_Timer is missing.
+-- Bag, loot, equipment and item info events and bag or loot frames shown: runs one refresh on the next frame however
+-- many arrive before it, after Blizzard has filled the buttons; at once when C_Timer is missing.
 function ItemBorders.Schedule()
     if not (C_Timer and C_Timer.After) then
         refresh()
@@ -161,10 +224,35 @@ local function hookShow(frame)
     end
 end
 
--- PLAYER_LOGIN: refreshes the borders whenever a default bag frame is shown.
+-- A ScrollBox frame just given its loot slot: paints that frame.
+local function onLootFrame(_, button)
+    if ready() then
+        paintLoot(button)
+    end
+end
+
+-- Repaints loot buttons where the client lays them out, so paging and frame reuse never leave a stale border.
+local function hookLoot()
+    if not hooked.LootFrame_Update and type(LootFrame_Update) == "function" and hooksecurefunc then
+        hooked.LootFrame_Update = pcall(hooksecurefunc, "LootFrame_Update", ItemBorders.Loot)
+    end
+    local box = scrollBox()
+    if not box or hooked[box] then
+        return
+    end
+    if ScrollUtil and type(ScrollUtil.AddInitializedFrameCallback) == "function" then
+        hooked[box] = pcall(ScrollUtil.AddInitializedFrameCallback, box, onLootFrame, ItemBorders)
+    elseif type(box.RegisterCallback) == "function" then
+        hooked[box] = pcall(box.RegisterCallback, box, "OnDataRangeChanged", ItemBorders.Loot, ItemBorders)
+    end
+end
+
+-- PLAYER_LOGIN: refreshes the borders whenever a default bag or loot frame is shown, and hooks the loot layout.
 function ItemBorders.OnLogin()
     for f = 1, BAG_FRAMES do
         hookShow(_G["ContainerFrame" .. f])
     end
     hookShow(ContainerFrameCombinedBags)
+    hookShow(LootFrame)
+    hookLoot()
 end
