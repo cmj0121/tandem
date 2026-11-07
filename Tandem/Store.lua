@@ -1,11 +1,12 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights
--- and the class trainer spells seen; every other key an older schema saved is dropped on load.
+-- and the class trainer spells seen and the UI layout state; every other key an older schema saved is dropped on
+-- load.
 local Store = { readOnly = false }
 ns.Store = Store
 
-local SCHEMA = 6
+local SCHEMA = 7
 Store.SCHEMA = SCHEMA
 -- Locale-independent stat keys a weights override may carry: sp is spell damage and healing, heal healing only, dps a
 -- weapon's damage per second.
@@ -21,7 +22,8 @@ end
 local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
-local KEPT = { schemaVersion = true, weights = true, trainers = true }
+local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true }
+local MAX_LAYOUT_NAME = 64
 
 local floor = math.floor
 
@@ -38,6 +40,7 @@ local function newDB()
         schemaVersion = SCHEMA,
         weights = {},
         trainers = {},
+        layout = {},
     }
 end
 
@@ -101,6 +104,28 @@ local function copyWeights(v, drop)
     return out
 end
 
+-- The check for each layout field: on is a boolean, previous { name, type } the layout active before Tandem's, tot
+-- the showTargetOfTarget CVar value before Tandem set it.
+local LAYOUT_FIELDS = {
+    on = function(v)
+        return type(v) == "boolean"
+    end,
+    previous = function(v)
+        return type(v) == "table" and type(v.name) == "string" and v.name ~= "" and #v.name <= MAX_LAYOUT_NAME
+            and isInt(v.type, 0)
+    end,
+    tot = function(v)
+        return type(v) == "string"
+    end,
+}
+
+local function copyLayoutField(field, v)
+    if field == "previous" then
+        return { name = v.name, type = v.type }
+    end
+    return v
+end
+
 -- Copies every entry of raw that passes its type check into a fresh current-schema table; every key a current db
 -- does not hold counts as one drop.
 local function migrate(raw, report)
@@ -139,6 +164,14 @@ local function migrate(raw, report)
                 end
             end
             db.trainers[classFile] = clean
+        else
+            drop()
+        end
+    end
+
+    for field, v in pairs(entries(raw.layout)) do
+        if LAYOUT_FIELDS[field] and LAYOUT_FIELDS[field](v) then
+            db.layout[field] = copyLayoutField(field, v)
         else
             drop()
         end
@@ -213,6 +246,22 @@ function Store.TrainerSpells(classFile)
     if not Store.readOnly then
         return Store.db.trainers[classFile]
     end
+end
+
+-- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil }; empty (off) when the
+-- db is newer (kept raw).
+function Store.Layout()
+    return not Store.readOnly and Store.db.layout or {}
+end
+
+-- Sets one layout field (on, previous or tot) to value, or clears it with nil; false when invalid or read-only.
+function Store.SetLayout(field, value)
+    local valid = LAYOUT_FIELDS[field]
+    if Store.readOnly or not valid or (value ~= nil and not valid(value)) then
+        return false
+    end
+    Store.db.layout[field] = value ~= nil and copyLayoutField(field, value) or nil
+    return true
 end
 
 -- Returns v, or nil when the client marks it secret.

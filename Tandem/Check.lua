@@ -44,7 +44,8 @@ Check.FEATURES = {
     } },
     { name = "Layout", needs = {
         { "C_EditMode.GetLayouts" }, { "C_EditMode.SaveLayouts" }, { "C_EditMode.SetActiveLayout" },
-        { "EditModeManagerFrame" }, { "MainActionBar", "MainMenuBar" },
+        { "EditModeManagerFrame" }, { "EditModePresetLayoutManager.GetCopyOfPresetLayouts" },
+        { "MainActionBar", "MainMenuBar" },
     } },
     { name = "XP bar", needs = {
         { "UnitXP" }, { "UnitXPMax" },

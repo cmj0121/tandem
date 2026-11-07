@@ -18,6 +18,7 @@ ActionBorders.lua
 Trainer.lua
 View.lua
 Check.lua
+Layout.lua
 QuestPick.lua
 Upgrade.lua
 ItemBorders.lua

@@ -14,6 +14,7 @@ local function printUsage()
     print(L["  /tandem weights spec <1|2|3|auto> - pick the talent tree, or follow your talents"])
     print(L["  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)"])
     print(L["  /tandem weights reset - drop your own weights for the active tree"])
+    print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -117,6 +118,21 @@ local function weights(args)
     showWeights(className, classFile, level)
 end
 
+-- layout [on|off] (stage 12, D4): no argument prints the state.
+local function layout(args)
+    local sub = args[1]
+    if #args == 0 then
+        print(ns.Layout.IsOn() and L["Tandem: layout on"] or L["Tandem: layout off"])
+        return
+    end
+    if #args ~= 1 or (sub ~= "on" and sub ~= "off") then
+        printUsage()
+        return
+    end
+    local ok, reason = ns.Layout.Set(sub == "on")
+    print(ns.Layout.Reply(sub == "on", ok, reason))
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
 local NOT_IN_COMBAT = { check = true, weights = true }
 
@@ -133,6 +149,8 @@ function Commands.Run(msg)
         check()
     elseif sub == "weights" then
         weights(args)
+    elseif sub == "layout" then
+        layout(args)
     else
         printUsage()
     end
