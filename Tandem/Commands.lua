@@ -15,6 +15,7 @@ local function printUsage()
     print(L["  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)"])
     print(L["  /tandem weights reset - drop your own weights for the active tree"])
     print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
+    print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -133,6 +134,18 @@ local function layout(args)
     print(ns.Layout.Reply(sub == "on", ok, reason))
 end
 
+-- minimap [on|off] (stage 12, U6): no argument toggles; works in combat.
+local function minimap(args)
+    local sub = args[1]
+    if #args > 1 or (sub and sub ~= "on" and sub ~= "off") then
+        printUsage()
+        return
+    end
+    local shown = sub == "on" or (sub == nil and not ns.Launcher.IsButtonShown())
+    ns.Launcher.SetButtonShown(shown)
+    print(shown and L["Tandem: minimap button shown"] or L["Tandem: minimap button hidden"])
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
 local NOT_IN_COMBAT = { check = true, weights = true }
 
@@ -151,6 +164,8 @@ function Commands.Run(msg)
         weights(args)
     elseif sub == "layout" then
         layout(args)
+    elseif sub == "minimap" then
+        minimap(args)
     else
         printUsage()
     end

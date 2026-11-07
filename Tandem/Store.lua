@@ -104,8 +104,13 @@ local function copyWeights(v, drop)
     return out
 end
 
+local function isAngle(v)
+    return isNum(v) and v >= 0 and v < 360
+end
+
 -- The check for each layout field: on is a boolean, previous { name, type } the layout active before Tandem's, tot
--- the showTargetOfTarget CVar value before Tandem set it.
+-- the showTargetOfTarget CVar value before Tandem set it, minimap { angle = degrees|nil, hidden = bool|nil } the
+-- minimap button's place and visibility.
 local LAYOUT_FIELDS = {
     on = function(v)
         return type(v) == "boolean"
@@ -117,11 +122,17 @@ local LAYOUT_FIELDS = {
     tot = function(v)
         return type(v) == "string"
     end,
+    minimap = function(v)
+        return type(v) == "table" and (v.angle == nil or isAngle(v.angle))
+            and (v.hidden == nil or type(v.hidden) == "boolean")
+    end,
 }
 
 local function copyLayoutField(field, v)
     if field == "previous" then
         return { name = v.name, type = v.type }
+    elseif field == "minimap" then
+        return { angle = v.angle, hidden = v.hidden }
     end
     return v
 end
@@ -248,13 +259,14 @@ function Store.TrainerSpells(classFile)
     end
 end
 
--- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil }; empty (off) when the
--- db is newer (kept raw).
+-- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil, minimap = { angle,
+-- hidden }|nil }; empty (off) when the db is newer (kept raw).
 function Store.Layout()
     return not Store.readOnly and Store.db.layout or {}
 end
 
--- Sets one layout field (on, previous or tot) to value, or clears it with nil; false when invalid or read-only.
+-- Sets one layout field (on, previous, tot or minimap) to value, or clears it with nil; false when invalid or
+-- read-only.
 function Store.SetLayout(field, value)
     local valid = LAYOUT_FIELDS[field]
     if Store.readOnly or not valid or (value ~= nil and not valid(value)) then

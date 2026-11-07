@@ -81,6 +81,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
         ns.Layout.Sync()
+        ns.Launcher.OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then

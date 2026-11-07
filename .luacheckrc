@@ -6,6 +6,9 @@ globals = {
     "SLASH_TANDEM1",
     "SlashCmdList",
     "TandemDB",
+    "Tandem_OnCompartmentClick",
+    "Tandem_OnCompartmentEnter",
+    "Tandem_OnCompartmentLeave",
 }
 
 -- WoW API used by the addon; add new ones here as the addon grows.
@@ -31,6 +34,8 @@ read_globals = {
     "EditModePresetLayoutManager",
     "EventRegistry",
     "GetCVar",
+    "GetCursorPosition",
+    "Minimap",
     "SetCVar",
     "C_Item",
     "C_SpecializationInfo",
