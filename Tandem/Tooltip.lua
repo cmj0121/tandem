@@ -1,7 +1,8 @@
 local _, ns = ...
 
--- Adds Tandem lines to item tooltips out of combat: where the item ranks in its slot and its stat score, whether
--- the player can use it, whether it beats what the player wears, and where it drops most.
+-- Adds Tandem lines to item tooltips out of combat: whether it beats what the player wears (from live item data, for
+-- any item), and for an item in TandemDB or the shipped data where it ranks in its slot and its stat score, whether
+-- the player can use it, and where it drops most.
 local Tooltip = {}
 ns.Tooltip = Tooltip
 
@@ -62,8 +63,8 @@ local function addLine(tooltip, text, colour)
     tooltip:AddLine(text, colour[1], colour[2], colour[3], false)
 end
 
--- The item tooltip post-call: adds the lines for a known item on GameTooltip or ItemRefTooltip; anything else, or
--- anything in combat, is left alone without a word.
+-- The item tooltip post-call: adds the lines for an item on GameTooltip or ItemRefTooltip; anything else, or anything
+-- in combat, is left alone without a word.
 function Tooltip.OnItem(tooltip, data)
     if InCombatLockdown and InCombatLockdown() then
         return
@@ -77,25 +78,28 @@ function Tooltip.OnItem(tooltip, data)
         return
     end
     local _, class, level = View.Player(true)
-    local record = class and Advisor.Item(id)
-    if not record then
+    if not class then
         return
     end
-    if not Advisor.IsDeprecated(id) then
+    local record = Advisor.Item(id)
+    if record and not Advisor.IsDeprecated(id) then
         View.NoteName(id, View.CachedName(id))
     end
-    if Advisor.IsDeprecated(id) then
+    if record and Advisor.IsDeprecated(id) then
         addLine(tooltip, L["Tandem: deprecated item"], GREY)
         return
     end
 
-    local items = entries(class, level)
-    local e = items[id]
-    if not e then
-        e = { rank = Advisor.Rank(id, class, level), source = sourceLine(id) }
-        items[id] = e
+    local e, r = nil, {}
+    if record then
+        local items = entries(class, level)
+        e = items[id]
+        if not e then
+            e = { rank = Advisor.Rank(id, class, level), source = sourceLine(id) }
+            items[id] = e
+        end
+        r = e.rank
     end
-    local r = e.rank
     if r.slot then
         local row = { id = id, ilvl = record[1], score = r.score, sourced = r.sourced, usable = r.usable }
         local worn = r.offhand and View.EquippedHands() or View.Equipped(r.slot)
@@ -118,7 +122,7 @@ function Tooltip.OnItem(tooltip, data)
     elseif r.reason == "proficiency" then
         addLine(tooltip, L["Tandem: your class cannot use it"], RED)
     end
-    if e.source then
+    if e and e.source then
         addLine(tooltip, e.source, LIGHT)
     end
 end

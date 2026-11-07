@@ -1,7 +1,8 @@
 local _, ns = ...
 
--- Says in chat when an item new in the bags beats what the player wears (decision 4): one line per item, at most once
--- per item per session, by stat score only (never item level), and never for an item the player cannot equip now.
+-- Says in chat when an item new in the bags beats what the player wears (decision 4, rule D2 of stage 11): one line
+-- per item, at most once per item per session, by stat score with item level breaking a tie, from live item data
+-- only, and never for an item the player cannot equip now.
 -- Advises only:
 -- nothing is equipped, and a line due in combat waits until combat ends. The first bag snapshot after login is taken
 -- silently.
@@ -48,77 +49,37 @@ local function say(line)
     end
 end
 
--- Better's answers by item id, for one class:level:spec:Store.revision:Weights.revision (as Advisor's memo); worn
--- items are not in the key, so an equipment change calls Invalidate.
+-- Better's answers by item id, for one class:level:spec:Weights.revision; worn items, skills and the player's level
+-- are not all in the key, so an equipment, level or skill line change calls Invalidate.
 local cache = { answers = {} }
 
 local function cacheKey(class, level)
-    return class .. ":" .. level .. ":" .. tostring(ns.Weights.Active(class, level)) .. ":" .. ns.Store.revision
-        .. ":" .. ns.Weights.revision
+    return class .. ":" .. level .. ":" .. tostring(ns.Weights.Active(class, level)) .. ":" .. ns.Weights.revision
 end
 
--- Returns the score to beat in one slot's worn table: the lowest worn score (an empty slot scores 0), false when
--- there is nothing to beat (an off hand behind a two-hander), nil while a worn item is unknown, loading or unscored.
-local function toBeat(worn)
-    local low = math.huge
-    for _, e in ipairs(worn.list) do
-        if e.unknown or (e.id and (e.ilvl == nil or e.score == nil)) then
-            return nil
-        end
-        low = math.min(low, e.score)
-    end
-    if worn.ilvl == nil then
-        return false
-    end
-    return low
-end
-
--- The score to beat for the item's place: both hands for a one-hander that fills either, else its slot.
-local function wornScore(place)
-    if not place.offhand then
-        return toBeat(ns.View.Equipped(place.slot))
-    end
-    local low = false
-    for _, slot in ipairs({ "mainhand", "offhand" }) do
-        local s = toBeat(ns.View.Equipped(slot))
-        if s == nil then
-            return nil
-        end
-        if s and (not low or s < low) then
-            low = s
-        end
-    end
-    return low
-end
-
--- Judges the item against what is worn, by stat score only: returns { better, done, r, place, over } where better is
--- nil while the item or a score is not known yet (the client is asked for the item), done says the answer was made
--- on complete data, and r, place and over (the worn score) are set behind a true answer.
+-- Judges the item against what is worn by rule D2 (Items.Beats): returns { better, done, info, score, place, over }
+-- where better is nil while the item, its tooltip or a worn item is not known yet (the client is asked for them),
+-- done says the answer was made on complete data, and info, score, place and over (the worn score) are set behind a
+-- true answer.
 local function assess(id)
-    local r = ns.View.Record(id)
-    if r == nil then
+    local Items = ns.Items
+    local info = Items.Info(id)
+    if info == nil then
         waiting[id] = true
-        if C_Item.RequestLoadItemDataByID then
-            C_Item.RequestLoadItemDataByID(id)
-        end
         return { done = false }
     end
     local _, class, level = ns.View.Player(true)
     if not class then
         return { better = false, done = false }
     end
-    if not r then
+    if not info then
         return { better = false, done = true }
     end
-    local View, Advisor = ns.View, ns.Advisor
-    local place = Advisor.PlaceRecord(r, class, level, id)
+    local place = Items.Place(info, class, level)
     if not (place.slot and place.usable) then
         return { better = false, done = true }
     end
-    local function wornNow()
-        return place.offhand and View.EquippedHands() or View.Equipped(place.slot)
-    end
-    local worn = wornNow()
+    local worn = place.offhand and Items.EquippedHands() or Items.Equipped(place.slot)
     if worn.ids[id] then
         return { better = false, done = true }
     end
@@ -129,23 +90,9 @@ local function assess(id)
     elseif blocked then
         return { better = false, done = true }
     end
-    if place.score == nil and Advisor.ReadStats(id) then
-        place = Advisor.PlaceRecord(r, class, level, id)
-    end
-    local read = false
-    for _, e in ipairs(worn.list) do
-        if e.id and e.score == nil then
-            read = Advisor.ReadStats(e.id) and true or read
-        end
-    end
-    if read then
-        worn = wornNow()
-    end
-    local over = wornScore(place)
-    if over == false then
-        return { better = false, done = true }
-    end
-    if place.score == nil or over == nil then
+    local score = Items.Score(id, class, level)
+    local better, over = Items.Beats(score, info[1], worn)
+    if better == nil then
         waiting[id] = true
         for _, e in ipairs(worn.list) do
             if e.id and (e.ilvl == nil or e.score == nil) then
@@ -154,10 +101,10 @@ local function assess(id)
         end
         return { done = false }
     end
-    if place.score <= over then
+    if not better then
         return { better = false, done = true }
     end
-    return { better = true, done = true, r = r, place = place, over = over }
+    return { better = true, done = true, info = info, score = score, place = place, over = over }
 end
 
 -- Returns the item's assessment, kept while the cache key holds when it was made on complete data.
@@ -178,13 +125,13 @@ local function verdict(id)
     return v
 end
 
--- Returns true when the item's stat score beats every worn item's of its slot, false when it does not (not usable,
--- not equippable now, no slot, already worn, no better), nil while the item, its stats or a worn item's are unknown.
--- Behind a true answer it also returns the item's score and the worn score it beats.
+-- Returns true when the item beats the weakest worn item of its slot by rule D2, false when it does not (not usable,
+-- a red tooltip line, not equippable, no slot, already worn, no better), nil while the item, its stats or a worn
+-- item's are unknown. Behind a true answer it also returns the item's score and the worn score it beats.
 function Upgrade.Better(id)
     local v = verdict(id)
     if v.better then
-        return true, v.place.score, v.over
+        return true, v.score, v.over
     end
     return v.better
 end
@@ -240,9 +187,9 @@ local function judge(id)
         return
     end
     alerted[id] = true
-    local View, r, place = ns.View, v.r, v.place
-    say(L["Tandem: upgrade for %s: %s (score %s over %s)"]:format(View.SlotLabel(place.slot), View.ItemLink(id, r[3]),
-        View.ScoreText(place.score), View.ScoreText(v.over)))
+    local View = ns.View
+    say(L["Tandem: upgrade for %s: %s (score %s over %s)"]:format(View.SlotLabel(v.place.slot),
+        View.ItemLink(id, v.info[3]), View.ScoreText(v.score), View.ScoreText(v.over)))
 end
 
 -- BAG_UPDATE_DELAYED: judges the item ids not in the last snapshot.

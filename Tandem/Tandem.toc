@@ -16,6 +16,7 @@ Locales\zhTW.lua
 Data\Loot.lua
 Store.lua
 Weights.lua
+Items.lua
 SpellRanks.lua
 ActionBorders.lua
 Scanner.lua
