@@ -8,8 +8,10 @@ Tandem is a World of Warcraft addon that tells you when an item beats what you w
 in the loot window and among quest rewards from what the client says about it right now: its slot, required level,
 armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
-marks the best quest reward choice and flags out-of-date spell ranks on your action bars. It never acts for the
-player: it only advises, and it saves nothing but your own stat weights and what your class trainer teaches.
+marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
+screen around the action bars, with an XP bar, a bag row and, for a Shaman, a class area. It never acts for the
+player: it only advises, and it saves nothing but your own stat weights, what your class trainer teaches and whether
+its layout is on.
 
 ## Install
 
@@ -66,16 +68,20 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
 
 ## Commands
 
-| Command                                | What it does                                                       |
-| -------------------------------------- | ------------------------------------------------------------------ |
-| `/tandem`                              | Prints the commands, as does any unknown subcommand                |
-| `/tandem check`                        | Lists, per feature, which client APIs it needs are found           |
-| `/tandem weights`                      | Shows the stat weights of your talent tree                         |
-| `/tandem weights spec <1\|2\|3\|auto>` | Picks the talent tree the weights are for, or follows talents      |
-| `/tandem weights set <stat> <number>`  | Sets your own weight for one stat of the active tree; 0 ignores it |
-| `/tandem weights reset`                | Drops your own weights for the active tree                         |
+| Command                                | What it does                                                            |
+| -------------------------------------- | ----------------------------------------------------------------------- |
+| `/tandem`                              | Prints the commands, as does any unknown subcommand                     |
+| `/tandem check`                        | Lists, per feature, which client APIs it needs are found                |
+| `/tandem weights`                      | Shows the stat weights of your talent tree                              |
+| `/tandem weights spec <1\|2\|3\|auto>` | Picks the talent tree the weights are for, or follows talents           |
+| `/tandem weights set <stat> <number>`  | Sets your own weight for one stat of the active tree; 0 ignores it      |
+| `/tandem weights reset`                | Drops your own weights for the active tree                              |
+| `/tandem layout`                       | Prints whether Tandem's [layout](#layout) is on or off                  |
+| `/tandem layout <on\|off>`             | Turns the layout on, or off to bring your previous layout back          |
+| `/tandem minimap [on\|off]`            | Shows or hides the [minimap button](#minimap-button); alone, toggles it |
 
-`check` and `weights` print `Tandem: not available in combat` and do nothing while you are in combat.
+`check` and `weights` print `Tandem: not available in combat` and do nothing while you are in combat. `layout` waits
+for combat to end instead; `minimap` works in combat too.
 
 ### `/tandem check`
 
@@ -91,13 +97,16 @@ Probe: LootFrame.ScrollBox missing
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
-`Action bar borders` and `Upgrade borders`. A feature whose API is missing stays off instead of raising an error.
+`Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button` and `Shaman area`. A feature whose API is
+missing stays off instead of raising an error.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
 
 Then one `Probe: <path> present|missing` line each for `LootButton1`, `LootFrame.ScrollBox`, `LootFrame_Update`,
-`ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture` and `ContainerFrame1Item1.UpgradeIcon`. They
-tell which bag and loot frames the client has, and turn nothing on or off.
+`ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture`, `ContainerFrame1Item1.UpgradeIcon`,
+`Enum.EditModeSystem.ChatFrame`, `MainStatusTrackingBarContainer`, `BagsBar`, `C_UnitAuras.GetAuraDataBySpellName`,
+`UnitBuff`, `Enum.EditModeSystem.MicroMenu`, `Enum.EditModeSystem.Minimap` and `Enum.EditModeSystem.AuraFrame`. They
+tell which bag, loot, Edit Mode and aura parts the client has, and turn nothing on or off.
 
 ### `/tandem weights`
 
@@ -252,6 +261,93 @@ Red wins when both apply. Macros, items, empty slots and spells without ranks ge
 - Nothing is drawn when the `Action bar borders` line of [`/tandem check`](#tandem-check) is `missing`. Tandem only
   draws over the buttons and never changes what they cast.
 
+## Layout
+
+```text
+/tandem layout on
+Tandem: layout on
+```
+
+`/tandem layout on` arranges the screen around the action bars, using the account Edit Mode layout `Tandem`, which it
+creates or updates. The layout is off until you turn it on. `/tandem layout off` brings back the layout you used
+before, printing `Tandem: layout off; your previous layout is back`; if that layout was deleted or renamed, the first
+preset layout is used instead. `/tandem layout` alone prints `Tandem: layout on` or `Tandem: layout off`.
+
+- Switching to another layout in Edit Mode turns Tandem's layout off, as `off` would, but keeps the layout you chose.
+- In combat the change waits: chat shows `Tandem: the layout will change after combat`, and it happens when combat
+  ends.
+- When the account layouts are full, `on` prints `Tandem: no free account layout slot; delete one in Edit Mode`.
+- Without Edit Mode, or when the `Layout` line of [`/tandem check`](#tandem-check) is `missing`, `on` prints
+  `Tandem: the layout needs Edit Mode, which this client lacks` and nothing moves.
+
+### Minimap button
+
+The Tandem icon on the minimap edge turns the layout on or off with a click and prints the same line as
+`/tandem layout on` or `off`; in combat the change waits as above. Its tooltip shows whether the layout is on. Drag it
+around the minimap to move it; the place is saved. `/tandem minimap off` hides it, `/tandem minimap on` shows it again
+and `/tandem minimap` alone toggles it, printing `Tandem: minimap button hidden` or `Tandem: minimap button shown`.
+Tandem's entry in the addon compartment menu does the same as a click.
+
+### What moves
+
+- The three bottom action bars stack at the bottom centre, 12 buttons in one row each, with room under them for the
+  XP bar and the [class area](#shaman-class-area) just above them.
+- The player frame sits as a wing left of the bars and the target frame as a wing right of them, both level with the
+  top bar. The target of target is shown, next to the target frame.
+- The chat window goes to the bottom left, about 380 by 120, when the client's Edit Mode has a chat system; without
+  Edit Mode's chat size settings it only moves; without a chat system it stays put.
+- The [bag row](#bag-row) sits in the bottom-right corner, with the micro menu above it.
+- On a narrow screen, the chat window narrows to the room left of the player frame (down to 260 wide) and otherwise
+  goes above the bars, and the micro menu goes above the bars when it does not fit right of the target frame.
+- The minimap goes to the top right, with the buffs just left of it.
+- The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
+  minimap's); otherwise they stay where they are.
+- The right action bars and action bars 5 to 7 are hidden.
+
+Turning the layout off restores the target of target setting and every frame Tandem hid. Tandem's own frames are
+display only and update in combat too.
+
+### XP bar
+
+A thin bar under the action bars shows your experience, with only the percent on it, such as `42%`. Hover it for
+value / max and the rested bonus:
+
+```text
+4200 / 9800 (42%)
+Rested +15%
+```
+
+The bar is blue while you have rested experience and purple without. It is hidden at the maximum level, and it
+replaces the default status bar, so a watched reputation bar is hidden too while the layout is on. It needs the
+`XP bar` line of [`/tandem check`](#tandem-check).
+
+### Bag row
+
+A row of icons at the bottom right shows free / total slots on each icon: your general bags first (rightmost), then
+one icon per profession bag type to its left, with that bag's icon, such as a herb or soul bag. A count turns yellow
+under 10 free slots and red when full. Hover an icon for its bags' names and free / total; click any icon to open all
+bags. It replaces the default bag bar while the layout is on, and needs the `Bag button` line of
+[`/tandem check`](#tandem-check).
+
+### Shaman class area
+
+For a Shaman, a rail of icons just above the action bars shows, centred, one icon for each of:
+
+- each totem that is down, in Earth, Fire, Water, Air order, with its time left;
+- each weapon enchant that is up, main hand then off hand, on the weapon's icon, with its time left;
+- Lightning Shield, or Water Shield where the client has it, with its charges in the lower-right corner and its time
+  left.
+
+The time left reads `m:ss` above a minute, else whole seconds, and counts down; an icon goes when its time runs out.
+Hover an icon for its name (the totem's, the shield's, or `Main hand` / `Off hand`) and time left. While any icon
+shows, a thin blue mana line runs along the rail's bottom; with no icon, the whole rail hides.
+
+It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
+rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
+
+Each part, the layout, XP bar, bag row and Shaman area, stays dark when its `/tandem check` line is `missing`, and
+the rest still works.
+
 ## Saved data
 
 Tandem saves one account-wide table, `TandemDB`, as
@@ -261,6 +357,7 @@ Tandem saves one account-wide table, `TandemDB`, as
 | ---------- | -------------------------------------------------------------------------------------------------------------- |
 | `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec          |
 | `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
+| `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target, the `minimap` button's `angle` and `hidden`   |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
@@ -271,10 +368,11 @@ Tandem saves one account-wide table, `TandemDB`, as
   is not valid; a character's entry that is not a table, or a class key that is not a class token or whose spells are
   not a table, is dropped.
 
-`TandemDB.schemaVersion` is `6`. Saved data from an older schema is migrated on load: `weights` and `trainers` are
-kept and every other key, such as the item cache, loot log and stats of earlier versions, is dropped. Chat then shows
-`Tandem: saved data upgraded from schema <n> to 6` and `Tandem: dropped <n> invalid or unused saved entries`. Saved
-data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
+`TandemDB.schemaVersion` is `7`. Saved data from an older schema is migrated on load: `weights`, `trainers` and
+`layout` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is dropped.
+Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
+`Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
+Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
 
 The client writes `Tandem.lua` only on logout or `/reload`.
 
@@ -297,10 +395,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nine lines, one each for `Item tooltip`,
-   `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
-   `Action bar borders` and `Upgrade borders`, each followed by `ok` or `missing` and its APIs. Six `Probe:` lines
-   follow, each `present` or `missing`.
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and thirteen lines, one each for
+   `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
+   `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button` and `Shaman area`, each followed by `ok`
+   or `missing` and its APIs. Fourteen `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -312,7 +410,8 @@ verified on Forever. One pass of `/tandem check` tells which of them the client 
    `/tandem weights` on a character level 10 or more: its first line names the tree with the most talent points,
    followed by `(auto)`. If `Action bar borders` is `ok`, run
    [Check the action bar borders](#check-the-action-bar-borders). If `Upgrade borders` is `ok`, run
-   [Check the upgrade borders](#check-the-upgrade-borders).
+   [Check the upgrade borders](#check-the-upgrade-borders). If `Layout` is `ok`, run
+   [Check the layout](#check-the-layout).
 
 Report back every line of steps 1 and 2 as printed, the `Probe:` lines included, the first line of `/tandem weights`
 from step 4, and any Lua error.
@@ -384,6 +483,28 @@ all, and any Lua error.
 Report back the `Upgrade borders` and `Probe:` lines of `/tandem check`, any bordered item that is not an upgrade or
 upgrade without a border, whether the border sits well on the button, and any Lua error.
 
+### Check the layout
+
+1. Out of combat, run `/tandem layout on`. Chat shows `Tandem: layout on`. The three bottom action bars sit at the
+   bottom centre with the player and target frames beside them, the chat window bottom left, the micro menu above
+   the bag row in the bottom-right corner and the minimap top right with the buffs to its left (where the client
+   lets Edit Mode move them); the right bars and the bag bar are gone. Target something: its target of target shows.
+2. Under the bars, the thin XP bar shows only its percent, purple, or blue when rested. Hover it: `<value> / <max>
+(<n>%)` and, when rested, `Rested +<n>%`. Kill something: it moves.
+3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one
+   icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one.
+4. On a Shaman, nothing shows above the bars at first. Drop a totem, apply a weapon enchant and cast Lightning
+   Shield: an icon for each appears on the rail above the bars with its time left counting down, the shield with its
+   charges, and a thin blue mana line under them. Hover one: its name. When one runs out, its icon goes; when the
+   last goes, the rail and its mana line go. Clicking the rail does nothing.
+5. Run `/reload`: everything is still in place.
+6. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
+   fight ends your previous layout is back, with its bars, bag bar, status bar and target of target as before.
+7. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row and class area go.
+
+Report back the `Layout`, `XP bar`, `Bag button`, `Shaman area` and `Probe:` lines of `/tandem check`, any frame that
+landed in the wrong place or overlaps another, anything not restored by `off`, and any Lua error.
+
 ## Interface number
 
 `Tandem/Tandem.toc` declares `## Interface: 16001`, confirmed in game on client `1.60.1`. When a client update changes
@@ -418,7 +539,8 @@ only.
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
 migration, `/tandem` parsing and output, stat weights, tooltip stat reading, trainer recording, the upgrade judge with
 stubbed class, level, equipped and bag items, the upgrade alert and borders, the quest reward pick, the action bar
-borders and the item tooltip line. These tests prove the logic only; the client's real API is checked in game.
+borders, the item tooltip line, the layout, the XP bar, the bag row and the Shaman class area. These tests prove
+the logic only; the client's real API is checked in game.
 
 ### Translations
 

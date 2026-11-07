@@ -7,8 +7,9 @@
 Tandem 是一個 World of Warcraft addon，會在物品勝過你身上的裝備時告訴你。它依用戶端當下提供的資料判斷背包、拾取
 視窗與任務獎勵中的每件物品：部位、需求等級、護甲或武器類型、提示框中的需求，以及依你的職業與天賦樹加權的屬性。升級
 物品會在背包或拾取按鈕上出現紅色邊框與綠色向上箭頭，聊天視窗顯示一行訊息，提示框也多一行綠字。Tandem 也會標出最佳的
-任務獎勵選擇，並標示快捷列上等級過時的法術。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重與職業
-訓練師教授的內容之外，不儲存任何資料。
+任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列，薩滿
+還有職業區。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的內容，以及介面配置是否
+開啟之外，不儲存任何資料。
 
 ## 安裝
 
@@ -65,16 +66,20 @@ make install MODE=copy
 
 ## 指令
 
-| 指令                                   | 作用                                     |
-| -------------------------------------- | ---------------------------------------- |
-| `/tandem`                              | 印出指令列表；任何未知的子指令也一樣     |
-| `/tandem check`                        | 逐項功能列出它需要的用戶端 API 是否存在  |
-| `/tandem weights`                      | 顯示你的天賦系的屬性權重                 |
-| `/tandem weights spec <1\|2\|3\|auto>` | 選擇權重所用的天賦系，或依天賦自動判斷   |
-| `/tandem weights set <stat> <number>`  | 自訂目前天賦系某項屬性的權重；0 表示忽略 |
-| `/tandem weights reset`                | 刪除目前天賦系的自訂權重                 |
+| 指令                                   | 作用                                                |
+| -------------------------------------- | --------------------------------------------------- |
+| `/tandem`                              | 印出指令列表；任何未知的子指令也一樣                |
+| `/tandem check`                        | 逐項功能列出它需要的用戶端 API 是否存在             |
+| `/tandem weights`                      | 顯示你的天賦系的屬性權重                            |
+| `/tandem weights spec <1\|2\|3\|auto>` | 選擇權重所用的天賦系，或依天賦自動判斷              |
+| `/tandem weights set <stat> <number>`  | 自訂目前天賦系某項屬性的權重；0 表示忽略            |
+| `/tandem weights reset`                | 刪除目前天賦系的自訂權重                            |
+| `/tandem layout`                       | 印出 Tandem 的[介面配置](#介面配置)是否開啟         |
+| `/tandem layout <on\|off>`             | 開啟介面配置，或關閉並還原你先前的版面              |
+| `/tandem minimap [on\|off]`            | 顯示或隱藏[小地圖按鈕](#小地圖按鈕)；不加參數則切換 |
 
-戰鬥中執行 `check` 與 `weights` 時，只會印出 `Tandem: not available in combat`，不做任何事。
+戰鬥中執行 `check` 與 `weights` 時，只會印出 `Tandem: not available in combat`，不做任何事。`layout` 則會等到戰鬥
+結束才執行；`minimap` 在戰鬥中也能使用。
 
 ### `/tandem check`
 
@@ -89,13 +94,15 @@ Probe: LootFrame.ScrollBox missing
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
-`Talent spec`、`Trainer record`、`Action bar borders` 與 `Upgrade borders`。缺少 API 的功能會保持關閉，而不會
-引發錯誤。`Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
+`Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button` 與
+`Shaman area`。缺少 API 的功能會保持關閉，而不會引發錯誤。`Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
 
 接著是 `LootButton1`、`LootFrame.ScrollBox`、`LootFrame_Update`、`ContainerFrame1Item1.IconBorder`、
-`ContainerFrame1Item1.NewItemTexture` 與 `ContainerFrame1Item1.UpgradeIcon` 各一行 `Probe: <path> present|missing`。
-它們顯示用戶端有哪些背包與拾取視窗元件，不會開啟或關閉任何功能。
+`ContainerFrame1Item1.NewItemTexture`、`ContainerFrame1Item1.UpgradeIcon`、`Enum.EditModeSystem.ChatFrame`、
+`MainStatusTrackingBarContainer`、`BagsBar`、`C_UnitAuras.GetAuraDataBySpellName`、`UnitBuff`、
+`Enum.EditModeSystem.MicroMenu`、`Enum.EditModeSystem.Minimap` 與 `Enum.EditModeSystem.AuraFrame` 各一行
+`Probe: <path> present|missing`。它們顯示用戶端有哪些背包、拾取視窗、編輯模式與光環元件，不會開啟或關閉任何功能。
 
 ### `/tandem weights`
 
@@ -232,15 +239,95 @@ Tandem：比身上裝備更好（分數 24.5，高於 18.0）
 - [`/tandem check`](#tandem-check) 的 `Action bar borders` 這行為 `missing` 時不會畫任何邊框。Tandem 只在按鈕上
   畫框，從不改變按鈕施放的內容。
 
+## 介面配置
+
+```text
+/tandem layout on
+Tandem: layout on
+```
+
+`/tandem layout on` 會以快捷列為中心重新排列畫面，使用帳號共用的編輯模式版面 `Tandem`（不存在時建立，存在時更新）。
+介面配置預設關閉，要你自己開啟。`/tandem layout off` 會還原你先前使用的版面，並印出
+`Tandem: layout off; your previous layout is back`；若那個版面已被刪除或改名，則改用第一個預設版面。只輸入
+`/tandem layout` 會印出 `Tandem: layout on` 或 `Tandem: layout off`。
+
+- 在編輯模式中切換到其他版面，會像 `off` 一樣關閉 Tandem 的介面配置，但保留你選的版面。
+- 戰鬥中的變更會等待：聊天視窗顯示 `Tandem: the layout will change after combat`，戰鬥結束時才變更。
+- 帳號版面已滿時，`on` 會印出 `Tandem: no free account layout slot; delete one in Edit Mode`。
+- 沒有編輯模式，或 [`/tandem check`](#tandem-check) 的 `Layout` 這行為 `missing` 時，`on` 會印出
+  `Tandem: the layout needs Edit Mode, which this client lacks`，什麼都不會移動。
+
+### 小地圖按鈕
+
+小地圖邊緣的 Tandem 圖示，點擊即可開啟或關閉介面配置，並印出與 `/tandem layout on` 或 `off` 相同的訊息；戰鬥中的
+變更同樣會等待。滑鼠提示會顯示介面配置是否開啟。沿著小地圖拖曳即可移動它，位置會被儲存。`/tandem minimap off`
+隱藏它，`/tandem minimap on` 再次顯示，只輸入 `/tandem minimap` 則切換，並印出 `Tandem: minimap button hidden` 或
+`Tandem: minimap button shown`。插件收納選單中的 Tandem 項目與點擊按鈕的作用相同。
+
+在繁體中文（`zhTW`）用戶端上，這些訊息會以中文顯示。
+
+### 移動了什麼
+
+- 下方三條快捷列疊在畫面底部中央，每條一排 12 個按鈕，下方留給經驗條，正上方是[職業區](#薩滿職業區)。
+- 玩家頭像像翅膀一樣位於快捷列左側、目標頭像位於右側，兩者與最上面那條快捷列齊高。並會在目標頭像旁顯示目標的
+  目標。
+- 用戶端的編輯模式有聊天系統時，聊天視窗移到左下角，大小約 380 × 120；編輯模式沒有聊天視窗大小設定時只移動位置；
+  沒有聊天系統時維持原位。
+- [背包圖示列](#背包圖示列)位於右下角，微型選單在它上方。
+- 螢幕較窄時，聊天視窗會縮窄到玩家頭像左側剩下的空間（最窄 260），再不夠就移到快捷列上方；微型選單放不進目標頭像
+  右側時也會移到快捷列上方。
+- 小地圖移到右上角，增益效果緊貼在它左側。
+- 微型選單、小地圖與增益效果只在用戶端的編輯模式有對應系統時移動（增益效果還需要小地圖的系統）；否則維持原位。
+- 右側快捷列與第 5 到 7 條快捷列會隱藏。
+
+關閉介面配置時，目標的目標設定與 Tandem 隱藏的每個框架都會還原。Tandem 自己的框架只負責顯示，戰鬥中也會更新。
+
+### 經驗條
+
+快捷列下方有一條細經驗條，上面只顯示百分比，例如 `42%`。滑鼠移上去會顯示目前值 / 最大值與休息加成：
+
+```text
+4200 / 9800 (42%)
+休息 +15%
+```
+
+有休息經驗時是藍色，沒有時是紫色。到達最高等級時會隱藏。它取代預設的狀態列，所以介面配置開啟時，追蹤中的聲望條也會
+一起隱藏。它需要 [`/tandem check`](#tandem-check) 的 `XP bar` 這行。
+
+### 背包圖示列
+
+右下角有一排圖示，每個圖示下緣顯示剩餘 / 總格數：最右邊是一般背包，左邊每種專業背包類型各一個圖示，使用該背包的
+圖示，例如草藥袋或靈魂碎片袋。剩餘少於 10 格時數字變黃，滿了變紅。滑鼠移到圖示上會列出那些背包的名稱與剩餘 /
+總格數；點擊任一圖示會開啟所有背包。介面配置開啟時它取代預設的背包列，需要 [`/tandem check`](#tandem-check) 的
+`Bag button` 這行。
+
+### 薩滿職業區
+
+薩滿在快捷列正上方會有一排置中的圖示，每項一個：
+
+- 每個已放下的圖騰，依大地、火焰、水、空氣的順序，附剩餘時間；
+- 每個生效中的武器附魔，先主手後副手，顯示武器的圖示與剩餘時間；
+- 閃電之盾（用戶端有水之盾時也包括水之盾），右下角顯示層數，並附剩餘時間。
+
+剩餘時間超過一分鐘時顯示 `m:ss`，否則顯示秒數，並持續倒數；時間到時圖示就會消失。滑鼠移到圖示上會顯示它的名稱
+（圖騰或護盾的名稱，或 `主手` / `副手`）與剩餘時間。有圖示時，這排圖示底部有一條細的藍色法力線；沒有任何
+圖示時，整排連同法力線一起隱藏。
+
+它只顯示狀態與計時：裡面沒有任何可點擊的東西，也絕不建議你該施放什麼。其他職業沒有這排圖示。它需要
+[`/tandem check`](#tandem-check) 的 `Shaman area` 這行。
+
+介面配置、經驗條、背包圖示列與薩滿職業區各自在 `/tandem check` 那一行為 `missing` 時保持關閉，其他部分照常運作。
+
 ## 存檔資料
 
 Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 `<World of Warcraft>/_forever_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
-| Key        | 內容                                                                                                |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`    |
-| `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在） |
+| Key        | 內容                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
+| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`        |
+| `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在）     |
+| `layout`   | [介面配置](#介面配置)是否開啟 `on`、先前版面 `previous`、原本的目標的目標設定、`minimap` 按鈕位置與隱藏 |
 
 - 每次在戰鬥外開啟或更新職業訓練師視窗時，都會以你角色的職業記錄它的法術：列出的每個法術（不論是否已學會）、需求
   等級，以及法術等級文字中的數字（`等級 3` 記為 `3`）。分類標題、專業技能訓練師，以及用戶端沒有提供法術 ID 的法術會
@@ -249,9 +336,10 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 - 載入時，無效的 `spec`、override、屬性鍵或數值會單獨捨棄，無效的 `trainers` 法術 ID 或項目也是；角色的項目若不是表、
   職業鍵不是職業代號，或職業的法術不是表，則會整個捨棄。
 
-`TandemDB.schemaVersion` 為 `6`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights` 與 `trainers`，其他所有鍵
-（例如舊版的物品快取、掉落紀錄與屬性）都會捨棄。聊天視窗接著顯示 `Tandem：存檔資料已從結構版本 <n> 升級到 6` 與
-`Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會儲存任何資料。
+`TandemDB.schemaVersion` 為 `7`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers` 與 `layout`，
+其他所有鍵（例如舊版的物品快取、掉落紀錄與屬性）都會捨棄。聊天視窗接著顯示
+`Tandem：存檔資料已從結構版本 <n> 升級到 7` 與 `Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`；schema 6 的資料在
+沒有捨棄任何項目時會靜默升級。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會儲存任何資料。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。
 
@@ -274,10 +362,10 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與九行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十三行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
-   `Action bar borders` 與 `Upgrade borders`，每行後面接著 `ok` 或 `missing` 以及它的 API。之後是六行 `Probe:`，
-   各為 `present` 或 `missing`。
+   `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button` 與 `Shaman area`，每行後面接著 `ok`
+   或 `missing` 以及它的 API。之後是十四行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -285,7 +373,8 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 4. 若步驟 2 中 `Quest reward pick` 為 `ok`，請進行[檢查任務獎勵建議](#檢查任務獎勵建議)。若 `Upgrade alert` 為
    `ok`，請進行[檢查升級提醒](#檢查升級提醒)。若 `Talent spec` 為 `ok`，在 10 級以上的角色執行 `/tandem weights`：
    第一行列出投入點數最多的天賦系，後面接著 `(auto)`。若 `Action bar borders` 為 `ok`，請進行
-   [檢查快捷列邊框](#檢查快捷列邊框)。若 `Upgrade borders` 為 `ok`，請進行[檢查升級邊框](#檢查升級邊框)。
+   [檢查快捷列邊框](#檢查快捷列邊框)。若 `Upgrade borders` 為 `ok`，請進行[檢查升級邊框](#檢查升級邊框)。若
+   `Layout` 為 `ok`，請進行[檢查介面配置](#檢查介面配置)。
 
 請回報步驟 1 與 2 印出的每一行（包括 `Probe:` 行）、步驟 4 中 `/tandem weights` 的第一行，以及任何 Lua 錯誤。
 
@@ -343,6 +432,27 @@ Lua 錯誤。
 請回報 `/tandem check` 的 `Upgrade borders` 與 `Probe:` 行、任何有邊框卻不是升級或是升級卻沒有邊框的物品、邊框在
 按鈕上的位置是否恰當，以及任何 Lua 錯誤。
 
+### 檢查介面配置
+
+1. 在戰鬥外執行 `/tandem layout on`。聊天視窗顯示 `Tandem: layout on`。下方三條快捷列位於底部中央，玩家與目標頭像
+   在其兩側，聊天視窗在左下角，微型選單在右下角背包圖示列上方，小地圖在右上角、增益效果在它左側（用戶端允許編輯模式
+   移動它們時）；右側快捷列與背包列消失。選取一個目標：會顯示目標的目標。
+2. 快捷列下方的細經驗條只顯示百分比，紫色，有休息經驗時為藍色。滑鼠移上去：`<目前值> / <最大值> (<n>%)`，有休息
+   經驗時還有 `休息 +<n>%`。殺一隻怪：經驗條會前進。
+3. 右下角的背包圖示列在背包圖示上顯示一般背包的剩餘 / 總格數，左邊每種專業背包各一個圖示。點擊任一圖示：所有背包
+   都會開啟。拾取一件
+   物品：剩餘格數減一。
+4. 薩滿一開始在快捷列上方什麼都沒有。放下一個圖騰、施放武器附魔並施放閃電之盾：快捷列上方各出現一個圖示，
+   顯示倒數中的剩餘時間，護盾另顯示層數，下方有一條細的藍色法力線。滑鼠移到圖示上：顯示它的名稱。時間到時圖示
+   消失；最後一個消失時，整排連同法力線一起消失。點擊這排圖示不會有任何反應。
+5. 執行 `/reload`：一切都還在原位。
+6. 開始戰鬥並執行 `/tandem layout off`：聊天視窗顯示 `Tandem: the layout will change after combat`。戰鬥結束時恢復
+   你先前的版面，快捷列、背包列、狀態列與目標的目標設定都和之前一樣。
+7. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列與職業區都會消失。
+
+請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架
+重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
+
 ## Interface number
 
 `Tandem/Tandem.toc` 宣告了 `## Interface: 16001`，已在用戶端 `1.60.1` 的遊戲中確認。用戶端更新後若這個數字改變，
@@ -374,7 +484,7 @@ make test
 `scripts/addon_test.lua` 會模擬 WoW API 函式，依 `Tandem/Tandem.toc` 列出的順序載入檔案，並檢查 `enUS`、`zhTW`
 與一個不支援的語系下的載入訊息。它也測試 `TandemDB` 的驗證與遷移、`/tandem` 的解析與輸出、屬性權重、從提示框讀取
 屬性、訓練師紀錄、以模擬的職業、等級、已穿戴與背包物品進行的升級判斷、升級提醒與邊框、任務獎勵建議、快捷列邊框，
-以及物品提示框的那一行。這些測試只能證明邏輯正確；用戶端實際的 API 要在遊戲中檢查。
+物品提示框的那一行、介面配置、經驗條、背包圖示列與薩滿職業區。這些測試只能證明邏輯正確；用戶端實際的 API 要在遊戲中檢查。
 
 ### 翻譯
 
