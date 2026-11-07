@@ -1,14 +1,18 @@
 local _, ns = ...
 
--- A green border on default bag and loot buttons whose item beats what the player wears (stage 10, decisions 1-3).
--- Each button gets one child frame with a glow texture over it; the button's own scripts, attributes and Blizzard's
+-- A red border and a green up arrow on default bag and loot buttons whose item beats what the player wears (stage 10,
+-- decisions 1-3; red and the arrow by user choice 2026-11-07). Each button gets one child frame with a glow texture
+-- and the arrow over it; the button's own scripts, attributes and Blizzard's
 -- UpgradeIcon are never touched. A non-secure child, so it is painted in combat too.
 local ItemBorders = {}
 ns.ItemBorders = ItemBorders
 
 local Safe = ns.Store.Safe
 
-local GREEN = { 0.1, 1, 0.1 }
+local RED = { 1, 0.15, 0.15 }
+local ARROW_ATLAS = "bags-greenarrow"
+local ARROW_FILE = "Interface\\PetBattles\\BattleBar-AbilityBadge-Strong"
+local ARROW_SIZE = 16
 local BAG_FRAMES = 13
 local BAG_SLOTS = 36
 local LOOT_BUTTONS = 4
@@ -29,6 +33,27 @@ end
 
 local painted = setmetatable({}, { __mode = "k" })
 
+-- Returns true when the client knows the atlas; never raises.
+local function hasAtlas(name)
+    if not (C_Texture and type(C_Texture.GetAtlasInfo) == "function") then
+        return false
+    end
+    local ok, info = pcall(C_Texture.GetAtlasInfo, name)
+    return ok and info ~= nil
+end
+
+-- The up arrow in the button's top-left corner, where Blizzard puts its own upgrade icon: the bag upgrade atlas when
+-- the client has it, else the pet battle "strong" badge, a green up arrow too.
+local function arrowOn(border, button)
+    local arrow = border:CreateTexture(nil, "OVERLAY")
+    if not (hasAtlas(ARROW_ATLAS) and pcall(arrow.SetAtlas, arrow, ARROW_ATLAS)) then
+        arrow:SetTexture(ARROW_FILE)
+    end
+    arrow:SetSize(ARROW_SIZE, ARROW_SIZE)
+    arrow:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)
+    return arrow
+end
+
 local function borderOf(button)
     local border = button.tandemUpgrade
     if not border then
@@ -40,16 +65,17 @@ local function borderOf(button)
         local texture = border:CreateTexture(nil, "OVERLAY")
         texture:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
         texture:SetBlendMode("ADD")
-        texture:SetVertexColor(GREEN[1], GREEN[2], GREEN[3])
+        texture:SetVertexColor(RED[1], RED[2], RED[3])
         texture:SetAllPoints(border)
         border.texture = texture
+        border.arrow = arrowOn(border, button)
         button.tandemUpgrade = border
         painted[button] = true
     end
     return border
 end
 
--- Shows the button's green border when on, else hides it (making no frame for a button that never had one).
+-- Shows the button's red border and arrow when on, else hides it (making no frame for a button that never had one).
 function ItemBorders.Paint(button, on)
     if on then
         local ok, border = pcall(borderOf, button)

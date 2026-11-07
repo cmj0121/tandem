@@ -112,6 +112,7 @@ L["%d items are still loading; run the command again in a moment"] = "還有 %d 
 L["Sorted by the number on the matching tooltip line, then item level and quality"] =
     "依符合的提示行上的數字排序，再依物品等級與品質"
 L["Tandem: upgrade for %s: %s (score %s over %s)"] = "Tandem：%s的升級：%s（分數 %s，高於 %s）"
+L["Tandem: upgrade over what you wear (score %s over %s)"] = "Tandem：比身上裝備更好（分數 %s，高於 %s）"
 L["  /tandem map <item link|id> - pin where an item comes from on the world map"] =
     "  /tandem map <物品連結|id> - 在世界地圖上標記物品的來源位置"
 L["  /tandem map clear - remove the map pins"] = "  /tandem map clear - 移除地圖標記"
