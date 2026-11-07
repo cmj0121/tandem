@@ -1028,7 +1028,7 @@ do
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
     check("check: thirteen features", #addon.Check.FEATURES, 13)
-    check("check: fourteen probes", #addon.Check.PROBES, 14)
+    check("check: nineteen probes", #addon.Check.PROBES, 19)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -1999,6 +1999,8 @@ local PROBES = {
     "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon", "Enum.EditModeSystem.ChatFrame",
     "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
     "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
+    "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
+    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
 }
 
 do
@@ -2034,8 +2036,11 @@ do
     addon, printed = loadWithDB(nil, "enUS", { env = {
         LootButton1 = {}, LootFrame = { ScrollBox = {} }, LootFrame_Update = fn,
         ContainerFrame1Item1 = { IconBorder = {}, NewItemTexture = {}, UpgradeIcon = {} },
-        Enum = { EditModeSystem = { ChatFrame = 2, MicroMenu = 10, Minimap = 11, AuraFrame = 12 } },
+        Enum = { EditModeSystem = { ChatFrame = 2, MicroMenu = 10, Minimap = 11, AuraFrame = 12 },
+            EditModeActionBarSetting = { HideBarArt = 6 } },
         MainStatusTrackingBarContainer = {}, BagsBar = {},
+        MainActionBar = { EndCaps = {} }, MainMenuBar = { EndCaps = {} },
+        MainMenuBarArtFrame = { LeftEndCap = {} }, MainMenuBarLeftEndCap = {},
         C_UnitAuras = { GetAuraDataBySpellName = fn }, UnitBuff = fn,
     } })
     out = run(addon, printed, "check")
@@ -3561,7 +3566,8 @@ end
 
 -- On and off: the Tandem layout per D2, previous by name and type, ToT CVar.
 do
-    local ctx = loadLayout({ layouts = { editLayout("view"), editLayout("view", 2) }, active = 4 })
+    local ctx = loadLayout({ layouts = { editLayout("view"), editLayout("view", 2) }, active = 4,
+        frames = { "MainMenuBarLeftEndCap" } })
     local changes = {}
     ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
     local before = #ctx.printed
@@ -3589,6 +3595,7 @@ do
         .. settingOf(main, 2), "0 1 12")
     check("layout on: other bar settings kept", settingOf(main, 3), 5)
     check("layout on: main bar art (gryphons) hidden by Edit Mode", settingOf(main, 6), 1)
+    check("layout on: classic end caps faded too", ctx.state.frames.MainMenuBarLeftEndCap.alpha, 0)
     check("layout on: bar 2 on the main bar", anchorText(systemOf(t, 0, 2)), "BOTTOM MainActionBar TOP 0 2")
     check("layout on: bar 2 always shown", settingOf(systemOf(t, 0, 2), 5), 0)
     check("layout on: bar 3 on bar 2", anchorText(systemOf(t, 0, 3)), "BOTTOM MultiBarBottomLeft TOP 0 2")
@@ -3807,7 +3814,7 @@ do
     check("layout combat: off cancels a deferred on", #ctx.state.activated, 2)
 end
 
--- Without Edit Mode's hide-art setting, the main bar's gryphon end caps fade instead and come back on off.
+-- Without Edit Mode's hide-art setting, the main bar's gryphon end caps still fade and come back on off.
 do
     local enumNoArt = copyTable(LAYOUT_ENUM)
     enumNoArt.EditModeActionBarSetting.HideBarArt = nil

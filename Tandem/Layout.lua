@@ -59,6 +59,12 @@ local function ready()
     return ns.Check.Ready("Layout")
 end
 
+-- Where clients keep the main bar's gryphon end caps (retail-style, then classic-style); missing ones are skipped.
+local END_CAPS = {
+    "MainActionBar.EndCaps", "MainMenuBar.EndCaps", "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarArtFrame.RightEndCap",
+    "MainMenuBarLeftEndCap", "MainMenuBarRightEndCap",
+}
+
 local function mainBarName()
     return type(_G.MainActionBar) == "table" and "MainActionBar" or "MainMenuBar"
 end
@@ -290,13 +296,15 @@ local function override(info)
         end
     end
     local faders = {}
-    -- The gryphon end caps beside the main bar: Edit Mode's hide-art setting, else fade them.
+    -- The gryphon end caps beside the main bar: Edit Mode's hide-art setting, and every known end cap frame faded
+    -- too, since a client may keep them outside that setting.
     local artSetting = enum("EditModeActionBarSetting", "HideBarArt")
     local mainSystem = bar and findSystem(info, bar, enum("EditModeActionBarSystemIndices", "MainBar"))
     if mainSystem and artSetting ~= nil then
         setSetting(mainSystem, artSetting, 1)
-    else
-        faders[#faders + 1] = main .. ".EndCaps"
+    end
+    for _, name in ipairs(END_CAPS) do
+        faders[#faders + 1] = name
     end
     for _, row in ipairs({ { "RightBar1", "MultiBarRight" }, { "RightBar2", "MultiBarLeft" },
         { "ExtraBar1", "MultiBar5" }, { "ExtraBar2", "MultiBar6" }, { "ExtraBar3", "MultiBar7" } }) do
@@ -328,6 +336,9 @@ end
 
 local function setFaders(list)
     for _, name in ipairs({ "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7" }) do
+        concealed[name] = nil
+    end
+    for _, name in ipairs(END_CAPS) do
         concealed[name] = nil
     end
     for _, name in ipairs(list) do
