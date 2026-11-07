@@ -10,7 +10,6 @@
 
 Locales\enUS.lua
 Locales\zhTW.lua
-Data\Loot.lua
 Store.lua
 Weights.lua
 Items.lua

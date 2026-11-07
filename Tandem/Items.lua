@@ -1,8 +1,7 @@
 local _, ns = ...
 
 -- Live item facts (stage 11, decision D1): what the client says about an item now, and how it compares with what the
--- player wears (rule D2). Nothing here reads or writes TandemDB or the shipped data; tooltip stats are kept for the
--- session only.
+-- player wears (rule D2). Nothing here reads or writes TandemDB; tooltip stats are kept for the session only.
 local Items = {}
 ns.Items = Items
 

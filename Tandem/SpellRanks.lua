@@ -1,8 +1,8 @@
 local _, ns = ...
 
 -- Spell rank state per action slot (decision 5). Red: the slot holds a lower rank of a spell already known at a
--- higher rank. Yellow, only when not red: own or shipped trainer data (decision 4) teaches a higher rank than the
--- highest known one at or below the player's level, not yet known. Read-only: drawing and events belong to
+-- higher rank. Yellow, only when not red: the player's own trainer records (decision 4) teach a higher rank
+-- than the highest known one at or below the player's level, not yet known. Read-only: drawing and events belong to
 -- ActionBorders. Known ranks and trainable ranks per spell name are cached until SpellRanks.Invalidate().
 local SpellRanks = {}
 ns.SpellRanks = SpellRanks
@@ -76,28 +76,6 @@ local function eachBookSpell(fn)
     return false
 end
 
--- Own trainer records merged with the shipped ones: union, lower level on conflict, own rank first.
-local function trainerSpells(classFile)
-    local merged = {}
-    local shipped = type(ns.Shipped) == "table" and type(ns.Shipped.trainers) == "table"
-        and ns.Shipped.trainers[classFile]
-    local own = ns.Store.db and ns.Store.TrainerSpells(classFile)
-    for _, source in ipairs({ type(own) == "table" and own or {}, type(shipped) == "table" and shipped or {} }) do
-        for id, entry in pairs(source) do
-            if type(id) == "number" and type(entry) == "table" and type(entry.level) == "number" then
-                local old = merged[id]
-                if old then
-                    old.level = math.min(old.level, entry.level)
-                    old.rank = old.rank or entry.rank
-                else
-                    merged[id] = { level = entry.level, rank = entry.rank }
-                end
-            end
-        end
-    end
-    return merged
-end
-
 local function build()
     local known, trainable, ranks = {}, {}, {}
     local readable = eachBookSpell(function(id)
@@ -109,13 +87,16 @@ local function build()
     local _, classFile = UnitClass("player")
     classFile = Safe(classFile)
     local level = Safe(UnitLevel("player"))
-    if type(classFile) == "string" and type(level) == "number" then
-        for id, entry in pairs(trainerSpells(classFile)) do
-            local rank = type(entry.rank) == "number" and entry.rank or subtextRank(id)
-            ranks[id] = rank
-            local name = spellName(id)
-            if name and rank and entry.level <= level and rank > (trainable[name] or 0) and not isKnown(id) then
-                trainable[name] = rank
+    local own = type(classFile) == "string" and ns.Store.db and ns.Store.TrainerSpells(classFile)
+    if type(own) == "table" and type(level) == "number" then
+        for id, entry in pairs(own) do
+            if type(id) == "number" and type(entry) == "table" and type(entry.level) == "number" then
+                local rank = type(entry.rank) == "number" and entry.rank or subtextRank(id)
+                ranks[id] = rank
+                local name = spellName(id)
+                if name and rank and entry.level <= level and rank > (trainable[name] or 0) and not isKnown(id) then
+                    trainable[name] = rank
+                end
             end
         end
     end
