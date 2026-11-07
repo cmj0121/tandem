@@ -84,9 +84,21 @@ local function notify(on)
     end
 end
 
+-- Resolves a global frame name, or a dotted path to a child frame such as "MainActionBar.EndCaps".
+local function frameOf(name)
+    local f
+    for part in name:gmatch("[^.]+") do
+        f = (f == nil and _G or f)[part]
+        if type(f) ~= "table" then
+            return nil
+        end
+    end
+    return f
+end
+
 local function fade()
     for name in pairs(concealed) do
-        local f = _G[name]
+        local f = frameOf(name)
         if type(f) == "table" then
             if not faded[name] then
                 faded[name] = { alpha = call(f.GetAlpha, f) or 1, mouse = call(f.IsMouseEnabled, f) }
@@ -99,7 +111,7 @@ end
 
 local function unfade()
     for name, was in pairs(faded) do
-        local f = _G[name]
+        local f = frameOf(name)
         if type(f) == "table" then
             pcall(f.SetAlpha, f, was.alpha)
             if was.mouse ~= nil then
@@ -278,6 +290,14 @@ local function override(info)
         end
     end
     local faders = {}
+    -- The gryphon end caps beside the main bar: Edit Mode's hide-art setting, else fade them.
+    local artSetting = enum("EditModeActionBarSetting", "HideBarArt")
+    local mainSystem = bar and findSystem(info, bar, enum("EditModeActionBarSystemIndices", "MainBar"))
+    if mainSystem and artSetting ~= nil then
+        setSetting(mainSystem, artSetting, 1)
+    else
+        faders[#faders + 1] = main .. ".EndCaps"
+    end
     for _, row in ipairs({ { "RightBar1", "MultiBarRight" }, { "RightBar2", "MultiBarLeft" },
         { "ExtraBar1", "MultiBar5" }, { "ExtraBar2", "MultiBar6" }, { "ExtraBar3", "MultiBar7" } }) do
         local s = bar and findSystem(info, bar, enum("EditModeActionBarSystemIndices", row[1]))

@@ -3352,7 +3352,8 @@ local LAYOUT_ENUM = {
     EditModeSystem = { ActionBar = 0, UnitFrame = 3, ChatFrame = 9 },
     EditModeActionBarSystemIndices = { MainBar = 1, Bar2 = 2, Bar3 = 3, RightBar1 = 4, RightBar2 = 5, ExtraBar1 = 6,
         ExtraBar2 = 7, ExtraBar3 = 8 },
-    EditModeActionBarSetting = { Orientation = 0, NumRows = 1, NumIcons = 2, IconSize = 3, VisibleSetting = 5 },
+    EditModeActionBarSetting = { Orientation = 0, NumRows = 1, NumIcons = 2, IconSize = 3, VisibleSetting = 5,
+        HideBarArt = 6 },
     ActionBarVisibleSetting = { Always = 0, Hidden = 3 },
     EditModeUnitFrameSystemIndices = { Player = 1, Target = 2, Focus = 3 },
     EditModeLayoutType = { Preset = 0, Account = 1, Character = 2 },
@@ -3587,6 +3588,7 @@ do
     check("layout on: main bar one row of 12", settingOf(main, 0) .. " " .. settingOf(main, 1) .. " "
         .. settingOf(main, 2), "0 1 12")
     check("layout on: other bar settings kept", settingOf(main, 3), 5)
+    check("layout on: main bar art (gryphons) hidden by Edit Mode", settingOf(main, 6), 1)
     check("layout on: bar 2 on the main bar", anchorText(systemOf(t, 0, 2)), "BOTTOM MainActionBar TOP 0 2")
     check("layout on: bar 2 always shown", settingOf(systemOf(t, 0, 2), 5), 0)
     check("layout on: bar 3 on bar 2", anchorText(systemOf(t, 0, 3)), "BOTTOM MultiBarBottomLeft TOP 0 2")
@@ -3803,6 +3805,23 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("layout combat: off cancels a deferred on", #ctx.state.activated, 2)
+end
+
+-- Without Edit Mode's hide-art setting, the main bar's gryphon end caps fade instead and come back on off.
+do
+    local enumNoArt = copyTable(LAYOUT_ENUM)
+    enumNoArt.EditModeActionBarSetting.HideBarArt = nil
+    local ctx = loadLayout({ env = { Enum = enumNoArt } })
+    local caps = { alpha = 1, mouse = true }
+    function caps.GetAlpha(self) return self.alpha end
+    function caps.SetAlpha(self, a) self.alpha = a end
+    function caps.IsMouseEnabled(self) return self.mouse end
+    function caps.EnableMouse(self, m) self.mouse = m end
+    ctx.state.frames.MainActionBar.EndCaps = caps
+    ctx.run("layout on")
+    check("layout art: end caps faded without HideBarArt", caps.alpha, 0)
+    ctx.run("layout off")
+    check("layout art: end caps back on off", caps.alpha, 1)
 end
 
 -- Bars Edit Mode cannot hide fade instead, again after Edit Mode re-applies, and come back on off.
