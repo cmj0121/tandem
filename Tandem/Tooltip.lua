@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- Adds Tandem lines to item tooltips out of combat: where the item ranks in its slot and its stat score, whether
--- the player can use it, and where it drops most.
+-- the player can use it, whether it beats what the player wears, and where it drops most.
 local Tooltip = {}
 ns.Tooltip = Tooltip
 
@@ -15,6 +15,7 @@ local BLUE = { 0.4, 0.8, 1 }
 local RED = { 1, 0.25, 0.25 }
 local LIGHT = { 0.8, 0.8, 0.8 }
 local GREY = { 0.5, 0.5, 0.5 }
+local GREEN = { 0.1, 1, 0.1 }
 
 -- Per-item results for one class:level:spec:Store.revision:Weights.revision over one own db and one shipped table,
 -- as Advisor's rank memo: a weight or spec change ranks again.
@@ -106,6 +107,11 @@ function Tooltip.OnItem(tooltip, data)
             text = L["Tandem: rank %d of %d for %s"]:format(r.rank, r.total, View.SlotLabel(r.slot))
         end
         addLine(tooltip, text .. View.Marks(row, worn), BLUE)
+    end
+    local okBetter, better, score, over = pcall(ns.Upgrade.Better, id)
+    if okBetter and better == true then
+        addLine(tooltip, L["Tandem: upgrade over what you wear (score %s over %s)"]:format(View.ScoreText(score),
+            View.ScoreText(over)), GREEN)
     end
     if r.reason == "level" then
         addLine(tooltip, L["Tandem: you cannot use it: level %d required"]:format(r.needLevel), RED)

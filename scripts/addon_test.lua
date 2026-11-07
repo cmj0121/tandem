@@ -7887,7 +7887,7 @@ do
 end
 
 
--- ItemBorders: green border on default bag buttons whose item beats what is worn (stage 10, unit 2).
+-- ItemBorders: red border on default bag buttons whose item beats what is worn (stage 10, unit 2).
 
 -- HookScript chains after the frame's script, as on a real frame; w.hooks counts the hooks per script.
 function WIDGET.HookScript(w, name, fn)
@@ -7906,13 +7906,16 @@ end
 -- ContainerFrame<f>Item<i> globals for slots 1..n (default #items; a nil id is an empty slot), reading bag;
 -- ctx.modern(name, list) builds a frame whose EnumerateValidItems yields one button per { bag, id } with GetBagID.
 -- Both are shown and fill ctx.bags.
--- opts.timer adds a C_Timer whose After calls wait in ctx.timers until ctx.nextFrame(); ctx.refreshes counts
--- ItemBorders.Bags runs. ctx.border(button) returns "green", "hidden", "none" or "other".
+-- opts.env adds globals; opts.timer adds a C_Timer whose After calls wait in ctx.timers until ctx.nextFrame();
+-- ctx.refreshes counts ItemBorders.Bags runs. ctx.border(button) returns "red", "hidden", "none" or "other".
 local function loadItemBorders(opts)
     opts = opts or {}
     local ui = { widgets = {} }
     local timers = {}
     local env = {}
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
     if opts.timer then
         env.C_Timer = { After = function(_, fn)
             timers[#timers + 1] = fn
@@ -7987,7 +7990,7 @@ local function loadItemBorders(opts)
             return "hidden"
         end
         local c = border.texture.color
-        return (c[1] == 0.1 and c[2] == 1 and c[3] == 0.1) and "green" or "other"
+        return (c[1] == 1 and c[2] == 0.15 and c[3] == 0.15) and "red" or "other"
     end
     return ctx
 end
@@ -8004,7 +8007,7 @@ do
     local ctx = loadItemBorders()
     local _, b = ctx.classic(1, 0, { 1, 4, nil, 900 }, 4)
     ctx.bagUpdate()
-    check("item borders: an upgrade in a shown bag gets a green border", ctx.border(b[1]), "green")
+    check("item borders: an upgrade in a shown bag gets a red border", ctx.border(b[1]), "red")
     check("item borders: a non-upgrade gets none", ctx.border(b[2]), "none")
     check("item borders: an empty slot gets none", ctx.border(b[3]), "none")
     check("item borders: a loading item gets none", ctx.border(b[4]), "none")
@@ -8015,12 +8018,16 @@ do
         "Interface\\Buttons\\UI-ActionButton-Border")
     check("item borders: the glow is additive", border.texture.blend, "ADD")
     check("item borders: the button's scripts are untouched", next(b[1].scripts), nil)
+    check("item borders: the arrow falls back to the pet battle badge", border.arrow.texture,
+        "Interface\\PetBattles\\BattleBar-AbilityBadge-Strong")
+    check("item borders: the arrow sits in the button's top-left corner", border.arrow.points[1][1], "TOPLEFT")
+    check("item borders: the arrow is anchored to the button", border.arrow.points[1][2], b[1])
 
     ctx.cache[900] = { "Late Plate", nil, 4, 60 }
     ctx.fire("GET_ITEM_INFO_RECEIVED", 77, true)
     check("item borders: another item's info leaves it bare", ctx.border(b[4]), "none")
     ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
-    check("item borders: info arriving later shows the border", ctx.border(b[4]), "green")
+    check("item borders: info arriving later shows the border", ctx.border(b[4]), "red")
 
     local frames = #ctx.ui.widgets
     ctx.bagUpdate()
@@ -8043,17 +8050,17 @@ do
     ctx.env.ContainerFrame3:Hide()
     local _, c = ctx.modern("ContainerFrameCombinedBags", { { 4, 1 }, { 4, 9 } })
     ctx.bagUpdate()
-    check("item borders: EnumerateValidItems and GetBagID give the upgrade", ctx.border(m[1]), "green")
+    check("item borders: EnumerateValidItems and GetBagID give the upgrade", ctx.border(m[1]), "red")
     check("item borders: EnumerateValidItems non-upgrade gets none", ctx.border(m[2]), "none")
     check("item borders: a hidden bag frame is skipped", ctx.border(hidden[1]), "none")
-    check("item borders: the combined bags get the border", ctx.border(c[1]), "green")
+    check("item borders: the combined bags get the border", ctx.border(c[1]), "red")
     check("item borders: the combined bags non-upgrade gets none", ctx.border(c[2]), "none")
-    check("item borders: the classic frame still painted", ctx.border(b[1]), "green")
+    check("item borders: the classic frame still painted", ctx.border(b[1]), "red")
     frame:Hide()
     ctx.equipped[5] = "|Hitem:900:|h"
     ctx.cache[900] = { "Late Plate", nil, 4, 60 }
     ctx.fire("PLAYER_EQUIPMENT_CHANGED")
-    check("item borders: a hidden frame keeps its border until shown", ctx.border(b[1]), "green")
+    check("item borders: a hidden frame keeps its border until shown", ctx.border(b[1]), "red")
 end
 
 do
@@ -8065,7 +8072,7 @@ do
     ctx.env.ContainerFrameCombinedBags = newWidget(ctx.ui, "Frame")
     ctx.env.ContainerFrameCombinedBags:Hide()
     ctx.bagUpdate()
-    check("item borders: ready again paints", ctx.border(m[1]), "green")
+    check("item borders: ready again paints", ctx.border(m[1]), "red")
     ctx.env.ContainerFrameCombinedBags = nil
     ctx.bagUpdate()
     check("item borders: not ready hides the borders it made", ctx.border(m[1]), "hidden")
@@ -8081,7 +8088,7 @@ do
     check("item borders: Schedule coalesces into one timer", #ctx.timers, 1)
     ctx.nextFrame()
     check("item borders: one refresh on the next frame", ctx.refreshes, 1)
-    check("item borders: the next frame paints", ctx.border(b[1]), "green")
+    check("item borders: the next frame paints", ctx.border(b[1]), "red")
     ctx.bagUpdate()
     check("item borders: a later event schedules again", #ctx.timers, 1)
     ctx.nextFrame()
@@ -8106,7 +8113,7 @@ do
     local ctx = loadItemBorders()
     local _, b = ctx.classic(1, 0, { 1 })
     ctx.bagUpdate()
-    check("item borders: painted with C_Item", ctx.border(b[1]), "green")
+    check("item borders: painted with C_Item", ctx.border(b[1]), "red")
     ctx.env.C_Item = nil
     ctx.addon.Upgrade.Invalidate()
     local ok = pcall(ctx.addon.ItemBorders.Bags)
@@ -8143,7 +8150,38 @@ do
 end
 
 
--- ItemBorders.Loot: green border on loot window buttons (stage 10, unit 3).
+-- SetAtlas records the atlas name, as SetTexture records its file.
+function WIDGET.SetAtlas(w, atlas) w.atlas = atlas end
+
+do
+    local ctx = loadItemBorders({ env = { C_Texture = { GetAtlasInfo = function(name)
+        return name == "bags-greenarrow" and {} or nil
+    end } } })
+    local _, b = ctx.classic(1, 0, { 1 }, 1)
+    ctx.bagUpdate()
+    check("item borders: the arrow uses the bag upgrade atlas when the client has it", b[1].tandemUpgrade.arrow.atlas,
+        "bags-greenarrow")
+end
+
+do
+    local ctx = loadItemBorders()
+    ctx.env.GameTooltip = fakeTooltip()
+    local tip = ctx.env.GameTooltip
+    ctx.addon.Tooltip.OnItem(tip, { id = 1 })
+    local line
+    for _, l in ipairs(tip.lines) do
+        if l.text:find("upgrade over what you wear", 1, true) then
+            line = l
+        end
+    end
+    check("item tooltip: an upgrade gets the score line", line and line.text:match("%(score .+%)") ~= nil, true)
+    check("item tooltip: the upgrade line is green", colour(line), "0.1,1,0.1")
+    tip.lines = {}
+    ctx.addon.Tooltip.OnItem(tip, { id = 4 })
+    check("item tooltip: a non-upgrade gets no upgrade line", texts(tip):find("upgrade over", 1, true), nil)
+end
+
+-- ItemBorders.Loot: red border on loot window buttons (stage 10, unit 3).
 
 local function itemLink(id)
     return "|cffffffff|Hitem:" .. id .. "::::::::60:::::|h[Item " .. id .. "]|h|r"
@@ -8231,7 +8269,7 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.fire("LOOT_OPENED")
     check("loot borders: LOOT_OPENED registered", ctx.frame.registered.LOOT_OPENED, true)
-    check("loot borders: an upgrade's loot button gets a green border", ctx.border(b[1]), "green")
+    check("loot borders: an upgrade's loot button gets a red border", ctx.border(b[1]), "red")
     check("loot borders: a coin slot gets none", ctx.border(b[2]), "none")
     check("loot borders: a non-upgrade gets none", ctx.border(b[3]), "none")
     check("loot borders: a hidden button is skipped", ctx.border(b[4]), "none")
@@ -8240,7 +8278,7 @@ do
     ctx.page = 1
     ctx.env.LootFrame_Update()
     check("loot borders: paging hides the border of the button's new non-upgrade", ctx.border(b[1]), "hidden")
-    check("loot borders: paging shows the border on the button's new upgrade", ctx.border(b[3]), "green")
+    check("loot borders: paging shows the border on the button's new upgrade", ctx.border(b[3]), "red")
     ctx.fire("PLAYER_LOGIN")
     check("loot borders: LootFrame_Update hooked once", ctx.hooks.secure, 1)
     check("loot borders: LootFrame OnShow hooked once", (ctx.env.LootFrame.hooks or {}).OnShow, 1)
@@ -8249,13 +8287,13 @@ do
     ctx.env.LootFrame_Update()
     check("loot borders: a hidden loot window is not painted", ctx.border(b[1]), "hidden")
     ctx.env.LootFrame:Show()
-    check("loot borders: showing the loot window repaints", ctx.border(b[1]), "green")
+    check("loot borders: showing the loot window repaints", ctx.border(b[1]), "red")
     ctx.links[1] = itemLink(900)
     ctx.fire("LOOT_READY")
     check("loot borders: LOOT_READY repaints; a loading item gets none", ctx.border(b[1]), "hidden")
     ctx.cache[900] = { "Late Plate", nil, 4, 60 }
     ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
-    check("loot borders: info arriving later shows it", ctx.border(b[1]), "green")
+    check("loot borders: info arriving later shows it", ctx.border(b[1]), "red")
 end
 
 do
@@ -8264,7 +8302,7 @@ do
     ctx.links[1], ctx.links[2], ctx.links[3] = itemLink(1), itemLink(4), itemLink(1)
     ctx.fire("PLAYER_LOGIN")
     ctx.fire("LOOT_OPENED")
-    check("loot borders: a ScrollBox upgrade frame gets a border", ctx.border(f1), "green")
+    check("loot borders: a ScrollBox upgrade frame gets a border", ctx.border(f1), "red")
     check("loot borders: a ScrollBox non-upgrade frame gets none", ctx.border(f2), "none")
     check("loot borders: the ScrollBox wins over LootButtons", ctx.border(ctx.buttons[1]), "none")
     f1.index = 2
@@ -8272,7 +8310,7 @@ do
     check("loot borders: a reused frame drops the old item's border", ctx.border(f1), "hidden")
     f2.index = 3
     ctx.init(f2)
-    check("loot borders: a reused frame shows the new item's border", ctx.border(f2), "green")
+    check("loot borders: a reused frame shows the new item's border", ctx.border(f2), "red")
     f2.GetSlotIndex, f2.slot = nil, 2
     ctx.init(f2)
     check("loot borders: .slot stands in for GetSlotIndex", ctx.border(f2), "hidden")
@@ -8288,7 +8326,7 @@ do
     ctx.fire("PLAYER_LOGIN")
     check("loot borders: OnDataRangeChanged hooked once", ctx.hooks.callback, 1)
     ctx.rangeChanged()
-    check("loot borders: a data range change paints", ctx.border(f1), "green")
+    check("loot borders: a data range change paints", ctx.border(f1), "red")
     f1.index = 2
     ctx.rangeChanged()
     check("loot borders: a data range change follows the item", ctx.border(f1), "hidden")
@@ -8301,7 +8339,7 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.env.LootFrame_Update()
     check("loot borders: painted while ready", ctx.border(ctx.buttons[1]), "none")
-    check("loot borders: frame painted while ready", ctx.border(f1), "green")
+    check("loot borders: frame painted while ready", ctx.border(f1), "red")
     ctx.env.C_Item = nil
     local ok = pcall(ctx.env.LootFrame_Update)
     check("loot borders: no C_Item raises nothing", ok, true)

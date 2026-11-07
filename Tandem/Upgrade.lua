@@ -180,8 +180,13 @@ end
 
 -- Returns true when the item's stat score beats every worn item's of its slot, false when it does not (not usable,
 -- not equippable now, no slot, already worn, no better), nil while the item, its stats or a worn item's are unknown.
+-- Behind a true answer it also returns the item's score and the worn score it beats.
 function Upgrade.Better(id)
-    return verdict(id).better
+    local v = verdict(id)
+    if v.better then
+        return true, v.place.score, v.over
+    end
+    return v.better
 end
 
 -- PLAYER_EQUIPMENT_CHANGED, PLAYER_LEVEL_UP (and OnSkillLines): drops Better's answers.
