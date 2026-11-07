@@ -4,10 +4,9 @@ ns.name = addonName
 
 local frame = CreateFrame("Frame")
 for _, event in ipairs({
-    "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED", "QUEST_DETAIL",
-    "QUEST_COMPLETE", "QUEST_FINISHED", "MERCHANT_SHOW", "MERCHANT_UPDATE", "TRAINER_SHOW", "TRAINER_UPDATE",
-    "PLAYER_REGEN_DISABLED", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED",
-    "PLAYER_ENTERING_WORLD",
+    "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_OPENED", "QUEST_COMPLETE", "QUEST_FINISHED",
+    "TRAINER_SHOW", "TRAINER_UPDATE", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED",
+    "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD",
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
 }) do
@@ -23,7 +22,6 @@ local function onLoaded(self, event, loadedName)
     local L = ns.L
     local db, report = ns.Store.Load(TandemDB)
     TandemDB = db
-    ns.Kills.Register(self)
     print(L["%s loaded"]:format(addonName))
 
     if report.status == "newer" then
@@ -44,34 +42,19 @@ frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         onLoaded(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
-        ns.Scanner.OnItemInfo(...)
-        ns.Browse.OnItemInfo(...)
-        ns.Sources.OnItemInfo(...)
         ns.QuestPick.OnItemInfo(...)
         if ns.Upgrade.OnItemInfo(...) then
             ns.ItemBorders.Schedule()
         end
-    elseif event == "LOOT_READY" then
-        ns.Loot.OnLootReady()
+    elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
         ns.ItemBorders.Schedule()
-    elseif event == "LOOT_OPENED" then
-        ns.ItemBorders.Schedule()
-    elseif event == "LOOT_CLOSED" then
-        ns.Loot.OnLootClosed()
-    elseif event == "QUEST_DETAIL" then
-        ns.Sources.OnQuest()
     elseif event == "QUEST_COMPLETE" then
-        ns.Sources.OnQuest()
         ns.QuestPick.OnQuestComplete()
     elseif event == "QUEST_FINISHED" then
         ns.QuestPick.OnQuestFinished()
-    elseif event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" then
-        ns.Sources.OnMerchant()
     elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
         ns.Trainer.OnTrainer()
         ns.ActionBorders.Schedule()
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        ns.Browse.OnCombat()
     elseif event == "SKILL_LINES_CHANGED" then
         if ns.Upgrade.OnSkillLines() then
             ns.ItemBorders.Schedule()
@@ -79,12 +62,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         ns.Upgrade.Invalidate()
         ns.ItemBorders.Schedule()
-        ns.Browse.OnEquipmentChanged()
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Upgrade.OnBagUpdate()
         ns.ItemBorders.Schedule()
     elseif event == "PLAYER_LOGIN" then
-        ns.Launcher.OnLogin()
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
@@ -95,13 +76,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.ItemBorders.Schedule()
         end
         ns.ActionBorders.Schedule()
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        ns.Kills.OnCombatLog()
     elseif event == "PLAYER_REGEN_ENABLED" then
-        ns.Kills.Flush(false)
         ns.Upgrade.OnCombatEnd()
         ns.ActionBorders.Schedule()
-    elseif event == "PLAYER_LOGOUT" then
-        ns.Kills.Flush(true)
     end
 end)
