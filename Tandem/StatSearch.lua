@@ -1,15 +1,11 @@
 local _, ns = ...
 
--- Finds items by the wording of their tooltip (decision 7): a query's terms must all appear on one line of the
--- client's own tooltip, in the client's language, and the first number on that line is the item's value. A few
--- common words the client spells differently are aliased per locale (ns.StatAliases).
+-- Reads the client's own item tooltip, in the client's language: its lines, its stats (through the locale's
+-- ns.StatPatterns) and whether it shows a requirement the player does not meet.
 local StatSearch = {}
 ns.StatSearch = StatSearch
 
 local Safe = ns.Store.Safe
-
--- Version of the stat parser (ReadStats and ns.StatPatterns); stats saved by an older one are read again on a scan.
-StatSearch.VERSION = 1
 
 -- Tooltip lines per item for the session: { {text = lower-cased, raw = as shown}, ... }, colour codes stripped.
 local cache = {}
@@ -17,21 +13,6 @@ local cache = {}
 -- Returns true when the client has the tooltip data API the search reads.
 function StatSearch.Ready()
     return ns.Check.Ready("Stat search")
-end
-
--- Returns the query's terms, lower-cased and aliased, or nil for a blank query. A leading "+" is dropped from each.
-function StatSearch.Parse(query)
-    local aliases = ns.StatAliases or {}
-    local terms = {}
-    for typed in tostring(query or ""):lower():gmatch("%S+") do
-        local word = typed:gsub("^%++", "")
-        for term in (aliases[word] or word):gmatch("%S+") do
-            terms[#terms + 1] = term
-        end
-    end
-    if #terms > 0 then
-        return terms
-    end
 end
 
 local function strip(text)
@@ -116,53 +97,6 @@ function StatSearch.Blocked(id)
         end
     end
     return false
-end
-
--- StatSearch.Match(id, terms) -> value, line | nil, pending
--- Returns the first number on the first tooltip line holding every term (0 when it has none) and that line as shown;
--- nil when no line matches, with pending true while the item's tooltip is not loaded yet.
-function StatSearch.Match(id, terms)
-    local lines = StatSearch.Lines(id)
-    if not lines then
-        return nil, true
-    end
-    for _, line in ipairs(lines) do
-        local all = true
-        for _, term in ipairs(terms) do
-            if not line.text:find(term, 1, true) then
-                all = false
-                break
-            end
-        end
-        if all then
-            return tonumber(line.text:match("%d+%.?%d*")) or 0, line.raw
-        end
-    end
-    return nil, false
-end
-
--- StatSearch.Filter(rows, terms) -> matched, pending
--- Returns the rows that match, each with value and line set, sorted by value desc then their order in rows; pending
--- is the set of ids still loading.
-function StatSearch.Filter(rows, terms)
-    local matched, pending, order = {}, {}, {}
-    for i, row in ipairs(rows) do
-        local value, line = StatSearch.Match(row.id, terms)
-        if value then
-            row.value, row.line = value, line
-            matched[#matched + 1] = row
-            order[row] = i
-        elseif line then
-            pending[row.id] = true
-        end
-    end
-    table.sort(matched, function(a, b)
-        if a.value ~= b.value then
-            return a.value > b.value
-        end
-        return order[a] < order[b]
-    end)
-    return matched, pending
 end
 
 -- StatSearch.ReadStats(id) -> { statKey = number } | nil

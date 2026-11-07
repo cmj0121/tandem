@@ -17,7 +17,6 @@ Items.lua
 SpellRanks.lua
 ActionBorders.lua
 Trainer.lua
-Advisor.lua
 View.lua
 Check.lua
 QuestPick.lua

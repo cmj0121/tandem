@@ -22,10 +22,6 @@ L["%s: %s (%s)"] = "%s：%s（%s）"
 L["ok"] = "可用"
 L["missing"] = "缺少"
 L["Item tooltip"] = "物品提示框"
-L["Quest sources"] = "任務來源"
-L["Vendor sources"] = "商人來源"
-L["Map pins"] = "地圖標記"
-L["Map waypoint"] = "地圖導航點"
 L["Quest reward pick"] = "任務獎勵建議"
 L["Upgrade alert"] = "升級提醒"
 L["Item stats"] = "物品屬性"
@@ -85,38 +81,6 @@ L["Balance"] = "平衡"
 L["Feral Combat"] = "野性戰鬥"
 L["Tandem: not available in combat"] = "Tandem：戰鬥中無法使用"
 L["Tandem: your class or level is not known yet; try again in a moment"] = "Tandem：尚未取得你的職業或等級，請稍後再試"
-L[" (equipped)"] = "（已裝備）"
-L[" (upgrade)"] = "（升級）"
-L[" (no stats)"] = "（無屬性）"
-L[" (no known source)"] = "（來源未知）"
-L["  no known source"] = "  來源未知"
-L["  %s, %s - drops: %d"] = "  %s，%s：掉落 %d 次"
-L["  %s, %s - drops: %d, %.1f%% per kill"] = "  %s，%s：掉落 %d 次，每次擊殺 %.1f%%"
-L["  %s, %s - drops: %d, %.1f%% per looted corpse (upper bound)"] =
-    "  %s，%s：掉落 %d 次，每具拾取屍體 %.1f%%（上限）"
-L["  %s, %s - quest reward"] = "  %s，%s：任務獎勵"
-L["  %s, %s - vendor"] = "  %s，%s：商人販售"
-L["  and %d more sources"] = "  還有 %d 個來源"
-L["npc #%d"] = "NPC #%d"
-L["quest #%d"] = "任務 #%d"
-L["Tandem: reward from %s, %s"] = "Tandem：%s 的任務獎勵，%s"
-L["Tandem: sold by %s, %s"] = "Tandem：由 %s 販售，%s"
-L[" (%s only)"] = "（僅限%s）"
-L["Alliance"] = "聯盟"
-L["Horde"] = "部落"
-L["Tandem: rank %d of %d for %s"] = "Tandem：排名第 %d／%d（%s）"
-L["Tandem: rank %d of %d for %s, score %s"] = "Tandem：排名第 %d／%d（%s），分數 %s"
-L["Tandem: you cannot use it: level %d required"] = "Tandem：你無法使用：需要等級 %d"
-L["Tandem: your class cannot use it"] = "Tandem：你的職業無法使用"
-L["Tandem: drops from %s, %s"] = "Tandem：掉落自 %s，%s"
-L[" (%.1f%% per kill)"] = "（每次擊殺 %.1f%%）"
-L[" (up to %.1f%%)"] = "（最高 %.1f%%）"
-L[" (+%d more)"] = "（另有 %d 個來源）"
-L["Tandem: deprecated item"] = "Tandem：已棄用的物品"
-L["object #%d"] = "物件 #%d"
-L["Fishing"] = "釣魚"
-L["unknown source"] = "未知來源"
-L["unknown map"] = "未知地圖"
 L["item #%d"] = "物品 #%d"
 
 L["Head"] = "頭部"
@@ -135,13 +99,6 @@ L["Main hand"] = "主手"
 L["Off hand"] = "副手"
 L["Two-hand"] = "雙手"
 L["Ranged"] = "遠程"
-
--- Stat search aliases: a word players type that the zhTW tooltip spells otherwise; the value may be several terms.
-ns.StatAliases = {
-    ["體力"] = "耐力",
-    ["暴擊"] = "致命一擊",
-    ["法術暴擊"] = "法術 致命一擊",
-}
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
 -- line comes after it.
