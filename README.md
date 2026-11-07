@@ -4,13 +4,12 @@
 
 English | [繁體中文](README.zh-TW.md)
 
-Tandem is a World of Warcraft addon. It collects a cache of equippable items, built by scanning item IDs, and a log of
-where each item came from: the creatures and objects it dropped from, with kill and looted-corpse counts for drop rates,
-the quests that reward it and the vendors that sell it. From that data, merged with what other players contributed, it
-suggests the best known gear your character can use and where to get it. It never acts for
-the player, it records nothing while you are in combat, and neither its advice commands nor its gear window are
-available in combat. Out of combat, it also adds lines to the tooltips of the items it knows, and it draws a red
-border and a green up arrow on bag and loot items that beat what you wear.
+Tandem is a World of Warcraft addon that tells you when an item beats what you wear. It judges each item in your bags,
+in the loot window and among quest rewards from what the client says about it right now: its slot, required level,
+armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
+border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
+marks the best quest reward choice and flags out-of-date spell ranks on your action bars. It never acts for the
+player: it only advises, and it saves nothing but your own stat weights and what your class trainer teaches.
 
 ## Install
 
@@ -32,8 +31,8 @@ make uninstall
 
 ### Finding the client
 
-`make install`, `make uninstall` and `make import` locate the `World of Warcraft` folder with `scripts/wow-dir.sh`. A
-folder qualifies only if it contains `<FLAVOR>/Interface/AddOns`. The search order is:
+`make install` and `make uninstall` locate the `World of Warcraft` folder with `scripts/wow-dir.sh`. A folder
+qualifies only if it contains `<FLAVOR>/Interface/AddOns`. The search order is:
 
 1. `WOW_DIR`, if set. If it does not qualify, the install fails rather than searching further.
 2. `/Applications/World of Warcraft`, `~/Applications/World of Warcraft` and `/Users/Shared/World of Warcraft`.
@@ -43,15 +42,11 @@ If nothing qualifies, the script exits with an error that lists every place it s
 
 ### Overrides
 
-| Variable  | Default                | Meaning                                                                             |
-| --------- | ---------------------- | ----------------------------------------------------------------------------------- |
-| `WOW_DIR` | auto-detected          | The `World of Warcraft` folder that contains `_forever_`, not the flavor dir        |
-| `FLAVOR`  | `_forever_`            | The client flavor folder inside `WOW_DIR`; `_classic_beta_` targets the beta client |
-| `MODE`    | `link`                 | `copy` copies the addon instead of linking it                                       |
-| `DATA`    | `data`                 | The folder `make import` writes contributions to                                    |
-| `OUT`     | `Tandem/Data/Loot.lua` | The merged file `make import` writes for the addon                                  |
-
-`WOW_DIR` and `FLAVOR` apply to `make install`, `make uninstall` and `make import`; `MODE` only to the first two.
+| Variable  | Default       | Meaning                                                                             |
+| --------- | ------------- | ----------------------------------------------------------------------------------- |
+| `WOW_DIR` | auto-detected | The `World of Warcraft` folder that contains `_forever_`, not the flavor dir        |
+| `FLAVOR`  | `_forever_`   | The client flavor folder inside `WOW_DIR`; `_classic_beta_` targets the beta client |
+| `MODE`    | `link`        | `copy` copies the addon instead of linking it                                       |
 
 Quote `WOW_DIR`, because the folder name contains spaces:
 
@@ -71,318 +66,16 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
 
 ## Commands
 
-Scan the next 100 item IDs at 10 per second, then look at what was collected:
-
-```text
-/tandem scan 10/s
-/tandem count
-```
-
 | Command                                | What it does                                                       |
 | -------------------------------------- | ------------------------------------------------------------------ |
 | `/tandem`                              | Prints the commands, as does any unknown subcommand                |
-| `/tandem count`                        | Prints what has been collected so far                              |
-| `/tandem scan [<n>/s\|<n>/m] [<cap>]`  | Scans `<cap>` IDs up from the cursor, `<n>` per second or minute   |
-| `/tandem scan from <id>`               | Sets the scan cursor to `<id>`; does not start a scan              |
-| `/tandem scan stop`                    | Stops the running scan and prints its summary                      |
-| `/tandem gear [<slot>] [all]`          | Lists the best known gear you can use, per slot or in one slot     |
-| `/tandem gear <slot> [all] <words>`    | Lists a slot's gear whose tooltip has the words on one line        |
-| `/tandem rank <item link\|id>`         | Ranks an item in its slot and lists where to get it                |
-| `/tandem export`                       | Shows what `make import` would collect from this account           |
-| `/tandem browse [<slot>]`              | Opens or closes a window of all known gear, in every slot or one   |
-| `/tandem minimap [on\|off]`            | Shows or hides the minimap button; with no argument, toggles it    |
 | `/tandem check`                        | Lists, per feature, which client APIs it needs are found           |
-| `/tandem map <item link\|id>`          | Opens the world map with a pin on each known place of the item     |
-| `/tandem map clear`                    | Removes the map pins                                               |
-| `/tandem forget <from> <to>`           | Drops your own items, stats and loot rows of item IDs in a range   |
 | `/tandem weights`                      | Shows the stat weights of your talent tree                         |
 | `/tandem weights spec <1\|2\|3\|auto>` | Picks the talent tree the weights are for, or follows talents      |
 | `/tandem weights set <stat> <number>`  | Sets your own weight for one stat of the active tree; 0 ignores it |
 | `/tandem weights reset`                | Drops your own weights for the active tree                         |
 
-`gear`, `rank`, `export`, `browse`, `check`, `map`, `forget` and `weights` print `Tandem: not available in combat` and do
-nothing while you are in combat.
-`minimap` works in combat too.
-
-### `/tandem scan`
-
-The rate defaults to `10/s` and must lie between `1/m` and `50/s`. The cap defaults to `100` IDs, at most `100000`.
-The two tokens may come in either order, so `/tandem scan 500 5/s` and `/tandem scan 5/s 500` are the same. An invalid
-or repeated token prints the command list and starts nothing.
-
-The scan resumes where the last one stopped: each ID it queries moves the cursor up by one, with no upper limit. The
-rate is a ceiling: the scan waits while 10 queries are still waiting for a server reply, and a query unanswered after 5
-seconds counts as a timeout. In combat the scan pauses and resumes by itself.
-
-When `/tandem check` shows `Stat search` as available, the scan also reads each item's stats (strength, spell power,
-hit, armor, weapon DPS and so on) from its tooltip, on an English (`enUS`, `enGB`) or Traditional Chinese (`zhTW`)
-client; a client in any other language reads no stats and leaves items unread rather than stat-less. An ID
-already in the cache is skipped, unless its stats were never read or were read by an older version of Tandem: then
-the scan reads them again (a backfill). A backfill is not a new item: it counts neither as a hit nor as skipped, and
-the summary gets an extra line `<n> cached items read for stats`. An item whose tooltip has not loaded yet waits and
-is retried like any other deferred query; when it times out, its stats stay unread until the next scan. Without
-`Stat search`, cached IDs are skipped and no stats are read.
-
-```text
-Tandem: scanning 100 IDs from ID 1
-Tandem: scan stopped, IDs 1-100 in 10.6s, 100 processed, 0 skipped
-  41 hits (12 equippable), 59 misses, 12 deferred, 0 timeouts
-```
-
-The numbers are an example. The summary prints when the cap is reached and every reply is in, or on
-`/tandem scan stop`. Other messages:
-
-- `Tandem: scan paused in combat`, once per combat.
-- `Tandem: scan already running` for a second `scan` while one runs.
-- `Tandem: no scan running` for `scan stop` with nothing to stop.
-- `Tandem: next scan starts at ID <id>` after `scan from <id>`, or `Tandem: stop the scan before moving the cursor`
-  while a scan runs.
-
-### `/tandem count`
-
-```text
-Tandem: 12 known items, 29 non-equippable
-Scan cursor: 101, found IDs: 25-98
-Loot entries: 3, npc names: 1
-Kills: 4, looted corpses: 3
-Drop rates use kills where counted, else looted corpses
-Unsaved records: 16 (saved on /reload or logout)
-Last run: IDs 1-100 at 10/s in 10.6s, 100 processed, 0 skipped
-  41 hits (12 equippable), 59 misses, 12 deferred, 0 timeouts
-```
-
-Before the first scan, `found IDs` reads `none` and the last line reads `Last run: never`. `Loot entries` counts drops,
-quest rewards and vendor items together. `Unsaved records` counts items, loot drops, quest rewards, vendor items, npc and
-quest names, kills and looted corpses added since the addon loaded; they are lost if the client exits without saving.
-
-`Kills` and `looted corpses` are this account's own counts (see [Drop rates](#drop-rates)). The line after them says
-whether kills are being counted. When the client does not allow it, it reads
-`Drop rates use looted corpses: kill counting is <status>`, where `<status>` is one of:
-
-- `unavailable`: the client has no combat log API.
-- `blocked`: the client refused to register for the combat log.
-- `secret`: the combat log hides who killed what; kill counting turned itself off for this session.
-
-### `/tandem gear`
-
-`/tandem gear` prints, for each slot, the best item you can use that has a known source, then the same note as
-`rank`:
-
-```text
-Best known gear for level 12 Warrior:
-Head: none known
-Chest: [Tough Leather Armor], ilvl 14 (upgrade)
-...
-Ranked by stat score, then item level and quality; items marked (no stats) come last
-```
-
-`/tandem gear <slot>` prints what you wear in that slot, then up to 10 items with their required level:
-
-```text
-Best Chest for level 12 Warrior:
-Equipped: [Recruit's Vest], ilvl 5
-1. [Tough Leather Armor], ilvl 14, level 9 (upgrade)
-2. [Rough Leather Vest], ilvl 10, level 5 (upgrade)
-Ranked by stat score, then item level and quality; items marked (no stats) come last
-```
-
-The items and numbers are an example. Items print as item links: click one to see the game's tooltip with its icon and
-stats. An item the client has not loaded yet prints as `[item #<id>]` and shows its name the next time.
-
-The slot tokens are `head neck shoulder back chest wrist hands waist legs feet finger trinket mainhand offhand twohand
-ranged`. They are English on every client; the printed slot names follow the client language. An unknown token prints
-`Tandem: unknown slot <token>; use one of: ...`.
-
-By default `gear` lists only items with a known source: a drop, quest reward or vendor entry in your data or in the
-shipped data (see [Quest rewards and vendors](#quest-rewards-and-vendors)). Add `all`, as
-in `/tandem gear all` or `/tandem gear chest all`, to include the other cached items, marked `(no known source)`. The
-item cache also holds items that cannot be obtained in game. Items flagged deprecated (see
-[Deprecated items](#deprecated-items)) are never listed, with or without `all`.
-
-Words after the slot, or after `all`, search the item tooltips instead: `/tandem gear chest +stamina` or
-`/tandem gear chest all +stamina`. See [Stat search](#stat-search).
-
-### `/tandem rank`
-
-`/tandem rank` takes an item link, shift-clicked into chat, or an item ID. It prints the item's rank in its slot among
-the items you can use that have a known source, counting the item itself when it is not one of them, whether you can
-use it yourself, and up to 5 places to get it:
-
-```text
-[Tough Leather Armor] (upgrade): rank 2 of 14 for Chest
-  Corina Steele, Elwynn Forest - vendor
-  Kobold Miner, Elwynn Forest - drops: 3, 4.2% per looted corpse (upper bound)
-  Defias Thug, Elwynn Forest - drops: 1
-Ranked by stat score, then item level and quality; items marked (no stats) come last
-```
-
-Quest rewards read `<quest>, <map> - quest reward` and vendor items `<npc>, <map> - vendor`, with no count or
-rate. They come before drops, except those seen only by the other faction, which come last and end with
-`(Horde only)` or `(Alliance only)`; see [Quest rewards and vendors](#quest-rewards-and-vendors).
-
-- An item you cannot use is still ranked, counted in the total, followed by `you cannot use it: level <n> required` or
-  `your class cannot use it`, and never marked as an upgrade.
-- A one-hand weapon is ranked as a main-hand weapon.
-- An item flagged deprecated (see [Deprecated items](#deprecated-items)) is ranked against the other items, which never
-  include a deprecated one, and `this item is deprecated` follows the first line.
-- An item with no known source is ranked too, followed by `no known source`.
-- An item that is not cached prints `Tandem: item <id> is not known; scan or loot it first`. Shirts, tabards, bags and
-  ammunition print `<item> does not go in a ranked slot`.
-- Loot from fishing, object 35591 (the Fishing Bobber), prints as `Fishing`. Any other source with no recorded name
-  prints as `npc #<id>`, `object #<id>` or `quest #<id>`; a map the client does not name prints as `unknown map`. More
-  than 5 sources end with `and <n> more sources`.
-
-### `/tandem browse`
-
-`/tandem browse` opens a window titled `Tandem gear` that lists every known item, best first, ranked as described in
-[How gear is ranked](#how-gear-is-ranked); run it again to close the window. `/tandem browse <slot>` opens the window on
-one slot, or switches the open window to it. It takes the slot tokens of `gear`, and an unknown token prints the same
-`Tandem: unknown slot <token>; use one of: ...` line. When the client has not told the addon your class or level yet,
-it prints `Tandem: your class or level is not known yet; try again in a moment` and opens nothing.
-
-The window also opens without a command, from **Tandem** in the minimap's addon compartment, the button by the minimap
-that lists addons; WoW Forever has one. Hovering the entry shows a tooltip, `Tandem` over `Click to browse known gear`.
-A click opens the window on `All slots`, or closes it when it is open. In combat the click prints
-`Tandem: not available in combat` and opens nothing; while your class or level is not known yet it prints
-`Tandem: your class or level is not known yet; try again in a moment` and opens nothing.
-
-A round Tandem button on the edge of the minimap does the same, next to the compartment entry or in its place on a client
-without one. It is shown by default, at the lower left until you move it. Its tooltip adds `Drag to move this button`:
-drag it with the left mouse button to move it around the minimap. Its place is kept in `TandemDB.ui` as an angle and
-restored after a `/reload` or the next login.
-
-Hide the button with `/tandem minimap off` or by unticking `Show minimap button` in the window, and bring it back with
-`/tandem minimap on` or the same box; `/tandem minimap` alone toggles it. The command prints
-`Tandem: minimap button hidden` or `Tandem: minimap button shown`, and the box follows whichever you use. The choice is
-kept in `TandemDB.ui` and applied at the next login.
-
-Along the top of the window:
-
-- A slot dropdown: `All slots`, then each slot by name. `All slots` lists each item once, under its first slot, so a
-  one-hand weapon appears once, as a main-hand weapon. When your class dual-wields at your level, such a one-hander is
-  marked against both hands there: `(equipped)` when you wear it in either hand, and `(upgrade)` when it beats the
-  weaker of the two hands, by score as in [How gear is ranked](#how-gear-is-ranked). In the `Main hand`
-  and `Off hand` views it is compared with that hand only.
-- A quality dropdown: `All qualities`, then `Poor`, `Common`, `Uncommon`, `Rare`, `Epic` and `Legendary`, each in its
-  quality colour. Picking a quality lists only the items of that quality.
-- The number of listed items, as `<n> items`.
-
-Under them, three boxes:
-
-- `Usable only`, ticked when the window is first opened. Untick it to also list the items your class or level cannot
-  use; they are dimmed.
-- `Hide deprecated`, ticked when the window is first opened. Untick it to also list the items flagged deprecated (see
-  [Deprecated items](#deprecated-items)); their name is followed by a grey `(deprecated)` mark.
-- `Show minimap button`, ticked while the minimap button is shown; untick it to hide the button, as
-  `/tandem minimap off` does.
-
-The slot is set each time the window opens: `All slots`, or the slot given to `/tandem browse <slot>`. The quality
-choice, `Usable only` and `Hide deprecated` are kept while the client runs but never saved: after a `/reload` or logout
-the quality reads `All qualities` and both boxes are ticked again.
-
-Below the boxes, a scan bar runs the same scan as [`/tandem scan`](#tandem-scan):
-
-- `Rate` and `Cap` boxes, which read `10/s` and `100` when the window is first opened. They follow the rules of the
-  command's tokens: a rate of `<n>/s` or `<n>/m` between `1/m` and `50/s`, and a cap from `1` to `100000`. An empty box
-  takes the default. Enter or Escape leaves a box without closing the window. What you type is kept until a `/reload`
-  or logout but never saved; after one, the boxes read `10/s` and `100` again.
-- `Start`, which scans from the cursor with those values. While a scan runs, whether started here or with
-  `/tandem scan`, the button reads `Stop` and stops it as `/tandem scan stop` does.
-- A status line. While a scan runs it reads `Scanning: <n> of <cap> IDs, <hits> found, next ID <id>` and is updated
-  every second while the window is open; otherwise it reads `<n> known items, next scan from ID <id>`.
-
-Under the scan bar, twelve stat boxes in two rows filter the list by stat:
-
-```text
-[ ] Strength  [ ] Agility  [ ] Stamina  [ ] Intellect     [ ] Spirit  [ ] Spell power
-[ ] Healing   [ ] Hit      [ ] Crit     [ ] Attack power  [ ] MP5     [ ] Defense
-```
-
-- With a box ticked, only items that have that stat, above 0, are listed. With several ticked, an item must have every
-  one of them: ticking `Stamina` and `Intellect` lists only items with both. The rows keep the score order and the
-  count follows.
-- The stats are the ones read by the scan (see [`/tandem scan`](#tandem-scan)): your own first, else the shipped data.
-  Items marked `(no stats)` are hidden while any box is ticked, since their stats are not known.
-- `Spell power` is the "damage and healing" line, `Healing` the healing-only line, `Hit` and `Crit` the physical ones;
-  spell hit and spell critical strike have no box. Armor and weapon damage have none either, as nearly every item has
-  them.
-- Untick every box to list all items again. The boxes start unticked, are kept while the client runs, and are never
-  saved. Dropping an item on the window unticks them so the item shows.
-- They work on stored stats, so they need no tooltip API. To search tooltip text instead, use
-  `/tandem gear <slot> <words>`; see [Stat search](#stat-search).
-
-A scan started from the bar prints the same chat lines as the command, such as `Tandem: scanning <n> IDs from ID <id>`
-and the summary. An invalid value prints the command's usage line and starts nothing:
-
-```text
-  /tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)
-```
-
-In combat, `Start` and `Stop` print `Tandem: not available in combat` and do nothing. When a scan ends, by reaching its
-cap or by being stopped, an open window lists the items again, so items the scan found show up without reopening it.
-
-The rows are in the order of [How gear is ranked](#how-gear-is-ranked): scored items by score, then the `(no stats)`
-ones by item level. Grey headings over the right of the list name the three number columns, `Score`, `iLvl` and `Req`.
-Each row shows:
-
-- The item's icon, or a question mark when the client gives none.
-- Its name in its quality colour, followed in grey by the marks of [How gear is ranked](#how-gear-is-ranked):
-  `(equipped)`, `(upgrade)`, `(no stats)` or `(no known source)`. Like `gear ... all`, the window lists items with no
-  known source too. A dimmed item is never marked `(upgrade)`.
-- Its stat score for your class and talent tree with one decimal, such as `12.5`; blank for an item marked
-  `(no stats)`. A weight or tree change from [`/tandem weights`](#tandem-weights) shows the next time the list is
-  rebuilt, for example when you change a filter or reopen the window.
-- Its item level, then a level. Normally that is the item's required level. When your level is too low to use the
-  item, it is the level from which you could, in red: the higher of the item's required level and the level your class
-  learns that armor or weapon type, so mail for a hunter shows `40`. An item your class cannot use at all is dimmed but
-  never red.
-
-An item the client has not loaded yet shows as `item #<id>` in its quality colour. The window asks the client for it,
-and the names fill in a moment after they arrive, without reopening the window. An item already flagged deprecated in
-its record, in your data or in the shipped data, is hidden whether its name is loaded or not. One not flagged yet is
-listed even while `Hide deprecated` is ticked, since its name is not known yet. If the name that arrives marks it
-deprecated, the row
-shows the grey `(deprecated)` mark and leaves the list the next time the list is rebuilt, for example when you change a
-filter, rather than jumping away under the mouse.
-
-Hover a row to see the game's tooltip for the item. Click a row to select it: the pane at the bottom shows the item's
-link and up to 5 places to get it, in the same lines and order as `rank`, ending with `and <n> more sources` when there
-are more. With nothing selected, the pane reads `Select an item to see where it drops`. The `Show on map` button at
-the pane's top right does what `/tandem map` does for the selected item; it is greyed out while nothing is selected, and
-selecting another item removes the pins of the earlier one.
-
-Drop an item on the window to look it up: pick it up from your bags or your character sheet, then drag it onto the list
-or the window's background, or click there with it. The item leaves the cursor and stays where it was. The dropdown
-switches to the item's slot, the item is selected and scrolled to, and the pane shows its sources. When you cannot
-use the item, `Usable only` is unticked so that its row is listed, dimmed; a usable item leaves the box as it is. In
-the same way, a deprecated item unticks `Hide deprecated`, and an item of another quality than the chosen one sets the quality
-dropdown back to `All qualities`. An item with no ranked slot, such as a shirt, switches the list to `All slots`, where
-it is not listed, and the pane still shows its sources; the filters stay as they are. An item that is not cached
-selects nothing and leaves the slot as it is; the pane reads `Tandem: item <id> is not known; scan or loot it first`.
-Anything else on the cursor, such as a spell, is ignored and stays on the cursor. In combat a dropped item prints
-`Tandem: not available in combat` and stays on the cursor.
-
-The window is not available in combat. `/tandem browse` prints `Tandem: not available in combat` and opens nothing, and
-an open window closes when combat starts; it stays closed afterwards. Escape closes it too. Drag the window with the
-left mouse button to move it. Its position is kept in `TandemDB.ui` and restored after a `/reload` or the next login;
-until you first move it, it opens in the middle of the screen.
-
-The window opens 640 wide and 620 high. Drag the grip at its bottom right corner to resize it, from 600 × 520 up to
-1200 × 1000, or the size of the screen when that is smaller. The list and the item names widen with the window, and the
-pane stays at the bottom. Whenever you move or resize the window, its size is kept in `TandemDB.ui` with the position
-and restored after a `/reload` or the next login, brought back within those bounds. On a client that cannot resize
-frames, there is no grip and the window keeps its default size.
-
-### `/tandem export`
-
-```text
-Tandem export: 42 loot entries, 7 npc names, 120 items, 15 kills, 12 looted corpses
-Unsaved records: 16 (saved on /reload or logout)
-To contribute: type /reload, then run make import
-```
-
-The counts are this account's saved data plus what is not saved yet. `export` only prints: it does not reload the UI or
-write anything. See [Importing loot logs](#importing-loot-logs).
+`check` and `weights` print `Tandem: not available in combat` and do nothing while you are in combat.
 
 ### `/tandem check`
 
@@ -397,55 +90,14 @@ Probe: LootFrame.ScrollBox missing
 
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
-`Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`, `Item stats`,
-`Stat search`, `Talent spec`, `Trainer record`, `Action bar borders` and `Upgrade borders`. A feature whose API is
-missing stays off instead of raising an error. `Upgrade borders` needs the `Upgrade alert` APIs and the default bag
-buttons, `ContainerFrame1Item1` or `ContainerFrameCombinedBags`.
+`Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
+`Action bar borders` and `Upgrade borders`. A feature whose API is missing stays off instead of raising an error.
+`Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
+`ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
 
 Then one `Probe: <path> present|missing` line each for `LootButton1`, `LootFrame.ScrollBox`, `LootFrame_Update`,
 `ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture` and `ContainerFrame1Item1.UpgradeIcon`. They
 tell which bag and loot frames the client has, and turn nothing on or off.
-
-### `/tandem map`
-
-`/tandem map <item link|id>` takes an item ID or a shift-clicked item link, as `rank` does. It opens the world map on
-the map of the item's first source, in the order `rank` lists them, that has a known place, and puts a pin on each
-place where the item was seen: up to 50, each place once. A pin shows only while its own map is shown, so switch the
-map to see the pins of the other sources. Hover a pin to see the source's name; click it to set the game's waypoint
-there and track it, which prints `Tandem: waypoint set to <source>`.
-
-Pinning another item replaces the pins, and `/tandem map clear` removes them, printing `Tandem: map pins cleared`.
-Pins are not projected onto the continent or world map, and they grow and shrink with the map's zoom.
-
-When nothing can be pinned, it says why and opens nothing:
-
-- `Tandem: map pins are not available on this client; see /tandem check` when the `Map pins` APIs are missing.
-- `Tandem: item <id> is not known; scan or loot it first` for an item with neither a record nor a source.
-- `Tandem: no known map position for item <id>` when no source has a place, such as one seen on an unknown map.
-
-A click on a pin prints `Tandem: this map does not take a waypoint` on a map that refuses waypoints, and
-`Tandem: waypoints are not available on this client; see /tandem check` when the `Map waypoint` APIs are missing.
-In combat the command, the button and a pin click print `Tandem: not available in combat` and do nothing.
-
-### `/tandem forget`
-
-`/tandem forget <from> <to>` drops this account's own item records, item stats and loot rows (drops, quest rewards and
-vendor items) of every item ID from `<from>` to `<to>`, both included. Use it to clear out a range of IDs that no
-longer means what it did, such as a beta's items, before scanning it again:
-
-```text
-/tandem forget 277000 277999
-Tandem: forgot 12 items, 12 stats and 3 loot rows with IDs 277000-277999
-```
-
-`/tandem count` then counts that many fewer items and loot entries; IDs outside the range are untouched. Each record
-dropped counts as an unsaved record, so the change is saved on `/reload` or logout. Npc and quest names, kills and
-looted corpses stay. The [shipped data](#shipped-data) is not touched: its items still show until `make import`
-writes a new `Loot.lua`.
-
-`<from>` and `<to>` must be whole numbers of 1 or more with `<from>` not above `<to>`; otherwise it prints
-`Tandem: usage /tandem forget <from> <to>` and drops nothing. On saved data of a newer schema it prints
-`Recording is off: saved data uses a newer schema`.
 
 ### `/tandem weights`
 
@@ -460,7 +112,8 @@ str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10
 The first line names the active tree and its number in talent tab order, then `auto` when it follows your talents or
 `manual` when you picked it. With `auto`, the tree is the one with the most talent points; below level 10, with no
 points spent or when the `Talent spec` line of [`/tandem check`](#tandem-check) is `missing`, it is the class's usual
-levelling tree. The second line lists each weighted stat by its key, in this order:
+levelling tree (Arms, Retribution, Beast Mastery, Combat, Shadow, Enhancement, Frost, Affliction, Feral Combat). The
+second line lists each weighted stat by its key, in this order:
 `str agi sta int spi armor dps ap rap sp heal hit crit spellhit spellcrit mp5 def dodge parry block blockvalue`.
 `sp` is spell damage and healing, `heal` healing only and `dps` a weapon's damage per second; hit and crit weights are
 per 1%.
@@ -475,7 +128,7 @@ per 1%.
   `Tandem: own weights for tree <n> dropped`. The other trees keep theirs.
 
 Each change then shows the weights as they now are. Your choices are saved per character (`Name-Realm`) and per tree,
-so they survive switching talents; they are not records and do not count as unsaved. Other messages:
+so they survive switching talents. Other messages:
 
 - `Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]` for anything else; nothing changes.
 - `Tandem: unknown stat <stat>; use one of: <keys>` for a stat key not in the list above.
@@ -483,180 +136,58 @@ so they survive switching talents; they are not records and do not count as unsa
 - `Tandem: weights cannot be saved: recording is off or your character is not known yet` on saved data of a newer
   schema, or while the client does not tell your name and realm.
 
-## Gear advice
+## Upgrade advice
 
-### How gear is ranked
+### What counts as an upgrade
 
-Items are sorted by a stat score: each stat on the item times its weight for your class and talent tree, added up.
-The tree is the one with the most talent points spent; below level 10, or while the talents cannot be read, it is the
-usual levelling tree of the class (Arms, Retribution, Beast Mastery, Combat, Shadow, Enhancement, Frost, Affliction,
-Feral Combat). So a strength item ranks above a caster item for a warrior even at a lower item level. Ties go by item
-level, then quality, then item ID. A score of 0, an item whose stats your weights ignore, still counts as scored.
+An item is an upgrade when both hold:
 
-Stats come from your own scans first, else from the shipped data. Items whose stats were never read are listed after
-every scored item, by item level, then quality, then item ID, and marked `(no stats)`. Rescan to read them. Each command
-that ranks says so on its last line.
+- You can equip it now. It goes in a slot, and:
+  - your level reaches its required level;
+  - your class can use its armor or weapon type, by the Classic class tables. Cloth and miscellaneous items are open
+    to every class. Hunters and shamans wear mail from level 40, warriors and paladins plate from level 40. Shamans'
+    two-hand axes and maces need a talent, so they never count. Fishing poles never count. Warriors and hunters
+    dual-wield from level 20, rogues from level 10, and only they can use off-hand-only weapons;
+  - its tooltip has no red requirement line, such as a class, a weapon skill you have not trained, a race, a
+    profession or a reputation you lack.
+- It beats what you wear in that slot: a higher stat score wins, and an equal score wins only with a higher item
+  level. A lower score never wins, whatever the item level.
 
-`gear` lists, and `rank` ranks against, only items your class and level can use; the browse window does too while
-`Usable only` is ticked. An item is usable when:
+The stat score is each stat on the item times its weight for your class and talent tree (see
+[`/tandem weights`](#tandem-weights)), added up. So a strength item beats a caster item for a warrior even at a lower
+item level. A score of 0, an item whose stats your weights ignore, still counts.
 
-- Required level: your level must reach the item's required level.
-- Armor and weapon types follow the Classic class tables. Cloth and miscellaneous items are open to every class.
-  Hunters and shamans wear mail from level 40, warriors and paladins plate from level 40. Shamans' two-hand axes and
-  maces need a talent, so they are never suggested. Fishing poles are never suggested.
-- Dual wield: warriors and hunters from level 20, rogues from level 10. Their one-hand weapons are listed under both
-  `mainhand` and `offhand`, and only they can use off-hand-only weapons. Shields and held-in-off-hand items go in
-  `offhand`.
-- Rings and trinkets are each one slot, compared against the lower score of the two you wear.
+- An empty slot scores 0 at item level 0, so any usable item with stats beats it.
+- A ring or trinket is compared with the weaker of the two you wear: the lower score, or at an equal score the lower
+  item level. A one-hander you can dual-wield is compared with your weaker hand in the same way.
+- An off-hand item is never an upgrade while you wield a two-hander.
 
-Marks after an item:
-
-- `(equipped)`: you wear it.
-- `(upgrade)`: its stat score is above that of what you wear in that slot, and an empty slot scores 0. Item level
-  never counts: no mark is given when the item or what you wear has no stats, when the client does not reveal what you
-  wear, and none in `offhand` while you wield a two-hand weapon.
-- `(no stats)`: its stats have not been read, so it is ranked after the scored items.
-- `(no known source)`: no drop, quest reward or vendor entry for it (`gear ... all` and the browse window only).
-
-### Item tooltip
-
-Out of combat, hovering an item that Tandem knows adds lines to the bottom of the game's tooltip. This works wherever
-the item's tooltip is the game's main tooltip, such as in your bags, on your character sheet and in the browse window,
-and in the tooltip that opens when you click an item link in chat. The comparison tooltips that show what you wear are
-left alone.
-
-- In Tandem blue, `Tandem: rank <n> of <total> for <slot>, score <score>`, followed by the marks of
-  [How gear is ranked](#how-gear-is-ranked): `(equipped)`, `(upgrade)`, `(no stats)` or `(no known source)`. The score
-  has one decimal; an item whose stats were never read has no `, score` part and is marked `(no stats)`. The rank is
-  the one `/tandem rank` prints, and a weight or tree change from [`/tandem weights`](#tandem-weights) shows at the
-  next hover. A one-hand weapon is ranked as a main-hand weapon; when your class dual-wields at your level,
-  it is marked against both hands, as in the browse window's `All slots`. An item with no ranked slot, such as a shirt,
-  gets no rank line.
-- In green, when the item beats what you wear by the rule of the [upgrade alert](#upgrade-alert) (the items that get
-  an [upgrade border](#upgrade-borders)): `Tandem: upgrade over what you wear (score <score> over <worn score>)`.
-- In red, when you cannot use the item, `Tandem: you cannot use it: level <n> required` or
-  `Tandem: your class cannot use it`.
-- In light grey, the item's first source, in the order of `rank`:
-  - a quest reward or vendor your faction has seen: `Tandem: reward from <quest>, <map>` or
-    `Tandem: sold by <npc>, <map>`, with no rate;
-  - else the source it dropped from most often: `Tandem: drops from <source>, <map>`, then `(<rate>% per kill)` or
-    `(up to <rate>%)` when a rate is known (see [Drop rates](#drop-rates));
-  - else a quest reward or vendor seen only by the other faction, as above followed by `(Horde only)` or
-    `(Alliance only)`.
-
-  Then `(+<n> more)` when other sources are known. Sources are named as in `rank`. An item with no known source has no
-  such line.
-
-For example:
-
-```text
-Tandem: rank 2 of 14 for Chest, score 24.5 (upgrade)
-Tandem: sold by Corina Steele, Elwynn Forest (+2 more)
-```
-
-An item that only drops reads, for example, `Tandem: drops from Kobold Miner, Elwynn Forest (up to 4.2%) (+1 more)`.
-
-An item flagged deprecated gets one grey line, `Tandem: deprecated item`, and nothing else. An item Tandem does not
-know adds nothing, and in combat no line is added and nothing is printed. Nothing is added either while the client has
-not told the addon your class or level. On a `zhTW` client the lines are in Chinese.
-
-### Quest rewards and vendors
-
-Besides drops, Tandem records the quests that reward an item and the vendors that sell it:
-
-- Quest rewards: when a quest window shows its rewards, at the quest giver (`QUEST_DETAIL`) or on turn-in
-  (`QUEST_COMPLETE`), each reward and choice item is recorded under that quest, with the quest's title.
-- Vendor items: when a merchant window opens (`MERCHANT_SHOW`), and again on each `MERCHANT_UPDATE` since item links can
-  arrive late, each item the merchant lists is recorded under that merchant, with its name.
-
-Only equippable items are recorded. One missing from the item cache is cached too, at once or as soon as the client
-sends its details, so it appears in `gear` and the browse window without a scan. Nothing is recorded in combat, while
-recording is off for a newer schema, when the client lacks the quest or merchant API, or when it does not tell your
-faction.
-
-Each quest or vendor is recorded once per item per account: seeing it again adds nothing, so its count stays 1. It keeps
-the map and position where you first saw it, at the quest giver, the turn-in or the merchant, and it is listed once
-whatever map it was seen on. In the shipped data its count is the number of contributors who saw it; that count only
-orders such sources among themselves and is never printed. Quest rewards and vendor items get no rate and no price.
-
-Each entry also records which factions have seen it, Alliance, Horde or both, from the faction of the characters that
-opened the window. Sources are listed in this order, by count within each group:
-
-1. Quest rewards and vendor items your faction has seen.
-2. Drops.
-3. Quest rewards and vendor items seen only by the other faction, marked `(Horde only)` or `(Alliance only)`.
-
-While the client does not tell your faction, no source is marked and all quest rewards and vendor items come first.
-
-| Source       | `rank` and the browse pane      | Item tooltip                         |
-| ------------ | ------------------------------- | ------------------------------------ |
-| Quest reward | `<quest>, <map> - quest reward` | `Tandem: reward from <quest>, <map>` |
-| Vendor item  | `<npc>, <map> - vendor`         | `Tandem: sold by <npc>, <map>`       |
-
-A quest is named from your data, else from the shipped quest names in the client language, else from the client's
-quest log, else `quest #<id>`. A vendor is named like any npc, else `npc #<id>`. On a `zhTW` client the lines and the
-faction mark are in Chinese, such as `（僅限部落）`.
-
-A quest or vendor source means the item is known to come from there, not that you can get it now: a vendor may have
-limited stock or ask for reputation, and a quest may follow a chain, be one-off, or need a class or level.
-
-### Quest reward pick
-
-When you hand in a quest that lets you choose one of two or more rewards (`QUEST_COMPLETE`), Tandem puts a small Tandem
-icon on the top right of the best choice's button. The best choice is the one your class and level can use that beats
-every other usable choice. When every usable choice has stats, that is by stat score alone, as in
-[How gear is ranked](#how-gear-is-ranked); when any of them is marked `(no stats)`, it is by item level, then by
-quality, for all of them. It is not
-compared with what you wear: hover the choice to see its rank and `(upgrade)` mark in the
-[item tooltip](#item-tooltip).
-
-- No icon when two usable choices share the best score (or, without stats, the best item level and quality), when no
-  choice is usable, or when the quest offers a single choice.
-- A choice the client has not loaded yet is asked for; the icon shows once every choice has arrived, while the reward
-  window is still open.
-- The icon only advises: Tandem never selects a reward, and you still click the one you want.
-- The icon goes when the reward window closes (`QUEST_FINISHED`).
-- Nothing happens in combat, while the client does not tell your class or level, or when the `Quest reward pick` line of
-  [`/tandem check`](#tandem-check) is `missing`. Nothing is printed.
+Everything is read live from the client: item level, required level, slot and type from its item info, stats from its
+tooltip (this needs the `Stat search` line of [`/tandem check`](#tandem-check)). Stats read are kept for the session
+and never saved. An item the client has not loaded yet is asked for and judged when it arrives
+(`GET_ITEM_INFO_RECEIVED`); until the stats of the item and of what you wear are known, it is not judged. Nothing is
+judged while the client does not reveal what you wear, or does not tell your class or level.
 
 ### Upgrade alert
 
-When an item lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4) that you can equip now and whose stat score beats
-what you wear in its slot, chat shows one line:
+When an upgrade lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4), chat shows one line:
 
 ```text
 Tandem: upgrade for Chest: [Plate Chest] (score 24.5 over 18.0)
 ```
 
-An item is better, for this alert and for the [upgrade borders](#upgrade-borders), when both hold:
-
-- You can equip it now: it goes in a slot, your class and level can use it as in
-  [How gear is ranked](#how-gear-is-ranked), and its tooltip has no red requirement line, such as a class, a weapon
-  skill you have not trained, a race, a profession or a reputation you lack.
-- Its stat score is higher than that of every item you wear in that slot. An empty slot scores 0, a ring or trinket is
-  compared with the weaker of the two you wear, a one-hander you can dual-wield with the weaker hand, and an off-hand
-  item is never better while you wield a two-hander. The score is for your class and talent tree, with your
-  [`/tandem weights`](#tandem-weights).
-
-Item level never counts. When the new item or an item you wear has no stats yet, its tooltip is read for them and
-they are saved, as a scan would (this needs the `Stat search` line of [`/tandem check`](#tandem-check)); until they
-are known, the item is not judged. Items listed only in the browse window still need a
-[`/tandem scan`](#tandem-scan) for their stats.
+The second score is that of the item it beats.
 
 - Each item is announced at most once per session, and only when it is new in the bags: the bags you log in with are
   read silently, and moving an item between bags says nothing.
-- An item the client has not loaded yet is asked for and judged when it arrives (`GET_ITEM_INFO_RECEIVED`), if it is
-  still in the bags.
 - In combat the line waits and is printed when combat ends (`PLAYER_REGEN_ENABLED`); nothing is printed in combat.
 - The alert only advises: Tandem never equips anything.
-- Nothing happens while the client does not tell your class or level, or when the `Upgrade alert` line of
-  [`/tandem check`](#tandem-check) is `missing`.
+- Nothing happens when the `Upgrade alert` line of [`/tandem check`](#tandem-check) is `missing`.
 
 ### Upgrade borders
 
-An item in your bags or in the loot window that is better than what you wear, by the rule of the
-[upgrade alert](#upgrade-alert), gets a red border on its button and a green up arrow in its top-left corner. Hover it to see
-`Tandem: upgrade over what you wear (score <score> over <worn score>)` in the [item tooltip](#item-tooltip).
+An upgrade in your bags or in the loot window gets a red border on its button and a green up arrow in its top-left
+corner.
 
 - Only the default Blizzard bag buttons, separate or combined bags, and the default loot window's buttons get borders.
   Bag addons such as Bagnon or AdiBags, and auto-loot, which never shows the loot window, bypass those frames, so
@@ -667,93 +198,39 @@ An item in your bags or in the loot window that is better than what you wear, by
 - The border only advises: Tandem never equips or loots anything, and never changes what the buttons do.
 - Nothing is drawn when the `Upgrade borders` line of [`/tandem check`](#tandem-check) is `missing`.
 
-### Stat search
+### Item tooltip
 
-Find gear by what its tooltip says, such as stamina or spell critical strike. Type words after the slot of
-`/tandem gear`. The browse window filters by stat with its stat boxes instead; see
-[`/tandem browse`](#tandem-browse).
+Out of combat, hovering an upgrade adds one green line to the bottom of the game's tooltip:
 
 ```text
-/tandem gear chest +stamina
-/tandem gear chest all +stamina
+Tandem: upgrade over what you wear (score 24.5 over 18.0)
 ```
 
-- An item matches when one line of its tooltip holds every word. Words are split on spaces, a leading `+` is dropped,
-  and case does not matter. `spell critical` matches `Equip: Improves your chance to get a critical strike with spells
-by 1%.`, but not a tooltip with `spell` on one line and `critical` on another.
-- Matching items are sorted by the first number on that line, highest first, then as usual (item level, then quality).
-  The number may be a decimal or a percentage: `1.5%` counts as `1.5`. A matching line with no number counts as 0.
-- The search reads the tooltip in the client's language, so type the client's own words. On a zhTW client stamina
-  reads `耐力` and spell critical strike reads `裝備：使你的法術造成致命一擊的機率提高1%。`, so search `耐力` or
-  `法術 致命一擊`. A few common words are translated for you on zhTW: `體力` searches `耐力`, `暴擊` searches
-  `致命一擊`, and `法術暴擊` searches `法術 致命一擊`. Other words must match the tooltip as written.
-- Only items that pass the other filters are searched: the slot, usable items and, without `all`, items with a known
-  source.
-- An item the client has not loaded yet counts as not matching and is asked for; the command then prints
-  `<m> items are still loading; run the command again in a moment`.
-- Each item's tooltip is read once per session.
-- `/tandem gear <slot> <words>` prints up to 10 matches, each with the matching line, and ends with
-  `Sorted by the number on the matching tooltip line, then item level and quality`. Words need a slot: `all` alone is
-  the flag of [`/tandem gear`](#tandem-gear), and `/tandem gear all <words>` is an unknown slot.
+This works wherever the item's tooltip is the game's main tooltip, such as in your bags, in the loot window and on a
+quest reward, and in the tooltip that opens when you click an item link in chat. The comparison tooltips that show
+what you wear are left alone. Any other item gets no line, and in combat no line is added. On a `zhTW` client the line
+is in Chinese.
 
-```text
-Best Chest for level 40 Warrior matching "+stamina":
-1. [Leather Chest], ilvl 30, level 25 (upgrade): +15 Stamina
-2. [Plate Chest], ilvl 45, level 40 (upgrade): +10 Stamina
-Sorted by the number on the matching tooltip line, then item level and quality
-```
+### Quest reward pick
 
-The search reads `C_TooltipInfo.GetItemByID`. When the `Stat search` line of [`/tandem check`](#tandem-check) is
-`missing`, the command prints `Tandem: stat search is not available on this client; see /tandem check`; the browse
-window's stat boxes still work, as they read the stored stats.
+When you hand in a quest that lets you choose one of two or more rewards (`QUEST_COMPLETE`), Tandem puts a small Tandem
+icon on the top right of the best choice's button. The best choice is the one you can equip, as in
+[What counts as an upgrade](#what-counts-as-an-upgrade), that beats every other such choice:
 
-### Deprecated items
+- by stat score when every usable choice has stats, an equal score going to the higher item level, then the better
+  quality;
+- by item level, then quality, when any usable choice has no stats.
 
-Items whose name starts with `Deprecated`, in any case and after any leading spaces, are flagged deprecated. The item
-cache stores no names, so the flag is stored with the item record, as an optional seventh field. It is set when a scan
-caches the item, and later whenever Tandem sees a name the client already holds for a known item: rows of the browse
-window, the item tooltip, and an item dropped on the window. Flagging an item known only from the shipped data stores a
-flagged copy of its record in your own `items`, so the next `make import` ships the flag; it counts in your known items
-and in `Unsaved records`.
+It is not compared with what you wear: hover the choice to see whether its [item tooltip](#item-tooltip) calls it an
+upgrade.
 
-`/tandem gear` never lists a flagged item, `/tandem rank` says `this item is deprecated`, the browse window hides them
-while `Hide deprecated` is ticked and otherwise marks them `(deprecated)`, and their item tooltip reads
-`Tandem: deprecated item`. This holds for an item already flagged in its record, in your data or in the shipped data,
-whether or not the client has loaded its name. An item not flagged yet whose name the client has not loaded is not
-known to be deprecated and is treated as any other.
-
-### Drop rates
-
-A rate is printed only for creatures, from one of two counts per npc:
-
-- Kills: your character's killing blows, read from the combat log when the client allows it (`/tandem count` says
-  whether it does). Kills by pets or party members are not counted. Kills in combat are stored when combat ends.
-  WoW Forever 1.60.1 does not allow it: `CombatLogGetCurrentEventInfo` and `C_CombatLog.GetCurrentEventInfo` are
-  absent and registering for the combat log is blocked, so `count` reports `unavailable`. Experience gives no kill
-  count either: Forever does not deliver `CHAT_MSG_COMBAT_XP_GAIN` to addons, although the experience line shows in
-  chat, and `PLAYER_XP_UPDATE` cannot be tied to the killed mob, because when it arrives the target no longer reads as
-  dead. So Forever has no kill count, and every rate there is per looted corpse.
-- Looted corpses: each distinct corpse you open a loot window on, gold-only corpses included. Corpses with nothing to
-  loot cannot be opened, so a rate per looted corpse is an upper bound.
-
-The rate uses kills when there are any for that npc, else looted corpses, and says which. Your own data and the shipped
-data are never added together: the rate takes both its drops and its count from one of them, the one with the larger
-count among those that saw this item drop from that npc. When the drops exceed the count, for example after looting
-kills made by others, no rate is shown rather than one above 100%. Objects such as chests, nodes and fishing get no
-rate, nor do quest rewards and vendor items.
-
-### Shipped data
-
-The addon ships `Tandem/Data/Loot.lua`, merged by `make import` from every contribution under `data/contributions/`:
-loot (drops, quest rewards and vendor items), npc and quest names per language, the factions that saw each quest reward
-and vendor item, kills, looted corpses, the item cache, each item's stats as read from its tooltip (the stat
-weights you set per character are not shipped) and the spells each class trainer teaches, with the level and rank of
-each. Commands use it together with your own
-`TandemDB`. For each loot entry's drop count they take the larger of your value and the shipped one, since your data
-may already be in the shipped file. Kill and corpse counts are never mixed this way: a drop rate takes its drops and its
-count from one dataset, as described under [Drop rates](#drop-rates). A quest reward or vendor item seen in both
-becomes one source with the factions of both. For an item record, your own cache wins.
-Without the file, the commands use your own data only.
+- No icon when two usable choices still tie, when no choice is usable, or when the quest offers a single choice.
+- A choice the client has not loaded yet is asked for; the icon shows once every choice has arrived, while the reward
+  window is still open.
+- The icon only advises: Tandem never selects a reward, and you still click the one you want.
+- The icon goes when the reward window closes (`QUEST_FINISHED`).
+- Nothing happens in combat, while the client does not tell your class or level, or when the `Quest reward pick` line of
+  [`/tandem check`](#tandem-check) is `missing`. Nothing is printed.
 
 ## Action bar borders
 
@@ -767,8 +244,7 @@ A spell on the default action bars gets a coloured border when its rank is out o
 Red wins when both apply. Macros, items, empty slots and spells without ranks get no border.
 
 - Yellow needs to know what your class trainer teaches: Tandem records it when you open a class trainer's window (see
-  [What is collected](#what-is-collected)), or it comes with the shipped data. Until either has your class's trainer,
-  only red borders show.
+  [Saved data](#saved-data)). Until you have opened your class's trainer, only red borders show.
 - Only the default Blizzard bars get borders: the main bar, the bottom left and right, the right bars and, when the
   client has them, action bars 5 to 7. Bars from other addons do not.
 - Borders follow bar, page, spell, level and trainer changes outside combat. In combat they stay as they are and are
@@ -776,67 +252,31 @@ Red wins when both apply. Macros, items, empty slots and spells without ranks ge
 - Nothing is drawn when the `Action bar borders` line of [`/tandem check`](#tandem-check) is `missing`. Tandem only
   draws over the buttons and never changes what they cast.
 
-## What is collected
+## Saved data
 
-Everything goes into one account-wide table, `TandemDB`, saved as
+Tandem saves one account-wide table, `TandemDB`, as
 `<World of Warcraft>/_forever_/WTF/Account/<account>/SavedVariables/Tandem.lua`.
 
-| Key        | Content                                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------------------- |
-| `items`    | Per equippable item ID: item level, required level, quality, equip slot, class, subclass; 7th `1` if deprecated |
-| `scan`     | Cursor, non-equippable count, min/max ID found, hits per 1000-ID block, last run                                |
-| `loot`     | Per item, source and map: npc, object, quest or merchant ID, map ID, drops, up to 5 positions; factions         |
-| `npcs`     | Npc names by npc ID, merchants included                                                                         |
-| `quests`   | Quest titles by quest ID                                                                                        |
-| `kills`    | Per npc ID: your character's killing blows on that npc                                                          |
-| `corpses`  | Per npc ID: distinct corpses of that npc you looted                                                             |
-| `ui`       | `window`: anchor, relative point, x, y, width, height; `minimap`: button angle; `minimapHidden`: true if hidden |
-| `stats`    | Per item ID: stat key to value, such as `str = 5`; `{}` when read with no stats, absent when not read yet       |
-| `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec           |
-| `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none)  |
+| Key        | Content                                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec          |
+| `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
 
-- Items that exist but cannot be equipped are counted in `scan.nonEquippable`, not stored.
-- `scan.lastRun` holds the last run's start time, ID range, rate, elapsed seconds and the counts the summary prints.
-- A loot entry is recorded once per source each time a loot window opens outside combat. Its source is a creature
-  (`kind = "c"`, npc ID) or a game object (`kind = "o"`, object ID); `kind = "?"` means the client did not say. Map
-  and positions are left out when the client does not report them.
-- A quest reward (`kind = "q"`, quest ID) or vendor item (`kind = "v"`, the merchant's npc ID) is recorded once, with
-  count `1`, one position and `factions`: `1` Alliance, `2` Horde, `3` both (see
-  [Quest rewards and vendors](#quest-rewards-and-vendors)).
-- A corpse or object opened again in the same session, such as one you left partly looted, adds no loot and no
-  corpse. The addon remembers the last 200 sources; a `/reload` forgets them, so opening one again after a reload
-  counts it twice.
-- An npc's name is recorded only when the looted corpse is your target or under the mouse.
-- `ui` holds only where the browse window and the minimap button sit, the window's size and whether the button is
-  hidden; the angle is saved once you drag the button, the size whenever you move or resize the window, and `minimapHidden` only
-  while the button is hidden. It is not counted in `Unsaved records`, and an invalid position, angle or flag is
-  dropped on load. An invalid size is dropped alone, and the position is kept.
-- The stat keys are `str`, `agi`, `sta`, `int`, `spi`, `armor`, `dps`, `ap`, `rap`, `sp`, `heal`, `hit`, `crit`,
-  `spellhit`, `spellcrit`, `mp5`, `def`, `dodge`, `parry`, `block` and `blockvalue`: `sp` is spell damage and healing,
-  `heal` healing only, `dps` a weapon's damage per second.
-  `statsVersion` is the version of the reader the saved stats were read with. On load, an unknown stat key or a value
-  that is not a number is dropped alone, as is an invalid `spec` or override; an item's or character's entry that is
-  not a table is dropped.
-- A `trainers` class key is an uppercase class token such as `MAGE`. On load, a spell ID or entry that is not valid
-  is dropped alone, and a class key that is not a token, or whose spells are not a table, is dropped.
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
   `3`). Section headers, tradeskill trainers and spells the client gives no spell ID for are skipped, and nothing is
   recorded when the `Trainer record` line of [`/tandem check`](#tandem-check) is `missing`. A spell seen again keeps
   the lower level.
+- On load, an invalid `spec`, override, stat key or value is dropped alone, as is a `trainers` spell ID or entry that
+  is not valid; a character's entry that is not a table, or a class key that is not a class token or whose spells are
+  not a table, is dropped.
 
-`TandemDB.schemaVersion` is `5`. Saved data from schema 2, 3 or 4 is migrated on load: schema 2 gains an empty
-`quests`, schemas 2 and 3 gain empty `stats` and `weights`, and all three gain an empty `trainers`. Saved data from
-a newer schema is kept as it is, and nothing is recorded until the addon is updated.
+`TandemDB.schemaVersion` is `6`. Saved data from an older schema is migrated on load: `weights` and `trainers` are
+kept and every other key, such as the item cache, loot log and stats of earlier versions, is dropped. Chat then shows
+`Tandem: saved data upgraded from schema <n> to 6` and `Tandem: dropped <n> invalid or unused saved entries`. Saved
+data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
 
-The client writes `Tandem.lua` only on logout or `/reload`. A crash or a forced quit loses everything collected since
-the last save; `/tandem count` shows how many records are waiting. `/reload` after a long scan.
-
-Known metric caveats:
-
-- `nonEquippable` is cumulative across runs and counts the same ID again when a range is rescanned, because
-  non-equippable items are not cached.
-- `elapsed` includes time the scan spent paused in combat.
+The client writes `Tandem.lua` only on logout or `/reload`.
 
 ## Verify in game
 
@@ -852,250 +292,64 @@ Known metric caveats:
 
 If the line is missing, check that the addon is enabled and that no Lua error was reported.
 
-### Check data collection
-
-The WoW Forever API is not verified yet, so check each step in game:
-
-1. Log in. Chat shows `Tandem loaded` and no Lua error.
-2. With no saved data yet, run `/tandem count`. It shows `0 known items`, `Scan cursor: 1`, `found IDs: none`, `0`
-   loot entries and `Last run: never`.
-3. Run `/tandem scan 10/s` and wait about 10 to 20 seconds, out of combat, for the two summary lines.
-4. Run `/tandem count` again. The cursor is `101` and the last run matches the summary.
-5. Type `/reload`, then open `WTF/Account/<account>/SavedVariables/Tandem.lua` and check that `TandemDB` holds `items`
-   and `scan.lastRun`.
-6. Target a mob, kill it and loot it while it is still targeted. If you were still in combat, close the loot window and
-   loot it again once combat ends. `/tandem count` shows more loot entries and, for a mob not seen before, one more
-   npc name. Then `/reload` and check `loot` and `npcs` in the file.
-7. Run `/tandem scan from 200000`, then a small scan such as `/tandem scan 20`, to see whether IDs that high exist on
-   Forever.
-8. Out of combat, talk to a quest giver whose quest rewards equippable items, and open a vendor that sells weapons or
-   armor. `/tandem count` shows more loot entries, and `Unsaved records` rises. Close and reopen the vendor: the loot
-   entries stay the same. Then `/reload` and check that `loot` holds entries with `kind = "q"` and `kind = "v"`, and
-   `quests` the quest's title.
-
-Report back the summary lines from steps 3 and 7, whether step 8 recorded anything, the `/tandem count` output, any
-Lua error, and the `SavedVariables/Tandem.lua` file.
-
-### Check gear advice
-
-1. Run `/tandem count`. Note which `Drop rates use` line it prints: `kills where counted` means the combat log works on
-   Forever; otherwise note the status (`unavailable`, `blocked` or `secret`).
-2. Out of combat, kill a mob that drops more than one item and loot only part of it, leaving an item on the corpse.
-   `/tandem count` shows one more looted corpse and, if kill counting is on, one more kill. Close the loot window and
-   open the same corpse again: neither count changes, and the loot entries stay the same.
-3. Run `/tandem gear`. Each slot shows an item or `none known`, and the last line is the stats note. Click an item:
-   the game's tooltip opens with its icon and stats.
-4. Run `/tandem gear chest`, or another slot you wear something in. The `Equipped:` line shows your item, and items
-   with a higher stat score are marked `(upgrade)`; an item marked `(no stats)` never is. Run
-   `/tandem gear chest all` and look for `(no known source)`.
-5. Shift-click an item you looted into `/tandem rank`. It prints a rank, its sources with drop counts and, for a
-   creature, a rate per kill or per looted corpse. Try `/tandem rank` with a number too.
-6. Run `/tandem gear finger` and `/tandem gear offhand`. Check that `(upgrade)` compares with your weaker ring, and
-   that no off-hand item is marked while you wield a two-hand weapon.
-7. Start a fight and, while in combat, run `/tandem gear`, `/tandem rank 25` and `/tandem export`. Each prints
-   `Tandem: not available in combat` and nothing else.
-8. Out of combat, run `/tandem export`. It prints the counts and `To contribute: type /reload, then run make import`,
-   and the UI does not reload.
-
-Report back the `/tandem count` lines from step 1, whether the counts in step 2 changed as described, and any item
-that is listed for your class but cannot be equipped.
-
-### Check the browse window
-
-1. Out of combat, run `/tandem browse`. A window titled `Tandem gear` opens in the middle of the screen: the slot
-   dropdown reads `All slots`, the quality dropdown `All qualities`, `Usable only` and `Hide deprecated` are ticked,
-   the item count is at the top right, the list fills the middle, and the pane at the bottom reads
-   `Select an item to see where it drops`.
-2. Untick `Usable only` and pick `All slots`, so the list holds up to about 1.5k rows. Scroll it with the scroll bar on its
-   right and with the mouse wheel over it; both move smoothly to the end and back. Note whether a scroll bar shows at
-   all.
-3. Pick `Chest` in the dropdown. Only chest items are listed, the count changes, and the item you wear, if it is a
-   known item, is marked `(equipped)`. Close the window with `/tandem browse`, then run `/tandem browse chest`: it opens
-   with `Chest` selected in the dropdown.
-4. Hover a row: the game's tooltip shows the item's stats, and it closes when the mouse leaves.
-5. Click a row: it is highlighted, and the bottom pane shows the item's link and where it drops. An item with more than
-   5 sources ends with `and <n> more sources`, an item you fished lists `Fishing`, and an item with no loot entry shows
-   `no known source`.
-6. Rows that read `item #<id>` change to the item's name within a moment, without reopening the window.
-7. With `Usable only` unticked, items your class or level cannot use are dimmed. An item your level is too low for
-   shows in red the level from which you could use it, such as `40` for mail on a level 20 hunter; an item your class
-   can never use is not red. Tick `Usable only` again: they disappear and the count drops.
-8. Drag the window elsewhere, type `/reload`, then run `/tandem browse`: it opens where you left it.
-9. Press Escape: the window closes.
-10. Open the window and start a fight: it closes as combat starts. While still in combat, run `/tandem browse`: it
-    prints `Tandem: not available in combat` and nothing opens.
-11. Out of combat, open the addon compartment by the minimap: it lists **Tandem**. Hover the entry: a tooltip reads
-    `Tandem` and `Click to browse known gear`, and it closes when the mouse leaves. Click the entry: the window opens on
-    `All slots`. Click it again: the window closes. A Tandem button shows on the minimap's edge as well, also on a
-    client without the compartment; check the same with it, and that its tooltip also reads `Drag to move this button`.
-    Drag it around the minimap, type `/reload`, and check that it is where you left it. Run `/tandem minimap off`: chat
-    shows `Tandem: minimap button hidden`, the button disappears, and `Show minimap button` in the window is unticked.
-    Type `/reload`: the button stays hidden. Tick `Show minimap button`: the button comes back.
-12. Open the window. Below the dropdown, the boxes read `10/s` and `100`, the button reads `Start`, and the status line
-    reads `<n> known items, next scan from ID <id>`, with the known items and the scan cursor of `/tandem count`.
-13. Type `20` in `Cap` and click `Start`. Chat shows `Tandem: scanning 20 IDs from ID <id>`, the button reads `Stop`,
-    and the status line counts up every second. When the summary prints, the button reads `Start` again, the status
-    line shows the new cursor, and the list is refreshed.
-14. Type `1000` in `Cap`, click `Start`, then `Stop`: the summary prints and the button reads `Start`. Close the window,
-    run `/tandem scan 20` and reopen the window while it runs: the status line shows its progress.
-15. Type `abc` in `Rate`, or `0` in `Cap`, and click `Start`: chat shows
-    `/tandem scan [<n>/s|<n>/m] [<cap>] - scan item IDs (default 10/s, 100 IDs)` and no scan starts. Click in a box
-    and press Escape: the box loses focus and the window stays open. Press Escape again: the window closes.
-16. Open the window, pick up an item from your bags and drop it on the list. It stays in your bag and leaves the
-    cursor, the dropdown switches to its slot, its row is selected, and the pane shows where it drops. Do the same
-    with an item from your character sheet, and with a known item your class cannot use while `Usable only` is ticked:
-    the box unticks and the row is dimmed.
-17. Drop an item that is not cached, such as a quest item: the pane reads
-    `Tandem: item <id> is not known; scan or loot it first`.
-18. Pick up a spell from your spellbook and drop it on the window: nothing changes and the spell stays on the cursor.
-19. Drag the grip at the bottom right corner: the window grows and shrinks, but not below 600 × 520 or above
-    1200 × 1000, and the list and item names follow its width. Make it wider, move it, type `/reload`, then run
-    `/tandem browse`: it opens at the same place and size.
-20. Pick `Rare` in the quality dropdown: only blue (rare) items are listed, and the count drops. Pick
-    `All qualities` again. With `Rare` picked, drop a common item on the window: the dropdown reads `All qualities`.
-21. Untick `Hide deprecated`: items whose name starts with `Deprecated` appear, marked `(deprecated)` in grey, and the
-    count rises. Tick it again: they disappear. With it ticked, drop a deprecated item on the window: the box unticks.
-22. Pick `All slots` while your class can dual-wield, and look at a one-hand weapon: it is marked `(equipped)` when
-    you wear it in your off hand, and `(upgrade)` when it beats the weaker of your two weapons.
-23. Run `/tandem gear` and `/tandem rank <id>` with the ID of a deprecated item: `gear` never lists it, and `rank`
-    prints `this item is deprecated` after the rank line.
-24. Pick `Chest`. Grey `Score`, `iLvl` and `Req` headings sit over the three number columns. Rows with a score come
-    first, highest score first; rows marked `(no stats)` follow with a blank score. Run `/tandem weights set sta 5`,
-    then pick `Chest` again: items with stamina move up and their scores grow. Run `/tandem weights reset` after.
-
-Report back whether the scroll bar showed, how scrolling felt in step 2, whether the compartment entry and the minimap
-button showed in step 11, whether the grip showed in step 19, whether the headings line up with the columns in step 24,
-any Lua error, and any text that does not fit in the window, at its smallest size too.
-
-### Check the item tooltip
-
-1. Out of combat, hover an item in your bags that Tandem knows and that goes in a ranked slot. Below the game's lines,
-   a blue line reads `Tandem: rank <n> of <total> for <slot>, score <score>`, with `(equipped)`, `(upgrade)` or
-   `(no known source)` as the browse window shows for the same item, and the same score as its browse row. An item
-   marked `(no stats)` has no `, score` part. Run `/tandem weights set sta 5` and hover it again: the score follows.
-   Run `/tandem weights reset` after.
-2. Hover an item you cannot use: a red line reads `Tandem: you cannot use it: level <n> required` or
-   `Tandem: your class cannot use it`.
-3. Hover an item you looted from a mob: a grey line reads `Tandem: drops from <source>, <map>`, with a rate when one is
-   known and `(+<n> more)` when it has other sources. It matches the first source `/tandem rank` lists.
-4. Hover an item a vendor sells, or a quest reward you have seen: the grey line reads `Tandem: sold by <npc>, <map>` or
-   `Tandem: reward from <quest>, <map>`, with no rate, even when the item also drops. `/tandem rank` lists the same
-   source first, as `- vendor` or `- quest reward`.
-5. Hover the items on your character sheet and the rows of the browse window: they get the same lines. Shift-click an
-   item into chat and click the link: the tooltip that opens gets them too. A comparison tooltip shown next to it gets
-   none.
-6. Hover a deprecated item, such as one listed after unticking `Hide deprecated`: the only Tandem line is
-   `Tandem: deprecated item`, in grey.
-7. Hover an item Tandem does not know, such as a quest item: no Tandem line is added.
-8. Start a fight and hover the same items while in combat: no Tandem line is added and nothing is printed in chat.
-
-Report back any item whose tooltip line does not match `/tandem rank`, whether the line showed on the chat link
-tooltip in step 5, and any Lua error.
-
 ### Check the client APIs
 
-The tooltip, the quest and vendor sources, the map pins, the quest reward pick, the upgrade alert and the upgrade
-borders use APIs that are
-not verified on Forever. One pass of `/tandem check` tells which of them the client has:
+The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
+verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and thirteen lines, one each for `Item tooltip`,
-   `Quest sources`, `Vendor sources`, `Map pins`, `Map waypoint`, `Quest reward pick`, `Upgrade alert`,
-   `Item stats`, `Stat search`, `Talent spec`, `Trainer record`, `Action bar borders` and `Upgrade borders`, each
-   followed by `ok` or `missing` and its APIs. Six `Probe:` lines follow, each `present` or `missing`.
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nine lines, one each for `Item tooltip`,
+   `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
+   `Action bar borders` and `Upgrade borders`, each followed by `ok` or `missing` and its APIs. Six `Probe:` lines
+   follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
    been shown.
-3. Open the world map and run `/tandem check` once more: the `Map pins` line stays the same.
-4. Start a fight and, while in combat, run `/tandem check`: it prints `Tandem: not available in combat` and nothing
+3. Start a fight and, while in combat, run `/tandem check`: it prints `Tandem: not available in combat` and nothing
    else.
-5. If `Item tooltip` is `ok`, run the steps of [Check the item tooltip](#check-the-item-tooltip). If `Quest sources` or
-   `Vendor sources` is `ok`, run step 8 of [Check data collection](#check-data-collection) and step 4 of the tooltip
-   check. If `Map pins` is `ok`, run [Check the map pins](#check-the-map-pins). If `Quest reward pick` is `ok` in step
-   2, run [Check the quest reward pick](#check-the-quest-reward-pick). If `Upgrade alert` is `ok`, run
-   [Check the upgrade alert](#check-the-upgrade-alert). If `Stat search` is `ok`, run
-   [Check the stat search](#check-the-stat-search). If `Talent spec` is `ok`, run `/tandem weights` on a character
-   level 10 or more: its first line names the tree with the most talent points, followed by `(auto)`. If
-   `Action bar borders` is `ok`, run [Check the action bar borders](#check-the-action-bar-borders). If
-   `Upgrade borders` is `ok`, run [Check the upgrade borders](#check-the-upgrade-borders).
+4. If `Quest reward pick` is `ok` in step 2, run [Check the quest reward pick](#check-the-quest-reward-pick). If
+   `Upgrade alert` is `ok`, run [Check the upgrade alert](#check-the-upgrade-alert). If `Talent spec` is `ok`, run
+   `/tandem weights` on a character level 10 or more: its first line names the tree with the most talent points,
+   followed by `(auto)`. If `Action bar borders` is `ok`, run
+   [Check the action bar borders](#check-the-action-bar-borders). If `Upgrade borders` is `ok`, run
+   [Check the upgrade borders](#check-the-upgrade-borders).
 
 Report back every line of steps 1 and 2 as printed, the `Probe:` lines included, the first line of `/tandem weights`
-from step 5, and any Lua error.
-
-### Check the map pins
-
-1. Out of combat, run `/tandem rank <item link>` for an item you looted from a mob, so you know its sources and maps.
-2. Run `/tandem map <item link>` with the same link. The world map opens on the map of the first listed source with a
-   known place, and small Tandem icons mark where the item was seen. Nothing is printed.
-3. Hover a pin: the tooltip shows the source's name and `Click to set a waypoint`. Click it: chat shows
-   `Tandem: waypoint set to <source>`, the waypoint appears on the map and the minimap, and it is tracked.
-4. Switch the world map to another zone and back: the pins show only on their own map. If the item has a source on
-   another map, open that map and check its pins.
-5. Open `/tandem browse`, select an item and click `Show on map`: the map opens with that item's pins. Select another
-   item: the pins are gone.
-6. Run `/tandem map clear`: chat shows `Tandem: map pins cleared` and the pins are gone.
-7. Run `/tandem map` for an item that has no known place, such as one only seen on map 0: chat shows
-   `Tandem: no known map position for item <id>` and the map does not open.
-8. Start a fight and, while in combat, run `/tandem map <item link>` and click a pin left on the map: each prints
-   `Tandem: not available in combat` and nothing else happens.
-
-Report back whether the pins sit on the right spots, whether they hide behind other map icons, whether the waypoint
-was set, the map ID of any map that refused it, and any Lua error.
+from step 4, and any Lua error.
 
 ### Check the quest reward pick
 
 1. Out of combat, hand in a quest that offers a choice of two or more rewards, at least one of which your class can
    use. In the reward window, a small Tandem icon sits on the top right of one choice's button. Nothing is printed and
    no reward is selected.
-2. Hover each choice: when every choice you can use shows `, score` on its Tandem line, the marked one has the highest
-   score; otherwise it has the highest item level among them, or the same item level and a better quality. Note the
-   score, item level and quality of each choice.
+2. Note the stats, item level and quality of each choice you can use: the marked one has the highest score for your
+   weights, or at an equal score the higher item level; when a usable choice has no stats, the highest item level,
+   then the better quality.
 3. Close the reward window without choosing, then talk to the quest giver again: the icon shows again on the same
    choice.
-4. For a quest whose usable choices share the best score (or, without stats, item level and quality), or that offers
-   nothing your class can use, no icon shows.
+4. For a quest whose usable choices tie, or that offers nothing your class can use, no icon shows.
 5. If you can, open a reward window in combat: no icon shows and nothing is printed.
 
-Report back the quest, the choices with their score, item level and quality, which one was marked, whether the icon sat well
-on the button or hid part of it, and any Lua error.
+Report back the quest, the choices with their stats, item level and quality, which one was marked, whether the icon
+sat well on the button or hid part of it, and any Lua error.
 
 ### Check the upgrade alert
 
 1. Log in or run `/reload` with some gear in your bags: no `Tandem: upgrade for` line shows.
-2. Out of combat, loot, buy or take from the mail an item your class can use that is marked `(upgrade)` in its tooltip
-   (or any usable item with stats for an empty slot). Chat shows one line, nothing is equipped, and it reads
-   `Tandem: upgrade for <slot>: <item link> (score <n> over <m>)`.
+2. Out of combat, loot, buy or take from the mail an item your class can use whose tooltip shows
+   `Tandem: upgrade over what you wear` (or any usable item with stats for an empty slot). Chat shows one line, nothing
+   is equipped, and it reads `Tandem: upgrade for <slot>: <item link> (score <n> over <m>)`.
 3. Move that item to another bag, sell it and buy it back, or drop and loot it again: no second line for it this
    session.
 4. Get an item you cannot use, one with a red line in its tooltip (such as a weapon type you have not trained), one
    with a higher item level but a lower score, or one no better than what you wear: no line.
-5. Loot an upgrade during a fight: nothing shows in combat; the line shows when the fight ends.
-6. If you can, loot an upgrade the client has never shown before (a fresh drop): the line may come a moment later, once
+5. Get an item with the same score as what you wear but a higher item level: a line shows.
+6. Loot an upgrade during a fight: nothing shows in combat; the line shows when the fight ends.
+7. If you can, loot an upgrade the client has never shown before (a fresh drop): the line may come a moment later, once
    the item has loaded.
 
 Report back each line as printed with the score of what you wore, any upgrade that got no line or any line for an
 item that is not an upgrade, and any Lua error.
-
-### Check the stat search
-
-1. Out of combat, run `/tandem browse chest`, or another slot you have scanned. Under the scan bar, twelve unticked
-   boxes sit in two rows, `Strength` to `Spell power` and `Healing` to `Defense` (`力量` to `法術能量` and `治療` to
-   `防禦` on a zhTW client), their columns lined up. Click a label: its box toggles, as clicking the box does.
-2. Tick `Stamina`. The list shrinks to items with stamina, still in score order, and the count follows; no row is
-   marked `(no stats)`. Hover a few rows: each tooltip has a stamina line.
-3. Tick `Intellect` too: only items with both stamina and intellect stay. Untick `Stamina`: the list holds the items
-   with intellect. Untick every box: every item is listed again.
-4. With `Stamina` ticked, untick `Usable only` or pick a quality: the stat filter follows the other filters. Drop an
-   item from your bags on the window: the boxes untick and the item is shown.
-5. Run `/tandem gear chest +stamina` (`/tandem gear chest 耐力` on zhTW) and `/tandem gear chest all +stamina`: chat
-   lists the matches with their tooltip line, highest number first, and ends with the sorting note. Run
-   `/tandem gear chest spell critical` (`法術 致命一擊` on zhTW, or `+法術暴擊`): items whose tooltip has an equip line
-   about spell critical strike are listed, highest percentage first.
-6. Note how long the list takes to change when you tick a box over `All slots` with `Usable only` unticked, and whether
-   the game stalls.
-
-Report back any label that does not fit its column or overlaps the next box, any item listed under a ticked stat its
-tooltip does not show (or missing though it does), the stall in step 6, and any Lua error.
 
 ### Check the action bar borders
 
@@ -1118,11 +372,11 @@ all, and any Lua error.
 ### Check the upgrade borders
 
 1. With the default bags, open your bags while they hold an item that the [upgrade alert](#upgrade-alert) would
-   announce: its button has a red border and a green up arrow. Items no better than what you wear, items you cannot
-   use and items with a red line in their tooltip have none.
+   announce: its button has a red border and a green up arrow, and its tooltip has the green Tandem line. Items no
+   better than what you wear, items you cannot use and items with a red line in their tooltip have none.
 2. Equip the bordered item: its border goes, and the item you took off gets none.
-3. Loot a corpse that drops an upgrade with auto-loot off: the item's button in the loot window has the border and arrow.
-   Page through a loot window of more than one page: borders follow the items, not the buttons.
+3. Loot a corpse that drops an upgrade with auto-loot off: the item's button in the loot window has the border and
+   arrow. Page through a loot window of more than one page: borders follow the items, not the buttons.
 4. Level up, or learn a weapon skill at a trainer for a weapon in your bags: its border appears or goes to match.
 5. Start a fight and loot or move an upgrade in your bags: the border still shows.
 6. With a bag addon such as Bagnon or AdiBags, or with auto-loot on, no border shows; the chat alert still does.
@@ -1157,90 +411,14 @@ make test
 ```
 
 This syntax-checks every Lua file under `Tandem/` and `scripts/` with `luac -p`, runs `scripts/addon_test.lua`, and
-runs `scripts/wow-dir_test.sh` and `scripts/import_test.sh`. The local `luac` is a newer Lua than the game's Lua 5.1, so
-it catches syntax errors only.
+runs `scripts/wow-dir_test.sh`. The local `luac` is a newer Lua than the game's Lua 5.1, so it catches syntax errors
+only.
+
 `scripts/addon_test.lua` loads the files listed in `Tandem/Tandem.toc`, in order, with stubbed WoW API functions, and
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
-migration, `/tandem` parsing and output, the scan with a manual timer and stubbed item API, loot, kill and corpse
-recording with stubbed loot, combat log, map and unit API, quest reward and vendor recording with stubbed quest and
-merchant API, the gear advice with stubbed class, level and equipped
-items, the browse window with stubbed frames, widgets and tooltip, and the item tooltip line with a stubbed tooltip
-API. These tests prove the logic only; the client's
-real API is checked in game.
-`scripts/import_test.sh` runs `make import` and `scripts/import.lua` against throwaway saved-variables files and data
-folders: two contributors, re-imports, rebuilds, rejected files and the sandbox.
-
-### Importing loot logs
-
-The loot log is crowdsourced: each player's `Tandem.lua` is imported into the repository's `data/` folder, merged into
-`Tandem/Data/Loot.lua`, and both are committed. Log out or `/reload` in game first, because the client writes the file
-only then. Run `/tandem export` to see what will be collected. Then, from the repository root:
-
-```sh
-make import
-```
-
-```text
-wrote data/contributions/3f2a9c81d0b4.lua (enUS: 42 loot entries, 7 npc names, 3 quest names, 120 items, 95 item stats, 15 kills, 12 looted corpses)
-wrote Tandem/Data/Loot.lua (1 contributors, 120 items, 42 loot rows)
-```
-
-The ID and the numbers are an example. `make import` reads every
-`<World of Warcraft>/<FLAVOR>/WTF/Account/*/SavedVariables/Tandem.lua` of the detected client and writes:
-
-| File                          | Content                                                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `data/contributions/<id>.lua` | One account's `loot`, `npcs`, `quests`, `items`, `kills`, `corpses`, `stats`, `trainers` |
-| `Tandem/Data/Loot.lua`        | Merged from every contribution and loaded by the addon                                   |
-
-The merged file sums loot counts, kills and looted corpses, keeps up to 5 positions per loot entry, keeps npc and quest
-names per locale, and takes the union of the item caches. A quest reward or vendor item becomes one row whatever map
-each contribution saw it on: it keeps the lowest map ID and that map's positions, sums the counts, so the count is the
-number of contributors who saw it, and combines the factions in `S.factions`, keyed `"<item>:<kind>:<id>:<map>"`.
-When two contributions disagree on an item, the one whose file name sorts first wins, except that the item is flagged
-deprecated when any contribution flags it. An item's stats, `S.stats[<item>] = { <stat> = <number>, ... }` (`{}` when
-its tooltip has no stat lines), come whole from one contribution, never mixed: any contribution with stats for the item
-beats those without, the one with the most stat entries wins, and on a tie the one whose file name sorts first.
-Trainer spells, `S.trainers[<class>][<spell>] = { level = <n>, rank = <r> }` (no `rank` when the trainer showed none),
-are the union of every contribution's: when two contributions list the same spell for a class, the lower level wins,
-a rank fills in a missing one, and at the same level with two ranks the one whose file name sorts first wins. It also
-records how many contributions it merged, as `contributors`. `data/loot.lua` from earlier versions is no longer
-written. Contributions written before kills, corpses, items, quests, stats and trainers were imported are still read.
-
-- `<id>` is the first 12 hex digits of the SHA-256 of the account folder name. The folder name, the account number, is
-  never written or printed, and the same account always gets the same ID.
-- The locale is the `SET textLocale` line of `WTF/Config.wtf`, `enUS` when missing. Npc names and quest titles are
-  stored in the client language, so `Tandem/Data/Loot.lua` keeps them under `names[<locale>]` and
-  `questNames[<locale>]`.
-- `scan`, `ui`, `weights` and `statsVersion` stay local: stat weights belong to one character. `items` and `stats` are
-  imported, because ranking among a few hundred personally scanned items says little. `trainers` is imported, so a
-  class's trainer data reaches players who have not visited that trainer yet.
-- Running it again is safe: each account's contribution is a full snapshot that replaces the last one, so counts are
-  never added twice, and the same input gives byte-identical files.
-- Each saved-variables file runs in an empty environment, with no functions to call and a limit on how long it may run,
-  and its `TandemDB` is checked as the addon checks it on load. A file that fails to parse, raises an error, runs too
-  long, is precompiled, has no `TandemDB` or comes from a newer addon version is skipped with a message such as
-  `import: <file>: no TandemDB table, skipped`. Invalid entries are dropped with
-  `import: <file>: <n> invalid entries ignored`.
-- A skipped file does not stop the others. `scripts/import.lua` exits with status 1, and `make import` fails, when no
-  file given to it was imported, or when `data/contributions/` holds no valid contribution to merge. `make import`
-  also fails, before running the script, when no `Tandem.lua` exists.
-
-Set `WOW_DIR`, `FLAVOR`, `DATA` or `OUT` as for `make install`, for example
-`make import DATA=/tmp/tandem-data OUT=/tmp/tandem-data/Loot.lua`. Then review the changes under `data/` and
-`Tandem/Data/` with `git diff` and commit them as usual. With the linked install, `/reload` in game picks up the new
-`Tandem/Data/Loot.lua`; with a copy, run `make install MODE=copy` first.
-
-`Tandem/Data/Loot.lua` is generated, so never resolve a merge conflict in it by hand. Resolve `data/contributions/`,
-then rebuild the merged file from it without reading any saved variables:
-
-```sh
-lua scripts/import.lua data Tandem/Data/Loot.lua
-```
-
-On success it prints the `wrote Tandem/Data/Loot.lua` line, after a warning on stderr for each contribution it
-skipped or trimmed. With no contribution to merge, it prints
-`import: data/contributions: no contributions, Tandem/Data/Loot.lua not written` and exits with status 1.
+migration, `/tandem` parsing and output, stat weights, tooltip stat reading, trainer recording, the upgrade judge with
+stubbed class, level, equipped and bag items, the upgrade alert and borders, the quest reward pick, the action bar
+borders and the item tooltip line. These tests prove the logic only; the client's real API is checked in game.
 
 ### Translations
 
