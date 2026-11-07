@@ -9,8 +9,8 @@ where each item came from: the creatures and objects it dropped from, with kill 
 the quests that reward it and the vendors that sell it. From that data, merged with what other players contributed, it
 suggests the best known gear your character can use and where to get it. It never acts for
 the player, it records nothing while you are in combat, and neither its advice commands nor its gear window are
-available in combat. Out of combat, it also adds lines to the tooltips of the items it knows, and it draws a green
-border on bag and loot items that beat what you wear.
+available in combat. Out of combat, it also adds lines to the tooltips of the items it knows, and it draws a red
+border and a green up arrow on bag and loot items that beat what you wear.
 
 ## Install
 
@@ -532,6 +532,8 @@ left alone.
   next hover. A one-hand weapon is ranked as a main-hand weapon; when your class dual-wields at your level,
   it is marked against both hands, as in the browse window's `All slots`. An item with no ranked slot, such as a shirt,
   gets no rank line.
+- In green, when the item beats what you wear by the rule of the [upgrade alert](#upgrade-alert) (the items that get
+  an [upgrade border](#upgrade-borders)): `Tandem: upgrade over what you wear (score <score> over <worn score>)`.
 - In red, when you cannot use the item, `Tandem: you cannot use it: level <n> required` or
   `Tandem: your class cannot use it`.
 - In light grey, the item's first source, in the order of `rank`:
@@ -653,8 +655,8 @@ are known, the item is not judged. Items listed only in the browse window still 
 ### Upgrade borders
 
 An item in your bags or in the loot window that is better than what you wear, by the rule of the
-[upgrade alert](#upgrade-alert), gets a green border on its button. Hover it to see its score in the
-[item tooltip](#item-tooltip).
+[upgrade alert](#upgrade-alert), gets a red border on its button and a green up arrow in its top-left corner. Hover it to see
+`Tandem: upgrade over what you wear (score <score> over <worn score>)` in the [item tooltip](#item-tooltip).
 
 - Only the default Blizzard bag buttons, separate or combined bags, and the default loot window's buttons get borders.
   Bag addons such as Bagnon or AdiBags, and auto-loot, which never shows the loot window, bypass those frames, so
@@ -1116,10 +1118,10 @@ all, and any Lua error.
 ### Check the upgrade borders
 
 1. With the default bags, open your bags while they hold an item that the [upgrade alert](#upgrade-alert) would
-   announce: its button has a green border. Items no better than what you wear, items you cannot use and items with a
-   red line in their tooltip have none.
+   announce: its button has a red border and a green up arrow. Items no better than what you wear, items you cannot
+   use and items with a red line in their tooltip have none.
 2. Equip the bordered item: its border goes, and the item you took off gets none.
-3. Loot a corpse that drops an upgrade with auto-loot off: the item's button in the loot window has a green border.
+3. Loot a corpse that drops an upgrade with auto-loot off: the item's button in the loot window has the border and arrow.
    Page through a loot window of more than one page: borders follow the items, not the buttons.
 4. Level up, or learn a weapon skill at a trainer for a weapon in your bags: its border appears or goes to match.
 5. Start a fight and loot or move an upgrade in your bags: the border still shows.
