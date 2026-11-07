@@ -6,7 +6,7 @@ local _, ns = ...
 local BagButton = {}
 ns.BagButton = BagButton
 
-local OFFSET_X, OFFSET_Y = -8, 40
+local OFFSET_X, OFFSET_Y = -12, 8
 local ICON_SIZE, LINE_HEIGHT = 20, 12
 local BAGS = 4
 local BACKPACK = "Interface\\Buttons\\Button-Backpack-Up"
