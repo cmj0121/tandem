@@ -20,6 +20,7 @@ View.lua
 Check.lua
 Layout.lua
 XPBar.lua
+BagButton.lua
 QuestPick.lua
 Upgrade.lua
 ItemBorders.lua

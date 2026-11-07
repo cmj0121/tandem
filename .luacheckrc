@@ -43,6 +43,8 @@ read_globals = {
     "GameTooltip",
     "GetContainerItemID",
     "GetContainerNumSlots",
+    "GetContainerNumFreeSlots",
+    "ToggleAllBags",
     "GetInventoryItemLink",
     "GetLocale",
     "GetLootSlotLink",

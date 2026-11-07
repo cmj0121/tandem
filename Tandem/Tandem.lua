@@ -67,6 +67,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Upgrade.OnBagUpdate()
         ns.ItemBorders.Schedule()
+        ns.BagButton.Update()
     elseif event == "PLAYER_LOGIN" then
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
