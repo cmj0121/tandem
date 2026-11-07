@@ -3602,10 +3602,10 @@ do
     for i = 4, 8 do
         check("layout on: bar index " .. i .. " hidden by Edit Mode", settingOf(systemOf(t, 0, i), 5), 3)
     end
-    check("layout on: player wing left of the top bar", anchorText(systemOf(t, 3, 1)),
-        "TOPRIGHT MultiBarBottomRight TOPLEFT -8 -12")
-    check("layout on: target wing right of the top bar", anchorText(systemOf(t, 3, 2)),
-        "TOPLEFT MultiBarBottomRight TOPRIGHT 8 -12")
+    check("layout on: player frame above the bars, left of centre", anchorText(systemOf(t, 3, 1)),
+        "BOTTOMRIGHT MultiBarBottomRight TOP -8 48")
+    check("layout on: target frame above the bars, right of centre", anchorText(systemOf(t, 3, 2)),
+        "BOTTOMLEFT MultiBarBottomRight TOP 8 48")
     check("layout on: focus untouched", systemOf(t, 3, 3).isInDefaultPosition, true)
     check("layout on: chat bottom-left", anchorText(systemOf(t, 9, 1)), "BOTTOMLEFT UIParent BOTTOMLEFT 16 8")
     check("layout on: chat 380x120 by its size settings", settingOf(systemOf(t, 9, 1), 0) .. " "
@@ -3645,8 +3645,8 @@ do
     local ctx = loadLayout({ env = { Enum = cornerEnum() }, frames = { "MinimapCluster" } })
     ctx.run("layout on")
     local t = savedTandem(ctx.state)
-    check("layout corners: micro menu bottom-right above the bag row", anchorText(systemOf(t, 10, 1)),
-        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 40")
+    check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
+        "TOPLEFT UIParent TOPLEFT 12 -12")
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3667,7 +3667,7 @@ do
     check("layout corners: no minimap system leaves the minimap and buffs",
         systemOf(t, 11, 1).anchorInfo.offsetX .. " " .. systemOf(t, 12, 1).anchorInfo.offsetX, "99 99")
     check("layout corners: micro menu still moved", anchorText(systemOf(t, 10, 1)),
-        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 40")
+        "TOPLEFT UIParent TOPLEFT 12 -12")
 
     local noSize = copyTable(LAYOUT_ENUM)
     noSize.EditModeChatFrameSetting = nil
@@ -3685,7 +3685,8 @@ do
         "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 0")
 end
 
--- Narrow screens (D12 fit): chat and micro menu stay beside the wings when they fit, else go above the band.
+-- Narrow screens (D12, D13 fit): the chat stays beside the bars, narrows to the room left, else goes above the band
+-- and the unit frames over it; the micro menu is top-left whatever the width.
 do
     local function corners(uiWidth, measured, barWidth)
         local sizes = { UIParent = { uiWidth, 768 }, MultiBarBottomRight = barWidth and { barWidth, 40 } or nil }
@@ -3703,29 +3704,24 @@ do
     end
     local chat, micro = corners(1920)
     check("layout fit 1920: chat bottom-left at full width", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
-    check("layout fit 1920: micro menu bottom-right", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 40")
-    chat, micro = corners(1600)
-    check("layout fit 1600: chat narrowed to the room left", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 287")
-    check("layout fit 1600: micro menu wider than the room right goes above", micro,
-        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 214")
-    chat, micro = corners(1366)
-    check("layout fit 1366: chat above the band", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 214 380")
-    check("layout fit 1366: micro menu above the band", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 214")
+    check("layout fit 1920: micro menu top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    chat = corners(1366)
+    check("layout fit 1366: chat keeps its full width beside the bars", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
+    chat = corners(1200)
+    check("layout fit 1200: chat narrowed to the room left", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 327")
     chat, micro = corners(1024)
-    check("layout fit 1024: chat above the band", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 214 380")
-    check("layout fit 1024: micro menu above the band", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 214")
-    chat, micro = corners(1920, true)
-    check("layout fit measured 1920: both beside the wings", chat .. " | " .. micro,
-        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380 | BOTTOMRIGHT UIParent BOTTOMRIGHT -12 40")
-    chat, micro = corners(1366, false, 45)
-    check("layout fit: a narrow measured bar 3 counts as one row of 12", chat .. " | " .. micro,
-        "BOTTOMLEFT UIParent BOTTOMLEFT 16 214 380 | BOTTOMRIGHT UIParent BOTTOMRIGHT -12 214")
-    chat = corners(1600, false, 45)
-    check("layout fit 1600: a narrow measured bar 3 still narrows the chat", chat,
-        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 287")
-    chat, micro = corners(1366, true)
-    check("layout fit measured 1366: both above the measured band", chat .. " | " .. micro,
-        "BOTTOMLEFT UIParent BOTTOMLEFT 16 229 380 | BOTTOMRIGHT UIParent BOTTOMRIGHT -12 229")
+    check("layout fit 1024: chat above the band and the unit frames", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 322 380")
+    check("layout fit 1024: micro menu still top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    chat = corners(1366, true)
+    check("layout fit measured 1366: chat beside the measured bars", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
+    chat = corners(1200, false, 45)
+    check("layout fit 1200: a narrow measured bar 3 counts as one row of 12", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 327")
+    chat = corners(1024, true)
+    check("layout fit measured 1024: chat above the measured band and unit frames", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 327 380")
 end
 
 do
@@ -3829,6 +3825,36 @@ do
     check("layout art: end caps faded without HideBarArt", caps.alpha, 0)
     ctx.run("layout off")
     check("layout art: end caps back on off", caps.alpha, 1)
+end
+
+-- The totem bar (D13): beside the bars while on, only out of combat, re-pinned on events, back to its points on off.
+do
+    local totem = { points = { { "BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4 } }, ignoreFramePositionManager = nil }
+    function totem.GetNumPoints(self) return #self.points end
+    function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
+    function totem.ClearAllPoints(self) self.points = {} end
+    function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
+    local ctx = loadLayout({ env = { MultiCastActionBarFrame = totem } })
+    local function where()
+        local p = totem.points[1]
+        return #totem.points .. " " .. table.concat({ p[1], p[2] == ctx.state.frames.MultiBarBottomLeft
+            and "MultiBarBottomLeft" or tostring(p[2]), p[3], p[4], p[5] }, " ")
+    end
+    ctx.run("layout on")
+    check("totem bar: right of the bars", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
+    check("totem bar: position manager skips it", totem.ignoreFramePositionManager, true)
+    totem.points = { { "CENTER", "UIParent", "CENTER", 0, 0 } }
+    ctx.state.combat = true
+    ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
+    check("totem bar: not moved in combat", totem.points[1][1], "CENTER")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("totem bar: re-pinned after combat", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
+    ctx.run("layout off")
+    check("totem bar: back to its points on off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
+    check("totem bar: position manager flag restored", totem.ignoreFramePositionManager, nil)
+    ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
+    check("totem bar: left alone while off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
 end
 
 -- Bars Edit Mode cannot hide fade instead, again after Edit Mode re-applies, and come back on off.

@@ -10,7 +10,7 @@ for _, event in ipairs({
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
-    "PLAYER_TOTEM_UPDATE",
+    "PLAYER_TOTEM_UPDATE", "UPDATE_MULTI_CAST_ACTIONBAR",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
@@ -85,6 +85,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
+        if event == "PLAYER_ENTERING_WORLD" then
+            ns.TotemBar.Place()
+        end
         if event == "PLAYER_LEVEL_UP" then
             ns.XPBar.Update(...)
             ns.Upgrade.Invalidate()
@@ -95,8 +98,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Upgrade.OnCombatEnd()
         ns.ActionBorders.Schedule()
         ns.Layout.OnCombatEnd()
+        ns.TotemBar.OnCombatEnd()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
+        ns.TotemBar.Place()
+    elseif event == "UPDATE_MULTI_CAST_ACTIONBAR" then
+        ns.TotemBar.Place()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
         ns.XPBar.Update()
     end

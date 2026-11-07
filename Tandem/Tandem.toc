@@ -26,6 +26,7 @@ XPBar.lua
 BagButton.lua
 ClassArea.lua
 Classes\Shaman.lua
+TotemBar.lua
 Launcher.lua
 QuestPick.lua
 Upgrade.lua

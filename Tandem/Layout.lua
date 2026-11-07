@@ -1,20 +1,20 @@
 local _, ns = ...
 
--- The Tandem Edit Mode layout (stage 12, D4, D12): an account layout named "Tandem" stacks the three bottom action
--- bars at the bottom centre with the player and target frames as wings beside them, moves the chat frame bottom-left,
--- the micro menu bottom-right and the minimap and buffs top-right (each only when the client's Edit Mode has its
--- system) and hides the other bars. Blizzard frames move only through Edit Mode, anchored to UIParent or to each
--- other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and EnableMouse(false), both undone on off.
+-- The Tandem Edit Mode layout (stage 12, D4, D12, D13): an account layout named "Tandem" stacks the three bottom
+-- action bars at the bottom centre with the player and target frames side by side above them (over the class rail),
+-- moves the chat frame bottom-left, the micro menu top-left and the minimap and buffs top-right (each only when the
+-- client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through Edit Mode, anchored
+-- to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and EnableMouse(false), both
+-- undone on off.
 local Layout = {}
 ns.Layout = Layout
 
 local NAME = "Tandem"
--- Room under the bottom bar for the XP bar and between bars; the unit frame wings' gap beside and drop below the top
--- bar's top edge.
-local XP_ROOM, BAR_GAP, UNIT_GAP, UNIT_DROP = 42, 2, 8, 12
+-- Room under the bottom bar for the XP bar and between bars; half the gap between the player and target frames.
+local XP_ROOM, BAR_GAP, UNIT_GAP = 42, 2, 8
 -- Chat frame size in Edit Mode's hundreds / tens-and-ones settings, and the narrowest chat kept beside the band.
 local CHAT_WIDTH, CHAT_HEIGHT, CHAT_MIN = 380, 120, 260
--- Corner inset and gap kept clear beside the wings; room above the bars for the class rail plus a gap.
+-- Corner inset and gap kept clear beside the bars; room above the bars for the class rail plus a gap.
 local INSET, CLEAR, RAIL_ROOM = 16, 8, 48
 local TOT_CVAR = "showTargetOfTarget"
 
@@ -226,10 +226,10 @@ local function measure(name, method, fallback)
     return type(v) == "number" and v > 0 and v or fallback
 end
 
--- Moves the chat frame, micro menu, minimap and buffs (D12) when the client's Edit Mode has their systems. The chat
--- and micro menu sit beside the wings when the screen leaves room, else above the band. The wings follow
--- MultiBarBottomRight's width as measured now (from the layout being replaced, never under one row of 12, as that
--- layout may have bar 3 vertical or in rows); no later check.
+-- Moves the chat frame, micro menu, minimap and buffs (D12, D13) when the client's Edit Mode has their systems. The
+-- chat sits beside the bars when the screen leaves room, else above the band; the bars' width is MultiBarBottomRight's
+-- as measured now (from the layout being replaced, never under one row of 12, as that layout may have bar 3 vertical
+-- or in rows); no later check.
 local function corners(info)
     local band = math.max(measure("MultiBarBottomRight", "GetWidth", 498), 498)
     local side = (measure("UIParent", "GetWidth", 1920) - band) / 2
@@ -237,11 +237,11 @@ local function corners(info)
     for _, name in ipairs({ mainBarName(), "MultiBarBottomLeft", "MultiBarBottomRight" }) do
         block = block + measure(name, "GetHeight", 40)
     end
-    local above = XP_ROOM + block + RAIL_ROOM
+    local above = XP_ROOM + block + RAIL_ROOM + measure("PlayerFrame", "GetHeight", 100) + CLEAR
     local chatSystem = enum("EditModeSystem", "ChatFrame")
     local chat = chatSystem ~= nil and findSystem(info, chatSystem, 1)
     if chat then
-        local free = side - UNIT_GAP - measure("PlayerFrame", "GetWidth", 232) - INSET - CLEAR
+        local free = side - INSET - CLEAR
         local width, y = CHAT_WIDTH, 8
         if free < CHAT_MIN then
             y = above
@@ -255,10 +255,7 @@ local function corners(info)
     local microSystem = enum("EditModeSystem", "MicroMenu")
     local micro = microSystem ~= nil and findSystem(info, microSystem)
     if micro then
-        local free = side - UNIT_GAP - measure("TargetFrame", "GetWidth", 232)
-            - measure("TargetFrameToT", "GetWidth", 93) - 12 - CLEAR
-        local fits = measure("MicroMenuContainer", "GetWidth", 260) <= free
-        move(micro, anchor("BOTTOMRIGHT", "UIParent", "BOTTOMRIGHT", -12, fits and 40 or above))
+        move(micro, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, -12))
     end
     local minimapSystem = enum("EditModeSystem", "Minimap")
     local minimap = minimapSystem ~= nil and findSystem(info, minimapSystem)
@@ -317,11 +314,11 @@ local function override(info)
     end
     local player = unit and findSystem(info, unit, enum("EditModeUnitFrameSystemIndices", "Player"))
     if player then
-        move(player, anchor("TOPRIGHT", "MultiBarBottomRight", "TOPLEFT", -UNIT_GAP, -UNIT_DROP))
+        move(player, anchor("BOTTOMRIGHT", "MultiBarBottomRight", "TOP", -UNIT_GAP, RAIL_ROOM))
     end
     local target = unit and findSystem(info, unit, enum("EditModeUnitFrameSystemIndices", "Target"))
     if target then
-        move(target, anchor("TOPLEFT", "MultiBarBottomRight", "TOPRIGHT", UNIT_GAP, -UNIT_DROP))
+        move(target, anchor("BOTTOMLEFT", "MultiBarBottomRight", "TOP", UNIT_GAP, RAIL_ROOM))
     end
     corners(info)
     return faders
