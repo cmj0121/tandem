@@ -10,8 +10,15 @@ for _, event in ipairs({
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
+    "PLAYER_TOTEM_UPDATE",
 }) do
     ns.Store.RegisterEvent(frame, event)
+end
+-- The class area's unit events, for the player only where the client allows it.
+local PLAYER_EVENTS = { UNIT_INVENTORY_CHANGED = true, UNIT_AURA = true, UNIT_POWER_UPDATE = true,
+    UNIT_MAXPOWER = true }
+for event in pairs(PLAYER_EVENTS) do
+    ns.Store.RegisterUnitEvent(frame, event, "player")
 end
 
 local function onLoaded(self, event, loadedName)
@@ -41,7 +48,9 @@ local function onLoaded(self, event, loadedName)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
+    if PLAYER_EVENTS[event] or event == "PLAYER_TOTEM_UPDATE" then
+        ns.ClassArea.OnEvent(event, ...)
+    elseif event == "ADDON_LOADED" then
         onLoaded(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         ns.QuestPick.OnItemInfo(...)

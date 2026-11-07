@@ -276,3 +276,12 @@ end
 function Store.RegisterEvent(frame, event)
     return (pcall(frame.RegisterEvent, frame, event))
 end
+
+-- Registers event on frame for unit only where the client has RegisterUnitEvent, else for every unit; returns false,
+-- registering nothing, when the client rejects the name.
+function Store.RegisterUnitEvent(frame, event, unit)
+    if type(frame.RegisterUnitEvent) == "function" and pcall(frame.RegisterUnitEvent, frame, event, unit) then
+        return true
+    end
+    return Store.RegisterEvent(frame, event)
+end

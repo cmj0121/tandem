@@ -78,4 +78,11 @@ read_globals = {
     "UnitXP",
     "UnitXPMax",
     "UnitName",
+    "C_UnitAuras",
+    "GetTime",
+    "GetTotemInfo",
+    "GetWeaponEnchantInfo",
+    "UnitBuff",
+    "UnitPower",
+    "UnitPowerMax",
 }
