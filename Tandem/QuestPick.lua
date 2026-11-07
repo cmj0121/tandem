@@ -1,8 +1,8 @@
 local _, ns = ...
 
--- Marks the best quest reward choice on turn-in (decision 3): among the choices the player can use, the one that
--- strictly beats every other by stat score when every one has stats, else by item level, then quality, gets a small
--- Tandem icon on its button. Advises only: the
+-- Marks the best quest reward choice on turn-in (decision 3, rule D2 of stage 11): among the choices the player can
+-- use, the one that strictly beats every other by stat score when every one has stats, ties and stat-less choices by
+-- item level, then quality, gets a small Tandem icon on its button. Advises only: the
 -- icon is a child texture of the reward button, nothing is selected, and nothing happens in combat or when the
 -- client lacks the quest API or the reward buttons.
 local QuestPick = {}
@@ -24,14 +24,14 @@ local function choiceID(i)
 end
 
 -- Returns the index of the strict winner among choices { index, ilvl, quality, score }, or nil on a tie: by score
--- when every choice has one, else by item level, then quality.
+-- when every choice has one, then item level, then quality.
 local function winner(choices)
     local scored = true
     for _, c in ipairs(choices) do
         scored = scored and c.score ~= nil
     end
     local function cmp(a, b)
-        if scored then
+        if scored and a.score ~= b.score then
             return a.score - b.score
         end
         return a.ilvl ~= b.ilvl and a.ilvl - b.ilvl or a.quality - b.quality
@@ -49,18 +49,25 @@ local function winner(choices)
 end
 
 -- QuestPick.Pick(ids, class, level) -> index, pending
--- Returns the index of the usable choice that strictly beats every other usable one: by stat score when every usable
--- choice has stats, else by item level, then quality; nil on a tie or when none is usable. pending lists the ids not
+-- Returns the index of the usable choice that strictly beats every other usable one, from live item data: by stat
+-- score when every usable choice has one, ties by item level, then quality; else by item level, then quality; nil on
+-- a remaining tie or when none is usable. A choice with a red tooltip line is not usable. pending lists the ids not
 -- loaded yet, and while any is, nothing is picked.
 function QuestPick.Pick(ids, class, level)
+    local Items = ns.Items
     local choices, pending = {}, {}
     for i, id in ipairs(ids) do
-        local r = id and ns.View.Record(id)
-        if r == nil and id then
+        local info = id and Items.Info(id)
+        if info == nil and id then
             pending[#pending + 1] = id
-        elseif r and ns.Advisor.Usable(r, class, level) then
-            choices[#choices + 1] = { index = i, ilvl = r[1], quality = r[3],
-                                      score = ns.Advisor.Score(id, class, level) }
+        elseif info and Items.Usable(info, class, level) then
+            local blocked = ns.StatSearch.Blocked(id)
+            if blocked == nil then
+                pending[#pending + 1] = id
+            elseif not blocked then
+                choices[#choices + 1] = { index = i, ilvl = info[1], quality = info[3],
+                                          score = Items.Score(id, class, level) }
+            end
         end
     end
     if #pending > 0 then

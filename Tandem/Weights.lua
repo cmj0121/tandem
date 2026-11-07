@@ -3,7 +3,7 @@ local _, ns = ...
 -- Stat weights per class and talent tree (decision 8): built-in Classic defaults, the active tree detected from the
 -- talent points spent, and per-character overrides in TandemDB.weights["Name-Realm"] =
 -- { spec = n|nil, overrides = { [spec] = { key = w } } }. A nil spec means auto.
--- revision goes up with every saved spec or weight change; Advisor keys its ranking memo on it.
+-- revision goes up with every saved spec or weight change; Upgrade keys its memo on it.
 local Weights = { revision = 0 }
 ns.Weights = Weights
 

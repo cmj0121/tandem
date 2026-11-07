@@ -7,32 +7,21 @@
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\Tandem\Media\icon
 ## SavedVariables: TandemDB
-## AddonCompartmentFunc: Tandem_OnCompartmentClick
-## AddonCompartmentFuncOnEnter: Tandem_OnCompartmentEnter
-## AddonCompartmentFuncOnLeave: Tandem_OnCompartmentLeave
 
 Locales\enUS.lua
 Locales\zhTW.lua
-Data\Loot.lua
 Store.lua
 Weights.lua
+Items.lua
 SpellRanks.lua
 ActionBorders.lua
-Scanner.lua
-Loot.lua
-Sources.lua
 Trainer.lua
-Kills.lua
-Advisor.lua
 View.lua
 Check.lua
-MapPins.lua
 QuestPick.lua
 Upgrade.lua
 ItemBorders.lua
 StatSearch.lua
 Commands.lua
-Browse.lua
-Launcher.lua
 Tooltip.lua
 Tandem.lua

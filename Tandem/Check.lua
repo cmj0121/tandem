@@ -10,20 +10,6 @@ Check.FEATURES = {
     { name = "Item tooltip", needs = {
         { "TooltipDataProcessor.AddTooltipPostCall" }, { "Enum.TooltipDataType.Item" },
     } },
-    { name = "Quest sources", needs = {
-        { "GetQuestID" }, { "GetQuestItemLink" }, { "GetNumQuestChoices" }, { "GetNumQuestRewards" },
-    } },
-    { name = "Vendor sources", needs = {
-        { "UnitGUID" }, { "GetMerchantNumItems" }, { "GetMerchantItemLink" },
-    } },
-    { name = "Map pins", needs = {
-        { "WorldMapFrame.GetCanvas" }, { "WorldMapFrame.GetMapID" }, { "WorldMapFrame.OnMapChanged" },
-        { "OpenWorldMap" }, { "hooksecurefunc" },
-    } },
-    { name = "Map waypoint", needs = {
-        { "C_Map.CanSetUserWaypointOnMap" }, { "C_Map.SetUserWaypoint" }, { "UiMapPoint.CreateFromCoordinates" },
-        { "C_SuperTrack.SetSuperTrackedUserWaypoint" },
-    } },
     { name = "Quest reward pick", needs = {
         { "GetNumQuestChoices" }, { "GetQuestItemLink" },
         { "QuestInfoRewardsFrame.RewardButtons", "QuestInfoRewardsFrameQuestInfoItem1", "QuestRewardItem1" },
