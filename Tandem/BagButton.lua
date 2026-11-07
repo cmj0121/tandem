@@ -1,18 +1,21 @@
 local _, ns = ...
 
--- The bag button (stage 12, D2, D5): a plain Button at the bottom right while the Tandem layout is on, showing the
--- general bags' free/total and one N/M line per profession bag family behind that bag's icon. A click opens all bags.
--- The default bag bar is faded through Layout.Conceal, never hidden.
+-- The bag row (stage 12, D5, D12): one row of icon buttons at the bottom right while the Tandem layout is on, the
+-- general bags first, then one icon per profession bag family, each with its free/total on its lower edge. A click
+-- on any icon opens all bags. The default bag bar is faded through Layout.Conceal, never hidden.
 local BagButton = {}
 ns.BagButton = BagButton
 
 local OFFSET_X, OFFSET_Y = -12, 8
-local ICON_SIZE, LINE_HEIGHT = 20, 12
+local SIZE, SPACING = 28, 4
 local BAGS = 4
-local BACKPACK = "Interface\\Buttons\\Button-Backpack-Up"
+local LOW = 10
+local BACKPACK = "Interface\\Icons\\INV_Misc_Bag_08"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local WHITE, YELLOW, RED = { 1, 1, 1 }, { 1, 0.82, 0 }, { 1, 0.1, 0.1 }
 
-local button, on
+local row, on
+local icons = {}
 
 local function call(fn, ...)
     if type(fn) ~= "function" then
@@ -44,11 +47,12 @@ local function bagName(bag)
     return type(name) == "string" and name or nil
 end
 
--- Returns the general group { free, total } and the profession groups { family, free, total, icon, name } in family
--- order, for bags 0..4; bags without slots are skipped.
+-- Returns the general group and the profession groups in family order, each { family, free, total, icon, names }
+-- for bags 0..4; bags without slots are skipped and names lists the bag names the client gives.
 function BagButton.Count()
     local numSlots, numFree = api("GetContainerNumSlots"), api("GetContainerNumFreeSlots")
-    local general, byFamily, families = { free = 0, total = 0 }, {}, {}
+    local general = { family = 0, free = 0, total = 0, icon = BACKPACK, names = {} }
+    local byFamily, families = {}, {}
     for bag = 0, BAGS do
         local total = number(call(numSlots, bag))
         if total > 0 then
@@ -58,12 +62,13 @@ function BagButton.Count()
             if family ~= 0 then
                 group = byFamily[family]
                 if not group then
-                    group = { family = family, free = 0, total = 0, icon = bagIcon(bag), name = bagName(bag) }
+                    group = { family = family, free = 0, total = 0, icon = bagIcon(bag), names = {} }
                     byFamily[family] = group
                     families[#families + 1] = group
                 end
             end
             group.free, group.total = group.free + free, group.total + total
+            group.names[#group.names + 1] = bagName(bag)
         end
     end
     table.sort(families, function(a, b)
@@ -72,28 +77,25 @@ function BagButton.Count()
     return general, families
 end
 
-local function slots(group)
-    return ("%d/%d"):format(group.free, group.total)
+local function countColor(free)
+    if free == 0 then
+        return RED
+    end
+    return free < LOW and YELLOW or WHITE
 end
 
-local function iconText(icon)
-    return ("|T%s:0|t"):format(icon)
-end
-
-local function showTooltip(owner)
-    local tip = GameTooltip
-    if type(tip) ~= "table" then
+local function showTooltip(icon)
+    local tip, group = GameTooltip, icon.group
+    if type(tip) ~= "table" or not group then
         return
     end
     local L = ns.L
-    local general, families = BagButton.Count()
-    tip:SetOwner(owner, "ANCHOR_TOPLEFT")
-    tip:SetText(L["Bags"])
-    tip:AddLine(iconText(BACKPACK) .. " " .. L["General bags: %d/%d free"]:format(general.free, general.total), 1, 1, 1)
-    for _, group in ipairs(families) do
-        tip:AddLine(iconText(group.icon) .. " " .. L["%s: %d/%d free"]:format(group.name or L["Profession bag"],
-            group.free, group.total), 1, 1, 1)
+    tip:SetOwner(icon, "ANCHOR_TOPLEFT")
+    tip:SetText(group.family == 0 and L["General bags"] or L["Profession bag"])
+    if #group.names > 0 then
+        tip:AddLine(table.concat(group.names, ", "), 1, 1, 1)
     end
+    tip:AddLine(L["%d/%d free"]:format(group.free, group.total), 1, 1, 1)
     tip:AddLine(L["Click to open your bags"], 0.5, 0.5, 0.5)
     tip:Show()
 end
@@ -104,44 +106,65 @@ local function hideTooltip()
     end
 end
 
-local function create()
-    button = CreateFrame("Button", nil, UIParent)
-    button:SetFrameStrata("MEDIUM")
-    button:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", OFFSET_X, OFFSET_Y)
-    button:RegisterForClicks("LeftButtonUp")
-    button.icon = button:CreateTexture(nil, "ARTWORK")
-    button.icon:SetSize(ICON_SIZE, ICON_SIZE)
-    button.icon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    button.icon:SetTexture(BACKPACK)
-    button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    button.text:SetPoint("TOPLEFT", button.icon, "TOPRIGHT", 4, 0)
-    button.text:SetJustifyH("LEFT")
-    button:SetScript("OnClick", function()
+local function iconButton(i)
+    local icon = icons[i]
+    if icon then
+        return icon
+    end
+    icon = CreateFrame("Button", nil, row)
+    icon:SetSize(SIZE, SIZE)
+    icon:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -(i - 1) * (SIZE + SPACING), 0)
+    icon:RegisterForClicks("LeftButtonUp")
+    icon.icon = icon:CreateTexture(nil, "ARTWORK")
+    icon.icon:SetAllPoints(icon)
+    icon.count = icon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    icon.count:SetPoint("BOTTOM", icon, "BOTTOM", 0, 1)
+    icon:SetScript("OnClick", function()
         ToggleAllBags()
     end)
-    button:SetScript("OnEnter", showTooltip)
-    button:SetScript("OnLeave", hideTooltip)
-    button:Hide()
+    icon:SetScript("OnEnter", showTooltip)
+    icon:SetScript("OnLeave", hideTooltip)
+    icons[i] = icon
+    return icon
 end
 
--- Refreshes the counts; hides the button while the layout is off or the client lacks the bag API.
+local function create()
+    row = CreateFrame("Frame", nil, UIParent)
+    row:SetFrameStrata("MEDIUM")
+    row:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", OFFSET_X, OFFSET_Y)
+    row:Hide()
+end
+
+-- Refreshes the icons and counts, reusing the icon buttons; hides the row while the layout is off or the client
+-- lacks the bag API.
 function BagButton.Update()
-    if not button then
+    if not row then
         return
     end
     if not on then
-        button:Hide()
+        row:Hide()
         return
     end
     local general, families = BagButton.Count()
-    local lines = { slots(general) }
+    local groups = { general }
     for _, group in ipairs(families) do
-        lines[#lines + 1] = iconText(group.icon) .. " " .. slots(group)
+        groups[#groups + 1] = group
     end
-    button.text:SetText(table.concat(lines, "\n"))
-    button:SetSize(ICON_SIZE + 10 + (button.text:GetStringWidth() or 0),
-        math.max(ICON_SIZE + 4, #lines * LINE_HEIGHT + 4))
-    button:Show()
+    for i, group in ipairs(groups) do
+        local icon = iconButton(i)
+        icon.group = group
+        icon.icon:SetTexture(group.icon)
+        icon.count:SetText(("%d/%d"):format(group.free, group.total))
+        local color = countColor(group.free)
+        icon.count:SetTextColor(color[1], color[2], color[3])
+        icon:Show()
+    end
+    for i = #groups + 1, #icons do
+        icons[i].group = nil
+        icons[i]:Hide()
+    end
+    row:SetSize(#groups * SIZE + (#groups - 1) * SPACING, SIZE)
+    row:Show()
 end
 
 local function onChange(layoutOn)
@@ -150,7 +173,7 @@ local function onChange(layoutOn)
         if type(_G.BagsBar) == "table" then
             ns.Layout.Conceal("BagsBar")
         end
-        if not button then
+        if not row then
             create()
         end
     end

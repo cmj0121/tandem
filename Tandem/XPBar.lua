@@ -1,11 +1,12 @@
 local _, ns = ...
 
--- The XP bar (stage 12, D2, D5): a plain StatusBar under the bottom action bar while the Tandem layout is on, with
--- value/max, percent and rested percent. The default status bar is faded through Layout.Conceal, never hidden.
+-- The XP bar (stage 12, D5, D12): a thin StatusBar under the bottom action bar while the Tandem layout is on, purple
+-- (blue while rested) with only the percent on it; value/max and rested percent show on hover. The default status bar
+-- is faded through Layout.Conceal, never hidden.
 local XPBar = {}
 ns.XPBar = XPBar
 
-local HEIGHT, GAP = 14, 4
+local HEIGHT, GAP = 6, 2
 local REST_COLOR, XP_COLOR = { 0, 0.39, 0.88 }, { 0.58, 0, 0.55 }
 
 local bar, on
@@ -28,6 +29,31 @@ local function maxLevel()
     return number(call(_G.GetMaxPlayerLevel)) or number(_G.MAX_PLAYER_LEVEL)
 end
 
+local function percent(n, max)
+    return math.floor(n / max * 100)
+end
+
+local function showTooltip(owner)
+    local tip = GameTooltip
+    if type(tip) ~= "table" or not owner.max then
+        return
+    end
+    local L = ns.L
+    tip:SetOwner(owner, "ANCHOR_TOP")
+    tip:SetText(("%d / %d (%d%%)"):format(owner.xp, owner.max, percent(owner.xp, owner.max)))
+    if owner.rested > 0 then
+        tip:AddLine(L["Rested +%d%%"]:format(percent(owner.rested, owner.max)), REST_COLOR[1], REST_COLOR[2],
+            REST_COLOR[3])
+    end
+    tip:Show()
+end
+
+local function hideTooltip()
+    if type(GameTooltip) == "table" then
+        GameTooltip:Hide()
+    end
+end
+
 local function create()
     bar = CreateFrame("StatusBar", nil, UIParent)
     bar:SetHeight(HEIGHT)
@@ -37,6 +63,9 @@ local function create()
     bg:SetColorTexture(0, 0, 0, 0.5)
     bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bar.text:SetPoint("CENTER", bar, "CENTER", 0, 0)
+    bar:EnableMouse(true)
+    bar:SetScript("OnEnter", showTooltip)
+    bar:SetScript("OnLeave", hideTooltip)
     bar:Hide()
 end
 
@@ -65,17 +94,12 @@ function XPBar.Update(newLevel)
         return
     end
     local rested = number(call(GetXPExhaustion)) or 0
-    local L = ns.L
+    bar.xp, bar.max, bar.rested = xp, max, rested
     bar:SetMinMaxValues(0, max)
     bar:SetValue(xp)
     local color = rested > 0 and REST_COLOR or XP_COLOR
     bar:SetStatusBarColor(color[1], color[2], color[3])
-    local percent = math.floor(xp / max * 100)
-    if rested > 0 then
-        bar.text:SetText(L["%d / %d  %d%%  rested +%d%%"]:format(xp, max, percent, math.floor(rested / max * 100)))
-    else
-        bar.text:SetText(L["%d / %d  %d%%"]:format(xp, max, percent))
-    end
+    bar.text:SetText(("%d%%"):format(percent(xp, max)))
     bar:Show()
 end
 
