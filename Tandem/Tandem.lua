@@ -34,7 +34,7 @@ local function onLoaded(self, event, loadedName)
         print(L["%s: saved data was unreadable and has been reset"]:format(addonName))
     end
     if report.dropped > 0 then
-        print(L["%s: dropped %d invalid saved entries"]:format(addonName, report.dropped))
+        print(L["%s: dropped %d invalid or unused saved entries"]:format(addonName, report.dropped))
     end
 end
 
