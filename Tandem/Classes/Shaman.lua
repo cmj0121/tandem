@@ -1,20 +1,21 @@
 local _, ns = ...
 
--- The Shaman class area (stage 12, D5): the four totems with their time left, the weapon enchants' time left, the
--- Lightning Shield or Water Shield charges and time, and a mana bar. State and timers only (PLAN decision 6).
+-- The Shaman class rail (stage 12, D5, D12): a slot per active totem in Earth, Fire, Water, Air order, per active
+-- weapon enchant and for Lightning Shield or Water Shield with its charges, plus the mana line along the rail bottom.
+-- State and timers only (PLAN decision 6). Each event refreshes its section's cache from the client; the rail's
+-- ticker only re-renders the cached expirations.
 local Shaman = {}
 
-local ROW, ICON, MANA_HEIGHT = 14, 12, 12
-local NONE = "—"
 -- GetTotemInfo slots: FIRE_TOTEM_SLOT = 1, EARTH_TOTEM_SLOT = 2, WATER_TOTEM_SLOT = 3, AIR_TOTEM_SLOT = 4; shown
 -- in Earth, Fire, Water, Air order.
-local TOTEMS = { { slot = 2, label = "Earth" }, { slot = 1, label = "Fire" }, { slot = 3, label = "Water" },
-    { slot = 4, label = "Air" } }
+local TOTEMS = { 2, 1, 3, 4 }
 -- Lightning Shield (rank 1) and Water Shield; a client without Water Shield names only Lightning Shield.
 local SHIELDS = { 324, 24398 }
+local MAIN_HAND, OFF_HAND = 16, 17
 local MANA = 0
+local MANA_COLOR = { 0, 0.44, 0.87 }
 
-local area
+local totems, weapons, shield, mana = {}, {}, nil, nil
 local shieldNames = {}
 
 local function safeAll(...)
@@ -49,75 +50,15 @@ local function now()
     return number(call(GetTime)) or 0
 end
 
-local function row(parent, column, index)
-    local r = CreateFrame("Frame", nil, parent)
-    r:SetHeight(ROW)
-    local y = -(index - 1) * ROW
-    if column == 1 then
-        r:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
-        r:SetPoint("TOPRIGHT", parent, "TOP", -4, y)
-    else
-        r:SetPoint("TOPLEFT", parent, "TOP", 4, y)
-        r:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, y)
-    end
-    r.icon = r:CreateTexture(nil, "ARTWORK")
-    r.icon:SetSize(ICON, ICON)
-    r.icon:SetPoint("LEFT", r, "LEFT", 0, 0)
-    r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    r.name:SetPoint("LEFT", r.icon, "RIGHT", 4, 0)
-    r.name:SetJustifyH("LEFT")
-    r.time = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    r.time:SetPoint("RIGHT", r, "RIGHT", 0, 0)
-    r.time:SetJustifyH("RIGHT")
-    return r
-end
-
-local function show(r, name, time, icon)
-    r.name:SetText(name)
-    r.time:SetText(time)
-    if icon then
-        r.icon:SetTexture(icon)
-        r.icon:Show()
-    else
-        r.icon:Hide()
-    end
-end
-
--- Paints a row from its cached entry { name, icon, expires (GetTime based), charges }: the label and a dash when
--- there is none or it has run out.
-local function paint(r)
-    local e, t = r.entry, now()
-    if not e or (e.expires and e.expires <= t) then
-        show(r, ns.L[r.label], NONE)
-        return
-    end
-    local left = e.expires and ns.ClassArea.Clock(e.expires - t) or NONE
-    if e.charges then
-        left = ns.L["%d charges, %s"]:format(e.charges, left)
-    end
-    show(r, e.name or ns.L[r.label], left, e.icon)
-end
-
-local function paintAll()
-    for _, r in ipairs(area.totems) do
-        paint(r)
-    end
-    paint(area.mainHand)
-    paint(area.offHand)
-    paint(area.shield)
-end
-
 local function updateTotems()
-    for i, totem in ipairs(TOTEMS) do
-        local have, name, start, duration, icon = call(GetTotemInfo, totem.slot)
-        local r = area.totems[i]
-        r.entry = nil
+    totems = {}
+    for _, slot in ipairs(TOTEMS) do
+        local have, name, start, duration, icon = call(GetTotemInfo, slot)
         if have and type(name) == "string" and name ~= "" then
             start, duration = number(start), number(duration)
-            r.entry = { name = name, icon = icon, expires = start and duration and duration > 0 and start + duration
-                or nil }
+            totems[#totems + 1] = { label = name, icon = icon,
+                expires = start and duration and duration > 0 and start + duration or nil }
         end
-        paint(r)
     end
 end
 
@@ -126,10 +67,13 @@ end
 local function updateWeapons()
     local v = pack(call(GetWeaponEnchantInfo))
     local off, t = v.n <= 6 and 4 or 5, now()
-    for _, hand in ipairs({ { area.mainHand, v[1], v[2] }, { area.offHand, v[off], v[off + 1] } }) do
-        local ms = number(hand[3])
-        hand[1].entry = hand[2] and ms and { expires = t + ms / 1000 } or nil
-        paint(hand[1])
+    weapons = {}
+    for _, hand in ipairs({ { "Main hand", MAIN_HAND, v[1], v[2] }, { "Off hand", OFF_HAND, v[off], v[off + 1] } }) do
+        local ms = number(hand[4])
+        if hand[3] and ms then
+            weapons[#weapons + 1] = { label = ns.L[hand[1]], icon = call(GetInventoryItemTexture, "player", hand[2]),
+                expires = t + ms / 1000 }
+        end
     end
 end
 
@@ -165,7 +109,7 @@ local function buff(name)
 end
 
 local function updateShield()
-    area.shield.entry = nil
+    shield = nil
     for _, id in ipairs(SHIELDS) do
         local name = shieldName(id)
         local charges, expiration, icon
@@ -173,24 +117,16 @@ local function updateShield()
             charges, expiration, icon = buff(name)
         end
         if charges then
-            area.shield.entry = { name = name, icon = icon, charges = charges,
+            shield = { label = name, icon = icon, count = charges,
                 expires = expiration and expiration > 0 and expiration or nil }
-            break
+            return
         end
     end
-    paint(area.shield)
 end
 
 local function updateMana()
-    local mana, max = number(call(UnitPower, "player", MANA)), number(call(UnitPowerMax, "player", MANA))
-    if not mana or not max or max <= 0 then
-        area.mana:Hide()
-        return
-    end
-    area.mana:SetMinMaxValues(0, max)
-    area.mana:SetValue(mana)
-    area.mana.text:SetText(("%d / %d"):format(mana, max))
-    area.mana:Show()
+    local cur, max = number(call(UnitPower, "player", MANA)), number(call(UnitPowerMax, "player", MANA))
+    mana = cur and max and max > 0 and { value = cur, max = max, color = MANA_COLOR } or nil
 end
 
 local SECTIONS = {
@@ -199,7 +135,6 @@ local SECTIONS = {
     UNIT_AURA = { updateShield },
     UNIT_POWER_UPDATE = { updateMana },
     UNIT_MAXPOWER = { updateMana },
-    tick = { paintAll },
 }
 local ALL = { updateTotems, updateWeapons, updateShield, updateMana }
 
@@ -207,37 +142,19 @@ function Shaman.Ready()
     return ns.Check.Ready("Shaman area")
 end
 
-function Shaman.Build(parent)
-    area = parent
-    area.totems = {}
-    for i, totem in ipairs(TOTEMS) do
-        area.totems[i] = row(area, 1, i)
-        area.totems[i].label = totem.label
-    end
-    area.mainHand, area.offHand, area.shield = row(area, 2, 1), row(area, 2, 2), row(area, 2, 3)
-    area.mainHand.label, area.offHand.label, area.shield.label = "Main hand", "Off hand", "Shield"
-    area.mana = CreateFrame("StatusBar", nil, area)
-    area.mana:SetHeight(MANA_HEIGHT)
-    area.mana:SetPoint("BOTTOMLEFT", area, "BOTTOM", 4, 0)
-    area.mana:SetPoint("BOTTOMRIGHT", area, "BOTTOMRIGHT", 0, 0)
-    area.mana:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    area.mana:SetStatusBarColor(0, 0, 1)
-    local bg = area.mana:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(area.mana)
-    bg:SetColorTexture(0, 0, 0, 0.5)
-    area.mana.text = area.mana:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    area.mana.text:SetPoint("CENTER", area.mana, "CENTER", 0, 0)
-end
-
--- Refreshes the sections event touches from the client, every section for nil; "tick" only repaints the cached
--- countdowns and calls no state API.
+-- Refreshes the sections event touches from the client, every section for nil, and hands the rail its slots:
+-- totems, then weapon enchants, then the shield.
 function Shaman.Update(event)
-    if not area then
-        return
-    end
     for _, fn in ipairs(event and SECTIONS[event] or ALL) do
         fn()
     end
+    local list = {}
+    for _, group in ipairs({ totems, weapons, { shield } }) do
+        for _, e in ipairs(group) do
+            list[#list + 1] = e
+        end
+    end
+    ns.ClassArea.Set(list, mana)
 end
 
 ns.ClassArea.Register("SHAMAN", Shaman)
