@@ -71,5 +71,9 @@ read_globals = {
     "TooltipUtil",
     "UnitClass",
     "UnitLevel",
+    "GetXPExhaustion",
+    "UIParent",
+    "UnitXP",
+    "UnitXPMax",
     "UnitName",
 }

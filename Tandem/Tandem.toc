@@ -19,6 +19,7 @@ Trainer.lua
 View.lua
 Check.lua
 Layout.lua
+XPBar.lua
 QuestPick.lua
 Upgrade.lua
 ItemBorders.lua

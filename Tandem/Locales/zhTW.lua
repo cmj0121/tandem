@@ -45,6 +45,7 @@ L["Tandem: the layout cannot be saved: saved data uses a newer schema"] =
 L["Tandem: the layout will change after combat"] = "Tandem：介面配置將在戰鬥結束後變更"
 L["Tandem: no free account layout slot; delete one in Edit Mode"] = "Tandem：沒有空的帳號版面欄位；請在編輯模式中刪除一個"
 L["Tandem: the layout could not be changed"] = "Tandem：無法變更介面配置"
+L["%d / %d  %d%%  rested +%d%%"] = "%d / %d  %d%%  休息 +%d%%"
 L["Probe: %s %s"] = "探測：%s %s"
 L["present"] = "存在"
 L["Tandem: upgrade for %s: %s (score %s over %s)"] = "Tandem：%s的升級：%s（分數 %s，高於 %s）"
