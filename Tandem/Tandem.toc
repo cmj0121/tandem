@@ -6,7 +6,7 @@
 ## Author: cmj
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\Tandem\Media\icon
-## SavedVariables: TandemDB
+## SavedVariables: TandemDB, TandemDebug
 ## AddonCompartmentFunc: Tandem_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: Tandem_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Tandem_OnCompartmentLeave
@@ -21,6 +21,7 @@ ActionBorders.lua
 Trainer.lua
 View.lua
 Check.lua
+Debug.lua
 Layout.lua
 XPBar.lua
 BagButton.lua

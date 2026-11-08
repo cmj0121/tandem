@@ -51,9 +51,11 @@ function TotemBar.Place()
     end
     if call(InCombatLockdown) == true then
         pending = true
+        ns.Debug.Log("totem: place waits for combat end")
         return
     end
     pending = nil
+    ns.Debug.Log(on and "totem: place right of the bars" or "totem: restore saved points")
     if on then
         local beside = _G.MultiBarBottomLeft
         if type(beside) ~= "table" then
@@ -107,6 +109,7 @@ function TotemBar.Watch()
     if not on or not f or not drifted(f) then
         return
     end
+    ns.Debug.Log("totem: watcher saw it moved")
     TotemBar.Place()
 end
 

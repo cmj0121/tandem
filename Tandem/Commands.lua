@@ -16,6 +16,7 @@ local function printUsage()
     print(L["  /tandem weights reset - drop your own weights for the active tree"])
     print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
+    print(L["  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -150,6 +151,22 @@ local function minimap(args)
     print(shown and L["Tandem: minimap button shown"] or L["Tandem: minimap button hidden"])
 end
 
+-- /tandem debug [on|off]: toggles the recorder (no argument flips it).
+local function debug(args)
+    local sub = args[1]
+    if #args > 1 or (sub ~= nil and sub ~= "on" and sub ~= "off") then
+        printUsage()
+        return
+    end
+    local on = sub == "on" or (sub == nil and not ns.Debug.IsOn())
+    local lines = ns.Debug.Set(on)
+    if on then
+        print(L["Tandem: debug recording on; /reload saves it to disk"])
+    else
+        print(L["Tandem: debug recording off (%d lines kept)"]:format(lines))
+    end
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
 local NOT_IN_COMBAT = { check = true, weights = true }
 
@@ -170,6 +187,8 @@ function Commands.Run(msg)
         layout(args)
     elseif sub == "minimap" then
         minimap(args)
+    elseif sub == "debug" then
+        debug(args)
     else
         printUsage()
     end
