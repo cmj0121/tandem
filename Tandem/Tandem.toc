@@ -21,8 +21,8 @@ ActionBorders.lua
 Trainer.lua
 View.lua
 Check.lua
-Debug.lua
 Layout.lua
+Debug.lua
 XPBar.lua
 BagButton.lua
 ClassArea.lua

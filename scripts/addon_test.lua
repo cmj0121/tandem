@@ -3926,6 +3926,23 @@ do
     check("debug: nothing logged after off", #env.TandemDebug.log, 300)
     check("debug: on again starts a fresh log", (ctx.run("debug on") and #env.TandemDebug.log), 1)
     check("debug: bad argument prints usage", ctx.run("debug maybe"):match("^Tandem commands:") ~= nil, true)
+    ctx.env.MainStatusTrackingBarContainer = { IsShown = function() return true end,
+        IsVisible = function() return true end, GetAlpha = function() return 1 end }
+    local xp = { GetName = function() return "MainMenuExpBar" end, GetBottom = function() return 30 end,
+        IsVisible = function() return true end }
+    local high = { GetName = function() return "Minimap" end, GetBottom = function() return 700 end,
+        IsVisible = function() return true end }
+    ctx.env.UIParent.GetChildren = function() return xp, high end
+    ctx.run("debug snap")
+    local text = table.concat(env.TandemDebug.log, "\n")
+    check("debug snap: watched status bar logged",
+        text:match("watch MainStatusTrackingBarContainer: shown true") ~= nil, true)
+    check("debug snap: a missing watched frame says so", text:match("watch ReputationWatchBar: missing") ~= nil, true)
+    check("debug snap: a visible frame in the bottom band is listed", text:match("frame MainMenuExpBar: ") ~= nil, true)
+    check("debug snap: a frame high on screen is not", text:match("frame Minimap") == nil, true)
+    ctx.run("layout on")
+    check("debug snap: a layout change takes one",
+        env.TandemDebug.log[#env.TandemDebug.log]:match("frame MainMenuExpBar") ~= nil, true)
 end
 
 -- Bars Edit Mode cannot hide fade instead, again after Edit Mode re-applies, and come back on off.

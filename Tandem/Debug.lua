@@ -3,7 +3,9 @@ local _, ns = ...
 -- The debug recorder (stage 12, D13): off by default; `/tandem debug on` records every move of Blizzard's totem bar
 -- (MultiCastActionBarFrame SetPoint, ClearAllPoints, SetParent, Show, Hide) with its caller's stack, the related
 -- events and Tandem's own totem bar decisions into the TandemDebug saved variable, which the client writes to disk
--- on /reload or logout for a developer to read. Nothing is printed while it records.
+-- on /reload or logout for a developer to read. Nothing is printed while it records. A snapshot (2 s after login, on
+-- every layout change, or `/tandem debug snap`) lists every named, visible child of UIParent in the bottom band and
+-- the known status (XP) bar frames, to find which Blizzard frame shows where.
 local Debug = {}
 ns.Debug = Debug
 
@@ -13,6 +15,11 @@ local EVENTS = { "UNIT_SPELLCAST_SUCCEEDED", "PLAYER_REGEN_DISABLED", "PLAYER_RE
     "UPDATE_MULTI_CAST_ACTIONBAR", "PLAYER_TOTEM_UPDATE" }
 
 local hooked, listening
+-- Frames whose state a snapshot always logs, shown or not: Blizzard's status (XP / reputation) bars.
+local WATCHED = { "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer", "StatusTrackingBarManager",
+    "MainMenuExpBar", "MainMenuBarExpBar", "ReputationWatchBar", "MainMenuBarMaxLevelBar" }
+-- A snapshot lists visible frames whose bottom edge sits this low on screen.
+local BAND = 300
 
 local function call(fn, ...)
     if type(fn) ~= "function" then
@@ -83,6 +90,38 @@ function Debug.Log(what, withStack)
     end
 end
 
+local function describe(f)
+    local alpha = tonumber(call(f.GetEffectiveAlpha, f) or call(f.GetAlpha, f))
+    return ("shown %s visible %s alpha %s at %s,%s size %sx%s parent %s"):format(text(call(f.IsShown, f)),
+        text(call(f.IsVisible, f)), alpha and ("%.2f"):format(alpha) or "nil", text(call(f.GetLeft, f)),
+        text(call(f.GetBottom, f)), text(call(f.GetWidth, f)), text(call(f.GetHeight, f)), text(call(f.GetParent, f)))
+end
+
+-- Logs the watched status bar frames, then every named, visible UIParent child in the bottom band.
+function Debug.Snapshot(why)
+    if not Debug.IsOn() then
+        return
+    end
+    Debug.Log("snapshot " .. tostring(why))
+    for _, name in ipairs(WATCHED) do
+        local f = _G[name]
+        Debug.Log("  watch " .. name .. ": " .. (type(f) == "table" and describe(f) or "missing"))
+    end
+    local parent = _G.UIParent
+    local children = type(parent) == "table" and { pcall(parent.GetChildren, parent) } or { false }
+    if not children[1] then
+        return
+    end
+    for i = 2, #children do
+        local f = children[i]
+        local name = type(f) == "table" and call(f.GetName, f)
+        local bottom = type(f) == "table" and tonumber(call(f.GetBottom, f))
+        if name and bottom and bottom < BAND and call(f.IsVisible, f) then
+            Debug.Log("  frame " .. tostring(name) .. ": " .. describe(f))
+        end
+    end
+end
+
 local function hook()
     local f = _G.MultiCastActionBarFrame
     if hooked or type(f) ~= "table" or type(hooksecurefunc) ~= "function" then
@@ -137,10 +176,19 @@ function Debug.Set(on)
     return #d.log
 end
 
--- At login: keeps recording across /reload while it is on.
+-- At login: keeps recording across /reload while it is on, with a snapshot once the UI has settled.
 function Debug.OnLogin()
     if Debug.IsOn() then
         start()
         Debug.Log("login")
+        if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+            C_Timer.After(2, function()
+                Debug.Snapshot("login")
+            end)
+        end
     end
 end
+
+ns.Layout.OnChange(function(on)
+    Debug.Snapshot(on and "layout on" or "layout off")
+end)

@@ -150,8 +150,16 @@ end
 -- /tandem debug [on|off]: toggles the recorder (no argument flips it).
 local function debug(args)
     local sub = args[1]
-    if #args > 1 or (sub ~= nil and sub ~= "on" and sub ~= "off") then
+    if #args > 1 or (sub ~= nil and sub ~= "on" and sub ~= "off" and sub ~= "snap") then
         printUsage()
+        return
+    end
+    if sub == "snap" then
+        if not ns.Debug.IsOn() then
+            ns.Debug.Set(true)
+        end
+        ns.Debug.Snapshot("command")
+        print(L["Tandem: debug recording on; /reload saves it to disk"])
         return
     end
     local on = sub == "on" or (sub == nil and not ns.Debug.IsOn())
