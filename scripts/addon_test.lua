@@ -4581,6 +4581,22 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("reagent bag: bound when combat ends", #binds, 2)
+
+    -- A client whose bag window state reads the same before and after the toggle: the reagent bag simply toggles.
+    local shut = {}
+    ctx = loadBags({ env = {
+        Enum = enum,
+        IsBagOpen = function(bag) return bag == 5 and shut[5] or nil end,
+        OpenBag = function(bag) shut[bag] = true end,
+        CloseBag = function(bag) shut[bag] = nil end,
+    } })
+    ctx.bags[5] = { 20, 7, 0 }
+    ctx.run("layout on")
+    local icon = ctx.icons()[1]
+    icon.scripts.OnClick(icon, "LeftButton")
+    check("reagent bag: unseen main window still opens it", tostring(shut[5]) .. " " .. ctx.toggled, "true 1")
+    icon.scripts.OnClick(icon, "LeftButton")
+    check("reagent bag: and closes it on the next press", tostring(shut[5]) .. " " .. ctx.toggled, "nil 2")
 end
 
 -- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).

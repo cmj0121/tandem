@@ -60,19 +60,28 @@ local function mainOpen()
 end
 
 -- Toggles all bags with Blizzard's ToggleAllBags, then opens or closes the reagent bag (when it has slots) with
--- the main window, which ToggleAllBags may leave out.
+-- the main window, which ToggleAllBags leaves out. Whether the main window opened is read before and after the
+-- toggle; when that reads the same both times (a client whose bag window state Tandem cannot see), the reagent bag
+-- simply toggles. Each press is logged to the debug recorder.
 function BagButton.OpenAll()
+    local before = mainOpen()
     pcall(_G.ToggleAllBags)
     local reagent = reagentBag()
-    if not reagent or number(call(api("GetContainerNumSlots"), reagent)) == 0 then
-        return
+    local slots = reagent and number(call(api("GetContainerNumSlots"), reagent)) or 0
+    local after = mainOpen()
+    local was = reagent and bagOpen(reagent)
+    local open
+    if after ~= before then
+        open = after
+    else
+        open = not was
     end
-    local open = mainOpen()
-    if open and not bagOpen(reagent) then
-        pcall(_G.OpenBag, reagent)
-    elseif not open and bagOpen(reagent) then
-        pcall(_G.CloseBag, reagent)
+    if slots > 0 then
+        pcall(open and _G.OpenBag or _G.CloseBag, reagent)
     end
+    ns.Debug.Log(("bags: main %s->%s reagent %s slots %d was %s -> %s now %s"):format(tostring(before),
+        tostring(after), tostring(reagent), slots, tostring(was), tostring(open),
+        tostring(reagent and bagOpen(reagent))))
 end
 
 -- Points every key bound to "open all bags" (B by default) at Tandem's opener with an override binding; waits for
@@ -92,11 +101,14 @@ local function bindKeys()
     end
     pcall(_G.ClearOverrideBindings, opener)
     local keys = { pcall(_G.GetBindingKey, "OPENALLBAGS") }
+    local bound = {}
     for i = 2, #keys do
         if type(keys[i]) == "string" then
             pcall(_G.SetOverrideBindingClick, opener, false, keys[i], "TandemOpenAllBags")
+            bound[#bound + 1] = keys[i]
         end
     end
+    ns.Debug.Log("bags: open-all keys bound: " .. (#bound > 0 and table.concat(bound, " ") or "none"))
 end
 
 -- Binds the keys deferred by combat.
