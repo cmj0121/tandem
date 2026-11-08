@@ -65,7 +65,7 @@ Check.PROBES = {
     "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
     "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
     "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
-    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
+    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
 }
 
 -- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.

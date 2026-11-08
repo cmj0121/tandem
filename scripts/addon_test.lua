@@ -1028,7 +1028,7 @@ do
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
     check("check: thirteen features", #addon.Check.FEATURES, 13)
-    check("check: nineteen probes", #addon.Check.PROBES, 19)
+    check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -2000,7 +2000,7 @@ local PROBES = {
     "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
     "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
     "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
-    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
+    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
 }
 
 do
@@ -2036,7 +2036,8 @@ do
     addon, printed = loadWithDB(nil, "enUS", { env = {
         LootButton1 = {}, LootFrame = { ScrollBox = {} }, LootFrame_Update = fn,
         ContainerFrame1Item1 = { IconBorder = {}, NewItemTexture = {}, UpgradeIcon = {} },
-        Enum = { EditModeSystem = { ChatFrame = 2, MicroMenu = 10, Minimap = 11, AuraFrame = 12 },
+        Enum = { EditModeSystem = { ChatFrame = 2, MicroMenu = 10, Minimap = 11, AuraFrame = 12,
+            ObjectiveTracker = 13 },
             EditModeActionBarSetting = { HideBarArt = 6 } },
         MainStatusTrackingBarContainer = {}, BagsBar = {},
         MainActionBar = { EndCaps = {} }, MainMenuBar = { EndCaps = {} },
@@ -3380,6 +3381,7 @@ end
 local function cornerEnum()
     local e = copyTable(LAYOUT_ENUM)
     e.EditModeSystem.MicroMenu, e.EditModeSystem.Minimap, e.EditModeSystem.AuraFrame = 10, 11, 12
+    e.EditModeSystem.ObjectiveTracker = 13
     e.EditModeAuraFrameSystemIndices = { BuffFrame = 1, DebuffFrame = 2 }
     return e
 end
@@ -3399,7 +3401,7 @@ local function editLayout(name, layoutType)
             settings = {} }
     end
     systems[#systems + 1] = { system = 9, systemIndex = 1, anchorInfo = at(99), settings = {} }
-    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 } }) do
+    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 } }) do
         systems[#systems + 1] = { system = s[1], systemIndex = s[2], anchorInfo = at(99), settings = {} }
     end
     return { layoutName = name or "view", layoutType = layoutType or 1, systems = systems }
@@ -3647,6 +3649,8 @@ do
     local t = savedTandem(ctx.state)
     check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
         "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout corners: quest tracker under the micro menu", anchorText(systemOf(t, 13, 1)),
+        "TOPLEFT UIParent TOPLEFT 12 -64")
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3668,6 +3672,25 @@ do
         systemOf(t, 11, 1).anchorInfo.offsetX .. " " .. systemOf(t, 12, 1).anchorInfo.offsetX, "99 99")
     check("layout corners: micro menu still moved", anchorText(systemOf(t, 10, 1)),
         "TOPLEFT UIParent TOPLEFT 12 -12")
+
+    local noMicro = cornerEnum()
+    noMicro.EditModeSystem.MicroMenu = nil
+    ctx = loadLayout({ env = { Enum = noMicro }, sizes = { MicroMenuContainer = { 250, 30 } } })
+    ctx.run("layout on")
+    t = savedTandem(ctx.state)
+    check("layout corners: no micro menu system puts the quest tracker in its place",
+        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. anchorText(systemOf(t, 13, 1)),
+        "99 TOPLEFT UIParent TOPLEFT 12 -12")
+    ctx = loadLayout({ env = { Enum = cornerEnum() }, sizes = { MicroMenuContainer = { 250, 30 } } })
+    ctx.run("layout on")
+    check("layout corners: quest tracker follows the measured micro menu height",
+        anchorText(systemOf(savedTandem(ctx.state), 13, 1)), "TOPLEFT UIParent TOPLEFT 12 -54")
+    local noTracker = cornerEnum()
+    noTracker.EditModeSystem.ObjectiveTracker = nil
+    ctx = loadLayout({ env = { Enum = noTracker } })
+    ctx.run("layout on")
+    check("layout corners: no tracker system leaves the quest tracker",
+        systemOf(savedTandem(ctx.state), 13, 1).anchorInfo.offsetX, 99)
 
     local noSize = copyTable(LAYOUT_ENUM)
     noSize.EditModeChatFrameSetting = nil

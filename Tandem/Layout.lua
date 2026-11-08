@@ -2,10 +2,10 @@ local _, ns = ...
 
 -- The Tandem Edit Mode layout (stage 12, D4, D12, D13): an account layout named "Tandem" stacks the three bottom
 -- action bars at the bottom centre with the player and target frames side by side above them (over the class rail),
--- moves the chat frame bottom-left, the micro menu top-left and the minimap and buffs top-right (each only when the
--- client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through Edit Mode, anchored
--- to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and EnableMouse(false), both
--- undone on off.
+-- moves the chat frame bottom-left, the micro menu and quest tracker top-left and the minimap and buffs top-right
+-- (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through
+-- Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and
+-- EnableMouse(false), both undone on off.
 local Layout = {}
 ns.Layout = Layout
 
@@ -256,6 +256,13 @@ local function corners(info)
     local micro = microSystem ~= nil and findSystem(info, microSystem)
     if micro then
         move(micro, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, -12))
+    end
+    -- The quest tracker goes top-left under the micro menu (in its place when the micro menu stays where it is).
+    local trackerSystem = enum("EditModeSystem", "ObjectiveTracker")
+    local tracker = trackerSystem ~= nil and findSystem(info, trackerSystem)
+    if tracker then
+        local y = micro and -(12 + measure("MicroMenuContainer", "GetHeight", 40) + 12) or -12
+        move(tracker, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, y))
     end
     local minimapSystem = enum("EditModeSystem", "Minimap")
     local minimap = minimapSystem ~= nil and findSystem(info, minimapSystem)
