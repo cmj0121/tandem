@@ -15,8 +15,7 @@ for _, event in ipairs({
     ns.Store.RegisterEvent(frame, event)
 end
 -- The class area's unit events, for the player only where the client allows it.
-local PLAYER_EVENTS = { UNIT_INVENTORY_CHANGED = true, UNIT_AURA = true, UNIT_POWER_UPDATE = true,
-    UNIT_MAXPOWER = true }
+local PLAYER_EVENTS = { UNIT_AURA = true, UNIT_POWER_UPDATE = true, UNIT_MAXPOWER = true }
 for event in pairs(PLAYER_EVENTS) do
     ns.Store.RegisterUnitEvent(frame, event, "player")
 end

@@ -2078,7 +2078,7 @@ do
     check("check: bag button line", byName["Bag button"],
         "Bag button: ok (C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, ToggleAllBags ok)")
     check("check: shaman area line", byName["Shaman area"],
-        "Shaman area: ok (GetTotemInfo ok, GetWeaponEnchantInfo ok, UnitPower ok)")
+        "Shaman area: ok (GetTotemInfo ok, UnitPower ok)")
 
     local fn = function() end
     local env = checkAPIs()
@@ -2093,7 +2093,7 @@ do
         { "Layout", "C_EditMode" }, { "Layout", "EditModeManagerFrame" }, { "Layout", "MainActionBar" },
         { "Layout", "EditModePresetLayoutManager" },
         { "XP bar", "UnitXPMax" }, { "Bag button", "ToggleAllBags" }, { "Shaman area", "GetTotemInfo" },
-        { "Shaman area", "GetWeaponEnchantInfo" }, { "Shaman area", "UnitPower" },
+        { "Shaman area", "UnitPower" },
     }) do
         env = checkAPIs()
         env[case[2]] = nil
@@ -2107,7 +2107,7 @@ do
     check("zhTW check: xp bar line", lineFor(out, "經驗條"), "經驗條：可用（UnitXP 可用, UnitXPMax 可用）")
     check("zhTW check: bag button line", lineFor(out, "背包按鈕"):match("^(.-)：可用"), "背包按鈕")
     check("zhTW check: shaman area line", lineFor(out, "薩滿區"),
-        "薩滿區：可用（GetTotemInfo 可用, GetWeaponEnchantInfo 可用, UnitPower 可用）")
+        "薩滿區：可用（GetTotemInfo 可用, UnitPower 可用）")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
@@ -4663,29 +4663,8 @@ do
 
     ctx.weapon = { true, 1234567, 0, 563, true, 61000, 0, 2, n = 8 }
     ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: only the off-hand enchant, never the main hand's", ctx.slots(), "ohIcon 1:01")
-    check("class rail: the off-hand tooltip names the hand and the time", ctx.tooltip(1), "Off hand / 1:01")
-    ctx.t, ctx.calls = 160.5, 0
-    ctx.tickers[1].fn()
-    check("class rail: a tick counts the enchant down from the cached time without API calls",
-        ctx.slots() .. " / " .. ctx.calls, "ohIcon 0 / 0")
-    ctx.t = 161
-    ctx.tickers[1].fn()
-    check("class rail: an expired weapon enchant's slot goes", ctx.slots(), "")
-    ctx.t = 100
-    ctx.weapon = { false, 0, 0, nil, true, 5000, 0, n = 8 }
-    ctx.fire("UNIT_INVENTORY_CHANGED", "target")
-    check("class rail: another unit's inventory is ignored", ctx.slots(), "")
-    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: off hand only", ctx.slots() .. " / " .. ctx.tooltip(1), "ohIcon 5 / Off hand / 0:05")
-    ctx.weapon = { true, 90000, 0, false, nil, nil, n = 6 }
-    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: a main-hand enchant alone shows nothing", ctx.slots(), "")
-    ctx.weapon = { true, 90000, 0, true, 30000, 0, n = 6 }
-    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: six-return weapon info", ctx.slots(), "ohIcon 30")
+    check("class rail: weapon enchants never show", ctx.slots(), "")
     ctx.weapon = { n = 8 }
-    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
 
     ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 640, icon = "lsIcon" }
     ctx.fire("UNIT_AURA", "target")
@@ -4711,9 +4690,7 @@ do
 
     ctx.totems[3] = { true, "Healing Stream Totem", 100, 60, "waterIcon" }
     ctx.fire("PLAYER_TOTEM_UPDATE")
-    ctx.weapon = { false, 0, 0, nil, true, 30000, 0, 2, n = 8 }
-    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: totems, then the enchant, then the shield", ctx.slots(), "waterIcon 60 | ohIcon 30 | wsIcon ")
+    check("class rail: totems, then the shield", ctx.slots(), "waterIcon 60 | wsIcon ")
 
     ctx.mana = { 450, 1200 }
     ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
@@ -4803,8 +4780,8 @@ do
     ctx.weapon = { true, 60000, 0, 1, true, 60000, 0, 2, n = 8 }
     ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 160, icon = "lsIcon" }
     ctx.run("layout on")
-    check("class rail: six slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
-        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[6].points[1][4]), "6 -90 90")
+    check("class rail: five slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
+        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[5].points[1][4]), "5 -72 72")
 
     local many = {}
     for i = 1, 14 do
@@ -4814,11 +4791,6 @@ do
     check("class rail: twelve slots at most", ("%d %d %d"):format(#ctx.shownSlots(), ctx.shownSlots()[1].points[1][4],
         ctx.shownSlots()[12].points[1][4]), "12 -198 198")
 
-    ctx = loadShaman({ locale = "zhTW" })
-    ctx.weapon = { true, 60000, 0, 1, true, 30000, 0, 0, n = 8 }
-    ctx.run("layout on")
-    check("zhTW class rail weapon tooltip", ctx.tooltip(1), "副手 / 0:30")
-
     ctx = loadShaman({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
         db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
     ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
@@ -4827,7 +4799,7 @@ do
     local reg = ctx.frame.registered
     check("class rail: unit events registered (falling back to every unit)", tostring(reg.UNIT_AURA) .. " "
         .. tostring(reg.UNIT_POWER_UPDATE) .. " " .. tostring(reg.UNIT_MAXPOWER) .. " "
-        .. tostring(reg.UNIT_INVENTORY_CHANGED) .. " " .. tostring(reg.PLAYER_TOTEM_UPDATE), "true true true true true")
+        .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " " .. tostring(reg.UNIT_INVENTORY_CHANGED), "true true true true nil")
 end
 
 -- Store.RegisterUnitEvent: the player only where the client has RegisterUnitEvent, else every unit (U5 review).

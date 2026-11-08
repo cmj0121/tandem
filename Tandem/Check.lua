@@ -54,7 +54,7 @@ Check.FEATURES = {
         { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "ToggleAllBags" },
     } },
     { name = "Shaman area", needs = {
-        { "GetTotemInfo" }, { "GetWeaponEnchantInfo" }, { "UnitPower" },
+        { "GetTotemInfo" }, { "UnitPower" },
     } },
 }
 

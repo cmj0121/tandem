@@ -1,8 +1,8 @@
 local _, ns = ...
 
--- The Shaman class rail (stage 12, D5, D12, D13): a slot per active totem in Earth, Fire, Water, Air order, for an
--- active off-hand weapon enchant (the main hand's is left out: the user does not want it shown) and for Lightning
--- Shield or Water Shield with its charges, plus the mana line along the rail bottom.
+-- The Shaman class rail (stage 12, D5, D12, D13): a slot per active totem in Earth, Fire, Water, Air order and for
+-- Lightning Shield or Water Shield with its charges, plus the mana line along the rail bottom. Weapon enchants are
+-- left out: the user does not want their timers shown.
 -- State and timers only (PLAN decision 6). Each event refreshes its section's cache from the client; the rail's
 -- ticker only re-renders the cached expirations.
 local Shaman = {}
@@ -12,11 +12,10 @@ local Shaman = {}
 local TOTEMS = { 2, 1, 3, 4 }
 -- Lightning Shield (rank 1) and Water Shield; a client without Water Shield names only Lightning Shield.
 local SHIELDS = { 324, 24398 }
-local OFF_HAND = 17
 local MANA = 0
 local MANA_COLOR = { 0, 0.44, 0.87 }
 
-local totems, weapons, shield, mana = {}, {}, nil, nil
+local totems, shield, mana = {}, nil, nil
 local shieldNames = {}
 
 local function safeAll(...)
@@ -39,16 +38,8 @@ local function call(fn, ...)
     return safe(pcall(fn, ...))
 end
 
-local function pack(...)
-    return { n = select("#", ...), ... }
-end
-
 local function number(v)
     return type(v) == "number" and v or nil
-end
-
-local function now()
-    return number(call(GetTime)) or 0
 end
 
 local function updateTotems()
@@ -59,21 +50,6 @@ local function updateTotems()
             start, duration = number(start), number(duration)
             totems[#totems + 1] = { label = name, icon = icon,
                 expires = start and duration and duration > 0 and start + duration or nil }
-        end
-    end
-end
-
--- GetWeaponEnchantInfo returns (hasMain, mainMs, mainCharges, mainID, hasOff, offMs, ...) on current clients and
--- (hasMain, mainMs, mainCharges, hasOff, offMs, offCharges) on 1.12-style ones; expirations are ms left.
-local function updateWeapons()
-    local v = pack(call(GetWeaponEnchantInfo))
-    local off, t = v.n <= 6 and 4 or 5, now()
-    weapons = {}
-    for _, hand in ipairs({ { "Off hand", OFF_HAND, v[off], v[off + 1] } }) do
-        local ms = number(hand[4])
-        if hand[3] and ms then
-            weapons[#weapons + 1] = { label = ns.L[hand[1]], icon = call(GetInventoryItemTexture, "player", hand[2]),
-                expires = t + ms / 1000 }
         end
     end
 end
@@ -132,25 +108,24 @@ end
 
 local SECTIONS = {
     PLAYER_TOTEM_UPDATE = { updateTotems },
-    UNIT_INVENTORY_CHANGED = { updateWeapons },
     UNIT_AURA = { updateShield },
     UNIT_POWER_UPDATE = { updateMana },
     UNIT_MAXPOWER = { updateMana },
 }
-local ALL = { updateTotems, updateWeapons, updateShield, updateMana }
+local ALL = { updateTotems, updateShield, updateMana }
 
 function Shaman.Ready()
     return ns.Check.Ready("Shaman area")
 end
 
 -- Refreshes the sections event touches from the client, every section for nil, and hands the rail its slots:
--- totems, then weapon enchants, then the shield.
+-- totems, then the shield.
 function Shaman.Update(event)
     for _, fn in ipairs(event and SECTIONS[event] or ALL) do
         fn()
     end
     local list = {}
-    for _, group in ipairs({ totems, weapons, { shield } }) do
+    for _, group in ipairs({ totems, { shield } }) do
         for _, e in ipairs(group) do
             list[#list + 1] = e
         end
