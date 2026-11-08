@@ -3653,8 +3653,7 @@ do
     local t = savedTandem(ctx.state)
     check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
         "TOPLEFT UIParent TOPLEFT 12 -12")
-    check("layout corners: quest tracker under the micro menu", anchorText(systemOf(t, 13, 1)),
-        "TOPLEFT UIParent TOPLEFT 12 -64")
+    check("layout corners: quest tracker left where the player has it", systemOf(t, 13, 1).anchorInfo.offsetX, 99)
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3682,19 +3681,8 @@ do
     ctx = loadLayout({ env = { Enum = noMicro }, sizes = { MicroMenuContainer = { 250, 30 } } })
     ctx.run("layout on")
     t = savedTandem(ctx.state)
-    check("layout corners: no micro menu system puts the quest tracker in its place",
-        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. anchorText(systemOf(t, 13, 1)),
-        "99 TOPLEFT UIParent TOPLEFT 12 -12")
-    ctx = loadLayout({ env = { Enum = cornerEnum() }, sizes = { MicroMenuContainer = { 250, 30 } } })
-    ctx.run("layout on")
-    check("layout corners: quest tracker follows the measured micro menu height",
-        anchorText(systemOf(savedTandem(ctx.state), 13, 1)), "TOPLEFT UIParent TOPLEFT 12 -54")
-    local noTracker = cornerEnum()
-    noTracker.EditModeSystem.ObjectiveTracker = nil
-    ctx = loadLayout({ env = { Enum = noTracker } })
-    ctx.run("layout on")
-    check("layout corners: no tracker system leaves the quest tracker",
-        systemOf(savedTandem(ctx.state), 13, 1).anchorInfo.offsetX, 99)
+    check("layout corners: no micro menu system leaves the micro menu and the quest tracker",
+        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX, "99 99")
 
     local noSize = copyTable(LAYOUT_ENUM)
     noSize.EditModeChatFrameSetting = nil
