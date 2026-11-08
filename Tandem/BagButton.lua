@@ -76,12 +76,21 @@ function BagButton.OpenAll()
     else
         open = not was
     end
-    if slots > 0 then
-        pcall(open and _G.OpenBag or _G.CloseBag, reagent)
+    local function apply(when)
+        if slots > 0 then
+            pcall(open and _G.OpenBag or _G.CloseBag, reagent)
+        end
+        ns.Debug.Log(("bags %s: main %s->%s reagent %s slots %d was %s -> %s now %s"):format(when,
+            tostring(before), tostring(after), tostring(reagent), slots, tostring(was), tostring(open),
+            tostring(reagent and bagOpen(reagent))))
     end
-    ns.Debug.Log(("bags: main %s->%s reagent %s slots %d was %s -> %s now %s"):format(tostring(before),
-        tostring(after), tostring(reagent), slots, tostring(was), tostring(open),
-        tostring(reagent and bagOpen(reagent))))
+    apply("now")
+    -- Again on the next frame, after Blizzard's bag windows have finished showing (one may close the others).
+    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+        C_Timer.After(0, function()
+            apply("next frame")
+        end)
+    end
 end
 
 -- Points every key bound to "open all bags" (B by default) at Tandem's opener with an override binding; waits for
