@@ -3857,6 +3857,9 @@ do
     function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
     function totem.ClearAllPoints(self) self.points = {} end
     function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
+    totem.strata = "MEDIUM"
+    function totem.GetFrameStrata(self) return self.strata end
+    function totem.SetFrameStrata(self, s) self.strata = s end
     local ticker = {}
     function ticker.Cancel(self) self.cancelled = true end
     local timer = { NewTicker = function(_, fn)
@@ -3872,6 +3875,7 @@ do
     ctx.run("layout on")
     check("totem bar: right of the bars", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
     check("totem bar: position manager skips it", totem.ignoreFramePositionManager, true)
+    check("totem bar: drawn above the unit frames", totem.strata, "HIGH")
     totem.points = { { "CENTER", "UIParent", "CENTER", 0, 0 } }
     ctx.state.combat = true
     ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
@@ -3891,6 +3895,24 @@ do
     end
     ticker.fn()
     check("totem bar: the watcher leaves a bar in place alone", moves, 0)
+    local beside = ctx.state.frames.MultiBarBottomLeft
+    function beside.GetRight() return 1000 end
+    function beside.GetBottom() return 90 end
+    function beside.GetTop() return 130 end
+    function totem.GetBottom() return 100 end
+    function totem.GetTop() return 120 end
+    function totem.GetLeft() return 1008 end
+    ticker.fn()
+    check("totem bar: on screen where its anchor says, left alone", moves, 0)
+    function totem.GetLeft() return 600 end
+    ticker.fn()
+    check("totem bar: anchor intact but moved on screen, put back", moves, 1)
+    function totem.GetLeft() return 1008 end
+    function totem.GetBottom() return 200 end
+    function totem.GetTop() return 220 end
+    ticker.fn()
+    check("totem bar: moved up on screen, put back", moves, 2)
+    totem.GetBottom, totem.GetTop, totem.GetLeft = nil, nil, nil
     totem.points = { { "CENTER", "UIParent", "CENTER", 0, 0 } }
     ctx.state.combat = true
     ticker.fn()
@@ -3901,6 +3923,7 @@ do
     ctx.run("layout off")
     check("totem bar: back to its points on off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
     check("totem bar: position manager flag restored", totem.ignoreFramePositionManager, nil)
+    check("totem bar: strata restored", totem.strata, "MEDIUM")
     check("totem bar: the watcher stops on off", ticker.cancelled, true)
     local described = ctx.run("check")
     check("totem bar: /tandem check ends with its state", described:match("Totem bar: [^|]*$") ~= nil, true)
