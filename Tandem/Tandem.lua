@@ -96,6 +96,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Upgrade.OnCombatEnd()
         ns.ActionBorders.Schedule()
         ns.Layout.OnCombatEnd()
+        ns.BagButton.OnCombatEnd()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then

@@ -4532,6 +4532,57 @@ do
         "true " .. GENERAL_ICON .. " 19/38")
 end
 
+-- The reagent bag: its own bag row icon, opened and closed with the other bags, and B pointed at the same opener.
+do
+    local open, binds, cleared = {}, {}, 0
+    local enum = copyTable(LAYOUT_ENUM)
+    enum.BagIndex = { ReagentBag = 5 }
+    local ctx
+    ctx = loadBags({ env = {
+        Enum = enum,
+        IsBagOpen = function(bag) return open[bag] end,
+        OpenBag = function(bag) open[bag] = true end,
+        CloseBag = function(bag) open[bag] = nil end,
+        ToggleAllBags = function()
+            ctx.toggled = ctx.toggled + 1
+            open[0] = not open[0] or nil
+        end,
+        GetBindingKey = function(action) if action == "OPENALLBAGS" then return "B", "SHIFT-B" end end,
+        SetOverrideBindingClick = function(owner, priority, key, button)
+            binds[#binds + 1] = key .. ">" .. button .. ">" .. tostring(owner.name) .. ">" .. tostring(priority)
+        end,
+        ClearOverrideBindings = function() cleared = cleared + 1 end,
+    } })
+    ctx.bags[5] = { 20, 7, 0 }
+    ctx.run("layout on")
+    check("reagent bag: its own icon after the profession bags", ctx.text(),
+        GENERAL_ICON .. " 19/38 | icon35 7/20")
+    local r = ctx.icons()[2]
+    r.scripts.OnEnter(r)
+    check("reagent bag: tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Reagent bag / Bag5 / 7/20 free / Click to open your bags")
+    r.scripts.OnClick(r, "LeftButton")
+    check("reagent bag: opens with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "true true")
+    r.scripts.OnClick(r, "LeftButton")
+    check("reagent bag: closes with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "nil nil")
+    ctx.fire("PLAYER_LOGIN")
+    check("reagent bag: every open-all-bags key clicks Tandem's opener", table.concat(binds, " ") .. " " .. cleared,
+        "B>TandemOpenAllBags>TandemOpenAllBags>false SHIFT-B>TandemOpenAllBags>TandemOpenAllBags>false 1")
+    ctx.bags[5] = nil
+    open = {}
+    r.scripts.OnClick(r, "LeftButton")
+    check("reagent bag: none equipped opens only the others", tostring(open[0]) .. " " .. tostring(open[5]),
+        "true nil")
+
+    binds = {}
+    ctx.state.combat = true
+    ctx.fire("PLAYER_LOGIN")
+    check("reagent bag: no binding change in combat", #binds, 0)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("reagent bag: bound when combat ends", #binds, 2)
+end
+
 -- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).
 
 -- Loads the layout as a Shaman: ctx.t is GetTime; ctx.totems[slot] = { have, name, start, duration, icon };

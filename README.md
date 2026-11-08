@@ -346,6 +346,9 @@ bags. It replaces the default bag bar while the layout is on, and needs the `Bag
 
 At every login, layout on or off, Tandem turns on the client's combined bags (the `combinedBags` setting), so `B`
 opens one window with all your bags. You can switch it off in the options; it comes back on at the next login.
+Tandem also points every key bound to "Open all bags" (`B` by default) at its own opener, which opens and closes the
+reagent bag together with the others; when the reagent bag has slots, it gets its own icon at the left end of the bag
+row, titled `Reagent bag`, and clicking any icon opens it too.
 
 ### Shaman class area
 

@@ -2,7 +2,9 @@ local _, ns = ...
 
 -- The bag row (stage 12, D5, D12): one row of icon buttons at the bottom right while the Tandem layout is on, the
 -- general bags first, then one icon per profession bag family, each with its free/total on its lower edge. A click
--- on any icon opens all bags. The default bag bar is faded through Layout.Conceal, never hidden.
+-- on any icon opens all bags, the reagent bag included. The default bag bar is faded through Layout.Conceal, never
+-- hidden. At login Tandem turns on combined bags and points the "open all bags" key (B) at the same opener through an
+-- override binding (no hook).
 local BagButton = {}
 ns.BagButton = BagButton
 
@@ -14,7 +16,7 @@ local BACKPACK = "Interface\\Icons\\INV_Misc_Bag_08"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local WHITE, YELLOW, RED = { 1, 1, 1 }, { 1, 0.82, 0 }, { 1, 0.1, 0.1 }
 
-local row, on
+local row, on, opener, pendingBind
 local icons = {}
 
 local function call(fn, ...)
@@ -36,6 +38,74 @@ local function api(name)
     return c[name] or _G[name]
 end
 
+-- The reagent bag's container index, or nil on a client without one.
+local function reagentBag()
+    local v = call(function()
+        return Enum.BagIndex.ReagentBag
+    end)
+    return type(v) == "number" and v or nil
+end
+
+local function bagOpen(bag)
+    return call(_G.IsBagOpen, bag) and true or false
+end
+
+-- Whether the main bag window (combined, or the backpack) is open.
+local function mainOpen()
+    local combined = _G.ContainerFrameCombinedBags
+    if type(combined) == "table" and call(combined.IsShown, combined) then
+        return true
+    end
+    return bagOpen(0)
+end
+
+-- Toggles all bags with Blizzard's ToggleAllBags, then opens or closes the reagent bag (when it has slots) with
+-- the main window, which ToggleAllBags may leave out.
+function BagButton.OpenAll()
+    pcall(_G.ToggleAllBags)
+    local reagent = reagentBag()
+    if not reagent or number(call(api("GetContainerNumSlots"), reagent)) == 0 then
+        return
+    end
+    local open = mainOpen()
+    if open and not bagOpen(reagent) then
+        pcall(_G.OpenBag, reagent)
+    elseif not open and bagOpen(reagent) then
+        pcall(_G.CloseBag, reagent)
+    end
+end
+
+-- Points every key bound to "open all bags" (B by default) at Tandem's opener with an override binding; waits for
+-- the end of combat, when bindings cannot change.
+local function bindKeys()
+    if type(CreateFrame) ~= "function" or type(_G.SetOverrideBindingClick) ~= "function" then
+        return
+    end
+    if call(InCombatLockdown) then
+        pendingBind = true
+        return
+    end
+    pendingBind = nil
+    if not opener then
+        opener = CreateFrame("Button", "TandemOpenAllBags", UIParent)
+        opener:SetScript("OnClick", BagButton.OpenAll)
+    end
+    pcall(_G.ClearOverrideBindings, opener)
+    local keys = { pcall(_G.GetBindingKey, "OPENALLBAGS") }
+    for i = 2, #keys do
+        if type(keys[i]) == "string" then
+            pcall(_G.SetOverrideBindingClick, opener, false, keys[i], "TandemOpenAllBags")
+        end
+    end
+end
+
+-- Binds the keys deferred by combat.
+function BagButton.OnCombatEnd()
+    if pendingBind then
+        bindKeys()
+    end
+end
+
 -- At login: turns on the client's combined bags (the "combinedBags" CVar), so B and the bag row open one bag
 -- window with every bag. Only sets a CVar the client has; the player can still switch it off in the options, and it
 -- comes back on at the next login.
@@ -46,6 +116,7 @@ function BagButton.OnLogin()
     if type(v) == "string" and v ~= "1" then
         pcall(set, "combinedBags", "1")
     end
+    bindKeys()
 end
 
 local function bagIcon(bag)
@@ -60,7 +131,8 @@ local function bagName(bag)
 end
 
 -- Returns the general group and the profession groups in family order, each { family, free, total, icon, names }
--- for bags 0..4; bags without slots are skipped and names lists the bag names the client gives.
+-- for bags 0..4, then the reagent bag as its own group (family "reagent") when it has slots; bags without slots are
+-- skipped and names lists the bag names the client gives.
 function BagButton.Count()
     local numSlots, numFree = api("GetContainerNumSlots"), api("GetContainerNumFreeSlots")
     local general = { family = 0, free = 0, total = 0, icon = BACKPACK, names = {} }
@@ -86,6 +158,12 @@ function BagButton.Count()
     table.sort(families, function(a, b)
         return a.family < b.family
     end)
+    local reagent = reagentBag()
+    local total = reagent and number(call(numSlots, reagent)) or 0
+    if total > 0 then
+        families[#families + 1] = { family = "reagent", free = number((call(numFree, reagent))), total = total,
+            icon = bagIcon(reagent), names = { bagName(reagent) } }
+    end
     return general, families
 end
 
@@ -103,7 +181,8 @@ local function showTooltip(icon)
     end
     local L = ns.L
     tip:SetOwner(icon, "ANCHOR_TOPLEFT")
-    tip:SetText(group.family == 0 and L["General bags"] or L["Profession bag"])
+    tip:SetText(group.family == 0 and L["General bags"] or group.family == "reagent" and L["Reagent bag"]
+        or L["Profession bag"])
     if #group.names > 0 then
         tip:AddLine(table.concat(group.names, ", "), 1, 1, 1)
     end
@@ -131,9 +210,7 @@ local function iconButton(i)
     icon.icon:SetAllPoints(icon)
     icon.count = icon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     icon.count:SetPoint("BOTTOM", icon, "BOTTOM", 0, 1)
-    icon:SetScript("OnClick", function()
-        ToggleAllBags()
-    end)
+    icon:SetScript("OnClick", BagButton.OpenAll)
     icon:SetScript("OnEnter", showTooltip)
     icon:SetScript("OnLeave", hideTooltip)
     icons[i] = icon
