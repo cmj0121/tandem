@@ -1,11 +1,12 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights
--- and the class trainer spells seen; every other key an older schema saved is dropped on load.
+-- and the class trainer spells seen and the UI layout state; every other key an older schema saved is dropped on
+-- load.
 local Store = { readOnly = false }
 ns.Store = Store
 
-local SCHEMA = 6
+local SCHEMA = 7
 Store.SCHEMA = SCHEMA
 -- Locale-independent stat keys a weights override may carry: sp is spell damage and healing, heal healing only, dps a
 -- weapon's damage per second.
@@ -21,7 +22,8 @@ end
 local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
-local KEPT = { schemaVersion = true, weights = true, trainers = true }
+local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true }
+local MAX_LAYOUT_NAME = 64
 
 local floor = math.floor
 
@@ -38,6 +40,7 @@ local function newDB()
         schemaVersion = SCHEMA,
         weights = {},
         trainers = {},
+        layout = {},
     }
 end
 
@@ -101,6 +104,39 @@ local function copyWeights(v, drop)
     return out
 end
 
+local function isAngle(v)
+    return isNum(v) and v >= 0 and v < 360
+end
+
+-- The check for each layout field: on is a boolean, previous { name, type } the layout active before Tandem's, tot
+-- the showTargetOfTarget CVar value before Tandem set it, minimap { angle = degrees|nil, hidden = bool|nil } the
+-- minimap button's place and visibility.
+local LAYOUT_FIELDS = {
+    on = function(v)
+        return type(v) == "boolean"
+    end,
+    previous = function(v)
+        return type(v) == "table" and type(v.name) == "string" and v.name ~= "" and #v.name <= MAX_LAYOUT_NAME
+            and isInt(v.type, 0)
+    end,
+    tot = function(v)
+        return type(v) == "string"
+    end,
+    minimap = function(v)
+        return type(v) == "table" and (v.angle == nil or isAngle(v.angle))
+            and (v.hidden == nil or type(v.hidden) == "boolean")
+    end,
+}
+
+local function copyLayoutField(field, v)
+    if field == "previous" then
+        return { name = v.name, type = v.type }
+    elseif field == "minimap" then
+        return { angle = v.angle, hidden = v.hidden }
+    end
+    return v
+end
+
 -- Copies every entry of raw that passes its type check into a fresh current-schema table; every key a current db
 -- does not hold counts as one drop.
 local function migrate(raw, report)
@@ -139,6 +175,14 @@ local function migrate(raw, report)
                 end
             end
             db.trainers[classFile] = clean
+        else
+            drop()
+        end
+    end
+
+    for field, v in pairs(entries(raw.layout)) do
+        if LAYOUT_FIELDS[field] and LAYOUT_FIELDS[field](v) then
+            db.layout[field] = copyLayoutField(field, v)
         else
             drop()
         end
@@ -215,6 +259,23 @@ function Store.TrainerSpells(classFile)
     end
 end
 
+-- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil, minimap = { angle,
+-- hidden }|nil }; empty (off) when the db is newer (kept raw).
+function Store.Layout()
+    return not Store.readOnly and Store.db.layout or {}
+end
+
+-- Sets one layout field (on, previous, tot or minimap) to value, or clears it with nil; false when invalid or
+-- read-only.
+function Store.SetLayout(field, value)
+    local valid = LAYOUT_FIELDS[field]
+    if Store.readOnly or not valid or (value ~= nil and not valid(value)) then
+        return false
+    end
+    Store.db.layout[field] = value ~= nil and copyLayoutField(field, value) or nil
+    return true
+end
+
 -- Returns v, or nil when the client marks it secret.
 function Store.Safe(v)
     if issecretvalue and issecretvalue(v) then
@@ -226,4 +287,13 @@ end
 -- Registers event on frame; returns false, registering nothing, when the client rejects the name.
 function Store.RegisterEvent(frame, event)
     return (pcall(frame.RegisterEvent, frame, event))
+end
+
+-- Registers event on frame for unit only where the client has RegisterUnitEvent, else for every unit; returns false,
+-- registering nothing, when the client rejects the name.
+function Store.RegisterUnitEvent(frame, event, unit)
+    if type(frame.RegisterUnitEvent) == "function" and pcall(frame.RegisterUnitEvent, frame, event, unit) then
+        return true
+    end
+    return Store.RegisterEvent(frame, event)
 end

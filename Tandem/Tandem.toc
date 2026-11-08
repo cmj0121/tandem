@@ -6,7 +6,10 @@
 ## Author: cmj
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\Tandem\Media\icon
-## SavedVariables: TandemDB
+## SavedVariables: TandemDB, TandemDebug
+## AddonCompartmentFunc: Tandem_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: Tandem_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: Tandem_OnCompartmentLeave
 
 Locales\enUS.lua
 Locales\zhTW.lua
@@ -18,6 +21,13 @@ ActionBorders.lua
 Trainer.lua
 View.lua
 Check.lua
+Layout.lua
+Debug.lua
+XPBar.lua
+BagButton.lua
+ClassArea.lua
+Classes\Shaman.lua
+Launcher.lua
 QuestPick.lua
 Upgrade.lua
 ItemBorders.lua

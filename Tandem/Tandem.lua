@@ -9,8 +9,15 @@ for _, event in ipairs({
     "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD",
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
+    "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
+    "PLAYER_TOTEM_UPDATE",
 }) do
     ns.Store.RegisterEvent(frame, event)
+end
+-- The class area's unit events, for the player only where the client allows it.
+local PLAYER_EVENTS = { UNIT_AURA = true, UNIT_POWER_UPDATE = true, UNIT_MAXPOWER = true }
+for event in pairs(PLAYER_EVENTS) do
+    ns.Store.RegisterUnitEvent(frame, event, "player")
 end
 
 local function onLoaded(self, event, loadedName)
@@ -28,7 +35,8 @@ local function onLoaded(self, event, loadedName)
         print(L["%s: saved data uses newer schema %d; recording is off until the addon is updated"]:format(
             addonName, report.version))
     elseif report.status == "migrated" and type(report.version) == "number" and report.version >= 0
-        and report.version < math.huge and report.version == math.floor(report.version) then
+        and report.version < math.huge and report.version == math.floor(report.version)
+        and (report.version < 6 or report.dropped > 0) then
         print(L["%s: saved data upgraded from schema %d to %d"]:format(addonName, report.version, ns.Store.SCHEMA))
     elseif report.status == "reset" then
         print(L["%s: saved data was unreadable and has been reset"]:format(addonName))
@@ -39,7 +47,9 @@ local function onLoaded(self, event, loadedName)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
+    if PLAYER_EVENTS[event] or event == "PLAYER_TOTEM_UPDATE" then
+        ns.ClassArea.OnEvent(event, ...)
+    elseif event == "ADDON_LOADED" then
         onLoaded(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         ns.QuestPick.OnItemInfo(...)
@@ -65,13 +75,18 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Upgrade.OnBagUpdate()
         ns.ItemBorders.Schedule()
+        ns.BagButton.Update()
     elseif event == "PLAYER_LOGIN" then
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
+        ns.Layout.Sync()
+        ns.Launcher.OnLogin()
+        ns.Debug.OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
         if event == "PLAYER_LEVEL_UP" then
+            ns.XPBar.Update(...)
             ns.Upgrade.Invalidate()
             ns.ItemBorders.Schedule()
         end
@@ -79,5 +94,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         ns.Upgrade.OnCombatEnd()
         ns.ActionBorders.Schedule()
+        ns.Layout.OnCombatEnd()
+    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+        ns.Layout.Sync()
+    elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
+        ns.XPBar.Update()
     end
 end)

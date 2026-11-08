@@ -14,6 +14,9 @@ local function printUsage()
     print(L["  /tandem weights spec <1|2|3|auto> - pick the talent tree, or follow your talents"])
     print(L["  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)"])
     print(L["  /tandem weights reset - drop your own weights for the active tree"])
+    print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
+    print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
+    print(L["  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
@@ -117,6 +120,57 @@ local function weights(args)
     showWeights(className, classFile, level)
 end
 
+-- layout [on|off] (stage 12, D4): no argument prints the state.
+local function layout(args)
+    local sub = args[1]
+    if #args == 0 then
+        print(ns.Layout.IsOn() and L["Tandem: layout on"] or L["Tandem: layout off"])
+        return
+    end
+    if #args ~= 1 or (sub ~= "on" and sub ~= "off") then
+        printUsage()
+        return
+    end
+    local ok, reason = ns.Layout.Set(sub == "on")
+    print(ns.Layout.Reply(sub == "on", ok, reason))
+end
+
+-- minimap [on|off] (stage 12, U6): no argument toggles; works in combat.
+local function minimap(args)
+    local sub = args[1]
+    if #args > 1 or (sub and sub ~= "on" and sub ~= "off") then
+        printUsage()
+        return
+    end
+    local shown = sub == "on" or (sub == nil and not ns.Launcher.IsButtonShown())
+    ns.Launcher.SetButtonShown(shown)
+    print(shown and L["Tandem: minimap button shown"] or L["Tandem: minimap button hidden"])
+end
+
+-- /tandem debug [on|off]: toggles the recorder (no argument flips it).
+local function debug(args)
+    local sub = args[1]
+    if #args > 1 or (sub ~= nil and sub ~= "on" and sub ~= "off" and sub ~= "snap") then
+        printUsage()
+        return
+    end
+    if sub == "snap" then
+        if not ns.Debug.IsOn() then
+            ns.Debug.Set(true)
+        end
+        ns.Debug.Snapshot("command")
+        print(L["Tandem: debug recording on; /reload saves it to disk"])
+        return
+    end
+    local on = sub == "on" or (sub == nil and not ns.Debug.IsOn())
+    local lines = ns.Debug.Set(on)
+    if on then
+        print(L["Tandem: debug recording on; /reload saves it to disk"])
+    else
+        print(L["Tandem: debug recording off (%d lines kept)"]:format(lines))
+    end
+end
+
 -- Subcommands refused in combat (decision 9), before their arguments are read.
 local NOT_IN_COMBAT = { check = true, weights = true }
 
@@ -133,6 +187,12 @@ function Commands.Run(msg)
         check()
     elseif sub == "weights" then
         weights(args)
+    elseif sub == "layout" then
+        layout(args)
+    elseif sub == "minimap" then
+        minimap(args)
+    elseif sub == "debug" then
+        debug(args)
     else
         printUsage()
     end

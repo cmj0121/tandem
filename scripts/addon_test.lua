@@ -145,30 +145,31 @@ local function dump(v)
     return "{" .. table.concat(out, ",") .. "}"
 end
 
--- Returns true for a fresh schema-6 db: no keys but schemaVersion and empty weights and trainers.
+-- Returns true for a fresh schema-7 db: no keys but schemaVersion and empty weights, trainers and layout.
 local function isCurrent(db)
-    if type(db) ~= "table" or db.schemaVersion ~= 6 or type(db.weights) ~= "table" or next(db.weights) ~= nil
-        or type(db.trainers) ~= "table" or next(db.trainers) ~= nil then
+    if type(db) ~= "table" or db.schemaVersion ~= 7 or type(db.weights) ~= "table" or next(db.weights) ~= nil
+        or type(db.trainers) ~= "table" or next(db.trainers) ~= nil or type(db.layout) ~= "table"
+        or next(db.layout) ~= nil then
         return false
     end
     local keys = 0
     for _ in pairs(db) do
         keys = keys + 1
     end
-    return keys == 3
+    return keys == 4
 end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v6 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v7 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
-    check("Store.SCHEMA is 6", addon.Store.SCHEMA, 6)
+    check("Store.SCHEMA is 7", addon.Store.SCHEMA, 7)
 end
 
 do
     local _, printed, env = loadWithDB("garbage")
-    check("garbage db becomes a fresh v6 table", isCurrent(env.TandemDB), true)
+    check("garbage db becomes a fresh v7 table", isCurrent(env.TandemDB), true)
     check("garbage db prints a reset line", printed[2], "Tandem: saved data was unreadable and has been reset")
 end
 
@@ -177,7 +178,7 @@ do
     check("zhTW reset line", printed[2], "Tandem：存檔資料無法讀取，已重設")
 end
 
--- Schema 6 (stage 11, D4): a v5 db keeps its weights and trainers; every other key is dropped and counted.
+-- Schema 6 (stage 11, D4), now 7: a v5 db keeps its weights and trainers; every other key is dropped and counted.
 do
     local weights = { ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5 } } } }
     local trainers = { MAGE = { [116] = { level = 4, rank = 1 }, [1459] = { level = 1 } } }
@@ -198,13 +199,14 @@ do
         trainers = trainers,
     })
     local db = env.TandemDB
-    check("v5 db migrates to v6", db.schemaVersion, 6)
+    check("v5 db migrates to v7", db.schemaVersion, 7)
     check("v5 db keeps its weights", dump(db.weights), dump(weights))
     check("v5 db keeps its trainers", dump(db.trainers), dump(trainers))
-    check("v5 db keeps nothing else", dump(db), dump({ schemaVersion = 6, weights = weights, trainers = trainers }))
+    check("v5 db keeps nothing else", dump(db), dump({ schemaVersion = 7, weights = weights, trainers = trainers,
+        layout = {} }))
     check("v5 db trainers are read back", addon.Store.TrainerSpells("MAGE")[116].level, 4)
     check("v5 db is writable", addon.Store.readOnly, false)
-    check("v5 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 5 to 6")
+    check("v5 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 5 to 7")
     -- items, stats, statsVersion, scan, npcs, quests, loot, kills, corpses, ui
     check("v5 db counts each dropped key", printed[3], "Tandem: dropped 10 invalid or unused saved entries")
     check("v5 db prints nothing else", #printed, 3)
@@ -212,13 +214,13 @@ end
 
 do
     local _, printed = loadWithDB({ schemaVersion = 5, items = {}, weights = {} }, "zhTW")
-    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 5 升級到 6")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 5 升級到 7")
     check("zhTW dropped line", printed[3], "Tandem：已捨棄 1 筆無效或不再使用的存檔資料")
 end
 
 do
     local _, printed, env = loadWithDB({ unknownTop = true, weights = { ["Tom-Realm"] = { spec = 1 } } })
-    check("old db without a version is migrated to v6", env.TandemDB.schemaVersion, 6)
+    check("old db without a version is migrated to v7", env.TandemDB.schemaVersion, 7)
     check("old db without a version keeps its weights", env.TandemDB.weights["Tom-Realm"].spec, 1)
     check("old db drops unknown top-level keys", env.TandemDB.unknownTop, nil)
     check("old db without a version prints no upgrade line", printed[2],
@@ -227,22 +229,22 @@ end
 
 for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
     local _, printed, env = loadWithDB({ schemaVersion = bad })
-    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 6)
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 7)
     check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 6, weights = { ["Tom-Realm"] = { spec = 3 } },
+    local _, printed, env = loadWithDB({ schemaVersion = 7, weights = { ["Tom-Realm"] = { spec = 3 } },
                                          trainers = { WARRIOR = { [100] = { level = 4 } } } })
-    check("v6 db keeps weights", env.TandemDB.weights["Tom-Realm"].spec, 3)
-    check("v6 db keeps trainers", env.TandemDB.trainers.WARRIOR[100].level, 4)
-    check("valid v6 db prints only the load line", #printed, 1)
+    check("v7 db keeps weights", env.TandemDB.weights["Tom-Realm"].spec, 3)
+    check("v7 db keeps trainers", env.TandemDB.trainers.WARRIOR[100].level, 4)
+    check("valid v7 db prints only the load line", #printed, 1)
 end
 
 -- Store: weights (stage 7, decisions 6-8).
 do
     local _, printed, env = loadWithDB({
-        schemaVersion = 6,
+        schemaVersion = 7,
         weights = {
             ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5, sta = 0 }, [1] = { int = 1 } } },
             ["Jaina-Realm"] = { spec = 4, overrides = { [1] = { int = 1, fire = 2, sp = "x" }, [5] = { str = 1 },
@@ -276,7 +278,7 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 6, weights = "bad" })
+    local addon, printed, env = loadWithDB({ schemaVersion = 7, weights = "bad" })
     check("weights: a non-table weights becomes empty", type(env.TandemDB.weights), "table")
     check("weights: a bad weights counts as dropped", printed[2], "Tandem: dropped 1 invalid or unused saved entries")
     check("STAT_KEYS lists 21 keys", #addon.Store.STAT_KEYS, 21)
@@ -285,7 +287,7 @@ end
 -- Store: class trainer spells (stage 8, decision 4).
 do
     local addon, printed, env = loadWithDB({
-        schemaVersion = 6,
+        schemaVersion = 7,
         trainers = {
             MAGE = { [116] = { level = 4, rank = 1 }, [205] = { level = 8, rank = 2, extra = true },
                      [1459] = { level = 1 }, [0] = { level = 1 }, [10] = { level = 0 }, [11] = { level = 2.5 },
@@ -339,18 +341,18 @@ do
     end
     check("SetTrainerSpell rejections write nothing", mage[1], nil)
 
-    local newer = loadWithDB({ schemaVersion = 7, trainers = { MAGE = { [116] = { level = 4 } } } }).Store
+    local newer = loadWithDB({ schemaVersion = 8, trainers = { MAGE = { [116] = { level = 4 } } } }).Store
     check("newer db blocks SetTrainerSpell", newer.SetTrainerSpell("MAGE", 1, 1, 1), false)
     check("newer db reads no trainer spells", newer.TrainerSpells("MAGE"), nil)
 end
 
 do
-    local newer = { schemaVersion = 7, items = "new format", weights = "new format" }
+    local newer = { schemaVersion = 8, items = "new format", weights = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items .. " " .. env.TandemDB.weights, "new format new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 7; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 8; recording is off until the addon is updated")
     check("newer db prints nothing else", #printed, 2)
     check("newer db is read-only", addon.Store.readOnly, true)
 end
@@ -399,9 +401,13 @@ do
     check("usage lists weights set", help[5],
         "  /tandem weights set <stat> <number> - set your own weight for a stat (0 ignores it)")
     check("usage lists weights reset", help[6], "  /tandem weights reset - drop your own weights for the active tree")
-    check("usage line count", #help, 6)
-    for _, sub in ipairs({ "scan", "count", "gear", "rank", "browse", "export", "map clear", "forget 1 2",
-                           "minimap" }) do
+    check("usage lists layout", help[7],
+        "  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout")
+    check("usage lists minimap", help[8], "  /tandem minimap [on|off] - show or hide the minimap button")
+    check("usage lists debug", help[9],
+        "  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them")
+    check("usage line count", #help, 9)
+    for _, sub in ipairs({ "scan", "count", "gear", "rank", "browse", "export", "map clear", "forget 1 2" }) do
         check(("removed %q prints usage"):format(sub), run(addon, printed, sub)[1], "Tandem commands:")
     end
 end
@@ -901,6 +907,13 @@ function WIDGET.SetMaxLetters(w, n) w.maxLetters = n end
 function WIDGET.SetFrameLevel(w, level) w.level = level end
 function WIDGET.GetFrameLevel(w) return w.level or 1 end
 function WIDGET.SetHitRectInsets(w, ...) w.hitInsets = { ... } end
+function WIDGET.SetMinMaxValues(w, lo, hi) w.min, w.max = lo, hi end
+function WIDGET.SetValue(w, v) w.value = v end
+function WIDGET.EnableMouse(w, v) w.mouse = v end
+function WIDGET.SetTextColor(w, r, g, b) w.textColor = { r, g, b } end
+function WIDGET.SetStatusBarColor(w, r, g, b) w.barColor = { r, g, b } end
+function WIDGET.SetHeight(w, h) w.height = h end
+function WIDGET.SetWidth(w, v) w.width = v end
 -- Six pixels a character stands in for the font's measure.
 function WIDGET.GetStringWidth(w) return 6 * #(w.text or "") end
 
@@ -976,7 +989,7 @@ local function checkAPIs()
         Enum = { TooltipDataType = { Item = 0 } },
         GetQuestItemLink = fn, GetNumQuestChoices = fn,
         QuestInfoRewardsFrame = { RewardButtons = {} },
-        C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn },
+        C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn, GetContainerNumFreeSlots = fn },
         GetInventoryItemLink = fn,
         C_Item = { GetItemStats = fn },
         C_TooltipInfo = { GetItemByID = fn, GetTrainerService = fn },
@@ -984,6 +997,10 @@ local function checkAPIs()
         GetNumTrainerServices = fn, GetTrainerServiceInfo = fn, GetTrainerServiceLevelReq = fn,
         GetActionInfo = fn, C_Spell = { GetSpellInfo = fn }, IsSpellKnown = fn, ActionButton1 = {},
         ContainerFrame1Item1 = {},
+        C_EditMode = { GetLayouts = fn, SaveLayouts = fn, SetActiveLayout = fn }, EditModeManagerFrame = {},
+        EditModePresetLayoutManager = { GetCopyOfPresetLayouts = fn },
+        MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, ToggleAllBags = fn,
+        GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn,
     }
 end
 
@@ -997,13 +1014,24 @@ local function runCheck(addon, printed)
     return byName, out
 end
 
+-- Returns the check output line of the named feature, matched by its (localized) name before an enUS or zhTW colon;
+-- "" when none matches.
+local function lineFor(out, name)
+    for _, line in ipairs(out) do
+        if line:sub(1, #name + 1) == name .. ":" or line:sub(1, #name + 3) == name .. "：" then
+            return line
+        end
+    end
+    return ""
+end
+
 do
     local addon, printed = loadWithDB(nil)
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: nine features", #addon.Check.FEATURES, 9)
-    check("check: six probes", #addon.Check.PROBES, 6)
+    check("check: thirteen features", #addon.Check.FEATURES, 13)
+    check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -1011,7 +1039,8 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
-        "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders" }) do
+        "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
+        "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1073,7 +1102,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on seven features", count, 7)
+    check("check: kept code gates on eleven features", count, 11)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -1091,7 +1120,7 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(addon, printed, "check")
     check("zhTW check: header", out[1], "Tandem API 檢查：")
-    check("zhTW check: feature line", out[#addon.Check.FEATURES - 4],
+    check("zhTW check: feature line", lineFor(out, "物品屬性"),
         "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
 end
 
@@ -1959,11 +1988,10 @@ do
             .. "GetSpecialization missing)")
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
-    local n = 1 + #zh.Check.FEATURES
-    check("zhTW check: talent spec line", out[n - 3]:match("^天賦專精："), "天賦專精：")
-    check("zhTW check: trainer record line", out[n - 2], "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
+    check("zhTW check: talent spec line", lineFor(out, "天賦專精"):match("^天賦專精："), "天賦專精：")
+    check("zhTW check: trainer record line", lineFor(out, "訓練師紀錄"), "訓練師紀錄：缺少（GetNumTrainerServices 缺少, "
         .. "GetTrainerServiceInfo 缺少, GetTrainerServiceLevelReq 缺少, C_TooltipInfo.GetTrainerService 缺少）")
-    check("zhTW check: action bar borders line", out[n - 1], "快捷列邊框：缺少（GetActionInfo 缺少, GetSpellInfo 缺少, "
+    check("zhTW check: action bar borders line", lineFor(out, "快捷列邊框"), "快捷列邊框：缺少（GetActionInfo 缺少, GetSpellInfo 缺少, "
         .. "C_Spell.GetSpellInfo 缺少, IsSpellKnown 缺少, IsPlayerSpell 缺少, ActionButton1 缺少）")
 end
 
@@ -1971,7 +1999,11 @@ end
 
 local PROBES = {
     "LootButton1", "LootFrame.ScrollBox", "LootFrame_Update", "ContainerFrame1Item1.IconBorder",
-    "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon",
+    "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon", "Enum.EditModeSystem.ChatFrame",
+    "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
+    "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
+    "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
+    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
 }
 
 do
@@ -1993,7 +2025,8 @@ do
     local addon, printed = loadWithDB(nil)
     local out = run(addon, printed, "check")
     local n = 1 + #addon.Check.FEATURES
-    check("check: upgrade borders line", out[n], "Upgrade borders: missing (C_Container.GetContainerNumSlots missing, "
+    check("check: upgrade borders line", lineFor(out, "Upgrade borders"),
+        "Upgrade borders: missing (C_Container.GetContainerNumSlots missing, "
         .. "GetContainerNumSlots missing, C_Container.GetContainerItemID missing, GetContainerItemID missing, "
         .. "GetInventoryItemLink missing, ContainerFrame1Item1 missing, ContainerFrameCombinedBags missing)")
     for i, path in ipairs(PROBES) do
@@ -2006,6 +2039,13 @@ do
     addon, printed = loadWithDB(nil, "enUS", { env = {
         LootButton1 = {}, LootFrame = { ScrollBox = {} }, LootFrame_Update = fn,
         ContainerFrame1Item1 = { IconBorder = {}, NewItemTexture = {}, UpgradeIcon = {} },
+        Enum = { EditModeSystem = { ChatFrame = 2, MicroMenu = 10, Minimap = 11, AuraFrame = 12,
+            ObjectiveTracker = 13 },
+            EditModeActionBarSetting = { HideBarArt = 6 } },
+        MainStatusTrackingBarContainer = {}, BagsBar = {},
+        MainActionBar = { EndCaps = {} }, MainMenuBar = { EndCaps = {} },
+        MainMenuBarArtFrame = { LeftEndCap = {} }, MainMenuBarLeftEndCap = {},
+        C_UnitAuras = { GetAuraDataBySpellName = fn }, UnitBuff = fn,
     } })
     out = run(addon, printed, "check")
     for i, path in ipairs(PROBES) do
@@ -2020,10 +2060,55 @@ do
 
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     out = run(zh, zhPrinted, "check")
-    check("zhTW check: upgrade borders line", out[n]:match("^(升級邊框)："), "升級邊框")
+    check("zhTW check: upgrade borders line", lineFor(out, "升級邊框"):match("^(升級邊框)："), "升級邊框")
     check("zhTW check: probe line", out[n + 1], "探測：LootButton1 缺少")
     zh, zhPrinted = loadWithDB(nil, "zhTW", { env = { LootButton1 = {} } })
     check("zhTW check: present probe", run(zh, zhPrinted, "check")[n + 1], "探測：LootButton1 存在")
+end
+
+-- Layout, XP bar, bag button and Shaman area gates in /tandem check (stage 12, unit 1).
+
+do
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    local byName = runCheck(addon, printed)
+    check("check: layout line", byName["Layout"], "Layout: ok (C_EditMode.GetLayouts ok, C_EditMode.SaveLayouts ok, "
+        .. "C_EditMode.SetActiveLayout ok, EditModeManagerFrame ok, "
+        .. "EditModePresetLayoutManager.GetCopyOfPresetLayouts ok, "
+        .. "MainActionBar ok, MainMenuBar missing)")
+    check("check: xp bar line", byName["XP bar"], "XP bar: ok (UnitXP ok, UnitXPMax ok)")
+    check("check: bag button line", byName["Bag button"],
+        "Bag button: ok (C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, ToggleAllBags ok)")
+    check("check: shaman area line", byName["Shaman area"],
+        "Shaman area: ok (GetTotemInfo ok, UnitPower ok)")
+
+    local fn = function() end
+    local env = checkAPIs()
+    env.MainActionBar, env.MainMenuBar = nil, {}
+    env.C_Container = { GetContainerNumSlots = fn, GetContainerItemID = fn }
+    env.GetContainerNumFreeSlots = fn
+    addon = loadWithDB(nil, "enUS", { env = env })
+    check("layout: ready with the classic MainMenuBar", addon.Check.Ready("Layout"), true)
+    check("bag button: ready with the global free-slot API", addon.Check.Ready("Bag button"), true)
+
+    for _, case in ipairs({
+        { "Layout", "C_EditMode" }, { "Layout", "EditModeManagerFrame" }, { "Layout", "MainActionBar" },
+        { "Layout", "EditModePresetLayoutManager" },
+        { "XP bar", "UnitXPMax" }, { "Bag button", "ToggleAllBags" }, { "Shaman area", "GetTotemInfo" },
+        { "Shaman area", "UnitPower" },
+    }) do
+        env = checkAPIs()
+        env[case[2]] = nil
+        addon = loadWithDB(nil, "enUS", { env = env })
+        check(("%s: not ready without %s"):format(case[1], case[2]), addon.Check.Ready(case[1]), false)
+    end
+
+    local zh, zhPrinted = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    local out = run(zh, zhPrinted, "check")
+    check("zhTW check: layout line", lineFor(out, "介面配置"):match("^(.-)：可用"), "介面配置")
+    check("zhTW check: xp bar line", lineFor(out, "經驗條"), "經驗條：可用（UnitXP 可用, UnitXPMax 可用）")
+    check("zhTW check: bag button line", lineFor(out, "背包按鈕"):match("^(.-)：可用"), "背包按鈕")
+    check("zhTW check: shaman area line", lineFor(out, "薩滿區"),
+        "薩滿區：可用（GetTotemInfo 可用, UnitPower 可用）")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
@@ -3270,6 +3355,1700 @@ do
     check("loot borders: gate false paints nothing", ctx.border(ctx.buttons[1]), "none")
 end
 
+
+-- Layout: the Tandem Edit Mode layout and /tandem layout (stage 12, U2, D2, D4).
+local LAYOUT_ENUM = {
+    EditModeSystem = { ActionBar = 0, UnitFrame = 3, ChatFrame = 9, StatusTrackingBar = 14 },
+    EditModeStatusTrackingBarSystemIndices = { StatusTrackingBar1 = 1, StatusTrackingBar2 = 2 },
+    EditModeActionBarSystemIndices = { MainBar = 1, Bar2 = 2, Bar3 = 3, RightBar1 = 4, RightBar2 = 5, ExtraBar1 = 6,
+        ExtraBar2 = 7, ExtraBar3 = 8 },
+    EditModeActionBarSetting = { Orientation = 0, NumRows = 1, NumIcons = 2, IconSize = 3, VisibleSetting = 5,
+        HideBarArt = 6 },
+    ActionBarVisibleSetting = { Always = 0, Hidden = 3 },
+    EditModeUnitFrameSystemIndices = { Player = 1, Target = 2, Focus = 3 },
+    EditModeLayoutType = { Preset = 0, Account = 1, Character = 2 },
+    EditModeChatFrameSetting = { WidthHundreds = 0, WidthTensAndOnes = 1, HeightHundreds = 2, HeightTensAndOnes = 3 },
+}
+
+local function copyTable(v)
+    if type(v) ~= "table" then
+        return v
+    end
+    local out = {}
+    for k, x in pairs(v) do
+        out[k] = copyTable(x)
+    end
+    return out
+end
+
+-- LAYOUT_ENUM plus the micro menu, minimap and aura frame systems some clients add (D12).
+local function cornerEnum()
+    local e = copyTable(LAYOUT_ENUM)
+    e.EditModeSystem.MicroMenu, e.EditModeSystem.Minimap, e.EditModeSystem.AuraFrame = 10, 11, 12
+    e.EditModeSystem.ObjectiveTracker = 13
+    e.EditModeAuraFrameSystemIndices = { BuffFrame = 1, DebuffFrame = 2 }
+    return e
+end
+
+-- A saved layout with eight action bars, three unit frames and the chat frame, all moved by the player.
+local function editLayout(name, layoutType)
+    local systems = {}
+    local function at(x)
+        return { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = x, offsetY = 0 }
+    end
+    for i = 1, 8 do
+        systems[#systems + 1] = { system = 0, systemIndex = i, isInDefaultPosition = false, anchorInfo = at(i),
+            anchorInfo2 = at(0), settings = { { setting = 1, value = 2 }, { setting = 3, value = 5 } } }
+    end
+    for i = 1, 3 do
+        systems[#systems + 1] = { system = 3, systemIndex = i, isInDefaultPosition = true, anchorInfo = at(10 * i),
+            settings = {} }
+    end
+    systems[#systems + 1] = { system = 9, systemIndex = 1, anchorInfo = at(99), settings = {} }
+    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 }, { 14, 1 }, { 14, 2 } }) do
+        systems[#systems + 1] = { system = s[1], systemIndex = s[2], anchorInfo = at(99), settings = {} }
+    end
+    return { layoutName = name or "view", layoutType = layoutType or 1, systems = systems }
+end
+
+-- Loads the addon with a stubbed Edit Mode: state.layouts is what GetLayouts returns (copied), state.active the active
+-- index (the two presets first). Frames record alpha, mouse, and every Hide/Show/SetPoint call in state.touched.
+-- opts.db is TandemDB, opts.env adds globals, opts.locale the locale, opts.frames more fake Blizzard frame names,
+-- opts.widgets goes to loadAddon, opts.sizes = { name = { width, height } } gives frames a size. Returns ctx with
+-- addon, printed, fire, state, env, run(msg).
+local function loadLayout(opts)
+    opts = opts or {}
+    local state = { layouts = opts.layouts or { editLayout() }, active = opts.active or 3, saved = 0, activated = {},
+        combat = false, touched = {}, cvar = opts.tot or "0", frames = {} }
+    local presetList = { editLayout("Modern", 0), editLayout("Classic", 0) }
+    for i = 3, opts.presets or 2 do
+        presetList[i] = editLayout("Preset" .. i, 0)
+    end
+    local function frame(name)
+        local f = { alpha = 1, mouse = true }
+        function f.GetAlpha(self) return self.alpha end
+        function f.SetAlpha(self, a) self.alpha = a end
+        function f.IsMouseEnabled(self) return self.mouse end
+        function f.EnableMouse(self, m) self.mouse = m end
+        for _, method in ipairs({ "Hide", "Show", "SetPoint", "ClearAllPoints", "SetParent" }) do
+            f[method] = function() state.touched[#state.touched + 1] = name .. ":" .. method end
+        end
+        state.frames[name] = f
+        return f
+    end
+    local env = {
+        Enum = copyTable(LAYOUT_ENUM),
+        InCombatLockdown = function() return state.combat end,
+        hooksecurefunc = function() state.hooked = true end,
+        GetCVar = function(name) return name == "showTargetOfTarget" and state.cvar or nil end,
+        SetCVar = function(name, v)
+            if name == "showTargetOfTarget" then
+                state.cvar = v
+            end
+        end,
+        C_EditMode = {
+            GetLayouts = function()
+                return { activeLayout = state.active, layouts = copyTable(state.layouts) }
+            end,
+            SaveLayouts = function(info)
+                state.saved = state.saved + 1
+                state.savedActive = info.activeLayout
+                state.layouts = copyTable(info.layouts)
+            end,
+            SetActiveLayout = function(i)
+                state.activated[#state.activated + 1] = i
+                state.active = i
+            end,
+        },
+        EditModeManagerFrame = {
+            GetActiveLayoutInfo = function()
+                if state.unknown then
+                    return nil
+                end
+                if state.active <= #presetList then
+                    return copyTable(presetList[state.active])
+                end
+                return copyTable(state.layouts[state.active - #presetList])
+            end,
+        },
+        EditModePresetLayoutManager = { GetCopyOfPresetLayouts = function() return copyTable(presetList) end },
+    }
+    for _, name in ipairs({ "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
+        "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "PlayerFrame", "TargetFrame", "ChatFrame1" }) do
+        env[name] = frame(name)
+    end
+    for _, name in ipairs(opts.frames or {}) do
+        env[name] = frame(name)
+    end
+    for name, size in pairs(opts.sizes or {}) do
+        env[name] = env[name] or frame(name)
+        env[name].GetWidth = function() return size[1] end
+        env[name].GetHeight = function() return size[2] end
+    end
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    local addon, printed, realEnv, fire, frameObj = loadWithDB(opts.db, opts.locale or "enUS",
+        { env = env, rejectEvents = opts.rejectEvents, widgets = opts.widgets })
+    local ctx = { addon = addon, printed = printed, fire = fire, state = state, env = realEnv, frame = frameObj }
+    function ctx.run(msg)
+        return table.concat(run(addon, printed, msg), "|")
+    end
+    return ctx
+end
+
+local function systemOf(info, system, index)
+    for _, s in ipairs(info.systems) do
+        if s.system == system and s.systemIndex == index then
+            return s
+        end
+    end
+end
+
+local function anchorText(s)
+    local a = s.anchorInfo
+    return ("%s %s %s %s %s"):format(a.point, a.relativeTo, a.relativePoint, a.offsetX, a.offsetY)
+end
+
+local function settingOf(s, id)
+    for _, row in ipairs(s.settings) do
+        if row.setting == id then
+            return row.value
+        end
+    end
+end
+
+local function savedTandem(state)
+    for _, l in ipairs(state.layouts) do
+        if l.layoutName == "Tandem" and l.layoutType == 1 then
+            return l
+        end
+    end
+end
+
+-- Schema 7 (D4): a v6 db gains the layout key silently, keeping its weights and trainers.
+do
+    local weights = { ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5 } } } }
+    local trainers = { MAGE = { [116] = { level = 4, rank = 1 } } }
+    local _, printed, env = loadWithDB({ schemaVersion = 6, weights = copyTable(weights),
+        trainers = copyTable(trainers) })
+    check("schema 7: v6 db migrates", env.TandemDB.schemaVersion, 7)
+    check("schema 7: v6 db keeps weights, trainers, gains layout", dump(env.TandemDB),
+        dump({ schemaVersion = 7, weights = weights, trainers = trainers, layout = {} }))
+    check("schema 7: v6 migration prints only the load line", table.concat(printed, "|"), "Tandem loaded")
+end
+
+do
+    local layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" }
+    local addon, printed, env = loadWithDB({ schemaVersion = 7, layout = copyTable(layout) })
+    check("schema 7: a valid layout is kept", dump(env.TandemDB.layout), dump(layout))
+    check("schema 7: a valid layout prints only the load line", #printed, 1)
+    check("schema 7: Store.Layout reads it", addon.Store.Layout().previous.name, "view")
+
+    printed, env = select(2, loadWithDB({ schemaVersion = 7, layout = { on = "yes", previous = { name = "", type = 1 },
+        tot = 1, extra = true } }))
+    check("schema 7: bad layout fields are dropped", dump(env.TandemDB.layout), "{}")
+    check("schema 7: bad layout fields are counted", printed[2], "Tandem: dropped 4 invalid or unused saved entries")
+    addon, printed, env = loadWithDB({ schemaVersion = 7, layout = "bad" })
+    check("schema 7: a non-table layout becomes empty", dump(env.TandemDB.layout), "{}")
+    check("schema 7: a non-table layout is counted", printed[2], "Tandem: dropped 1 invalid or unused saved entries")
+
+    local Store = addon.Store
+    check("SetLayout: on", Store.SetLayout("on", true) and Store.Layout().on, true)
+    check("SetLayout: rejects a non-boolean on", Store.SetLayout("on", 1), false)
+    check("SetLayout: rejects an unknown field", Store.SetLayout("rows", 3), false)
+    check("SetLayout: rejects a 65-character name", Store.SetLayout("previous", { name = ("x"):rep(65), type = 1 }),
+        false)
+    check("SetLayout: rejects a fractional type", Store.SetLayout("previous", { name = "a", type = 1.5 }), false)
+    local prev = { name = "a", type = 2, extra = 1 }
+    Store.SetLayout("previous", prev)
+    check("SetLayout: previous is copied clean", dump(Store.Layout().previous), dump({ name = "a", type = 2 }))
+    check("SetLayout: nil clears", Store.SetLayout("previous", nil) and Store.Layout().previous, nil)
+
+    local newer = loadWithDB({ schemaVersion = 8, layout = { on = true } }).Store
+    check("SetLayout: a newer db is not written", newer.SetLayout("on", false), false)
+    check("SetLayout: a newer db reads as off", newer.Layout().on, nil)
+end
+
+-- On and off: the Tandem layout per D2, previous by name and type, ToT CVar.
+do
+    local ctx = loadLayout({ layouts = { editLayout("view"), editLayout("view", 2) }, active = 4,
+        frames = { "MainMenuBarLeftEndCap" } })
+    local changes = {}
+    ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
+    local before = #ctx.printed
+    check("layout state: off at first", ctx.run("layout"), "Tandem: layout off")
+    check("layout on: reply", ctx.run("layout on"), "Tandem: layout on")
+    check("layout on: prints only the replies", #ctx.printed - before, 2)
+    local state, Store = ctx.state, ctx.addon.Store
+    check("layout on: saved once, activates presets + index", state.saved .. " " .. table.concat(state.activated, ","),
+        "1 4")
+    check("layout on: inserted after the account layout, before the character one",
+        state.layouts[2].layoutName .. " " .. state.layouts[3].layoutType, "Tandem 2")
+    check("layout on: previous by name and type", dump(Store.Layout().previous), dump({ name = "view", type = 2 }))
+    check("layout on: stored on", Store.Layout().on, true)
+    check("layout on: IsOn and IsActive", tostring(ctx.addon.Layout.IsOn()) .. " "
+        .. tostring(ctx.addon.Layout.IsActive()), "true true")
+    check("layout on: ToT CVar set", state.cvar, "1")
+    check("layout on: old ToT CVar saved", Store.Layout().tot, "0")
+    check("layout on: listeners told", table.concat(changes, ","), "true")
+    local t = savedTandem(state)
+    local main = systemOf(t, 0, 1)
+    check("layout on: main bar on top of the stack", anchorText(main), "BOTTOM MultiBarBottomLeft TOP 0 2")
+    check("layout on: main bar not default, one anchor", tostring(main.isInDefaultPosition) .. " "
+        .. tostring(main.anchorInfo2), "false nil")
+    check("layout on: main bar one row of 12", settingOf(main, 0) .. " " .. settingOf(main, 1) .. " "
+        .. settingOf(main, 2), "0 1 12")
+    check("layout on: other bar settings kept", settingOf(main, 3), 5)
+    check("layout on: main bar art (gryphons) hidden by Edit Mode", settingOf(main, 6), 1)
+    check("layout on: classic end caps faded too", ctx.state.frames.MainMenuBarLeftEndCap.alpha, 0)
+    check("layout on: bar 2 on bar 3", anchorText(systemOf(t, 0, 2)), "BOTTOM MultiBarBottomRight TOP 0 2")
+    check("layout on: bar 2 always shown", settingOf(systemOf(t, 0, 2), 5), 0)
+    check("layout on: bar 3 at the bottom centre with XP room", anchorText(systemOf(t, 0, 3)),
+        "BOTTOM UIParent BOTTOM 0 8")
+    check("layout on: Blizzard's XP and reputation bars along the bottom edge", anchorText(systemOf(t, 14, 1))
+        .. " | " .. anchorText(systemOf(t, 14, 2)), "BOTTOM UIParent BOTTOM 0 0 | BOTTOM UIParent BOTTOM 0 17")
+    for i = 4, 8 do
+        check("layout on: bar index " .. i .. " hidden by Edit Mode", settingOf(systemOf(t, 0, i), 5), 3)
+    end
+    check("layout on: player frame in the unit row, left of centre", anchorText(systemOf(t, 3, 1)),
+        "BOTTOMRIGHT UIParent BOTTOM -120 192")
+    check("layout on: target frame in the unit row, right of centre", anchorText(systemOf(t, 3, 2)),
+        "BOTTOMLEFT UIParent BOTTOM 120 192")
+    check("layout on: focus untouched", systemOf(t, 3, 3).isInDefaultPosition, true)
+    check("layout on: chat bottom-left", anchorText(systemOf(t, 9, 1)), "BOTTOMLEFT UIParent BOTTOMLEFT 16 8")
+    check("layout on: chat 380x120 by its size settings", settingOf(systemOf(t, 9, 1), 0) .. " "
+        .. settingOf(systemOf(t, 9, 1), 1) .. " " .. settingOf(systemOf(t, 9, 1), 2) .. " "
+        .. settingOf(systemOf(t, 9, 1), 3), "3 80 1 20")
+    for _, sys in ipairs({ 10, 11, 12 }) do
+        check("layout on: corner system " .. sys .. " untouched", systemOf(t, sys, 1).anchorInfo.offsetX, 99)
+    end
+    check("layout on: copied from the character view", state.layouts[1].systems[1].anchorInfo.offsetX, 1)
+    check("layout: UnitRow is the XP room, three 40px bars, two gaps and the lift; spread 120",
+        table.concat({ ctx.addon.Layout.UnitRow() }, " "), "192 120")
+    check("layout state: on", ctx.run("layout"), "Tandem: layout on")
+
+    check("layout reapply: ok", ctx.run("layout on"), "Tandem: layout on")
+    check("layout reapply: replaces, keeps previous", #state.layouts .. " " .. Store.Layout().previous.type, "3 2")
+    check("layout reapply: keeps the first ToT value", Store.Layout().tot, "0")
+
+    check("layout off: reply", ctx.run("layout off"), "Tandem: layout off; your previous layout is back")
+    check("layout off: the character view by name and type", state.active, 5)
+    check("layout off: ToT CVar restored", state.cvar, "0")
+    check("layout off: state cleared", dump(Store.Layout()), "{}")
+    check("layout off: listeners told", table.concat(changes, ","), "true,true,false")
+    check("layout off: Tandem kept saved", savedTandem(state) ~= nil, true)
+    local n = #state.activated
+    check("layout off again: nothing to restore", ctx.run("layout off") .. " " .. #state.activated - n,
+        "Tandem: layout off; your previous layout is back 0")
+    check("layout: no frame hidden, shown, moved or hooked", #state.touched .. " " .. tostring(state.hooked), "0 nil")
+    for _, msg in ipairs({ "layout maybe", "layout on off" }) do
+        check("layout: usage for " .. msg, run(ctx.addon, ctx.printed, msg)[1], "Tandem commands:")
+    end
+end
+
+-- Corners (D12): micro menu, minimap and buffs move only when the client's Edit Mode has their systems; chat keeps its
+-- size without the size settings.
+do
+    local ctx = loadLayout({ env = { Enum = cornerEnum() }, frames = { "MinimapCluster" } })
+    ctx.run("layout on")
+    local t = savedTandem(ctx.state)
+    check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
+        "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout corners: quest tracker left where the player has it", systemOf(t, 13, 1).anchorInfo.offsetX, 99)
+    check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
+    check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
+        "TOPRIGHT MinimapCluster TOPLEFT -8 0")
+    check("layout corners: debuffs untouched", systemOf(t, 12, 2).anchorInfo.offsetX, 99)
+    check("layout corners: no frame moved directly", #ctx.state.touched, 0)
+
+    ctx = loadLayout({ env = { Enum = cornerEnum() } })
+    ctx.run("layout on")
+    t = savedTandem(ctx.state)
+    check("layout corners: buffs untouched without the minimap frame", systemOf(t, 12, 1).anchorInfo.offsetX, 99)
+    check("layout corners: minimap still moved", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
+
+    local noMinimap = cornerEnum()
+    noMinimap.EditModeSystem.Minimap = nil
+    ctx = loadLayout({ env = { Enum = noMinimap }, frames = { "MinimapCluster" } })
+    ctx.run("layout on")
+    t = savedTandem(ctx.state)
+    check("layout corners: no minimap system leaves the minimap and buffs",
+        systemOf(t, 11, 1).anchorInfo.offsetX .. " " .. systemOf(t, 12, 1).anchorInfo.offsetX, "99 99")
+    check("layout corners: micro menu still moved", anchorText(systemOf(t, 10, 1)),
+        "TOPLEFT UIParent TOPLEFT 12 -12")
+
+    local noMicro = cornerEnum()
+    noMicro.EditModeSystem.MicroMenu = nil
+    ctx = loadLayout({ env = { Enum = noMicro }, sizes = { MicroMenuContainer = { 250, 30 } } })
+    ctx.run("layout on")
+    t = savedTandem(ctx.state)
+    check("layout corners: no micro menu system leaves the micro menu and the quest tracker",
+        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX, "99 99")
+
+    local noSize = copyTable(LAYOUT_ENUM)
+    noSize.EditModeChatFrameSetting = nil
+    noSize.EditModeSystem.ChatFrame = nil
+    ctx = loadLayout({ env = { Enum = noSize } })
+    check("layout corners: no chat system still turns on", ctx.run("layout on"), "Tandem: layout on")
+    check("layout corners: chat left alone", systemOf(savedTandem(ctx.state), 9, 1).anchorInfo.offsetX, 99)
+
+    noSize = copyTable(LAYOUT_ENUM)
+    noSize.EditModeChatFrameSetting = nil
+    ctx = loadLayout({ env = { Enum = noSize } })
+    ctx.run("layout on")
+    local chat = systemOf(savedTandem(ctx.state), 9, 1)
+    check("layout corners: chat moved without size settings", anchorText(chat) .. " " .. #chat.settings,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 0")
+end
+
+-- Narrow screens (D12, D13 fit): the chat stays beside the bars, narrows to the room left, else goes above the band
+-- and the unit frames over it; the micro menu is top-left whatever the width.
+do
+    local function corners(uiWidth, measured, barWidth)
+        local sizes = { UIParent = { uiWidth, 768 }, MultiBarBottomRight = barWidth and { barWidth, 40 } or nil }
+        if measured then
+            sizes.MultiBarBottomRight, sizes.MultiBarBottomLeft = { 500, 45 }, { 500, 45 }
+            sizes.MainActionBar, sizes.PlayerFrame, sizes.TargetFrame = { 500, 45 }, { 230, 90 }, { 230, 90 }
+            sizes.TargetFrameToT, sizes.MicroMenuContainer = { 90, 40 }, { 250, 40 }
+        end
+        local ctx = loadLayout({ env = { Enum = cornerEnum() }, sizes = sizes })
+        ctx.run("layout on")
+        local t = savedTandem(ctx.state)
+        local chat = systemOf(t, 9, 1)
+        return anchorText(chat) .. " " .. (settingOf(chat, 0) * 100 + settingOf(chat, 1)),
+            anchorText(systemOf(t, 10, 1))
+    end
+    local chat, micro = corners(1920)
+    check("layout fit 1920: chat bottom-left at full width", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
+    check("layout fit 1920: micro menu top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    chat = corners(1366)
+    check("layout fit 1366: chat keeps its full width beside the bars", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
+    chat = corners(1200)
+    check("layout fit 1200: chat narrowed to the room left", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 327")
+    chat, micro = corners(1024)
+    check("layout fit 1024: chat above the band and the unit frames", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 300 380")
+    check("layout fit 1024: micro menu still top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    chat = corners(1366, true)
+    check("layout fit measured 1366: chat beside the measured bars", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
+    chat = corners(1200, false, 45)
+    check("layout fit 1200: a narrow measured bar 3 counts as one row of 12", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 327")
+    chat = corners(1024, true)
+    check("layout fit measured 1024: chat above the measured band and unit frames", chat,
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 305 380")
+end
+
+do
+    local ctx = loadLayout({ active = 2, tot = "1" })
+    ctx.run("layout on")
+    check("layout preset: previous is the preset", dump(ctx.addon.Store.Layout().previous),
+        dump({ name = "Classic", type = 0 }))
+    check("layout preset: ToT already on saves nothing", ctx.addon.Store.Layout().tot, nil)
+    ctx.run("layout off")
+    check("layout preset: off picks the preset index", ctx.state.active, 2)
+    check("layout preset: ToT left on", ctx.state.cvar, "1")
+end
+
+-- Off after the player deleted or renamed a layout in Edit Mode.
+do
+    local ctx = loadLayout()
+    ctx.run("layout on")
+    ctx.state.layouts[1].layoutName = "renamed"
+    ctx.run("layout off")
+    check("layout fallback: a renamed previous picks the first preset", ctx.state.active, 1)
+    check("layout fallback: renamed previous still restores ToT", ctx.state.cvar, "0")
+
+    ctx = loadLayout()
+    ctx.run("layout on")
+    table.remove(ctx.state.layouts, 2)
+    ctx.state.active = 1
+    check("layout fallback: Tandem deleted, off still replies", ctx.run("layout off"),
+        "Tandem: layout off; your previous layout is back")
+    check("layout fallback: Tandem deleted restores the previous", ctx.state.active, 3)
+    check("layout fallback: Tandem deleted restores ToT", ctx.state.cvar, "0")
+
+    ctx = loadLayout()
+    ctx.run("layout on")
+    table.remove(ctx.state.layouts, 2)
+    table.remove(ctx.state.layouts, 1)
+    ctx.run("layout off")
+    check("layout fallback: both gone pick the first preset", ctx.state.active, 1)
+end
+
+-- The per-type layout limit.
+do
+    local layouts = {}
+    for i = 1, 5 do
+        layouts[i] = editLayout("L" .. i)
+    end
+    local ctx = loadLayout({ layouts = layouts })
+    check("layout full: reply", ctx.run("layout on"), "Tandem: no free account layout slot; delete one in Edit Mode")
+    check("layout full: nothing saved, activated or stored", ctx.state.saved .. " " .. #ctx.state.activated .. " "
+        .. tostring(ctx.addon.Store.Layout().on) .. " " .. ctx.state.cvar, "0 0 nil 0")
+    layouts[5] = editLayout("Tandem")
+    ctx = loadLayout({ layouts = copyTable(layouts) })
+    check("layout full: an existing Tandem is reused", ctx.run("layout on"), "Tandem: layout on")
+    check("layout full: activates the reused index", table.concat(ctx.state.activated, ",") .. " "
+        .. #ctx.state.layouts, "7 5")
+    ctx = loadLayout({ layouts = copyTable(layouts), env = { Constants = { EditModeConsts = {
+        EditModeMaxLayoutsPerType = 4 } } } })
+    check("layout full: the client's maximum is used", ctx.run("layout on"), "Tandem: layout on")
+end
+
+-- Combat: on and off wait for PLAYER_REGEN_ENABLED, with one line.
+do
+    local ctx = loadLayout()
+    ctx.state.combat = true
+    local before = #ctx.printed
+    check("layout combat: on deferred", ctx.run("layout on"), "Tandem: the layout will change after combat")
+    check("layout combat: nothing changed", ctx.state.saved .. " " .. #ctx.state.activated .. " "
+        .. tostring(ctx.addon.Store.Layout().on), "0 0 nil")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: applies after combat", table.concat(ctx.state.activated, ",") .. " "
+        .. tostring(ctx.addon.Store.Layout().on), "4 true")
+    check("layout combat: one line in all", #ctx.printed - before, 1)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: runs once", #ctx.state.activated, 1)
+    ctx.state.combat = true
+    check("layout combat: off deferred", ctx.run("layout off"), "Tandem: the layout will change after combat")
+    check("layout combat: still Tandem", ctx.state.active, 4)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: restores after combat", ctx.state.active .. " " .. ctx.state.cvar, "3 0")
+    ctx.state.combat = true
+    ctx.run("layout on")
+    ctx.run("layout off")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: off cancels a deferred on", #ctx.state.activated, 2)
+end
+
+-- Without Edit Mode's hide-art setting, the main bar's gryphon end caps still fade and come back on off.
+do
+    local enumNoArt = copyTable(LAYOUT_ENUM)
+    enumNoArt.EditModeActionBarSetting.HideBarArt = nil
+    local ctx = loadLayout({ env = { Enum = enumNoArt } })
+    local caps = { alpha = 1, mouse = true }
+    function caps.GetAlpha(self) return self.alpha end
+    function caps.SetAlpha(self, a) self.alpha = a end
+    function caps.IsMouseEnabled(self) return self.mouse end
+    function caps.EnableMouse(self, m) self.mouse = m end
+    ctx.state.frames.MainActionBar.EndCaps = caps
+    ctx.run("layout on")
+    check("layout art: end caps faded without HideBarArt", caps.alpha, 0)
+    ctx.run("layout off")
+    check("layout art: end caps back on off", caps.alpha, 1)
+end
+
+-- The totem bar room (D13): a Shaman's top bar keeps Edit Mode's totem bar spot free; the rail and unit frames go above
+-- it; other classes keep no room.
+do
+    local totem = { GetHeight = function() return 38 end }
+    local ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, UnitClass = function()
+        return "Shaman", "SHAMAN"
+    end }, sizes = { MainActionBar = { 498, 40 } } })
+    check("totem room: Shaman keeps the totem bar spot above the main bar", ctx.addon.Layout.TotemRoom(), 68)
+    ctx.run("layout on")
+    local t = savedTandem(ctx.state)
+    check("totem room: unit row above the totem bar", anchorText(systemOf(t, 3, 1)) .. " | "
+        .. anchorText(systemOf(t, 3, 2)), "BOTTOMRIGHT UIParent BOTTOM -120 260 | BOTTOMLEFT UIParent BOTTOM 120 260")
+    ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, UnitClass = function()
+        return "Mage", "MAGE"
+    end } })
+    check("totem room: other classes keep none", ctx.addon.Layout.TotemRoom(), 0)
+    ctx = loadLayout({ env = { UnitClass = function() return "Shaman", "SHAMAN" end } })
+    check("totem room: none without the totem bar", ctx.addon.Layout.TotemRoom(), 0)
+end
+
+-- The debug recorder (D13): off by default; on hooks the totem bar's moves with their caller and logs events into
+-- TandemDebug; off stops recording and keeps the log.
+do
+    local totem = { points = {} }
+    function totem.GetNumPoints(self) return #self.points end
+    function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
+    function totem.ClearAllPoints(self) self.points = {} end
+    function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
+    local listener
+    local function widgets()
+        listener = { events = {} }
+        function listener.RegisterEvent(self, e) self.events[e] = true end
+        function listener.RegisterUnitEvent(self, e) self.events[e] = true end
+        function listener.SetScript(self, _, fn) self.onEvent = fn end
+        return listener
+    end
+    local function hook(t, method, fn)
+        local orig = t[method]
+        t[method] = function(...)
+            local r = { orig(...) }
+            fn(...)
+            return (unpack or rawget(table, "unpack"))(r)
+        end
+    end
+    local ctx = loadLayout({ widgets = widgets, env = { MultiCastActionBarFrame = totem, hooksecurefunc = hook,
+        UIParent = {},
+        debugstack = function() return "Interface/AddOns/Blizzard_ActionBar/MultiCast.lua:42: in function\n  x" end,
+        GetTime = function() return 12.5 end } })
+    local env = ctx.env
+    check("debug: off by default", ctx.addon.Debug.IsOn(), false)
+    totem:SetPoint("CENTER", "UIParent", "CENTER", 0, 0)
+    check("debug: nothing logged while off", env.TandemDebug, nil)
+    check("debug: on replies", ctx.run("debug on"), "Tandem: debug recording on; /reload saves it to disk")
+    check("debug: on is saved", env.TandemDebug.on, true)
+    totem:SetPoint("BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4)
+    local log = env.TandemDebug.log
+    check("debug: a Blizzard move is logged with its caller", log[#log],
+        "12.50 combat=false SetPoint(BOTTOMLEFT, MainActionBar, TOPLEFT, 0, 4) | at nil,nil strata nil parent nil "
+        .. "[CENTER UIParent CENTER 0 0; BOTTOMLEFT MainActionBar TOPLEFT 0 4] | Blizzard_ActionBar/MultiCast.lua:42: "
+        .. "in function < x")
+    listener.onEvent(listener, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 8071)
+    check("debug: a cast is logged", env.TandemDebug.log[#env.TandemDebug.log]:match("event [%w_]+ spell %d+"),
+        "event UNIT_SPELLCAST_SUCCEEDED spell 8071")
+    for _ = 1, 400 do
+        totem:ClearAllPoints()
+    end
+    check("debug: the log keeps the last 300 lines", #env.TandemDebug.log, 300)
+    check("debug: off replies with the lines kept", ctx.run("debug off"),
+        "Tandem: debug recording off (300 lines kept)")
+    totem:ClearAllPoints()
+    check("debug: nothing logged after off", #env.TandemDebug.log, 300)
+    check("debug: on again starts a fresh log", (ctx.run("debug on") and #env.TandemDebug.log), 1)
+    check("debug: bad argument prints usage", ctx.run("debug maybe"):match("^Tandem commands:") ~= nil, true)
+    ctx.env.MainStatusTrackingBarContainer = { IsShown = function() return true end,
+        IsVisible = function() return true end, GetAlpha = function() return 1 end }
+    local xp = { GetName = function() return "MainMenuExpBar" end, GetBottom = function() return 30 end,
+        IsVisible = function() return true end }
+    local high = { GetName = function() return "Minimap" end, GetBottom = function() return 700 end,
+        IsVisible = function() return true end }
+    ctx.env.UIParent.GetChildren = function() return xp, high end
+    ctx.run("debug snap")
+    local text = table.concat(env.TandemDebug.log, "\n")
+    check("debug snap: watched status bar logged",
+        text:match("watch MainStatusTrackingBarContainer: shown true") ~= nil, true)
+    check("debug snap: a missing watched frame says so", text:match("watch ReputationWatchBar: missing") ~= nil, true)
+    check("debug snap: a visible frame in the bottom band is listed", text:match("frame MainMenuExpBar: ") ~= nil, true)
+    check("debug snap: a frame high on screen is not", text:match("frame Minimap") == nil, true)
+    ctx.run("layout on")
+    check("debug snap: a layout change takes one",
+        env.TandemDebug.log[#env.TandemDebug.log]:match("frame MainMenuExpBar") ~= nil, true)
+end
+
+-- Bars Edit Mode cannot hide fade instead, again after Edit Mode re-applies, and come back on off.
+do
+    local enumNoVisible = copyTable(LAYOUT_ENUM)
+    enumNoVisible.ActionBarVisibleSetting = nil
+    local ctx = loadLayout({ env = { Enum = enumNoVisible } })
+    check("layout fade: EDIT_MODE_LAYOUTS_UPDATED registered", ctx.frame.registered.EDIT_MODE_LAYOUTS_UPDATED, true)
+    local bar = ctx.state.frames.MultiBarRight
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    check("layout fade: nothing while off", bar.alpha, 1)
+    ctx.run("layout on")
+    check("layout fade: faded and mouse off", bar.alpha .. " " .. tostring(bar.mouse), "0 false")
+    check("layout fade: every other bar faded", ctx.state.frames.MultiBar7.alpha, 0)
+    check("layout fade: the shown bars stay", ctx.state.frames.MultiBarBottomRight.alpha, 1)
+    bar.alpha, bar.mouse = 1, true
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    check("layout fade: re-faded on EDIT_MODE_LAYOUTS_UPDATED", bar.alpha .. " " .. tostring(bar.mouse), "0 false")
+    bar.alpha = 1
+    ctx.state.combat = true
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    check("layout fade: not in combat", bar.alpha, 1)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout fade: after combat", bar.alpha, 0)
+    ctx.state.frames.MultiBarLeft.alpha = 0.5
+    ctx.run("layout off")
+    check("layout fade: off restores alpha and mouse", bar.alpha .. " " .. tostring(bar.mouse), "1 true")
+    check("layout fade: no frame hidden or hooked", #ctx.state.touched .. " " .. tostring(ctx.state.hooked), "0 nil")
+
+    local exit
+    ctx = loadLayout({ env = { Enum = copyTable(enumNoVisible), EventRegistry = {
+        RegisterCallback = function(_, name, fn, owner) exit = name == "EditMode.Exit" and function() fn(owner) end end,
+    } } })
+    ctx.run("layout on")
+    bar = ctx.state.frames.MultiBarRight
+    bar.alpha = 1
+    exit()
+    check("layout fade: re-faded when Edit Mode closes", bar.alpha, 0)
+    ctx.addon.Layout.Conceal("BagsBar")
+    check("layout conceal: an unknown frame is skipped", bar.alpha, 0)
+
+    ctx = loadLayout({ rejectEvents = { EDIT_MODE_LAYOUTS_UPDATED = true } })
+    check("layout fade: an unknown event leaves the load working", ctx.run("layout on"), "Tandem: layout on")
+end
+
+-- Relogin with the layout on re-attaches without saving again.
+do
+    local enumNoVisible = copyTable(LAYOUT_ENUM)
+    enumNoVisible.ActionBarVisibleSetting = nil
+    local ctx = loadLayout({ env = { Enum = enumNoVisible }, layouts = { editLayout(), editLayout("Tandem") },
+        active = 4, db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 },
+        tot = "0" } } })
+    local changes = {}
+    ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
+    ctx.fire("PLAYER_LOGIN")
+    check("layout relogin: nothing saved or activated", ctx.state.saved .. " " .. #ctx.state.activated, "0 0")
+    check("layout relogin: listeners told", table.concat(changes, ","), "true")
+    check("layout relogin: bars faded again", ctx.state.frames.MultiBarRight.alpha, 0)
+    check("layout relogin: previous kept", ctx.addon.Store.Layout().previous.name, "view")
+    ctx.run("layout off")
+    check("layout relogin: off restores the saved previous", ctx.state.active .. " " .. ctx.state.cvar, "3 0")
+
+    ctx = loadLayout()
+    local told = 0
+    ctx.addon.Layout.OnChange(function() told = told + 1 end)
+    ctx.fire("PLAYER_LOGIN")
+    check("layout relogin: off tells nobody", told, 0)
+end
+
+-- Gate: without Edit Mode the layout stays dark.
+do
+    local ctx = loadLayout({ env = { MainActionBar = false, C_EditMode = false },
+        db = { schemaVersion = 7, layout = { on = true } } })
+    local changes = 0
+    ctx.addon.Layout.OnChange(function() changes = changes + 1 end)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    check("layout gate: login stays dark", changes, 0)
+    check("layout gate: on refused", ctx.run("layout on"),
+        "Tandem: the layout needs Edit Mode, which this client lacks")
+    check("layout gate: nothing changed", ctx.state.cvar .. " " .. #ctx.state.activated, "0 0")
+    local newer = loadLayout({ db = { schemaVersion = 8 } })
+    check("layout: a newer db refuses", newer.run("layout on"),
+        "Tandem: the layout cannot be saved: saved data uses a newer schema")
+    local broken = loadLayout()
+    broken.env.C_EditMode.SaveLayouts = function() error("bad layout") end
+    check("layout error: a failing save", broken.run("layout on"), "Tandem: the layout could not be changed")
+    check("layout error: nothing activated", #broken.state.activated, 0)
+end
+
+do
+    local ctx = loadLayout({ locale = "zhTW" })
+    check("zhTW layout on", ctx.run("layout on"), "Tandem：介面配置已開啟")
+    check("zhTW layout off", ctx.run("layout off"), "Tandem：介面配置已關閉；已還原你先前的版面")
+    ctx.state.combat = true
+    check("zhTW layout combat", ctx.run("layout on"), "Tandem：介面配置將在戰鬥結束後變更")
+end
+
+-- Review fixes: the layout follows Edit Mode, real preset count, deferred failures, saved active index.
+do
+    local enumNoVisible = copyTable(LAYOUT_ENUM)
+    enumNoVisible.ActionBarVisibleSetting = nil
+    local ctx = loadLayout({ env = { Enum = enumNoVisible } })
+    local changes = {}
+    ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
+    ctx.run("layout on")
+    local bar = ctx.state.frames.MultiBarRight
+    local before = #ctx.printed
+    ctx.state.active = 3
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    check("layout sync: another active layout turns it off", tostring(ctx.addon.Layout.IsOn()), "false")
+    check("layout sync: ToT and faded frames restored", ctx.state.cvar .. " " .. bar.alpha .. " "
+        .. tostring(bar.mouse), "0 1 true")
+    check("layout sync: listeners told off", table.concat(changes, ","), "true,false")
+    check("layout sync: prints nothing, activates nothing", (#ctx.printed - before) .. " " .. #ctx.state.activated,
+        "0 1")
+
+    local exit
+    ctx = loadLayout({ env = { Enum = copyTable(enumNoVisible), EventRegistry = {
+        RegisterCallback = function(_, name, fn, owner) exit = name == "EditMode.Exit" and function() fn(owner) end end,
+    } } })
+    ctx.run("layout on")
+    table.remove(ctx.state.layouts, 2)
+    ctx.state.active = 1
+    exit()
+    check("layout sync: Tandem deleted in Edit Mode turns it off", tostring(ctx.addon.Layout.IsOn()) .. " "
+        .. ctx.state.cvar .. " " .. ctx.state.frames.MultiBar5.alpha, "false 0 1")
+
+    ctx = loadLayout({ layouts = { editLayout(), editLayout("Tandem") }, active = 3,
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" } } })
+    ctx.state.cvar = "1"
+    changes = {}
+    ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
+    before = #ctx.printed
+    ctx.fire("PLAYER_LOGIN")
+    check("layout relogin: another layout active turns it off", tostring(ctx.addon.Layout.IsOn()) .. " "
+        .. ctx.state.cvar .. " " .. table.concat(changes, ","), "false 0 false")
+    check("layout relogin: off silently, nothing activated", (#ctx.printed - before) .. " " .. #ctx.state.activated,
+        "0 0")
+
+    ctx = loadLayout({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, layout = { on = true } } })
+    changes = {}
+    ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
+    ctx.state.unknown = true
+    ctx.fire("PLAYER_LOGIN")
+    check("layout relogin: an unknown active layout waits", tostring(ctx.addon.Layout.IsOn()) .. " "
+        .. #changes, "true 0")
+    ctx.state.unknown = nil
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    check("layout relogin: attaches once Edit Mode knows", table.concat(changes, ","), "true")
+end
+
+do
+    local tandemChar = editLayout("Tandem", 2)
+    local ctx = loadLayout({ layouts = { editLayout(), tandemChar }, active = 4 })
+    check("layout IsActive: a character layout named Tandem is not it", ctx.addon.Layout.IsActive(), false)
+    ctx.run("layout on")
+    check("layout IsActive: the account Tandem is", ctx.addon.Layout.IsActive(), true)
+    check("layout insert: saved with the new Tandem active", ctx.state.savedActive .. " "
+        .. table.concat(ctx.state.activated, ","), "4 4")
+    ctx.run("layout on")
+    check("layout replace: saved with Tandem active", ctx.state.savedActive, 4)
+
+    ctx = loadLayout({ presets = 3, active = 4 })
+    ctx.run("layout on")
+    check("layout presets: three presets put the first saved layout at 4, Tandem at 5",
+        table.concat(ctx.state.activated, ",") .. " " .. ctx.state.savedActive, "5 5")
+    ctx.run("layout off")
+    check("layout presets: off counts three presets", ctx.state.active, 4)
+
+    ctx = loadLayout({ env = { EditModePresetLayoutManager = { GetCopyOfPresetLayouts = function() end } } })
+    check("layout presets: an unknown preset list is an error", ctx.run("layout on"),
+        "Tandem: the layout could not be changed")
+    check("layout presets: nothing saved or activated", ctx.state.saved .. " " .. #ctx.state.activated, "0 0")
+end
+
+do
+    local layouts = {}
+    for i = 1, 5 do
+        layouts[i] = editLayout("L" .. i)
+    end
+    local ctx = loadLayout({ layouts = layouts })
+    ctx.state.combat = true
+    ctx.run("layout on")
+    ctx.state.combat = false
+    local before = #ctx.printed
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: a deferred on that fails says why", table.concat(linesSince(ctx.printed, before), "|"),
+        "Tandem: no free account layout slot; delete one in Edit Mode")
+
+    ctx = loadLayout()
+    ctx.state.combat = true
+    ctx.run("layout on")
+    ctx.state.combat = false
+    ctx.env.C_EditMode = nil
+    before = #ctx.printed
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: a deferred on without Edit Mode says so", table.concat(linesSince(ctx.printed, before), "|"),
+        "Tandem: the layout needs Edit Mode, which this client lacks")
+
+    ctx = loadLayout()
+    ctx.run("layout on")
+    ctx.state.combat = true
+    ctx.run("layout off")
+    ctx.state.combat = false
+    before = #ctx.printed
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("layout combat: a deferred off that works prints nothing", #ctx.printed - before, 0)
+end
+
+do
+    local enumNoVisible = copyTable(LAYOUT_ENUM)
+    enumNoVisible.ActionBarVisibleSetting = nil
+    local ctx = loadLayout({ env = { Enum = enumNoVisible } })
+    ctx.run("layout on")
+    ctx.env.MultiBarRight = nil
+    local ok = pcall(ctx.run, "layout off")
+    check("layout unfade: a missing frame is skipped", tostring(ok) .. " " .. ctx.state.frames.MultiBar7.alpha .. " "
+        .. ctx.state.cvar, "true 1 0")
+end
+
+do
+    local _, printed = loadWithDB({ schemaVersion = 6, weights = "bad" })
+    check("schema 7: a v6 db with drops still reports the upgrade", printed[2],
+        "Tandem: saved data upgraded from schema 6 to 7")
+end
+
+-- Shared helpers for the frame tests below (stage 12).
+
+-- A fake GameTooltip for the frame tests: SetText records title, AddLine records lines, Show/Hide set shown.
+local function barTooltip()
+    local tip = fakeTooltip()
+    function tip.SetOwner(self, owner, anchor) self.owner, self.anchor, self.lines = owner, anchor, {} end
+    function tip.SetText(self, text) self.title = text end
+    function tip.Show(self) self.shown = true end
+    function tip.Hide(self) self.shown = false end
+    return tip
+end
+
+-- Returns "r,g,b" of a widget colour field rounded to two places, or "nil".
+local function rgb(c)
+    if not c then
+        return "nil"
+    end
+    return ("%.2f,%.2f,%.2f"):format(c[1], c[2], c[3])
+end
+
+local function loadXP(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local xp = { xp = 1200, max = 4000, rested = 0, level = 20, cap = 60 }
+    local env = {
+        UnitXP = function() return xp.xp end,
+        UnitXPMax = function() return xp.max end,
+        GetXPExhaustion = function() return xp.rested end,
+        UnitLevel = function() return xp.level end,
+        GetMaxPlayerLevel = function() return xp.cap end,
+        GameTooltip = barTooltip(),
+        UIParent = { name = "UIParent", GetWidth = function() return 1600 end },
+    }
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    local ctx = loadLayout({ env = env, locale = opts.locale, db = opts.db, layouts = opts.layouts,
+        active = opts.active, sizes = opts.sizes,
+        frames = opts.frames or { "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer" },
+        widgets = function(kind, name, parent, template)
+            return newWidget(ui, kind, name, parent, template)
+        end })
+    ctx.ui, ctx.xp, ctx.tip = ui, xp, env.GameTooltip
+    function ctx.bar()
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "StatusBar" then
+                return w
+            end
+        end
+    end
+    function ctx.text()
+        local b = ctx.bar()
+        return b and b.text and b.text.text
+    end
+    return ctx
+end
+
+do
+    local ctx = loadXP()
+    check("xp bar: nothing made while the layout is off", (ctx.bar()), nil)
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: events while off are harmless", (ctx.bar()), nil)
+    ctx.run("layout on")
+    local bar = ctx.bar()
+    check("xp bar: shown at the top centre", tostring(bar.shown) .. " " .. tostring(bar.parent == ctx.env.UIParent)
+        .. " " .. #bar.points .. " " .. tostring(bar.points[1][2] == ctx.env.UIParent) .. " "
+        .. bar.points[1][1] .. " " .. bar.points[1][3] .. " " .. bar.points[1][4] .. " " .. bar.points[1][5],
+        "true true 1 true TOP TOP 0 -4")
+    check("xp bar: 12px, half the 1600 wide screen", bar.height .. " " .. bar.width, "12 800")
+    local cuts = {}
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.kind == "Texture" and w.parent == bar and w.width == 1 then
+            cuts[#cuts + 1] = w.points[1][4] .. "/" .. w.points[2][1]
+        end
+    end
+    check("xp bar: nine 1px dividers make ten cells", table.concat(cuts, " "),
+        "80/BOTTOMLEFT 160/BOTTOMLEFT 240/BOTTOMLEFT 320/BOTTOMLEFT 400/BOTTOMLEFT 480/BOTTOMLEFT 560/BOTTOMLEFT "
+        .. "640/BOTTOMLEFT 720/BOTTOMLEFT")
+    check("xp bar: value and max", bar.value .. " " .. bar.min .. " " .. bar.max, "1200 0 4000")
+    check("xp bar: only the percent on the bar", ctx.text(), "30%")
+    check("xp bar: purple without rested", rgb(bar.barColor), "0.58,0.00,0.55")
+    check("xp bar: takes the mouse for its tooltip", bar.mouse, true)
+    bar.scripts.OnEnter(bar)
+    check("xp bar: tooltip without rested",
+        ctx.tip.title .. " / " .. texts(ctx.tip) .. " / " .. tostring(ctx.tip.shown),
+        "1200 / 4000 (30%) /  / true")
+    bar.scripts.OnLeave(bar)
+    check("xp bar: tooltip hidden on leave", ctx.tip.shown, false)
+    ctx.xp.xp, ctx.xp.rested = 2480, 1000
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: PLAYER_XP_UPDATE updates", ctx.text(), "62%")
+    check("xp bar: blue while rested", rgb(bar.barColor), "0.00,0.39,0.88")
+    bar.scripts.OnEnter(bar)
+    check("xp bar: tooltip with rested", ctx.tip.title .. " / " .. texts(ctx.tip), "2480 / 4000 (62%) / Rested +25%")
+    ctx.xp.rested = 2000
+    ctx.fire("UPDATE_EXHAUSTION")
+    bar.scripts.OnEnter(bar)
+    check("xp bar: UPDATE_EXHAUSTION updates the tooltip", texts(ctx.tip), "Rested +50%")
+    ctx.xp.xp, ctx.xp.max, ctx.xp.rested, ctx.xp.level = 10, 5000, nil, 21
+    ctx.fire("PLAYER_LEVEL_UP")
+    check("xp bar: PLAYER_LEVEL_UP updates", ctx.text() .. "|" .. bar.value .. "|" .. rgb(bar.barColor),
+        "0%|10|0.58,0.00,0.55")
+    check("xp bar: default status bar faded", ctx.state.frames.MainStatusTrackingBarContainer.alpha .. " "
+        .. tostring(ctx.state.frames.MainStatusTrackingBarContainer.mouse), "0 false")
+    check("xp bar: the second (reputation) status bar faded too",
+        ctx.state.frames.SecondaryStatusTrackingBarContainer.alpha, 0)
+    ctx.xp.level = 59
+    ctx.fire("PLAYER_LEVEL_UP", 60)
+    check("xp bar: PLAYER_LEVEL_UP's level wins over a stale UnitLevel", bar.shown, false)
+    ctx.xp.level = 60
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: hidden at the maximum level", bar.shown, false)
+    ctx.xp.level = 59
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: back below the maximum", bar.shown, true)
+    ctx.xp.max = 0
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: hidden when max XP is 0", bar.shown, false)
+    ctx.xp.max = 5000
+    ctx.run("layout off")
+    check("xp bar: hidden when the layout is off", bar.shown, false)
+    check("xp bar: default status bar restored", ctx.state.frames.MainStatusTrackingBarContainer.alpha .. " "
+        .. tostring(ctx.state.frames.MainStatusTrackingBarContainer.mouse), "1 true")
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: events while off keep it hidden", bar.shown, false)
+    check("xp bar: no Blizzard frame hidden or hooked", #ctx.state.touched .. " " .. tostring(ctx.state.hooked),
+        "0 nil")
+    ctx.run("layout on")
+    check("xp bar: shown again, one bar", tostring(bar.shown) .. " " .. tostring(ctx.bar() == bar), "true true")
+end
+
+do
+    local ctx = loadXP({ env = { GetMaxPlayerLevel = false, MAX_PLAYER_LEVEL = 20 } })
+    ctx.run("layout on")
+    check("xp bar: MAX_PLAYER_LEVEL when GetMaxPlayerLevel is missing", ctx.bar().shown, false)
+
+    ctx = loadXP({ env = { GetMaxPlayerLevel = false } })
+    ctx.run("layout on")
+    check("xp bar: no level cap known still shows", ctx.bar().shown, true)
+
+    ctx = loadXP()
+    ctx.env.UnitXPMax = nil
+    ctx.run("layout on")
+    check("xp bar: not ready stays dark", tostring((ctx.bar())) .. " "
+        .. ctx.state.frames.MainStatusTrackingBarContainer.alpha, "nil 1")
+
+    ctx = loadXP({ frames = { "MainMenuExpBar" } })
+    ctx.run("layout on")
+    check("xp bar: classic MainMenuExpBar faded", ctx.state.frames.MainMenuExpBar.alpha, 0)
+    ctx.run("layout off")
+    check("xp bar: classic MainMenuExpBar restored", ctx.state.frames.MainMenuExpBar.alpha, 1)
+
+    ctx = loadXP({ locale = "zhTW" })
+    ctx.xp.rested = 400
+    ctx.run("layout on")
+    ctx.bar().scripts.OnEnter(ctx.bar())
+    check("zhTW xp bar text and tooltip", ctx.text() .. " / " .. ctx.tip.title .. " / " .. texts(ctx.tip),
+        "30% / 1200 / 4000 (30%) / 休息 +10%")
+
+    ctx = loadXP({ env = { GameTooltip = false } })
+    ctx.run("layout on")
+    ctx.bar().scripts.OnEnter(ctx.bar())
+    ctx.bar().scripts.OnLeave(ctx.bar())
+    check("xp bar: no GameTooltip is harmless", ctx.bar().shown, true)
+
+    ctx = loadXP({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+    ctx.fire("PLAYER_LOGIN")
+    check("xp bar: relogin with the layout on shows it", tostring(ctx.bar().shown) .. " " .. ctx.text(),
+        "true 30%")
+end
+
+-- Bag row at the bottom right while the layout is on (stage 12, U4, D5, D12).
+
+-- Loads the layout with fake bags: ctx.bags[bag] = { total, free, family }; bag b sits in inventory slot 30 + b whose
+-- texture is "icon<slot>" and is named "Bag<b>". ctx.toggled counts ToggleAllBags calls, ctx.tip is GameTooltip.
+local function loadBags(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local bags = {
+        [0] = { 16, 5, 0 }, [1] = { 10, 2, 0 }, [2] = { 12, 12, 0 },
+    }
+    local ctx
+    local env = {
+        C_Container = {
+            GetContainerNumSlots = function(bag) return bags[bag] and bags[bag][1] or 0 end,
+            GetContainerNumFreeSlots = function(bag)
+                if bags[bag] then
+                    return bags[bag][2], bags[bag][3]
+                end
+                return 0, 0
+            end,
+            ContainerIDToInventoryID = function(bag) return 30 + bag end,
+            GetBagName = function(bag) return "Bag" .. bag end,
+        },
+        GetInventoryItemTexture = function(unit, slot)
+            return unit == "player" and ("icon" .. slot) or nil
+        end,
+        ToggleAllBags = function() ctx.toggled = ctx.toggled + 1 end,
+        GameTooltip = barTooltip(),
+        UIParent = { name = "UIParent" },
+    }
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    ctx = loadLayout({ env = env, locale = opts.locale, db = opts.db, layouts = opts.layouts, active = opts.active,
+        frames = opts.frames or { "BagsBar" },
+        widgets = function(kind, name, parent, template)
+            return newWidget(ui, kind, name, parent, template)
+        end })
+    ctx.ui, ctx.bags, ctx.toggled, ctx.tip = ui, bags, 0, env.GameTooltip
+    -- Every icon button made so far, in creation order.
+    function ctx.icons()
+        local out = {}
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "Button" and w.count then
+                out[#out + 1] = w
+            end
+        end
+        return out
+    end
+    function ctx.row()
+        local first = ctx.icons()[1]
+        return first and first.parent
+    end
+    -- The shown icons as "texture free/total", right to left, joined by " | ".
+    function ctx.text()
+        local out = {}
+        for _, w in ipairs(ctx.icons()) do
+            if w.shown then
+                out[#out + 1] = tostring(w.icon.texture) .. " " .. tostring(w.count.text)
+            end
+        end
+        return table.concat(out, " | ")
+    end
+    return ctx
+end
+
+local GENERAL_ICON = "Interface\\Icons\\INV_Misc_Bag_08"
+
+do
+    local ctx = loadBags()
+    check("bag row: nothing made while the layout is off", #ctx.icons(), 0)
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: events while off are harmless", #ctx.icons(), 0)
+    ctx.run("layout on")
+    local row = ctx.row()
+    check("bag row: shown at the bottom right", tostring(row.shown) .. " " .. tostring(row.parent == ctx.env.UIParent)
+        .. " " .. #row.points .. " " .. table.concat({ row.points[1][1], tostring(row.points[1][2] == ctx.env.UIParent),
+        row.points[1][3], row.points[1][4], row.points[1][5] }, " "), "true true 1 BOTTOMRIGHT true BOTTOMRIGHT -12 8")
+    check("bag row: general bags first, backpack icon, free/total across bags", ctx.text(), GENERAL_ICON .. " 19/38")
+    local general = ctx.icons()[1]
+    check("bag row: 28px icon, rightmost", general.width .. "x" .. general.height .. " " .. general.points[1][1] .. " "
+        .. general.points[1][4], "28x28 BOTTOMRIGHT 0")
+    check("bag row: count on the icon's lower edge", general.count.points[1][1] .. " " .. general.count.points[1][3],
+        "BOTTOM BOTTOM")
+    check("bag row: white with 10 or more free", rgb(general.count.textColor), "1.00,1.00,1.00")
+    ctx.bags[3] = { 20, 7, 8 }
+    ctx.bags[1][2] = 0
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: BAG_UPDATE_DELAYED updates; a profession bag gets its own icon", ctx.text(),
+        GENERAL_ICON .. " 17/38 | icon33 7/20")
+    local icons = ctx.icons()
+    check("bag row: the next icon grows leftwards", icons[2].points[1][1] .. " " .. icons[2].points[1][4],
+        "BOTTOMRIGHT -32")
+    check("bag row: yellow under 10 free", rgb(icons[2].count.textColor), "1.00,0.82,0.00")
+    ctx.bags[4] = { 14, 4, 8 }
+    ctx.bags[2] = { 18, 1, 1024 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: one icon per family, in family order; same family summed", ctx.text(),
+        GENERAL_ICON .. " 5/26 | icon33 11/34 | icon32 1/18")
+    check("bag row: row sized to its icons", ctx.row().width .. "x" .. ctx.row().height, "92x28")
+    ctx.bags[0][2] = 0
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: red at 0 free", rgb(ctx.icons()[1].count.textColor), "1.00,0.10,0.10")
+    ctx.bags[0][2] = 5
+    ctx.bags[2], ctx.bags[4] = nil, { 0, 0, 0 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: empty and missing bags skipped; spare icon hidden, icons reused", ctx.text() .. " / "
+        .. #ctx.icons() .. " " .. tostring(ctx.icons()[3].shown), GENERAL_ICON .. " 5/26 | icon33 7/20 / 3 false")
+    local b = ctx.icons()[2]
+    b.scripts.OnClick(b, "LeftButton")
+    ctx.icons()[1].scripts.OnClick(ctx.icons()[1], "LeftButton")
+    check("bag row: any icon click opens all bags", ctx.toggled, 2)
+    b.scripts.OnEnter(b)
+    check("bag row: profession tooltip names its bags", ctx.tip.title .. " / " .. texts(ctx.tip) .. " / "
+        .. tostring(ctx.tip.shown), "Profession bag / Bag3 / 7/20 free / Click to open your bags / true")
+    b.scripts.OnLeave(b)
+    check("bag row: tooltip hidden on leave", ctx.tip.shown, false)
+    ctx.icons()[1].scripts.OnEnter(ctx.icons()[1])
+    check("bag row: general tooltip names its bags", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "General bags / Bag0, Bag1 / 5/26 free / Click to open your bags")
+    check("bag row: BagsBar faded", ctx.state.frames.BagsBar.alpha .. " "
+        .. tostring(ctx.state.frames.BagsBar.mouse), "0 false")
+    ctx.run("layout off")
+    check("bag row: hidden when the layout is off", ctx.row().shown, false)
+    check("bag row: BagsBar restored", ctx.state.frames.BagsBar.alpha .. " "
+        .. tostring(ctx.state.frames.BagsBar.mouse), "1 true")
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: events while off keep it hidden", ctx.row().shown, false)
+    check("bag row: no Blizzard frame hidden or hooked", #ctx.state.touched .. " " .. tostring(ctx.state.hooked),
+        "0 nil")
+    ctx.bags[0][2] = 1
+    local rowBefore = ctx.row()
+    ctx.run("layout on")
+    check("bag row: shown again and updated, same frames", tostring(ctx.row().shown) .. " "
+        .. tostring(ctx.row() == rowBefore) .. " " .. #ctx.icons() .. " " .. ctx.text(),
+        "true true 3 " .. GENERAL_ICON .. " 1/26 | icon33 7/20")
+end
+
+do
+    local ctx = loadBags()
+    ctx.env.ToggleAllBags = nil
+    ctx.run("layout on")
+    check("bag row: not ready stays dark, BagsBar kept", #ctx.icons() .. " " .. ctx.state.frames.BagsBar.alpha, "0 1")
+
+    ctx = loadBags({ frames = {} })
+    ctx.run("layout on")
+    check("bag row: no BagsBar still shows", ctx.row().shown, true)
+
+    ctx = loadBags({ env = { GetInventoryItemTexture = false } })
+    ctx.bags[1] = { 20, 3, 8 }
+    ctx.run("layout on")
+    check("bag row: no icon API falls back to a question mark", ctx.text(),
+        GENERAL_ICON .. " 17/28 | Interface\\Icons\\INV_Misc_QuestionMark 3/20")
+    local b = ctx.icons()[1]
+    ctx.env.GameTooltip = nil
+    b.scripts.OnEnter(b)
+    b.scripts.OnLeave(b)
+    check("bag row: no GameTooltip is harmless", b.shown, true)
+
+    ctx = loadBags({ locale = "zhTW" })
+    ctx.bags[1] = { 20, 3, 8 }
+    ctx.env.C_Container.GetBagName = nil
+    ctx.run("layout on")
+    local zb = ctx.icons()[2]
+    zb.scripts.OnEnter(zb)
+    check("zhTW bag row tooltip, no bag names", ctx.tip.title .. " / " .. texts(ctx.tip), "專業背包 / 剩餘 3/20 / 點擊開啟背包")
+    ctx.icons()[1].scripts.OnEnter(ctx.icons()[1])
+    check("zhTW bag row general tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "一般背包 / 剩餘 17/28 / 點擊開啟背包")
+
+    ctx = loadBags({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+    ctx.fire("PLAYER_LOGIN")
+    check("bag row: relogin with the layout on shows it", tostring(ctx.row().shown) .. " " .. ctx.text(),
+        "true " .. GENERAL_ICON .. " 19/38")
+end
+
+-- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).
+
+-- Loads the layout as a Shaman: ctx.t is GetTime; ctx.totems[slot] = { have, name, start, duration, icon };
+-- ctx.weapon is GetWeaponEnchantInfo's returns (n of them); ctx.auras[name] = aura data for
+-- C_UnitAuras.GetAuraDataBySpellName, or with opts.unitBuff the UnitBuff list { name, icon, count, expiration };
+-- ctx.mana = { cur, max }; ctx.tickers lists C_Timer.NewTicker calls; ctx.calls counts totem, weapon, weapon icon,
+-- aura and power API calls; ctx.tip is GameTooltip. opts.class is the class file.
+local function loadShaman(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local ctx
+    local spells = { [324] = "Lightning Shield", [24398] = "Water Shield" }
+    for id, name in pairs(opts.spells or {}) do
+        spells[id] = name or nil
+    end
+    local env = {
+        UIParent = { name = "UIParent" },
+        GameTooltip = barTooltip(),
+        UnitClass = function() return "Class", opts.class or "SHAMAN" end,
+        GetTime = function() return ctx.t end,
+        GetTotemInfo = function(slot)
+            ctx.calls = ctx.calls + 1
+            local t = ctx.totems[slot]
+            if not t then
+                return false, "", 0, 0, ""
+            end
+            return t[1], t[2], t[3], t[4], t[5]
+        end,
+        GetWeaponEnchantInfo = function()
+            ctx.calls = ctx.calls + 1
+            local w = ctx.weapon
+            if w.n == 6 then
+                return w[1], w[2], w[3], w[4], w[5], w[6]
+            end
+            return w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8]
+        end,
+        GetInventoryItemTexture = function(unit, slot)
+            ctx.calls = ctx.calls + 1
+            return unit == "player" and ({ [16] = "mhIcon", [17] = "ohIcon" })[slot] or nil
+        end,
+        C_Spell = { GetSpellName = function(id) return spells[id] end },
+        UnitPower = function(unit, kind)
+            ctx.calls = ctx.calls + 1
+            return unit == "player" and kind == 0 and ctx.mana[1] or nil end,
+        UnitPowerMax = function(unit, kind) return unit == "player" and kind == 0 and ctx.mana[2] or nil end,
+        C_Timer = { NewTicker = function(interval, fn)
+            local t = { interval = interval, fn = fn }
+            function t.Cancel(self) self.cancelled = true end
+            ctx.tickers[#ctx.tickers + 1] = t
+            return t
+        end },
+    }
+    if opts.unitBuff then
+        env.UnitBuff = function(unit, i)
+            ctx.calls = ctx.calls + 1
+            local b = unit == "player" and ctx.buffs[i]
+            if b then
+                return b[1], b[2], b[3], nil, nil, b[4]
+            end
+        end
+    else
+        env.C_UnitAuras = { GetAuraDataBySpellName = function(unit, name, filter)
+            ctx.calls = ctx.calls + 1
+            return unit == "player" and filter == "HELPFUL" and ctx.auras[name] or nil
+        end }
+    end
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    ctx = loadLayout({ env = env, locale = opts.locale, db = opts.db, layouts = opts.layouts, active = opts.active,
+        widgets = function(kind, name, parent, template)
+            return newWidget(ui, kind, name, parent, template)
+        end })
+    ctx.ui, ctx.t, ctx.totems, ctx.weapon, ctx.auras, ctx.buffs = ui, 100, {}, { n = 8 }, {}, {}
+    ctx.mana, ctx.tickers, ctx.calls, ctx.tip = { 800, 1000 }, {}, 0, env.GameTooltip
+    function ctx.area()
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "Frame" and w.parent == ctx.env.UIParent then
+                return w
+            end
+        end
+    end
+    -- The rail's shown slots in order, as "icon time" plus " x<count>" when a count shows.
+    function ctx.shownSlots()
+        local out = {}
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "Frame" and w.parent == ctx.area() and w.shown then
+                out[#out + 1] = w
+            end
+        end
+        return out
+    end
+    function ctx.slots()
+        local out = {}
+        for i, s in ipairs(ctx.shownSlots()) do
+            out[i] = tostring(s.icon.texture) .. " " .. s.time.text .. (s.count.text ~= "" and (" x" .. s.count.text)
+                or "")
+        end
+        return table.concat(out, " | ")
+    end
+    -- The tooltip of shown slot i as "title / line / ...".
+    function ctx.tooltip(i)
+        local s = ctx.shownSlots()[i]
+        s.scripts.OnEnter(s)
+        local out = { ctx.tip.title }
+        for _, l in ipairs(ctx.tip.lines) do
+            out[#out + 1] = l.text
+        end
+        s.scripts.OnLeave(s)
+        return table.concat(out, " / ")
+    end
+    function ctx.live()
+        local n = 0
+        for _, t in ipairs(ctx.tickers) do
+            n = n + (t.cancelled and 0 or 1)
+        end
+        return n
+    end
+    return ctx
+end
+
+do
+    local ctx = loadShaman()
+    check("class rail: nothing made while the layout is off", (ctx.area()), nil)
+    ctx.fire("PLAYER_TOTEM_UPDATE")
+    ctx.fire("UNIT_AURA", "player")
+    check("class rail: events while off are harmless", (ctx.area()), nil)
+    ctx.run("layout on")
+    local a = ctx.area()
+    check("class rail: 36x232 between the unit frames, 30 above the unit row; mana and no slot keep it hidden",
+        tostring(a.shown) .. " " .. a.height .. "x" .. tostring(a.width) .. " "
+        .. tostring(a.template) .. " " .. #a.points .. " " .. a.points[1][1] .. " "
+        .. tostring(a.points[1][2] == ctx.env.UIParent) .. " " .. table.concat(a.points[1], " ", 3),
+        "false 36x232 nil 1 BOTTOM true BOTTOM 0 222")
+    check("class rail: no totem, enchant or shield shows no slot", ctx.slots(), "")
+    check("class rail: mana line along the bottom", a.line.kind .. " " .. a.line.height .. " " .. a.line.points[1][1]
+        .. " " .. a.line.points[2][1] .. " " .. a.line.value .. " " .. a.line.min .. " " .. a.line.max .. " "
+        .. tostring(a.line.shown) .. " " .. rgb(a.line.barColor), "StatusBar 4 BOTTOMLEFT BOTTOMRIGHT 800 0 1000 true "
+        .. "0.00,0.44,0.87")
+
+    ctx.totems[1] = { true, "Searing Totem", 90, 55, "fireIcon" }
+    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
+    ctx.totems[4] = { true, "Windfury Totem", 40, 120, "airIcon" }
+    ctx.fire("PLAYER_TOTEM_UPDATE")
+    check("class rail: active totems only, in Earth, Fire, Water, Air order; m:ss above a minute, else seconds",
+        ctx.slots(), "earthIcon 2:00 | fireIcon 45 | airIcon 60")
+    check("class rail: a slot shows the rail with its mana line", tostring(a.shown) .. " " .. tostring(a.line.shown)
+        .. " " .. ctx.live(), "true true 1")
+    local s = ctx.shownSlots()
+    check("class rail: 32px slots centred above the line", s[1].width .. "x" .. s[1].height .. " "
+        .. ("%s %d %d / %d / %d "):format(s[1].points[1][3], s[1].points[1][4], s[1].points[1][5], s[2].points[1][4],
+        s[3].points[1][4]) .. tostring(s[1].points[1][2] == a), "32x32 BOTTOM -36 4 / 0 / 36 true")
+    check("class rail: a totem's tooltip is its name", ctx.tooltip(1) .. " " .. tostring(ctx.tip.shown),
+        "Stoneskin Totem / 2:00 false")
+    check("class rail: one ticker at 4 Hz while shown", #ctx.tickers .. " " .. ctx.tickers[1].interval .. " "
+        .. ctx.live(), "1 0.25 1")
+    ctx.t = 150
+    ctx.calls = 0
+    ctx.tickers[1].fn()
+    check("class rail: the ticker counts down; an expired totem's slot goes", ctx.slots(),
+        "earthIcon 1:10 | airIcon 10")
+    check("class rail: a tick calls no totem, weapon, aura or power API", ctx.calls, 0)
+    check("class rail: the remaining slots re-centre", ("%d %d"):format(ctx.shownSlots()[1].points[1][4],
+        ctx.shownSlots()[2].points[1][4]), "-18 18")
+    ctx.t = 100
+    ctx.totems = {}
+    ctx.fire("PLAYER_TOTEM_UPDATE")
+
+    ctx.weapon = { true, 1234567, 0, 563, true, 61000, 0, 2, n = 8 }
+    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
+    check("class rail: weapon enchants never show", ctx.slots(), "")
+    ctx.weapon = { n = 8 }
+
+    ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 640, icon = "lsIcon" }
+    ctx.fire("UNIT_AURA", "target")
+    check("class rail: another unit's aura is ignored", ctx.slots(), "")
+    ctx.fire("UNIT_AURA", "player")
+    check("class rail: Lightning Shield with charges as count", ctx.slots() .. " / " .. ctx.tooltip(1),
+        "lsIcon 9:00 x3 / Lightning Shield / 9:00")
+    check("class rail: the count sits at the slot's bottom right", ctx.shownSlots()[1].count.points[1][1],
+        "BOTTOMRIGHT")
+    ctx.t, ctx.calls = 340, 0
+    ctx.tickers[1].fn()
+    check("class rail: a tick counts the shield down without API calls", ctx.slots() .. " / " .. ctx.calls,
+        "lsIcon 5:00 x3 / 0")
+    ctx.t = 640
+    ctx.tickers[1].fn()
+    check("class rail: an expired shield's slot goes", ctx.slots(), "")
+    ctx.t = 100
+    ctx.auras["Lightning Shield"] = nil
+    ctx.auras["Water Shield"] = { applications = 0, expirationTime = 0, icon = "wsIcon" }
+    ctx.fire("UNIT_AURA", "player")
+    check("class rail: Water Shield without expiry or charges", ctx.slots() .. " / " .. ctx.tooltip(1),
+        "wsIcon  / Water Shield")
+
+    ctx.totems[3] = { true, "Healing Stream Totem", 100, 60, "waterIcon" }
+    ctx.fire("PLAYER_TOTEM_UPDATE")
+    check("class rail: totems, then the shield", ctx.slots(), "waterIcon 60 | wsIcon ")
+
+    ctx.mana = { 450, 1200 }
+    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
+    check("class rail: UNIT_POWER_UPDATE", a.line.value .. " " .. a.line.max, "450 1200")
+    ctx.mana = { 450, 1500 }
+    ctx.fire("UNIT_MAXPOWER", "player", "MANA")
+    check("class rail: UNIT_MAXPOWER", a.line.value .. " " .. a.line.max, "450 1500")
+
+    local clickable, mouse = {}, 0
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.template or w.scripts.OnClick or w.scripts.OnMouseDown or w.scripts.OnMouseUp or w.kind == "Button" then
+            clickable[#clickable + 1] = w.kind
+        end
+        if w.mouse and not (w.parent == a and w.scripts.OnEnter) then
+            mouse = mouse + 1
+        end
+    end
+    check("class rail: nothing clickable, no templates; only slots take the mouse, for their tooltip",
+        #clickable .. " " .. mouse, "0 0")
+
+    ctx.run("layout off")
+    check("class rail: hidden with the layout off; ticker stopped", tostring(a.shown) .. " " .. ctx.live(),
+        "false 0")
+    ctx.fire("PLAYER_TOTEM_UPDATE")
+    check("class rail: events while off keep it hidden", a.shown, false)
+    ctx.run("layout on")
+    check("class rail: shown again, one rail, one live ticker", tostring(a.shown) .. " "
+        .. tostring(ctx.area() == a) .. " " .. ctx.live(), "true true 1")
+end
+
+do
+    local ctx = loadShaman({ unitBuff = true, spells = { [24398] = false } })
+    ctx.buffs = { { "Mark of the Wild", "motwIcon", 0, 900 }, { "Lightning Shield", "lsIcon", 2, 160 } }
+    ctx.run("layout on")
+    check("class rail: shield by UnitBuff scan; no Water Shield spell is fine", ctx.slots(), "lsIcon 60 x2")
+    ctx.buffs = {}
+    ctx.fire("UNIT_AURA", "player")
+    check("class rail: shield gone by UnitBuff scan", ctx.slots(), "")
+
+    ctx = loadShaman({ env = { C_Spell = {}, GetSpellInfo = function(id)
+        return id == 324 and "Lightning Shield" or nil
+    end } })
+    ctx.auras["Lightning Shield"] = { applications = 1, expirationTime = 130 }
+    ctx.run("layout on")
+    check("class rail: shield name from GetSpellInfo; no icon falls back", ctx.slots() .. " / " .. ctx.tooltip(1),
+        "Interface\\Icons\\INV_Misc_QuestionMark 30 x1 / Lightning Shield / 0:30")
+
+    ctx = loadShaman({ env = { UnitPowerMax = function() return 0 end } })
+    ctx.run("layout on")
+    check("class rail: no mana and no slot hides the rail and the line", tostring(ctx.area().shown) .. " "
+        .. tostring(ctx.area().line.shown) .. " " .. ctx.live(), "false false 0")
+    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
+    ctx.fire("PLAYER_TOTEM_UPDATE")
+    check("class rail: a slot shows the rail again", tostring(ctx.area().shown) .. " " .. ctx.slots() .. " "
+        .. ctx.live(), "true earthIcon 2:00 1")
+    ctx.t = 220
+    ctx.tickers[1].fn()
+    check("class rail: the last slot running out hides the rail", tostring(ctx.area().shown) .. " " .. ctx.live(),
+        "false 0")
+
+    ctx = loadShaman({ class = "WARRIOR" })
+    ctx.run("layout on")
+    check("class rail: another class gets no rail", (ctx.area()), nil)
+
+    ctx = loadShaman()
+    ctx.env.GetTotemInfo = nil
+    ctx.run("layout on")
+    check("class rail: not ready stays dark", (ctx.area()), nil)
+
+    ctx = loadShaman({ env = { C_Timer = false } })
+    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
+    ctx.run("layout on")
+    check("class rail: no C_Timer still shows", ctx.area().shown, true)
+
+    ctx = loadShaman({ env = { GameTooltip = false } })
+    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
+    ctx.run("layout on")
+    local s = ctx.shownSlots()[1]
+    s.scripts.OnEnter(s)
+    s.scripts.OnLeave(s)
+    check("class rail: no GameTooltip is harmless", ctx.slots(), "earthIcon 2:00")
+
+    ctx = loadShaman()
+    for i = 1, 4 do
+        ctx.totems[i] = { true, "Totem " .. i, 100, 120, "t" .. i }
+    end
+    ctx.weapon = { true, 60000, 0, 1, true, 60000, 0, 2, n = 8 }
+    ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 160, icon = "lsIcon" }
+    ctx.run("layout on")
+    check("class rail: five slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
+        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[5].points[1][4]), "5 -72 72")
+
+    local many = {}
+    for i = 1, 14 do
+        many[i] = { icon = "i" .. i, label = "L" .. i }
+    end
+    ctx.addon.ClassArea.Set(many)
+    check("class rail: twelve slots at most", ("%d %d %d"):format(#ctx.shownSlots(), ctx.shownSlots()[1].points[1][4],
+        ctx.shownSlots()[12].points[1][4]), "12 -198 198")
+
+    ctx = loadShaman({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
+    ctx.fire("PLAYER_LOGIN")
+    check("class rail: relogin with the layout on shows it", ctx.area().shown, true)
+    local reg = ctx.frame.registered
+    check("class rail: unit events registered (falling back to every unit)", tostring(reg.UNIT_AURA) .. " "
+        .. tostring(reg.UNIT_POWER_UPDATE) .. " " .. tostring(reg.UNIT_MAXPOWER) .. " "
+        .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " " .. tostring(reg.UNIT_INVENTORY_CHANGED), "true true true true nil")
+end
+
+-- Store.RegisterUnitEvent: the player only where the client has RegisterUnitEvent, else every unit (U5 review).
+do
+    local Store = loadWithDB(nil).Store
+    local got = {}
+    local f = { RegisterUnitEvent = function(_, ev, unit) got[#got + 1] = ev .. ":" .. unit end,
+        RegisterEvent = function(_, ev) got[#got + 1] = ev end }
+    check("unit event: RegisterUnitEvent used for the unit", tostring(Store.RegisterUnitEvent(f, "UNIT_AURA", "player"))
+        .. " " .. table.concat(got, ","), "true UNIT_AURA:player")
+    got = {}
+    f.RegisterUnitEvent = function() error("unknown event") end
+    check("unit event: a raising RegisterUnitEvent falls back", tostring(Store.RegisterUnitEvent(f, "UNIT_AURA",
+        "player")) .. " " .. table.concat(got, ","), "true UNIT_AURA")
+    f.RegisterUnitEvent = nil
+    f.RegisterEvent = function() error("unknown event") end
+    check("unit event: an unknown event registers nothing", Store.RegisterUnitEvent(f, "UNIT_NOPE", "player"), false)
+end
+
+-- Minimap button and addon compartment: a click turns the layout on or off (stage 12, U6).
+
+local function fakeMinimap(ui)
+    local m = newWidget(ui, "Minimap", "Minimap")
+    m.GetWidth = function() return 140 end
+    m.GetCenter = function() return 500, 400 end
+    m.GetEffectiveScale = function() return 2 end
+    return m
+end
+
+local function near(a, b)
+    return math.abs(a - b) < 1e-6
+end
+
+-- Loads the layout with a fake minimap and GameTooltip; ctx.cursor is GetCursorPosition, ctx.button() the minimap
+-- button after PLAYER_LOGIN, ctx.tip the tooltip. opts.noMinimap leaves Minimap out.
+local function loadMinimap(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local tip = fakeTooltip()
+    function tip.SetOwner(self, owner) self.owner, self.lines = owner, {} end
+    function tip.SetText(self, text) self.title = text end
+    function tip.Show(self) self.shown = true end
+    function tip.Hide(self) self.shown = false end
+    local ctx
+    local env = { GameTooltip = tip, GetCursorPosition = function() return ctx.cursor[1], ctx.cursor[2] end }
+    if not opts.noMinimap then
+        env.Minimap = fakeMinimap(ui)
+    end
+    ctx = loadLayout({ env = env, locale = opts.locale, db = opts.db, layouts = opts.layouts, active = opts.active,
+        widgets = function(kind, name, parent, template)
+            return newWidget(ui, kind, name, parent, template)
+        end })
+    ctx.ui, ctx.tip, ctx.cursor = ui, tip, { 1000, 1000 }
+    function ctx.button()
+        for _, w in ipairs(ui.widgets) do
+            if w.name == "TandemMinimapButton" then
+                return w
+            end
+        end
+    end
+    function ctx.click(b)
+        local from = #ctx.printed
+        b.scripts.OnClick(b, "LeftButton")
+        return table.concat(linesSince(ctx.printed, from), "|")
+    end
+    return ctx
+end
+
+do
+    local want = {
+        AddonCompartmentFunc = "Tandem_OnCompartmentClick",
+        AddonCompartmentFuncOnEnter = "Tandem_OnCompartmentEnter",
+        AddonCompartmentFuncOnLeave = "Tandem_OnCompartmentLeave",
+    }
+    local got = {}
+    for raw in io.lines(addonDir .. "Tandem.toc") do
+        local key, value = raw:match("^## (%S+): (%S+)$")
+        if key and want[key] then
+            got[key] = value
+        end
+    end
+    local ctx = loadMinimap()
+    for key, fn in pairs(want) do
+        check("toc " .. key, got[key], fn)
+        check("launcher: global " .. fn, type(ctx.env[fn]), "function")
+    end
+
+    ctx.fire("PLAYER_LOGIN")
+    local b = ctx.button()
+    check("minimap button: shown by default on the minimap", tostring(b.shown) .. " " .. tostring(b.parent
+        == ctx.env.Minimap) .. " " .. b.icon.texture, "true true Interface\\AddOns\\Tandem\\Media\\icon")
+    local p = b.points[1]
+    check("minimap button: default angle 225", p[1] .. " " .. p[3] .. " " .. tostring(near(p[4], -80 * math.sqrt(0.5))
+        and near(p[5], -80 * math.sqrt(0.5))), "CENTER CENTER true")
+    check("minimap button: no state saved by default", ctx.env.TandemDB.layout.minimap, nil)
+    ctx.fire("PLAYER_LOGIN")
+    local n = 0
+    for _, w in ipairs(ctx.ui.widgets) do
+        n = n + (w.name == "TandemMinimapButton" and 1 or 0)
+    end
+    check("minimap button: built once", n, 1)
+
+    local from = #ctx.printed
+    b.scripts.OnClick(b, "RightButton")
+    check("minimap button: a right click does nothing", #ctx.printed .. " " .. tostring(ctx.addon.Layout.IsOn()),
+        from .. " false")
+    check("minimap button: click turns the layout on", ctx.click(b) .. " " .. tostring(ctx.addon.Layout.IsOn()),
+        "Tandem: layout on true")
+    b.scripts.OnEnter(b)
+    check("minimap button: tooltip with the state and hints", ctx.tip.title .. " / " .. texts(ctx.tip) .. " / "
+        .. tostring(ctx.tip.owner == b) .. " " .. tostring(ctx.tip.shown),
+        "Tandem / Layout: on / Click to turn the layout on/off / Drag to move this button / true true")
+    b.scripts.OnLeave(b)
+    check("minimap button: tooltip hidden", ctx.tip.shown, false)
+    check("minimap button: click turns the layout off", ctx.click(b) .. " " .. tostring(ctx.addon.Layout.IsOn()),
+        "Tandem: layout off; your previous layout is back false")
+    b.scripts.OnEnter(b)
+    check("minimap button: tooltip shows off", ctx.tip.lines[1].text, "Layout: off")
+
+    from = #ctx.printed
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    check("compartment click turns the layout on", table.concat(linesSince(ctx.printed, from), "|") .. " "
+        .. tostring(ctx.addon.Layout.IsOn()), "Tandem: layout on true")
+    from = #ctx.printed
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "LeftButton")
+    check("compartment click turns the layout off", table.concat(linesSince(ctx.printed, from), "|") .. " "
+        .. tostring(ctx.addon.Layout.IsOn()), "Tandem: layout off; your previous layout is back false")
+    local menuButton = {}
+    ctx.env.Tandem_OnCompartmentEnter("Tandem", menuButton)
+    check("compartment tooltip: no drag hint", tostring(ctx.tip.owner == menuButton) .. " " .. texts(ctx.tip),
+        "true Layout: off / Click to turn the layout on/off")
+    ctx.env.Tandem_OnCompartmentLeave("Tandem", menuButton)
+    check("compartment tooltip hidden", ctx.tip.shown, false)
+
+    ctx.state.combat = true
+    check("minimap button: click in combat waits", ctx.click(b), "Tandem: the layout will change after combat")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("minimap button: the deferred click turns it on after combat", ctx.addon.Layout.IsOn(), true)
+
+    b.scripts.OnDragStart(b)
+    check("minimap button: follows the cursor while dragged", type(b.scripts.OnUpdate), "function")
+    ctx.cursor = { 1200, 800 }
+    b.scripts.OnUpdate(b)
+    check("minimap button: drag moves it east", near(b.points[1][4], 80) and near(b.points[1][5], 0), true)
+    ctx.cursor = { 1200, 1000 }
+    b.scripts.OnUpdate(b)
+    b.scripts.OnDragStop(b)
+    check("minimap button: stops following", b.scripts.OnUpdate, nil)
+    check("minimap button: drag saves the angle", near(ctx.env.TandemDB.layout.minimap.angle, 45), true)
+
+    check("minimap command: no argument hides", ctx.run("minimap") .. " " .. tostring(b.shown),
+        "Tandem: minimap button hidden false")
+    check("minimap command: hidden is saved with the angle", tostring(ctx.env.TandemDB.layout.minimap.hidden) .. " "
+        .. tostring(near(ctx.env.TandemDB.layout.minimap.angle, 45)), "true true")
+    check("minimap command: no argument shows again", ctx.run("minimap") .. " " .. tostring(b.shown),
+        "Tandem: minimap button shown true")
+    check("minimap command: shown drops the hidden flag", ctx.env.TandemDB.layout.minimap.hidden, nil)
+    check("minimap command: off", ctx.run("minimap off") .. " " .. tostring(b.shown),
+        "Tandem: minimap button hidden false")
+    check("minimap command: off again stays hidden", ctx.run("minimap off") .. " " .. tostring(b.shown),
+        "Tandem: minimap button hidden false")
+    ctx.state.combat = true
+    check("minimap command: works in combat", ctx.run("minimap on") .. " " .. tostring(b.shown),
+        "Tandem: minimap button shown true")
+    ctx.state.combat = false
+    for _, msg in ipairs({ "minimap yes", "minimap on off" }) do
+        check("minimap command: usage for " .. msg, ctx.run(msg):match("^[^|]*"), "Tandem commands:")
+    end
+    ctx.run("minimap off")
+
+    local again = loadMinimap({ db = ctx.env.TandemDB })
+    again.fire("PLAYER_LOGIN")
+    local q = again.button()
+    check("minimap button: hidden state restored at login", q.shown, false)
+    check("minimap button: angle restored at login", near(q.points[1][4], 80 * math.sqrt(0.5))
+        and near(q.points[1][5], 80 * math.sqrt(0.5)), true)
+end
+
+do
+    local ctx = loadMinimap({ noMinimap = true })
+    ctx.fire("PLAYER_LOGIN")
+    check("minimap button: no minimap builds nothing", ctx.button(), nil)
+    ctx.run("minimap on")
+    check("minimap command: nothing saved when shown without an angle", ctx.env.TandemDB.layout.minimap, nil)
+    check("minimap command: still saved without a minimap", ctx.run("minimap off") .. " "
+        .. tostring(ctx.env.TandemDB.layout.minimap.hidden), "Tandem: minimap button hidden true")
+    ctx.env.Tandem_OnCompartmentEnter("Tandem", nil)
+    check("compartment tooltip without a frame is skipped", ctx.tip.title, nil)
+end
+
+do
+    local ctx = loadMinimap({ locale = "zhTW" })
+    ctx.fire("PLAYER_LOGIN")
+    local b = ctx.button()
+    b.scripts.OnEnter(b)
+    check("zhTW minimap tooltip", texts(ctx.tip), "介面配置：關閉 / 點擊以開啟或關閉介面配置 / 拖曳以移動此按鈕")
+    check("zhTW minimap command", ctx.run("minimap"), "Tandem：已隱藏小地圖按鈕")
+    local help = run(ctx.addon, ctx.printed, "help")
+    check("zhTW usage lists minimap", help[#help - 1], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off] - 為開發者記錄圖騰列的移動；/reload 後寫入存檔")
+end
+
+do
+    local Launcher = loadWithDB(nil).Launcher
+    check("angle: north is 90", near(Launcher.Angle(0, 10, 0, 0), 90), true)
+    check("angle: a tiny negative angle wraps to 0", Launcher.Angle(1, -1e-300, 0, 0), 0)
+end
+
+-- Store: the optional minimap state in TandemDB.layout (U6), schema 7 unchanged.
+do
+    local addon, printed, env = loadWithDB({ schemaVersion = 7, layout = { on = true,
+        minimap = { angle = 90.5, hidden = true } } })
+    check("minimap store: a valid state is kept", dump(env.TandemDB.layout.minimap), dump({ angle = 90.5,
+        hidden = true }))
+    check("minimap store: a valid state prints only the load line", #printed, 1)
+    local Store = addon.Store
+    check("minimap store: SetLayout copies clean", Store.SetLayout("minimap", { angle = 0, extra = 1 })
+        and dump(Store.Layout().minimap), dump({ angle = 0 }))
+    for name, v in pairs({ ["360"] = { angle = 360 }, ["a string angle"] = { angle = "90" },
+        ["NaN"] = { angle = 0 / 0 }, ["a non-boolean hidden"] = { hidden = 1 }, ["a number"] = 5 }) do
+        check("minimap store: SetLayout rejects " .. name, Store.SetLayout("minimap", v), false)
+        local _, out, e = loadWithDB({ schemaVersion = 7, layout = { on = true, minimap = v } })
+        check("minimap store: load drops " .. name, tostring(e.TandemDB.layout.minimap) .. " "
+            .. tostring(e.TandemDB.layout.on) .. " " .. tostring(out[2]),
+            "nil true Tandem: dropped 1 invalid or unused saved entries")
+    end
+    check("minimap store: a newer db is not written",
+        loadWithDB({ schemaVersion = 8 }).Store.SetLayout("minimap", { angle = 1 }), false)
+end
 
 if failures > 0 then
     os.exit(1)

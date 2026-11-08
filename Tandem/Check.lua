@@ -42,12 +42,30 @@ Check.FEATURES = {
         { "GetInventoryItemLink" },
         { "ContainerFrame1Item1", "ContainerFrameCombinedBags" },
     } },
+    { name = "Layout", needs = {
+        { "C_EditMode.GetLayouts" }, { "C_EditMode.SaveLayouts" }, { "C_EditMode.SetActiveLayout" },
+        { "EditModeManagerFrame" }, { "EditModePresetLayoutManager.GetCopyOfPresetLayouts" },
+        { "MainActionBar", "MainMenuBar" },
+    } },
+    { name = "XP bar", needs = {
+        { "UnitXP" }, { "UnitXPMax" },
+    } },
+    { name = "Bag button", needs = {
+        { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "ToggleAllBags" },
+    } },
+    { name = "Shaman area", needs = {
+        { "GetTotemInfo" }, { "UnitPower" },
+    } },
 }
 
 -- Client paths /tandem check reports for in-game diagnosis; they gate nothing.
 Check.PROBES = {
     "LootButton1", "LootFrame.ScrollBox", "LootFrame_Update", "ContainerFrame1Item1.IconBorder",
-    "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon",
+    "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon", "Enum.EditModeSystem.ChatFrame",
+    "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
+    "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
+    "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
+    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
 }
 
 -- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.
