@@ -79,6 +79,7 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
 | `/tandem layout`                       | Prints whether Tandem's [layout](#layout) is on or off                  |
 | `/tandem layout <on\|off>`             | Turns the layout on, or off to bring your previous layout back          |
 | `/tandem minimap [on\|off]`            | Shows or hides the [minimap button](#minimap-button); alone, toggles it |
+| `/tandem debug [on\|off\|snap]`        | Records layout traces for the developer; see [Debug log](#debug-log)    |
 
 `check` and `weights` print `Tandem: not available in combat` and do nothing while you are in combat. `layout` waits
 for combat to end instead; `minimap` works in combat too.
@@ -290,15 +291,29 @@ Tandem's entry in the addon compartment menu does the same as a click.
 
 ### What moves
 
-- The three bottom action bars stack at the bottom centre, 12 buttons in one row each, with room under them for the
-  XP bar and the [class area](#shaman-class-area) just above them.
-- The player frame sits as a wing left of the bars and the target frame as a wing right of them, both level with the
-  top bar. The target of target is shown, next to the target frame.
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ [micro menu]           [====|====| XP 62% |====]    [buffs][map] │
+│                                                                  │
+│      [player]          [class rail]          [target][ToT]       │
+│                                                                  │
+│                      [ Shaman totem bar ]                        │
+│ [chat]               [ main action bar  ]                        │
+│ [chat]               [ action bar 2     ]                        │
+│ [chat]               [ action bar 3     ]              [bag row] │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- The three bottom action bars stack at the bottom centre, 12 buttons in one row each, the main bar on top, without
+  the gryphon art. A Shaman's totem bar keeps its own row just above the main bar, where Blizzard puts it.
+- The player frame and the target frame sit in a row well above the bars, left and right of centre, with the
+  [class area](#shaman-class-area) between them. The target of target is shown, next to the target frame.
+- The [XP bar](#xp-bar) sits at the top centre of the screen.
 - The chat window goes to the bottom left, about 380 by 120, when the client's Edit Mode has a chat system; without
-  Edit Mode's chat size settings it only moves; without a chat system it stays put.
-- The [bag row](#bag-row) sits in the bottom-right corner, with the micro menu above it.
-- On a narrow screen, the chat window narrows to the room left of the player frame (down to 260 wide) and otherwise
-  goes above the bars, and the micro menu goes above the bars when it does not fit right of the target frame.
+  Edit Mode's chat size settings it only moves; without a chat system it stays put. On a narrow screen it narrows to
+  the room left of the bars (down to 260 wide) and otherwise goes above the player frame.
+- The [bag row](#bag-row) sits in the bottom-right corner.
+- The micro menu goes to the top left; the quest tracker stays where your previous layout had it.
 - The minimap goes to the top right, with the buffs just left of it.
 - The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
   minimap's); otherwise they stay where they are.
@@ -309,8 +324,8 @@ display only and update in combat too.
 
 ### XP bar
 
-A thin bar under the action bars shows your experience, with only the percent on it, such as `42%`. Hover it for
-value / max and the rested bonus:
+A bar at the top centre of the screen, half the screen wide, shows your experience with the percent on it, such as
+`42%`, split into ten cells by thin lines like the classic XP bar. Hover it for value / max and the rested bonus:
 
 ```text
 4200 / 9800 (42%)
@@ -318,7 +333,7 @@ Rested +15%
 ```
 
 The bar is blue while you have rested experience and purple without. It is hidden at the maximum level, and it
-replaces the default status bar, so a watched reputation bar is hidden too while the layout is on. It needs the
+replaces the default status bars, so a watched reputation bar is hidden too while the layout is on. It needs the
 `XP bar` line of [`/tandem check`](#tandem-check).
 
 ### Bag row
@@ -331,15 +346,14 @@ bags. It replaces the default bag bar while the layout is on, and needs the `Bag
 
 ### Shaman class area
 
-For a Shaman, a rail of icons just above the action bars shows, centred, one icon for each of:
+For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each of:
 
 - each totem that is down, in Earth, Fire, Water, Air order, with its time left;
-- each weapon enchant that is up, main hand then off hand, on the weapon's icon, with its time left;
 - Lightning Shield, or Water Shield where the client has it, with its charges in the lower-right corner and its time
   left.
 
 The time left reads `m:ss` above a minute, else whole seconds, and counts down; an icon goes when its time runs out.
-Hover an icon for its name (the totem's, the shield's, or `Main hand` / `Off hand`) and time left. While any icon
+Hover an icon for its name (the totem's or the shield's) and time left. While any icon
 shows, a thin blue mana line runs along the rail's bottom; with no icon, the whole rail hides.
 
 It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
@@ -347,6 +361,15 @@ rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
 
 Each part, the layout, XP bar, bag row and Shaman area, stays dark when its `/tandem check` line is `missing`, and
 the rest still works.
+
+### Debug log
+
+`/tandem debug on` starts recording, for the developer, every move of the Shaman totem bar with its caller, the
+related game events and a snapshot of the frames near the bottom of the screen and Blizzard's status bars (2 seconds
+after login, on every layout change, and on `/tandem debug snap`). Nothing is printed while it records. The log, at
+most 300 lines, is saved in the `TandemDebug` saved variable when you `/reload` or log out. `/tandem debug off` stops
+recording and prints how many lines it kept; `/tandem debug` alone toggles it, and `snap` turns recording on if
+needed and takes a snapshot.
 
 ## Saved data
 
@@ -373,6 +396,9 @@ Tandem saves one account-wide table, `TandemDB`, as
 Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
 `Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
+
+The same file also holds `TandemDebug`, the [debug log](#debug-log): `on` and up to 300 `log` lines, only after you
+turn it on.
 
 The client writes `Tandem.lua` only on logout or `/reload`.
 
@@ -486,15 +512,18 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 ### Check the layout
 
 1. Out of combat, run `/tandem layout on`. Chat shows `Tandem: layout on`. The three bottom action bars sit at the
-   bottom centre with the player and target frames beside them, the chat window bottom left, the micro menu above
-   the bag row in the bottom-right corner and the minimap top right with the buffs to its left (where the client
-   lets Edit Mode move them); the right bars and the bag bar are gone. Target something: its target of target shows.
-2. Under the bars, the thin XP bar shows only its percent, purple, or blue when rested. Hover it: `<value> / <max>
-(<n>%)` and, when rested, `Rested +<n>%`. Kill something: it moves.
+   bottom centre without gryphons, the player and target frames in a row above them, the chat window bottom left,
+   the bag row in the bottom-right corner, the micro menu top left and the minimap top right with the buffs to its
+   left (where the client lets Edit Mode move them); the right bars and the bag bar are gone. Target something: its
+   target of target shows.
+2. At the top centre, the XP bar, half the screen wide in ten cells, shows its percent, purple, or blue when rested.
+   Only one XP bar shows. Hover it: `<value> / <max> (<n>%)` and, when rested, `Rested +<n>%`. Kill something: it
+   moves.
 3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one
    icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one.
-4. On a Shaman, nothing shows above the bars at first. Drop a totem, apply a weapon enchant and cast Lightning
-   Shield: an icon for each appears on the rail above the bars with its time left counting down, the shield with its
+4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
+   shows between the unit frames at first. Drop a totem and cast Lightning Shield: an icon for each appears on the
+   rail between the player and target frames with its time left counting down, the shield with its
    charges, and a thin blue mana line under them. Hover one: its name. When one runs out, its icon goes; when the
    last goes, the rail and its mana line go. Clicking the rail does nothing.
 5. Run `/reload`: everything is still in place.
