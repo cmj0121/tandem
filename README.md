@@ -344,6 +344,9 @@ under 10 free slots and red when full. Hover an icon for its bags' names and fre
 bags. It replaces the default bag bar while the layout is on, and needs the `Bag button` line of
 [`/tandem check`](#tandem-check).
 
+At every login, layout on or off, Tandem turns on the client's combined bags (the `combinedBags` setting), so `B`
+opens one window with all your bags. You can switch it off in the options; it comes back on at the next login.
+
 ### Shaman class area
 
 For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each of:

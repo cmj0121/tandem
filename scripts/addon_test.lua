@@ -4336,6 +4336,26 @@ do
         "true 30%")
 end
 
+-- Combined bags at login (B opens one window with every bag).
+do
+    local cvars = { combinedBags = "0" }
+    local env = {
+        GetCVar = function(name) return cvars[name] end,
+        SetCVar = function(name, v) cvars[name] = v end,
+    }
+    local ctx = loadLayout({ env = env })
+    ctx.fire("PLAYER_LOGIN")
+    check("combined bags: turned on at login", cvars.combinedBags, "1")
+    cvars.combinedBags = nil
+    ctx.fire("PLAYER_LOGIN")
+    check("combined bags: a client without the CVar gets none", cvars.combinedBags, nil)
+    local c = { combinedBags = "0" }
+    ctx = loadLayout({ env = { C_CVar = { GetCVar = function(n) return c[n] end,
+        SetCVar = function(n, v) c[n] = v end } } })
+    ctx.fire("PLAYER_LOGIN")
+    check("combined bags: C_CVar preferred", c.combinedBags, "1")
+end
+
 -- Bag row at the bottom right while the layout is on (stage 12, U4, D5, D12).
 
 -- Loads the layout with fake bags: ctx.bags[bag] = { total, free, family }; bag b sits in inventory slot 30 + b whose

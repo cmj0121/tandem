@@ -36,6 +36,18 @@ local function api(name)
     return c[name] or _G[name]
 end
 
+-- At login: turns on the client's combined bags (the "combinedBags" CVar), so B and the bag row open one bag
+-- window with every bag. Only sets a CVar the client has; the player can still switch it off in the options, and it
+-- comes back on at the next login.
+function BagButton.OnLogin()
+    local get = type(C_CVar) == "table" and C_CVar.GetCVar or GetCVar
+    local set = type(C_CVar) == "table" and C_CVar.SetCVar or SetCVar
+    local v = call(get, "combinedBags")
+    if type(v) == "string" and v ~= "1" then
+        pcall(set, "combinedBags", "1")
+    end
+end
+
 local function bagIcon(bag)
     local inv = call(api("ContainerIDToInventoryID"), bag)
     local icon = inv and call(_G.GetInventoryItemTexture, "player", inv)
