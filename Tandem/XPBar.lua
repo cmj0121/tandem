@@ -8,6 +8,8 @@ ns.XPBar = XPBar
 
 -- Height, gap under the screen's top edge, and share of the screen's width.
 local HEIGHT, GAP, SHARE = 12, 4, 0.5
+-- The bar is split into this many cells by thin dark lines, like Blizzard's classic XP bar.
+local CELLS = 10
 local REST_COLOR, XP_COLOR = { 0, 0.39, 0.88 }, { 0.58, 0, 0.55 }
 
 local bar, on
@@ -62,6 +64,14 @@ local function create()
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(bar)
     bg:SetColorTexture(0, 0, 0, 0.5)
+    -- Cell dividers over the fill (ARTWORK sublevel 7), under the percent text (OVERLAY).
+    bar.dividers = {}
+    for i = 1, CELLS - 1 do
+        local d = bar:CreateTexture(nil, "ARTWORK", nil, 7)
+        d:SetColorTexture(0, 0, 0, 0.8)
+        d:SetWidth(1)
+        bar.dividers[i] = d
+    end
     bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bar.text:SetPoint("CENTER", bar, "CENTER", 0, 0)
     bar:EnableMouse(true)
@@ -75,7 +85,13 @@ local function place()
     local width = type(parent) == "table" and call(parent.GetWidth, parent)
     bar:ClearAllPoints()
     bar:SetPoint("TOP", UIParent, "TOP", 0, -GAP)
-    bar:SetWidth(math.floor((type(width) == "number" and width > 0 and width or 1024) * SHARE))
+    width = math.floor((type(width) == "number" and width > 0 and width or 1024) * SHARE)
+    bar:SetWidth(width)
+    for i, d in ipairs(bar.dividers) do
+        d:ClearAllPoints()
+        d:SetPoint("TOPLEFT", bar, "TOPLEFT", math.floor(width * i / CELLS), 0)
+        d:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", math.floor(width * i / CELLS), 0)
+    end
 end
 
 -- Refreshes the bar's value and text; hides it while the layout is off, the client lacks the XP API or the player
