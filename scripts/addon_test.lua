@@ -3857,7 +3857,13 @@ do
     function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
     function totem.ClearAllPoints(self) self.points = {} end
     function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
-    local ctx = loadLayout({ env = { MultiCastActionBarFrame = totem } })
+    local ticker = {}
+    function ticker.Cancel(self) self.cancelled = true end
+    local timer = { NewTicker = function(_, fn)
+        ticker.fn, ticker.cancelled = fn, nil
+        return ticker
+    end }
+    local ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, C_Timer = timer } })
     local function where()
         local p = totem.points[1]
         return #totem.points .. " " .. table.concat({ p[1], p[2] == ctx.state.frames.MultiBarBottomLeft
@@ -3873,9 +3879,29 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("totem bar: re-pinned after combat", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
+    totem.points = { { "BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4 } }
+    ticker.fn()
+    check("totem bar: the watcher puts back a bar Blizzard moved after a cast", where(),
+        "1 LEFT MultiBarBottomLeft RIGHT 8 0")
+    local moves = 0
+    local setPoint = totem.SetPoint
+    function totem.SetPoint(self, ...)
+        moves = moves + 1
+        setPoint(self, ...)
+    end
+    ticker.fn()
+    check("totem bar: the watcher leaves a bar in place alone", moves, 0)
+    totem.points = { { "CENTER", "UIParent", "CENTER", 0, 0 } }
+    ctx.state.combat = true
+    ticker.fn()
+    check("totem bar: the watcher waits out combat", totem.points[1][1], "CENTER")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("totem bar: moved in combat, put back after it", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
     ctx.run("layout off")
     check("totem bar: back to its points on off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
     check("totem bar: position manager flag restored", totem.ignoreFramePositionManager, nil)
+    check("totem bar: the watcher stops on off", ticker.cancelled, true)
     ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
     check("totem bar: left alone while off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
 end

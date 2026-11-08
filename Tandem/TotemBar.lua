@@ -2,15 +2,15 @@ local _, ns = ...
 
 -- Blizzard's totem bar (stage 12, D13): while the Tandem layout is on, MultiCastActionBarFrame (secure totem buttons)
 -- sits right of the three-bar block. It has no Edit Mode system, so it moves by SetPoint, only out of combat (a move
--- in combat waits for PLAYER_REGEN_ENABLED), again whenever Blizzard may have re-anchored it, and goes back to its
--- saved points on off.
+-- in combat waits for PLAYER_REGEN_ENABLED), again whenever Blizzard may have re-anchored it (on events, and a twice a
+-- second check while on, since Blizzard also moves it after spell casts), and goes back to its saved points on off.
 local TotemBar = {}
 ns.TotemBar = TotemBar
 
-local GAP = 8
+local GAP, WATCH = 8, 0.5
 
 -- saved = { manager = ignoreFramePositionManager as it was, points = { {point, relativeTo, ...}, ... } }
-local saved, on, pending
+local saved, on, pending, watcher
 
 local function call(fn, ...)
     if type(fn) ~= "function" then
@@ -72,6 +72,39 @@ function TotemBar.Place()
     end
 end
 
+-- True when the totem bar is anchored anywhere but right of the bars.
+local function drifted(f)
+    local beside = _G.MultiBarBottomLeft
+    if call(f.GetNumPoints, f) ~= 1 then
+        return true
+    end
+    local ok, point, relativeTo, relativePoint, x, y = pcall(f.GetPoint, f, 1)
+    return not ok or point ~= "LEFT" or relativeTo ~= beside or relativePoint ~= "RIGHT"
+        or math.abs((tonumber(x) or 0) - GAP) > 0.5 or math.abs(tonumber(y) or 0) > 0.5
+end
+
+-- The watcher's tick: puts a moved totem bar back, or after combat when it moved in combat.
+function TotemBar.Watch()
+    local f = totemBar()
+    if not on or not f or not drifted(f) then
+        return
+    end
+    TotemBar.Place()
+end
+
+local function startWatch()
+    if not watcher and type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
+        watcher = C_Timer.NewTicker(WATCH, TotemBar.Watch)
+    end
+end
+
+local function stopWatch()
+    if watcher then
+        pcall(watcher.Cancel, watcher)
+        watcher = nil
+    end
+end
+
 function TotemBar.OnCombatEnd()
     if pending then
         TotemBar.Place()
@@ -79,6 +112,11 @@ function TotemBar.OnCombatEnd()
 end
 
 ns.Layout.OnChange(function(layoutOn)
-    on = layoutOn == true
+    on = layoutOn == true and totemBar() ~= nil
     TotemBar.Place()
+    if on then
+        startWatch()
+    else
+        stopWatch()
+    end
 end)
