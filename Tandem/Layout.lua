@@ -1,7 +1,8 @@
 local _, ns = ...
 
 -- The Tandem Edit Mode layout (stage 12, D4, D12, D13): an account layout named "Tandem" stacks the three bottom
--- action bars at the bottom centre with the player and target frames side by side above them (over the class rail),
+-- action bars at the bottom centre, the main bar on top (Blizzard keeps a Shaman's totem bar just above it, also in
+-- combat, so that room stays free), with the player and target frames side by side above them (over the class rail),
 -- moves the chat frame bottom-left, the micro menu and quest tracker top-left and the minimap and buffs top-right
 -- (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through
 -- Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and
@@ -17,6 +18,8 @@ local CHAT_WIDTH, CHAT_HEIGHT, CHAT_MIN = 380, 120, 260
 -- Corner inset and gap kept clear beside the bars; room above the bars for the class rail plus a gap.
 local INSET, CLEAR, RAIL_ROOM = 16, 8, 48
 local TOT_CVAR = "showTargetOfTarget"
+-- How far above the main bar's bottom edge Edit Mode puts the totem bar.
+local TOTEM_Y = 70
 
 local listeners = {}
 -- concealed: frame names faded while on; faded[name] = { alpha, mouse } as they were before.
@@ -69,10 +72,25 @@ local function mainBarName()
     return type(_G.MainActionBar) == "table" and "MainActionBar" or "MainMenuBar"
 end
 
--- Returns the frame Tandem's class area anchors above (the top bar) and the one the XP bar anchors under (the
--- bottom bar).
+-- Returns the frame Tandem's class area anchors above (the top bar, the main bar) and the one the XP bar anchors
+-- under (the bottom bar).
 function Layout.BarAnchor()
-    return _G.MultiBarBottomRight, _G[mainBarName()]
+    return _G[mainBarName()], _G.MultiBarBottomRight
+end
+
+-- Height above the top bar kept free for Blizzard's totem bar: Edit Mode puts MultiCastActionBarFrame TOTEM_Y above
+-- the main bar's bottom edge (seen in game) whenever it lays the bars out, also in combat; 0 for other classes.
+function Layout.TotemRoom()
+    local ok, _, classFile = pcall(UnitClass, "player")
+    local totem = _G.MultiCastActionBarFrame
+    if not ok or classFile ~= "SHAMAN" or type(totem) ~= "table" then
+        return 0
+    end
+    local function size(f, fallback)
+        local v = type(f) == "table" and call(f.GetHeight, f)
+        return type(v) == "number" and v > 0 and v or fallback
+    end
+    return math.max(0, TOTEM_Y + size(totem, 40) - size(_G[mainBarName()], 40))
 end
 
 function Layout.IsOn()
@@ -237,7 +255,7 @@ local function corners(info)
     for _, name in ipairs({ mainBarName(), "MultiBarBottomLeft", "MultiBarBottomRight" }) do
         block = block + measure(name, "GetHeight", 40)
     end
-    local above = XP_ROOM + block + RAIL_ROOM + measure("PlayerFrame", "GetHeight", 100) + CLEAR
+    local above = XP_ROOM + block + RAIL_ROOM + Layout.TotemRoom() + measure("PlayerFrame", "GetHeight", 100) + CLEAR
     local chatSystem = enum("EditModeSystem", "ChatFrame")
     local chat = chatSystem ~= nil and findSystem(info, chatSystem, 1)
     if chat then
@@ -285,9 +303,9 @@ local function override(info)
     local hidden, always = enum("ActionBarVisibleSetting", "Hidden"), enum("ActionBarVisibleSetting", "Always")
     local main = mainBarName()
     local shown = {
-        { "MainBar", anchor("BOTTOM", "UIParent", "BOTTOM", 0, XP_ROOM) },
-        { "Bar2", anchor("BOTTOM", main, "TOP", 0, BAR_GAP), always },
-        { "Bar3", anchor("BOTTOM", "MultiBarBottomLeft", "TOP", 0, BAR_GAP), always },
+        { "Bar3", anchor("BOTTOM", "UIParent", "BOTTOM", 0, XP_ROOM), always },
+        { "Bar2", anchor("BOTTOM", "MultiBarBottomRight", "TOP", 0, BAR_GAP), always },
+        { "MainBar", anchor("BOTTOM", "MultiBarBottomLeft", "TOP", 0, BAR_GAP) },
     }
     for _, row in ipairs(shown) do
         local s = bar and findSystem(info, bar, enum("EditModeActionBarSystemIndices", row[1]))
@@ -321,11 +339,11 @@ local function override(info)
     end
     local player = unit and findSystem(info, unit, enum("EditModeUnitFrameSystemIndices", "Player"))
     if player then
-        move(player, anchor("BOTTOMRIGHT", "MultiBarBottomRight", "TOP", -UNIT_GAP, RAIL_ROOM))
+        move(player, anchor("BOTTOMRIGHT", main, "TOP", -UNIT_GAP, RAIL_ROOM + Layout.TotemRoom()))
     end
     local target = unit and findSystem(info, unit, enum("EditModeUnitFrameSystemIndices", "Target"))
     if target then
-        move(target, anchor("BOTTOMLEFT", "MultiBarBottomRight", "TOP", UNIT_GAP, RAIL_ROOM))
+        move(target, anchor("BOTTOMLEFT", main, "TOP", UNIT_GAP, RAIL_ROOM + Layout.TotemRoom()))
     end
     corners(info)
     return faders

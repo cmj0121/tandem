@@ -3592,7 +3592,7 @@ do
     check("layout on: listeners told", table.concat(changes, ","), "true")
     local t = savedTandem(state)
     local main = systemOf(t, 0, 1)
-    check("layout on: main bar at the bottom centre with XP room", anchorText(main), "BOTTOM UIParent BOTTOM 0 42")
+    check("layout on: main bar on top of the stack", anchorText(main), "BOTTOM MultiBarBottomLeft TOP 0 2")
     check("layout on: main bar not default, one anchor", tostring(main.isInDefaultPosition) .. " "
         .. tostring(main.anchorInfo2), "false nil")
     check("layout on: main bar one row of 12", settingOf(main, 0) .. " " .. settingOf(main, 1) .. " "
@@ -3600,16 +3600,17 @@ do
     check("layout on: other bar settings kept", settingOf(main, 3), 5)
     check("layout on: main bar art (gryphons) hidden by Edit Mode", settingOf(main, 6), 1)
     check("layout on: classic end caps faded too", ctx.state.frames.MainMenuBarLeftEndCap.alpha, 0)
-    check("layout on: bar 2 on the main bar", anchorText(systemOf(t, 0, 2)), "BOTTOM MainActionBar TOP 0 2")
+    check("layout on: bar 2 on bar 3", anchorText(systemOf(t, 0, 2)), "BOTTOM MultiBarBottomRight TOP 0 2")
     check("layout on: bar 2 always shown", settingOf(systemOf(t, 0, 2), 5), 0)
-    check("layout on: bar 3 on bar 2", anchorText(systemOf(t, 0, 3)), "BOTTOM MultiBarBottomLeft TOP 0 2")
+    check("layout on: bar 3 at the bottom centre with XP room", anchorText(systemOf(t, 0, 3)),
+        "BOTTOM UIParent BOTTOM 0 42")
     for i = 4, 8 do
         check("layout on: bar index " .. i .. " hidden by Edit Mode", settingOf(systemOf(t, 0, i), 5), 3)
     end
     check("layout on: player frame above the bars, left of centre", anchorText(systemOf(t, 3, 1)),
-        "BOTTOMRIGHT MultiBarBottomRight TOP -8 48")
+        "BOTTOMRIGHT MainActionBar TOP -8 48")
     check("layout on: target frame above the bars, right of centre", anchorText(systemOf(t, 3, 2)),
-        "BOTTOMLEFT MultiBarBottomRight TOP 8 48")
+        "BOTTOMLEFT MainActionBar TOP 8 48")
     check("layout on: focus untouched", systemOf(t, 3, 3).isInDefaultPosition, true)
     check("layout on: chat bottom-left", anchorText(systemOf(t, 9, 1)), "BOTTOMLEFT UIParent BOTTOMLEFT 16 8")
     check("layout on: chat 380x120 by its size settings", settingOf(systemOf(t, 9, 1), 0) .. " "
@@ -3620,8 +3621,8 @@ do
     end
     check("layout on: copied from the character view", state.layouts[1].systems[1].anchorInfo.offsetX, 1)
     local top, bottom = ctx.addon.Layout.BarAnchor()
-    check("layout: BarAnchor gives the top and bottom bars", tostring(top == state.frames.MultiBarBottomRight) .. " "
-        .. tostring(bottom == state.frames.MainActionBar), "true true")
+    check("layout: BarAnchor gives the top and bottom bars", tostring(top == state.frames.MainActionBar) .. " "
+        .. tostring(bottom == state.frames.MultiBarBottomRight), "true true")
     check("layout state: on", ctx.run("layout"), "Tandem: layout on")
 
     check("layout reapply: ok", ctx.run("layout on"), "Tandem: layout on")
@@ -3852,85 +3853,24 @@ do
     check("layout art: end caps back on off", caps.alpha, 1)
 end
 
--- The totem bar (D13): beside the bars while on, only out of combat, re-pinned on events, back to its points on off.
+-- The totem bar room (D13): a Shaman's top bar keeps Edit Mode's totem bar spot free; the rail and unit frames go above
+-- it; other classes keep no room.
 do
-    local totem = { points = { { "BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4 } }, ignoreFramePositionManager = nil }
-    function totem.GetNumPoints(self) return #self.points end
-    function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
-    function totem.ClearAllPoints(self) self.points = {} end
-    function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
-    totem.strata = "MEDIUM"
-    function totem.GetFrameStrata(self) return self.strata end
-    function totem.SetFrameStrata(self, s) self.strata = s end
-    local ticker = {}
-    function ticker.Cancel(self) self.cancelled = true end
-    local timer = { NewTicker = function(_, fn)
-        ticker.fn, ticker.cancelled = fn, nil
-        return ticker
-    end }
-    local ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, C_Timer = timer } })
-    local function where()
-        local p = totem.points[1]
-        return #totem.points .. " " .. table.concat({ p[1], p[2] == ctx.state.frames.MultiBarBottomLeft
-            and "MultiBarBottomLeft" or tostring(p[2]), p[3], p[4], p[5] }, " ")
-    end
+    local totem = { GetHeight = function() return 38 end }
+    local ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, UnitClass = function()
+        return "Shaman", "SHAMAN"
+    end }, sizes = { MainActionBar = { 498, 40 } } })
+    check("totem room: Shaman keeps the totem bar spot above the main bar", ctx.addon.Layout.TotemRoom(), 68)
     ctx.run("layout on")
-    check("totem bar: right of the bars", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
-    check("totem bar: position manager skips it", totem.ignoreFramePositionManager, true)
-    check("totem bar: drawn above the unit frames", totem.strata, "HIGH")
-    totem.points = { { "CENTER", "UIParent", "CENTER", 0, 0 } }
-    ctx.state.combat = true
-    ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
-    check("totem bar: not moved in combat", totem.points[1][1], "CENTER")
-    ctx.state.combat = false
-    ctx.fire("PLAYER_REGEN_ENABLED")
-    check("totem bar: re-pinned after combat", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
-    totem.points = { { "BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4 } }
-    ticker.fn()
-    check("totem bar: the watcher puts back a bar Blizzard moved after a cast", where(),
-        "1 LEFT MultiBarBottomLeft RIGHT 8 0")
-    local moves = 0
-    local setPoint = totem.SetPoint
-    function totem.SetPoint(self, ...)
-        moves = moves + 1
-        setPoint(self, ...)
-    end
-    ticker.fn()
-    check("totem bar: the watcher leaves a bar in place alone", moves, 0)
-    local beside = ctx.state.frames.MultiBarBottomLeft
-    function beside.GetRight() return 1000 end
-    function beside.GetBottom() return 90 end
-    function beside.GetTop() return 130 end
-    function totem.GetBottom() return 100 end
-    function totem.GetTop() return 120 end
-    function totem.GetLeft() return 1008 end
-    ticker.fn()
-    check("totem bar: on screen where its anchor says, left alone", moves, 0)
-    function totem.GetLeft() return 600 end
-    ticker.fn()
-    check("totem bar: anchor intact but moved on screen, put back", moves, 1)
-    function totem.GetLeft() return 1008 end
-    function totem.GetBottom() return 200 end
-    function totem.GetTop() return 220 end
-    ticker.fn()
-    check("totem bar: moved up on screen, put back", moves, 2)
-    totem.GetBottom, totem.GetTop, totem.GetLeft = nil, nil, nil
-    totem.points = { { "CENTER", "UIParent", "CENTER", 0, 0 } }
-    ctx.state.combat = true
-    ticker.fn()
-    check("totem bar: the watcher waits out combat", totem.points[1][1], "CENTER")
-    ctx.state.combat = false
-    ctx.fire("PLAYER_REGEN_ENABLED")
-    check("totem bar: moved in combat, put back after it", where(), "1 LEFT MultiBarBottomLeft RIGHT 8 0")
-    ctx.run("layout off")
-    check("totem bar: back to its points on off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
-    check("totem bar: position manager flag restored", totem.ignoreFramePositionManager, nil)
-    check("totem bar: strata restored", totem.strata, "MEDIUM")
-    check("totem bar: the watcher stops on off", ticker.cancelled, true)
-    local described = ctx.run("check")
-    check("totem bar: /tandem check ends with its state", described:match("Totem bar: [^|]*$") ~= nil, true)
-    ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
-    check("totem bar: left alone while off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
+    local t = savedTandem(ctx.state)
+    check("totem room: unit frames above the totem bar and rail", anchorText(systemOf(t, 3, 1)) .. " | "
+        .. anchorText(systemOf(t, 3, 2)), "BOTTOMRIGHT MainActionBar TOP -8 116 | BOTTOMLEFT MainActionBar TOP 8 116")
+    ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, UnitClass = function()
+        return "Mage", "MAGE"
+    end } })
+    check("totem room: other classes keep none", ctx.addon.Layout.TotemRoom(), 0)
+    ctx = loadLayout({ env = { UnitClass = function() return "Shaman", "SHAMAN" end } })
+    check("totem room: none without the totem bar", ctx.addon.Layout.TotemRoom(), 0)
 end
 
 -- The debug recorder (D13): off by default; on hooks the totem bar's moves with their caller and logs events into
@@ -4279,7 +4219,7 @@ do
     ctx.run("layout on")
     local bar = ctx.bar()
     check("xp bar: shown under the bottom bar", tostring(bar.shown) .. " " .. tostring(bar.parent == ctx.env.UIParent)
-        .. " " .. #bar.points .. " " .. tostring(bar.points[1][2] == ctx.state.frames.MainActionBar) .. " "
+        .. " " .. #bar.points .. " " .. tostring(bar.points[1][2] == ctx.state.frames.MultiBarBottomRight) .. " "
         .. bar.points[1][1] .. " " .. bar.points[1][3] .. " " .. bar.points[2][1] .. " " .. bar.points[2][3],
         "true true 2 true TOPLEFT BOTTOMLEFT TOPRIGHT BOTTOMRIGHT")
     check("xp bar: 6px, 2px under the bottom bar", bar.height .. " " .. bar.points[1][5] .. " " .. bar.points[2][5],
@@ -4684,7 +4624,7 @@ do
     check("class rail: 36 high, no template, 4px above the top bar; mana and no slot keep it hidden",
         tostring(a.shown) .. " " .. a.height .. " "
         .. tostring(a.template) .. " " .. #a.points .. " "
-        .. tostring(a.points[1][2] == ctx.state.frames.MultiBarBottomRight) .. " "
+        .. tostring(a.points[1][2] == ctx.state.frames.MainActionBar) .. " "
         .. table.concat(a.points[1], " ", 3) .. " " .. a.points[2][1] .. " " .. a.points[2][3] .. " " .. a.points[2][5],
         "false 36 nil 2 true TOPLEFT 0 4 BOTTOMRIGHT TOPRIGHT 4")
     check("class rail: no totem, enchant or shield shows no slot", ctx.slots(), "")

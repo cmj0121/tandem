@@ -187,8 +187,9 @@ local function place()
     local top = ns.Layout.BarAnchor()
     area:ClearAllPoints()
     if type(top) == "table" then
-        area:SetPoint("BOTTOMLEFT", top, "TOPLEFT", 0, GAP)
-        area:SetPoint("BOTTOMRIGHT", top, "TOPRIGHT", 0, GAP)
+        local room = GAP + ns.Layout.TotemRoom()
+        area:SetPoint("BOTTOMLEFT", top, "TOPLEFT", 0, room)
+        area:SetPoint("BOTTOMRIGHT", top, "TOPRIGHT", 0, room)
     else
         area:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 160)
         area:SetWidth(500)
