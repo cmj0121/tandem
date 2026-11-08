@@ -4663,25 +4663,27 @@ do
 
     ctx.weapon = { true, 1234567, 0, 563, true, 61000, 0, 2, n = 8 }
     ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: weapon enchant slots with the weapon icons", ctx.slots(), "mhIcon 20:34 | ohIcon 1:01")
-    check("class rail: weapon tooltips name the hand and the time", ctx.tooltip(1) .. " | " .. ctx.tooltip(2),
-        "Main hand / 20:34 | Off hand / 1:01")
+    check("class rail: only the off-hand enchant, never the main hand's", ctx.slots(), "ohIcon 1:01")
+    check("class rail: the off-hand tooltip names the hand and the time", ctx.tooltip(1), "Off hand / 1:01")
     ctx.t, ctx.calls = 160.5, 0
     ctx.tickers[1].fn()
-    check("class rail: a tick counts weapon enchants down from the cached time without API calls",
-        ctx.slots() .. " / " .. ctx.calls, "mhIcon 19:34 | ohIcon 0 / 0")
+    check("class rail: a tick counts the enchant down from the cached time without API calls",
+        ctx.slots() .. " / " .. ctx.calls, "ohIcon 0 / 0")
     ctx.t = 161
     ctx.tickers[1].fn()
-    check("class rail: an expired weapon enchant's slot goes", ctx.slots(), "mhIcon 19:33")
+    check("class rail: an expired weapon enchant's slot goes", ctx.slots(), "")
     ctx.t = 100
     ctx.weapon = { false, 0, 0, nil, true, 5000, 0, n = 8 }
     ctx.fire("UNIT_INVENTORY_CHANGED", "target")
-    check("class rail: another unit's inventory is ignored", ctx.slots(), "mhIcon 19:33")
+    check("class rail: another unit's inventory is ignored", ctx.slots(), "")
     ctx.fire("UNIT_INVENTORY_CHANGED", "player")
     check("class rail: off hand only", ctx.slots() .. " / " .. ctx.tooltip(1), "ohIcon 5 / Off hand / 0:05")
     ctx.weapon = { true, 90000, 0, false, nil, nil, n = 6 }
     ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: six-return weapon info", ctx.slots(), "mhIcon 1:30")
+    check("class rail: a main-hand enchant alone shows nothing", ctx.slots(), "")
+    ctx.weapon = { true, 90000, 0, true, 30000, 0, n = 6 }
+    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
+    check("class rail: six-return weapon info", ctx.slots(), "ohIcon 30")
     ctx.weapon = { n = 8 }
     ctx.fire("UNIT_INVENTORY_CHANGED", "player")
 
@@ -4709,9 +4711,9 @@ do
 
     ctx.totems[3] = { true, "Healing Stream Totem", 100, 60, "waterIcon" }
     ctx.fire("PLAYER_TOTEM_UPDATE")
-    ctx.weapon = { true, 30000, 0, 1, false, 0, 0, 0, n = 8 }
+    ctx.weapon = { false, 0, 0, nil, true, 30000, 0, 2, n = 8 }
     ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: totems, then enchants, then the shield", ctx.slots(), "waterIcon 60 | mhIcon 30 | wsIcon ")
+    check("class rail: totems, then the enchant, then the shield", ctx.slots(), "waterIcon 60 | ohIcon 30 | wsIcon ")
 
     ctx.mana = { 450, 1200 }
     ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
@@ -4801,8 +4803,8 @@ do
     ctx.weapon = { true, 60000, 0, 1, true, 60000, 0, 2, n = 8 }
     ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 160, icon = "lsIcon" }
     ctx.run("layout on")
-    check("class rail: seven slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
-        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[7].points[1][4]), "7 -108 108")
+    check("class rail: six slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
+        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[6].points[1][4]), "6 -90 90")
 
     local many = {}
     for i = 1, 14 do
@@ -4815,7 +4817,7 @@ do
     ctx = loadShaman({ locale = "zhTW" })
     ctx.weapon = { true, 60000, 0, 1, true, 30000, 0, 0, n = 8 }
     ctx.run("layout on")
-    check("zhTW class rail weapon tooltips", ctx.tooltip(1) .. " | " .. ctx.tooltip(2), "主手 / 1:00 | 副手 / 0:30")
+    check("zhTW class rail weapon tooltip", ctx.tooltip(1), "副手 / 0:30")
 
     ctx = loadShaman({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
         db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
