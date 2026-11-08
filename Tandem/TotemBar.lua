@@ -105,6 +105,39 @@ local function stopWatch()
     end
 end
 
+local function nameOf(v)
+    if type(v) ~= "table" then
+        return tostring(v)
+    end
+    return tostring(call(v.GetName, v) or "?")
+end
+
+local function flag(v)
+    return tostring(v == true or v == 1)
+end
+
+-- One diagnostic line for /tandem check (where the totem bar is and what holds it), or nil without the bar.
+function TotemBar.Describe()
+    local f = totemBar()
+    if not f then
+        return nil
+    end
+    local points = {}
+    for i = 1, tonumber(call(f.GetNumPoints, f)) or 0 do
+        local ok, p, r, rp, x, y = pcall(f.GetPoint, f, i)
+        if ok then
+            points[#points + 1] = ("%s %s %s %d %d"):format(tostring(p), nameOf(r), tostring(rp), tonumber(x) or 0,
+                tonumber(y) or 0)
+        end
+    end
+    local parent = call(f.GetParent, f)
+    return ("Totem bar: shown %s, visible %s, alpha %s, parent %s (visible %s), left %d, bottom %d, points [%s], "
+        .. "layout %s, watch %s, NewTicker %s"):format(flag(call(f.IsShown, f)), flag(call(f.IsVisible, f)),
+        tostring(call(f.GetAlpha, f)), nameOf(parent), flag(type(parent) == "table" and call(parent.IsVisible, parent)),
+        tonumber(call(f.GetLeft, f)) or -1, tonumber(call(f.GetBottom, f)) or -1, table.concat(points, "; "),
+        flag(on), flag(watcher ~= nil), flag(type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function"))
+end
+
 function TotemBar.OnCombatEnd()
     if pending then
         TotemBar.Place()

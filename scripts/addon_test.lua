@@ -3902,6 +3902,8 @@ do
     check("totem bar: back to its points on off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
     check("totem bar: position manager flag restored", totem.ignoreFramePositionManager, nil)
     check("totem bar: the watcher stops on off", ticker.cancelled, true)
+    local described = ctx.run("check")
+    check("totem bar: /tandem check ends with its state", described:match("Totem bar: [^|]*$") ~= nil, true)
     ctx.fire("UPDATE_MULTI_CAST_ACTIONBAR")
     check("totem bar: left alone while off", where(), "1 BOTTOMLEFT MainActionBar TOPLEFT 0 4")
 end
