@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- The Tandem Edit Mode layout (stage 12, D4, D12, D13, D14): an account layout named "Tandem" stacks the three
--- bottom action bars at the bottom centre over Blizzard's XP (status tracking) bars, the main bar on top (Blizzard
+-- bottom action bars at the bottom centre over Blizzard's (faded) XP status bars, the main bar on top (Blizzard
 -- keeps a Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target
 -- frames in a row well above them, left and right of centre with the class rail between (the unit row), moves the
 -- chat frame bottom-left, the micro menu top-left and the minimap and buffs top-right (each only
@@ -12,8 +12,8 @@ local Layout = {}
 ns.Layout = Layout
 
 local NAME = "Tandem"
--- Room under the bottom bar for Blizzard's two status (XP / reputation) bars, and between bars.
-local XP_ROOM, BAR_GAP = 36, 2
+-- Room under the bottom bar (Blizzard's faded status bars sit there), and between bars.
+local XP_ROOM, BAR_GAP = 8, 2
 -- Height of one status bar; half the gap between the player and target frames, where the class rail sits; the unit
 -- row's gap above the bar stack (and the totem bar).
 local STATUS_HEIGHT, UNIT_SPREAD, UNIT_LIFT = 17, 120, 60
@@ -345,7 +345,7 @@ local function override(info)
     if target then
         move(target, anchor("BOTTOMLEFT", "UIParent", "BOTTOM", spread, row))
     end
-    -- Blizzard's XP and reputation bars along the screen's bottom edge, under the bar stack.
+    -- Blizzard's XP and reputation bars (faded by XPBar for Tandem's own at the top) along the screen's bottom edge.
     local status = enum("EditModeSystem", "StatusTrackingBar")
     for i, index in ipairs({ "StatusTrackingBar1", "StatusTrackingBar2" }) do
         local s = status and findSystem(info, status, enum("EditModeStatusTrackingBarSystemIndices", index) or i - 1)
