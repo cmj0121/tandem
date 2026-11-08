@@ -47,9 +47,6 @@ Check.FEATURES = {
         { "EditModeManagerFrame" }, { "EditModePresetLayoutManager.GetCopyOfPresetLayouts" },
         { "MainActionBar", "MainMenuBar" },
     } },
-    { name = "XP bar", needs = {
-        { "UnitXP" }, { "UnitXPMax" },
-    } },
     { name = "Bag button", needs = {
         { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "ToggleAllBags" },
     } },

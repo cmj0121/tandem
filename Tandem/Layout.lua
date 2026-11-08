@@ -1,22 +1,26 @@
 local _, ns = ...
 
--- The Tandem Edit Mode layout (stage 12, D4, D12, D13): an account layout named "Tandem" stacks the three bottom
--- action bars at the bottom centre, the main bar on top (Blizzard keeps a Shaman's totem bar just above it, also in
--- combat, so that room stays free), with the player and target frames side by side above them (over the class rail),
--- moves the chat frame bottom-left, the micro menu and quest tracker top-left and the minimap and buffs top-right
--- (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through
+-- The Tandem Edit Mode layout (stage 12, D4, D12, D13, D14): an account layout named "Tandem" stacks the three
+-- bottom action bars at the bottom centre over Blizzard's XP (status tracking) bars, the main bar on top (Blizzard
+-- keeps a Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target
+-- frames in a row well above them, left and right of centre with the class rail between (the unit row), moves the
+-- chat frame bottom-left, the micro menu and quest tracker top-left and the minimap and buffs top-right (each only
+-- when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through
 -- Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and
 -- EnableMouse(false), both undone on off.
 local Layout = {}
 ns.Layout = Layout
 
 local NAME = "Tandem"
--- Room under the bottom bar for the XP bar and between bars; half the gap between the player and target frames.
-local XP_ROOM, BAR_GAP, UNIT_GAP = 42, 2, 8
+-- Room under the bottom bar for Blizzard's two status (XP / reputation) bars, and between bars.
+local XP_ROOM, BAR_GAP = 36, 2
+-- Height of one status bar; half the gap between the player and target frames, where the class rail sits; the unit
+-- row's gap above the bar stack (and the totem bar).
+local STATUS_HEIGHT, UNIT_SPREAD, UNIT_LIFT = 17, 120, 60
 -- Chat frame size in Edit Mode's hundreds / tens-and-ones settings, and the narrowest chat kept beside the band.
 local CHAT_WIDTH, CHAT_HEIGHT, CHAT_MIN = 380, 120, 260
--- Corner inset and gap kept clear beside the bars; room above the bars for the class rail plus a gap.
-local INSET, CLEAR, RAIL_ROOM = 16, 8, 48
+-- Corner inset and gap kept clear beside the bars.
+local INSET, CLEAR = 16, 8
 local TOT_CVAR = "showTargetOfTarget"
 -- How far above the main bar's bottom edge Edit Mode puts the totem bar.
 local TOTEM_Y = 70
@@ -72,11 +76,6 @@ local function mainBarName()
     return type(_G.MainActionBar) == "table" and "MainActionBar" or "MainMenuBar"
 end
 
--- Returns the frame Tandem's class area anchors above (the top bar, the main bar) and the one the XP bar anchors
--- under (the bottom bar).
-function Layout.BarAnchor()
-    return _G[mainBarName()], _G.MultiBarBottomRight
-end
 
 -- Height above the top bar kept free for Blizzard's totem bar: Edit Mode puts MultiCastActionBarFrame TOTEM_Y above
 -- the main bar's bottom edge (seen in game) whenever it lays the bars out, also in combat; 0 for other classes.
@@ -91,6 +90,18 @@ function Layout.TotemRoom()
         return type(v) == "number" and v > 0 and v or fallback
     end
     return math.max(0, TOTEM_Y + size(totem, 40) - size(_G[mainBarName()], 40))
+end
+
+-- Returns the height (from UIParent's bottom) of the unit row's bottom edge, and the half gap between the player and
+-- target frames, as the bars measure now: the XP room, the three bars, the totem bar room and UNIT_LIFT.
+function Layout.UnitRow()
+    local f = _G
+    local function height(name)
+        local v = type(f[name]) == "table" and call(f[name].GetHeight, f[name])
+        return type(v) == "number" and v > 0 and v or 40
+    end
+    local block = 2 * BAR_GAP + height(mainBarName()) + height("MultiBarBottomLeft") + height("MultiBarBottomRight")
+    return XP_ROOM + block + Layout.TotemRoom() + UNIT_LIFT, UNIT_SPREAD
 end
 
 function Layout.IsOn()
@@ -251,11 +262,7 @@ end
 local function corners(info)
     local band = math.max(measure("MultiBarBottomRight", "GetWidth", 498), 498)
     local side = (measure("UIParent", "GetWidth", 1920) - band) / 2
-    local block = 2 * BAR_GAP
-    for _, name in ipairs({ mainBarName(), "MultiBarBottomLeft", "MultiBarBottomRight" }) do
-        block = block + measure(name, "GetHeight", 40)
-    end
-    local above = XP_ROOM + block + RAIL_ROOM + Layout.TotemRoom() + measure("PlayerFrame", "GetHeight", 100) + CLEAR
+    local above = Layout.UnitRow() + measure("PlayerFrame", "GetHeight", 100) + CLEAR
     local chatSystem = enum("EditModeSystem", "ChatFrame")
     local chat = chatSystem ~= nil and findSystem(info, chatSystem, 1)
     if chat then
@@ -301,7 +308,6 @@ local function override(info)
     local bar, unit = enum("EditModeSystem", "ActionBar"), enum("EditModeSystem", "UnitFrame")
     local visible = enum("EditModeActionBarSetting", "VisibleSetting")
     local hidden, always = enum("ActionBarVisibleSetting", "Hidden"), enum("ActionBarVisibleSetting", "Always")
-    local main = mainBarName()
     local shown = {
         { "Bar3", anchor("BOTTOM", "UIParent", "BOTTOM", 0, XP_ROOM), always },
         { "Bar2", anchor("BOTTOM", "MultiBarBottomRight", "TOP", 0, BAR_GAP), always },
@@ -337,13 +343,22 @@ local function override(info)
             faders[#faders + 1] = row[2]
         end
     end
+    local row, spread = Layout.UnitRow()
     local player = unit and findSystem(info, unit, enum("EditModeUnitFrameSystemIndices", "Player"))
     if player then
-        move(player, anchor("BOTTOMRIGHT", main, "TOP", -UNIT_GAP, RAIL_ROOM + Layout.TotemRoom()))
+        move(player, anchor("BOTTOMRIGHT", "UIParent", "BOTTOM", -spread, row))
     end
     local target = unit and findSystem(info, unit, enum("EditModeUnitFrameSystemIndices", "Target"))
     if target then
-        move(target, anchor("BOTTOMLEFT", main, "TOP", UNIT_GAP, RAIL_ROOM + Layout.TotemRoom()))
+        move(target, anchor("BOTTOMLEFT", "UIParent", "BOTTOM", spread, row))
+    end
+    -- Blizzard's XP and reputation bars along the screen's bottom edge, under the bar stack.
+    local status = enum("EditModeSystem", "StatusTrackingBar")
+    for i, index in ipairs({ "StatusTrackingBar1", "StatusTrackingBar2" }) do
+        local s = status and findSystem(info, status, enum("EditModeStatusTrackingBarSystemIndices", index) or i - 1)
+        if s then
+            move(s, anchor("BOTTOM", "UIParent", "BOTTOM", 0, (i - 1) * STATUS_HEIGHT))
+        end
     end
     corners(info)
     return faders

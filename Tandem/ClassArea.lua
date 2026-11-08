@@ -1,15 +1,16 @@
 local _, ns = ...
 
--- The class rail (stage 12, D5, D12): a plain Frame just above the top action bar holding up to 12 icon slots,
--- centred, each with a short timer on the icon, an optional count and a tooltip naming it, plus an optional 4px line
--- along its bottom for a resource, shown only together with a slot. The module registered for the player's class
--- fills it through ClassArea.Set.
+-- The class rail (stage 12, D5, D12, D14): a plain Frame between the player and target frames holding up to 12 icon
+-- slots, centred, each with a short timer on the icon, an optional count and a tooltip naming it, plus an optional
+-- 4px line along its bottom for a resource, shown only together with a slot. The module registered for the player's
+-- class fills it through ClassArea.Set.
 -- Display only: the slots take the mouse for their tooltip and nothing else, no secure template, no advice on what
 -- to cast (PLAN decision 6). Classes without a module get no rail.
 local ClassArea = {}
 ns.ClassArea = ClassArea
 
-local GAP, HEIGHT, TICK = 4, 36, 0.25
+-- RAISE lifts the rail off the unit row's bottom edge, to about the frames' middle.
+local GAP, HEIGHT, TICK, RAISE = 4, 36, 0.25, 30
 local SIZE, SPACING, MAX_SLOTS, LINE = 32, 4, 12, 4
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
@@ -183,17 +184,12 @@ local function create()
     area.line:Hide()
 end
 
+-- Centres the rail between the player and target frames, level with the middle of the unit row.
 local function place()
-    local top = ns.Layout.BarAnchor()
+    local row, spread = ns.Layout.UnitRow()
     area:ClearAllPoints()
-    if type(top) == "table" then
-        local room = GAP + ns.Layout.TotemRoom()
-        area:SetPoint("BOTTOMLEFT", top, "TOPLEFT", 0, room)
-        area:SetPoint("BOTTOMRIGHT", top, "TOPRIGHT", 0, room)
-    else
-        area:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 160)
-        area:SetWidth(500)
-    end
+    area:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, row + RAISE)
+    area:SetWidth(2 * (spread - GAP))
 end
 
 -- Forwards a game event to the class module while the layout is on; unit events count only for the player.

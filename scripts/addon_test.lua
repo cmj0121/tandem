@@ -913,6 +913,7 @@ function WIDGET.EnableMouse(w, v) w.mouse = v end
 function WIDGET.SetTextColor(w, r, g, b) w.textColor = { r, g, b } end
 function WIDGET.SetStatusBarColor(w, r, g, b) w.barColor = { r, g, b } end
 function WIDGET.SetHeight(w, h) w.height = h end
+function WIDGET.SetWidth(w, v) w.width = v end
 -- Six pixels a character stands in for the font's measure.
 function WIDGET.GetStringWidth(w) return 6 * #(w.text or "") end
 
@@ -1029,7 +1030,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: thirteen features", #addon.Check.FEATURES, 13)
+    check("check: twelve features", #addon.Check.FEATURES, 12)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1038,7 +1039,7 @@ do
             .. "QuestInfoRewardsFrame.RewardButtons missing, QuestInfoRewardsFrameQuestInfoItem1 missing, "
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
-        "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
+        "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "Bag button",
         "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
@@ -1101,7 +1102,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on eleven features", count, 11)
+    check("check: kept code gates on ten features", count, 10)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -2065,7 +2066,7 @@ do
     check("zhTW check: present probe", run(zh, zhPrinted, "check")[n + 1], "探測：LootButton1 存在")
 end
 
--- Layout, XP bar, bag button and Shaman area gates in /tandem check (stage 12, unit 1).
+-- Layout, bag button and Shaman area gates in /tandem check (stage 12, unit 1).
 
 do
     local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
@@ -2074,7 +2075,6 @@ do
         .. "C_EditMode.SetActiveLayout ok, EditModeManagerFrame ok, "
         .. "EditModePresetLayoutManager.GetCopyOfPresetLayouts ok, "
         .. "MainActionBar ok, MainMenuBar missing)")
-    check("check: xp bar line", byName["XP bar"], "XP bar: ok (UnitXP ok, UnitXPMax ok)")
     check("check: bag button line", byName["Bag button"],
         "Bag button: ok (C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, ToggleAllBags ok)")
     check("check: shaman area line", byName["Shaman area"],
@@ -2092,7 +2092,7 @@ do
     for _, case in ipairs({
         { "Layout", "C_EditMode" }, { "Layout", "EditModeManagerFrame" }, { "Layout", "MainActionBar" },
         { "Layout", "EditModePresetLayoutManager" },
-        { "XP bar", "UnitXPMax" }, { "Bag button", "ToggleAllBags" }, { "Shaman area", "GetTotemInfo" },
+        { "Bag button", "ToggleAllBags" }, { "Shaman area", "GetTotemInfo" },
         { "Shaman area", "UnitPower" },
     }) do
         env = checkAPIs()
@@ -2104,7 +2104,6 @@ do
     local zh, zhPrinted = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     local out = run(zh, zhPrinted, "check")
     check("zhTW check: layout line", lineFor(out, "介面配置"):match("^(.-)：可用"), "介面配置")
-    check("zhTW check: xp bar line", lineFor(out, "經驗條"), "經驗條：可用（UnitXP 可用, UnitXPMax 可用）")
     check("zhTW check: bag button line", lineFor(out, "背包按鈕"):match("^(.-)：可用"), "背包按鈕")
     check("zhTW check: shaman area line", lineFor(out, "薩滿區"),
         "薩滿區：可用（GetTotemInfo 可用, UnitPower 可用）")
@@ -3357,7 +3356,8 @@ end
 
 -- Layout: the Tandem Edit Mode layout and /tandem layout (stage 12, U2, D2, D4).
 local LAYOUT_ENUM = {
-    EditModeSystem = { ActionBar = 0, UnitFrame = 3, ChatFrame = 9 },
+    EditModeSystem = { ActionBar = 0, UnitFrame = 3, ChatFrame = 9, StatusTrackingBar = 14 },
+    EditModeStatusTrackingBarSystemIndices = { StatusTrackingBar1 = 1, StatusTrackingBar2 = 2 },
     EditModeActionBarSystemIndices = { MainBar = 1, Bar2 = 2, Bar3 = 3, RightBar1 = 4, RightBar2 = 5, ExtraBar1 = 6,
         ExtraBar2 = 7, ExtraBar3 = 8 },
     EditModeActionBarSetting = { Orientation = 0, NumRows = 1, NumIcons = 2, IconSize = 3, VisibleSetting = 5,
@@ -3403,7 +3403,7 @@ local function editLayout(name, layoutType)
             settings = {} }
     end
     systems[#systems + 1] = { system = 9, systemIndex = 1, anchorInfo = at(99), settings = {} }
-    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 } }) do
+    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 }, { 14, 1 }, { 14, 2 } }) do
         systems[#systems + 1] = { system = s[1], systemIndex = s[2], anchorInfo = at(99), settings = {} }
     end
     return { layoutName = name or "view", layoutType = layoutType or 1, systems = systems }
@@ -3603,14 +3603,16 @@ do
     check("layout on: bar 2 on bar 3", anchorText(systemOf(t, 0, 2)), "BOTTOM MultiBarBottomRight TOP 0 2")
     check("layout on: bar 2 always shown", settingOf(systemOf(t, 0, 2), 5), 0)
     check("layout on: bar 3 at the bottom centre with XP room", anchorText(systemOf(t, 0, 3)),
-        "BOTTOM UIParent BOTTOM 0 42")
+        "BOTTOM UIParent BOTTOM 0 36")
+    check("layout on: Blizzard's XP and reputation bars along the bottom edge", anchorText(systemOf(t, 14, 1))
+        .. " | " .. anchorText(systemOf(t, 14, 2)), "BOTTOM UIParent BOTTOM 0 0 | BOTTOM UIParent BOTTOM 0 17")
     for i = 4, 8 do
         check("layout on: bar index " .. i .. " hidden by Edit Mode", settingOf(systemOf(t, 0, i), 5), 3)
     end
-    check("layout on: player frame above the bars, left of centre", anchorText(systemOf(t, 3, 1)),
-        "BOTTOMRIGHT MainActionBar TOP -8 48")
-    check("layout on: target frame above the bars, right of centre", anchorText(systemOf(t, 3, 2)),
-        "BOTTOMLEFT MainActionBar TOP 8 48")
+    check("layout on: player frame in the unit row, left of centre", anchorText(systemOf(t, 3, 1)),
+        "BOTTOMRIGHT UIParent BOTTOM -120 220")
+    check("layout on: target frame in the unit row, right of centre", anchorText(systemOf(t, 3, 2)),
+        "BOTTOMLEFT UIParent BOTTOM 120 220")
     check("layout on: focus untouched", systemOf(t, 3, 3).isInDefaultPosition, true)
     check("layout on: chat bottom-left", anchorText(systemOf(t, 9, 1)), "BOTTOMLEFT UIParent BOTTOMLEFT 16 8")
     check("layout on: chat 380x120 by its size settings", settingOf(systemOf(t, 9, 1), 0) .. " "
@@ -3620,9 +3622,8 @@ do
         check("layout on: corner system " .. sys .. " untouched", systemOf(t, sys, 1).anchorInfo.offsetX, 99)
     end
     check("layout on: copied from the character view", state.layouts[1].systems[1].anchorInfo.offsetX, 1)
-    local top, bottom = ctx.addon.Layout.BarAnchor()
-    check("layout: BarAnchor gives the top and bottom bars", tostring(top == state.frames.MainActionBar) .. " "
-        .. tostring(bottom == state.frames.MultiBarBottomRight), "true true")
+    check("layout: UnitRow is the XP room, three 40px bars, two gaps and the lift; spread 120",
+        table.concat({ ctx.addon.Layout.UnitRow() }, " "), "220 120")
     check("layout state: on", ctx.run("layout"), "Tandem: layout on")
 
     check("layout reapply: ok", ctx.run("layout on"), "Tandem: layout on")
@@ -3738,7 +3739,7 @@ do
     check("layout fit 1200: chat narrowed to the room left", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 327")
     chat, micro = corners(1024)
     check("layout fit 1024: chat above the band and the unit frames", chat,
-        "BOTTOMLEFT UIParent BOTTOMLEFT 16 322 380")
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 328 380")
     check("layout fit 1024: micro menu still top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
     chat = corners(1366, true)
     check("layout fit measured 1366: chat beside the measured bars", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
@@ -3747,7 +3748,7 @@ do
         "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 327")
     chat = corners(1024, true)
     check("layout fit measured 1024: chat above the measured band and unit frames", chat,
-        "BOTTOMLEFT UIParent BOTTOMLEFT 16 327 380")
+        "BOTTOMLEFT UIParent BOTTOMLEFT 16 333 380")
 end
 
 do
@@ -3863,8 +3864,8 @@ do
     check("totem room: Shaman keeps the totem bar spot above the main bar", ctx.addon.Layout.TotemRoom(), 68)
     ctx.run("layout on")
     local t = savedTandem(ctx.state)
-    check("totem room: unit frames above the totem bar and rail", anchorText(systemOf(t, 3, 1)) .. " | "
-        .. anchorText(systemOf(t, 3, 2)), "BOTTOMRIGHT MainActionBar TOP -8 116 | BOTTOMLEFT MainActionBar TOP 8 116")
+    check("totem room: unit row above the totem bar", anchorText(systemOf(t, 3, 1)) .. " | "
+        .. anchorText(systemOf(t, 3, 2)), "BOTTOMRIGHT UIParent BOTTOM -120 288 | BOTTOMLEFT UIParent BOTTOM 120 288")
     ctx = loadLayout({ env = { MultiCastActionBarFrame = totem, UnitClass = function()
         return "Mage", "MAGE"
     end } })
@@ -4173,7 +4174,7 @@ do
         "Tandem: saved data upgraded from schema 6 to 7")
 end
 
--- XP bar under the bottom action bar while the layout is on (stage 12, U3, D5, D12).
+-- Shared helpers for the frame tests below (stage 12).
 
 -- A fake GameTooltip for the frame tests: SetText records title, AddLine records lines, Show/Hide set shown.
 local function barTooltip()
@@ -4191,146 +4192,6 @@ local function rgb(c)
         return "nil"
     end
     return ("%.2f,%.2f,%.2f"):format(c[1], c[2], c[3])
-end
-
-local function loadXP(opts)
-    opts = opts or {}
-    local ui = { widgets = {} }
-    local xp = { xp = 1200, max = 4000, rested = 0, level = 20, cap = 60 }
-    local env = {
-        UnitXP = function() return xp.xp end,
-        UnitXPMax = function() return xp.max end,
-        GetXPExhaustion = function() return xp.rested end,
-        UnitLevel = function() return xp.level end,
-        GetMaxPlayerLevel = function() return xp.cap end,
-        GameTooltip = barTooltip(),
-    }
-    for k, v in pairs(opts.env or {}) do
-        env[k] = v
-    end
-    local ctx = loadLayout({ env = env, locale = opts.locale, db = opts.db, layouts = opts.layouts,
-        active = opts.active, frames = opts.frames or { "MainStatusTrackingBarContainer" },
-        widgets = function(kind, name, parent, template)
-            return newWidget(ui, kind, name, parent, template)
-        end })
-    ctx.ui, ctx.xp, ctx.tip = ui, xp, env.GameTooltip
-    function ctx.bar()
-        for _, w in ipairs(ui.widgets) do
-            if w.kind == "StatusBar" then
-                return w
-            end
-        end
-    end
-    function ctx.text()
-        local b = ctx.bar()
-        return b and b.text and b.text.text
-    end
-    return ctx
-end
-
-do
-    local ctx = loadXP()
-    check("xp bar: nothing made while the layout is off", (ctx.bar()), nil)
-    ctx.fire("PLAYER_XP_UPDATE")
-    check("xp bar: events while off are harmless", (ctx.bar()), nil)
-    ctx.run("layout on")
-    local bar = ctx.bar()
-    check("xp bar: shown under the bottom bar", tostring(bar.shown) .. " " .. tostring(bar.parent == ctx.env.UIParent)
-        .. " " .. #bar.points .. " " .. tostring(bar.points[1][2] == ctx.state.frames.MultiBarBottomRight) .. " "
-        .. bar.points[1][1] .. " " .. bar.points[1][3] .. " " .. bar.points[2][1] .. " " .. bar.points[2][3],
-        "true true 2 true TOPLEFT BOTTOMLEFT TOPRIGHT BOTTOMRIGHT")
-    check("xp bar: 6px, 2px under the bottom bar", bar.height .. " " .. bar.points[1][5] .. " " .. bar.points[2][5],
-        "6 -2 -2")
-    check("xp bar: value and max", bar.value .. " " .. bar.min .. " " .. bar.max, "1200 0 4000")
-    check("xp bar: only the percent on the bar", ctx.text(), "30%")
-    check("xp bar: purple without rested", rgb(bar.barColor), "0.58,0.00,0.55")
-    check("xp bar: takes the mouse for its tooltip", bar.mouse, true)
-    bar.scripts.OnEnter(bar)
-    check("xp bar: tooltip without rested",
-        ctx.tip.title .. " / " .. texts(ctx.tip) .. " / " .. tostring(ctx.tip.shown),
-        "1200 / 4000 (30%) /  / true")
-    bar.scripts.OnLeave(bar)
-    check("xp bar: tooltip hidden on leave", ctx.tip.shown, false)
-    ctx.xp.xp, ctx.xp.rested = 2480, 1000
-    ctx.fire("PLAYER_XP_UPDATE")
-    check("xp bar: PLAYER_XP_UPDATE updates", ctx.text(), "62%")
-    check("xp bar: blue while rested", rgb(bar.barColor), "0.00,0.39,0.88")
-    bar.scripts.OnEnter(bar)
-    check("xp bar: tooltip with rested", ctx.tip.title .. " / " .. texts(ctx.tip), "2480 / 4000 (62%) / Rested +25%")
-    ctx.xp.rested = 2000
-    ctx.fire("UPDATE_EXHAUSTION")
-    bar.scripts.OnEnter(bar)
-    check("xp bar: UPDATE_EXHAUSTION updates the tooltip", texts(ctx.tip), "Rested +50%")
-    ctx.xp.xp, ctx.xp.max, ctx.xp.rested, ctx.xp.level = 10, 5000, nil, 21
-    ctx.fire("PLAYER_LEVEL_UP")
-    check("xp bar: PLAYER_LEVEL_UP updates", ctx.text() .. "|" .. bar.value .. "|" .. rgb(bar.barColor),
-        "0%|10|0.58,0.00,0.55")
-    check("xp bar: default status bar faded", ctx.state.frames.MainStatusTrackingBarContainer.alpha .. " "
-        .. tostring(ctx.state.frames.MainStatusTrackingBarContainer.mouse), "0 false")
-    ctx.xp.level = 59
-    ctx.fire("PLAYER_LEVEL_UP", 60)
-    check("xp bar: PLAYER_LEVEL_UP's level wins over a stale UnitLevel", bar.shown, false)
-    ctx.xp.level = 60
-    ctx.fire("PLAYER_XP_UPDATE")
-    check("xp bar: hidden at the maximum level", bar.shown, false)
-    ctx.xp.level = 59
-    ctx.fire("PLAYER_XP_UPDATE")
-    check("xp bar: back below the maximum", bar.shown, true)
-    ctx.xp.max = 0
-    ctx.fire("PLAYER_XP_UPDATE")
-    check("xp bar: hidden when max XP is 0", bar.shown, false)
-    ctx.xp.max = 5000
-    ctx.run("layout off")
-    check("xp bar: hidden when the layout is off", bar.shown, false)
-    check("xp bar: default status bar restored", ctx.state.frames.MainStatusTrackingBarContainer.alpha .. " "
-        .. tostring(ctx.state.frames.MainStatusTrackingBarContainer.mouse), "1 true")
-    ctx.fire("PLAYER_XP_UPDATE")
-    check("xp bar: events while off keep it hidden", bar.shown, false)
-    check("xp bar: no Blizzard frame hidden or hooked", #ctx.state.touched .. " " .. tostring(ctx.state.hooked),
-        "0 nil")
-    ctx.run("layout on")
-    check("xp bar: shown again, one bar", tostring(bar.shown) .. " " .. tostring(ctx.bar() == bar), "true true")
-end
-
-do
-    local ctx = loadXP({ env = { GetMaxPlayerLevel = false, MAX_PLAYER_LEVEL = 20 } })
-    ctx.run("layout on")
-    check("xp bar: MAX_PLAYER_LEVEL when GetMaxPlayerLevel is missing", ctx.bar().shown, false)
-
-    ctx = loadXP({ env = { GetMaxPlayerLevel = false } })
-    ctx.run("layout on")
-    check("xp bar: no level cap known still shows", ctx.bar().shown, true)
-
-    ctx = loadXP()
-    ctx.env.UnitXPMax = nil
-    ctx.run("layout on")
-    check("xp bar: not ready stays dark", tostring((ctx.bar())) .. " "
-        .. ctx.state.frames.MainStatusTrackingBarContainer.alpha, "nil 1")
-
-    ctx = loadXP({ frames = { "MainMenuExpBar" } })
-    ctx.run("layout on")
-    check("xp bar: classic MainMenuExpBar faded", ctx.state.frames.MainMenuExpBar.alpha, 0)
-    ctx.run("layout off")
-    check("xp bar: classic MainMenuExpBar restored", ctx.state.frames.MainMenuExpBar.alpha, 1)
-
-    ctx = loadXP({ locale = "zhTW" })
-    ctx.xp.rested = 400
-    ctx.run("layout on")
-    ctx.bar().scripts.OnEnter(ctx.bar())
-    check("zhTW xp bar text and tooltip", ctx.text() .. " / " .. ctx.tip.title .. " / " .. texts(ctx.tip),
-        "30% / 1200 / 4000 (30%) / 休息 +10%")
-
-    ctx = loadXP({ env = { GameTooltip = false } })
-    ctx.run("layout on")
-    ctx.bar().scripts.OnEnter(ctx.bar())
-    ctx.bar().scripts.OnLeave(ctx.bar())
-    check("xp bar: no GameTooltip is harmless", ctx.bar().shown, true)
-
-    ctx = loadXP({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
-    ctx.fire("PLAYER_LOGIN")
-    check("xp bar: relogin with the layout on shows it", tostring(ctx.bar().shown) .. " " .. ctx.text(),
-        "true 30%")
 end
 
 -- Bag row at the bottom right while the layout is on (stage 12, U4, D5, D12).
@@ -4638,12 +4499,11 @@ do
     check("class rail: events while off are harmless", (ctx.area()), nil)
     ctx.run("layout on")
     local a = ctx.area()
-    check("class rail: 36 high, no template, 4px above the top bar; mana and no slot keep it hidden",
-        tostring(a.shown) .. " " .. a.height .. " "
-        .. tostring(a.template) .. " " .. #a.points .. " "
-        .. tostring(a.points[1][2] == ctx.state.frames.MainActionBar) .. " "
-        .. table.concat(a.points[1], " ", 3) .. " " .. a.points[2][1] .. " " .. a.points[2][3] .. " " .. a.points[2][5],
-        "false 36 nil 2 true TOPLEFT 0 4 BOTTOMRIGHT TOPRIGHT 4")
+    check("class rail: 36x232 between the unit frames, 30 above the unit row; mana and no slot keep it hidden",
+        tostring(a.shown) .. " " .. a.height .. "x" .. tostring(a.width) .. " "
+        .. tostring(a.template) .. " " .. #a.points .. " " .. a.points[1][1] .. " "
+        .. tostring(a.points[1][2] == ctx.env.UIParent) .. " " .. table.concat(a.points[1], " ", 3),
+        "false 36x232 nil 1 BOTTOM true BOTTOM 0 250")
     check("class rail: no totem, enchant or shield shows no slot", ctx.slots(), "")
     check("class rail: mana line along the bottom", a.line.kind .. " " .. a.line.height .. " " .. a.line.points[1][1]
         .. " " .. a.line.points[2][1] .. " " .. a.line.value .. " " .. a.line.min .. " " .. a.line.max .. " "
