@@ -20,6 +20,8 @@ local WATCHED = { "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarC
     "MainMenuExpBar", "MainMenuBarExpBar", "ReputationWatchBar", "MainMenuBarMaxLevelBar" }
 -- A snapshot lists visible frames whose bottom edge sits this low on screen.
 local BAND = 300
+-- A snapshot reads at most this many UIParent children.
+local MAX_CHILDREN = 400
 
 local function call(fn, ...)
     if type(fn) ~= "function" then
@@ -105,19 +107,27 @@ function Debug.Snapshot(why)
     Debug.Log("snapshot " .. tostring(why))
     for _, name in ipairs(WATCHED) do
         local f = _G[name]
-        Debug.Log("  watch " .. name .. ": " .. (type(f) == "table" and describe(f) or "missing"))
+        local ok, state = pcall(describe, f)
+        Debug.Log("  watch " .. name .. ": " .. (type(f) ~= "table" and "missing" or ok and state or "unreadable"))
     end
     local parent = _G.UIParent
     local children = type(parent) == "table" and { pcall(parent.GetChildren, parent) } or { false }
     if not children[1] then
         return
     end
-    for i = 2, #children do
+    -- Each child is read under pcall, at most MAX_CHILDREN of them: a forbidden or odd frame is skipped, never an
+    -- error, and a crowded UIParent cannot make the snapshot run too long.
+    for i = 2, math.min(#children, MAX_CHILDREN + 1) do
         local f = children[i]
-        local name = type(f) == "table" and call(f.GetName, f)
-        local bottom = type(f) == "table" and tonumber(call(f.GetBottom, f))
-        if name and bottom and bottom < BAND and call(f.IsVisible, f) then
-            Debug.Log("  frame " .. tostring(name) .. ": " .. describe(f))
+        local ok, line = pcall(function()
+            local name = type(f) == "table" and call(f.GetName, f)
+            local bottom = type(f) == "table" and tonumber(call(f.GetBottom, f))
+            if type(name) == "string" and bottom and bottom < BAND and call(f.IsVisible, f) then
+                return "  frame " .. name .. ": " .. describe(f)
+            end
+        end)
+        if ok and line then
+            Debug.Log(line)
         end
     end
 end
