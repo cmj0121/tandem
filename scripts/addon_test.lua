@@ -1502,6 +1502,60 @@ do
     check("upgrade: no off-hand line while wielding a two-hander", #ctx.loot(5, 14), 0)
 end
 
+-- Two-hander against both hands (D3): a bag two-hander (item 50) beats the main hand and the off hand together.
+do
+    local ctx = loadUpgrade()
+    local Upgrade, Items = ctx.addon.Upgrade, ctx.addon.Items
+    local function twoHander(id, str)
+        ctx.items[id] = { "INVTYPE_2HWEAPON", 2, 1 }
+        ctx.cache[id] = { "Axe " .. id, nil, 2, 30, 20 }
+        ctx.tips[id] = { "Axe " .. id, ctx.strength(str) }
+    end
+    twoHander(50, 30)
+    ctx.tips[7] = { "Sword", ctx.strength(20) }
+    ctx.tips[5] = { "Shield", ctx.strength(15) }
+    ctx.equipped[16] = "|cff1eff00|Hitem:7::::::::::::::|h[Sword]|h|r"
+    ctx.equipped[17] = "|cff1eff00|Hitem:5::::::::::::::|h[Shield]|h|r"
+    check("two-hand: 30 does not beat main 20 + shield 15", Upgrade.Better(50), false)
+    local worn = Items.Equipped("twohand")
+    check("two-hand: both hands make one entry", #worn.list, 1)
+    check("two-hand: the entry sums both hands", worn.score, 35)
+    check("two-hand: the entry is at the lower item level", worn.ilvl, 20)
+    check("two-hand: both hands are worn ids", worn.ids[7] and worn.ids[5], true)
+    ctx.equipped[17] = nil
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    check("two-hand: 30 beats main 20 with an empty off hand", Upgrade.Better(50), true)
+    check("two-hand: an empty off hand adds 0", Items.Equipped("twohand").score, 20)
+
+    ctx.tips[14] = { "Off Sword", "(10.0 damage per second)" }
+    ctx.equipped[17] = "|cff1eff00|Hitem:14::::::::::::::|h[Off Sword]|h|r"
+    local full = Items.Score(14, "WARRIOR", 40)
+    check("two-hand: the off-hand weapon has a dps score", full > 0, true)
+    check("two-hand: an off-hand weapon's dps counts half", Items.Equipped("twohand").score, 20 + full / 2)
+
+    ctx.equipped[17] = secret()
+    check("two-hand: an unknown off hand answers nil", Items.Beats(99, 99, Items.Equipped("twohand")), nil)
+    ctx.equipped[17] = nil
+    ctx.equipped[16] = secret()
+    check("two-hand: an unknown main hand answers nil", Items.Beats(99, 99, Items.Equipped("twohand")), nil)
+end
+
+do
+    local ctx = loadUpgrade()
+    local Upgrade, Items = ctx.addon.Upgrade, ctx.addon.Items
+    for id, str in pairs({ [50] = 35, [51] = 25 }) do
+        ctx.items[id] = { "INVTYPE_2HWEAPON", 2, 1 }
+        ctx.cache[id] = { "Axe " .. id, nil, 2, 30, 20 }
+        ctx.tips[id] = { "Axe " .. id, ctx.strength(str) }
+    end
+    ctx.equipped[16] = "|cff1eff00|Hitem:15::::::::::::::|h[Axe]|h|r"
+    local worn = Items.Equipped("twohand")
+    check("two-hand: a worn two-hander alone is its own entry", worn.list[1].id, 15)
+    check("two-hand: a worn two-hander scores alone", worn.score, 30)
+    check("two-hand: a better two-hander beats a worn one", Upgrade.Better(50), true)
+    check("two-hand: a worse two-hander does not", Upgrade.Better(51), false)
+end
+
 do
     local ctx = loadUpgrade()
     ctx.bagUpdate()
@@ -3355,6 +3409,161 @@ do
     check("loot borders: gate false paints nothing", ctx.border(ctx.buttons[1]), "none")
 end
 
+-- Source-aware stats (D2): worn, bag and linked items score from their own tooltip, not the bare item id's.
+
+-- Adds the source tooltip APIs to a loadUpgrade ctx: C_TooltipInfo.GetInventoryItem over ctx.invTips[inv],
+-- GetBagItem over ctx.bagTips["bag:slot"] and GetHyperlink over ctx.linkTips[link] (lists of left texts; a missing
+-- entry gives no lines), and C_Container.GetContainerItemLink over ctx.bagLinks["bag:slot"]. ctx.calls counts the
+-- reads per API ("inv", "bag", "link").
+local function withSources(ctx)
+    ctx.invTips, ctx.bagTips, ctx.linkTips, ctx.bagLinks, ctx.calls = {}, {}, {}, {}, {}
+    local function data(api, list)
+        ctx.calls[api] = (ctx.calls[api] or 0) + 1
+        local lines = {}
+        for i, text in ipairs(list or {}) do
+            lines[i] = { leftText = text, leftColor = WHITE }
+        end
+        return { lines = lines }
+    end
+    local tips = ctx.env.C_TooltipInfo
+    tips.GetInventoryItem = function(unit, inv)
+        assert(unit == "player")
+        return data("inv", ctx.invTips[inv])
+    end
+    tips.GetBagItem = function(bag, slot)
+        return data("bag", ctx.bagTips[bag .. ":" .. slot])
+    end
+    tips.GetHyperlink = function(link)
+        return data("link", ctx.linkTips[link])
+    end
+    ctx.env.C_Container.GetContainerItemLink = function(bag, slot)
+        return ctx.bagLinks[bag .. ":" .. slot]
+    end
+    return ctx
+end
+
+local MONKEY = "|cff0070dd|Hitem:3::::::::40:::::|h[Leather Vest of the Monkey]|h|r"
+local BEAR = "|cff0070dd|Hitem:3::::::::40:::::|h[Leather Vest of the Bear]|h|r"
+
+do
+    local ctx = withSources(loadUpgrade())
+    local Upgrade = ctx.addon.Upgrade
+    ctx.equipped[5] = MONKEY
+    ctx.tips[3] = { "Leather Vest" }
+    ctx.invTips[5] = { "Leather Vest of the Monkey", ctx.strength(50) }
+    check("sources: a worn suffix item scores from its inventory tooltip", Upgrade.Better(1), false)
+    ctx.bagLinks["0:1"] = "|cff0070dd|Hitem:1::::::::40:::::|h[Plate Chest of Strength]|h|r"
+    ctx.bagTips["0:1"] = { "Plate Chest of Strength", ctx.strength(60) }
+    check("sources: a bag item scores from its bag tooltip", Upgrade.Better(1, { bag = 0, slot = 1, id = 1 }), true)
+    check("sources: the bare id keeps its own answer", Upgrade.Better(1), false)
+end
+
+do
+    local ctx = withSources(loadUpgrade())
+    ctx.equipped[5] = MONKEY
+    check("sources: an inventory tooltip without lines falls back to the id's", ctx.addon.Upgrade.Better(1), true)
+    check("sources: the inventory tooltip was asked first", ctx.calls.inv ~= nil, true)
+end
+
+do
+    local ctx = withSources(loadUpgrade())
+    local Items = ctx.addon.Items
+    ctx.equipped[5] = MONKEY
+    ctx.cache[3] = nil
+    ctx.invTips[5] = { "Leather Vest" }
+    check("sources: a worn item not loaded has no stats", Items.Stats({ inv = 5, id = 3 }), nil)
+    check("sources: its slot tooltip is not read before it loads", ctx.calls.inv, nil)
+    ctx.cache[3] = { "Leather Vest", nil, 3, 30 }
+    ctx.invTips[5] = { "Leather Vest of the Monkey", ctx.strength(50) }
+    check("sources: the loaded worn item reads its slot tooltip", statsText(Items.Stats({ inv = 5, id = 3 })), "str=50")
+    ctx.equipped[5] = BEAR
+    ctx.invTips[5] = { "Leather Vest of the Bear", ctx.strength(5) }
+    check("sources: another item in the slot is read anew", statsText(Items.Stats({ inv = 5, id = 3 })), "str=5")
+end
+
+-- Returns the scores in upgrade lines, sorted, as "50.0,60.0".
+local function lineScores(lines)
+    local scores = {}
+    for _, line in ipairs(lines) do
+        scores[#scores + 1] = line:match("%(score ([%d.]+) over")
+    end
+    table.sort(scores)
+    return table.concat(scores, ",")
+end
+
+do
+    local ctx = withSources(loadUpgrade())
+    ctx.bagUpdate()
+    ctx.bagLinks["0:1"] = "|Hitem:1::::::::40:::1::|h"
+    ctx.bagLinks["0:2"] = "|Hitem:1::::::::40:::2::|h"
+    ctx.bagTips["0:1"] = { "Plate Chest of the Monkey", ctx.strength(20) }
+    ctx.bagTips["0:2"] = { "Plate Chest of the Bear", ctx.strength(40) }
+    local out = ctx.loot(1, 1)
+    check("sources: two suffix variants of one id are judged apart", lineScores(out), "40.0")
+    check("sources: the line names the bag item's own link", out[1],
+        "Tandem: upgrade for Chest: |Hitem:1::::::::40:::2::|h (score 40.0 over 30.0)")
+end
+
+do
+    local ctx = withSources(loadUpgrade())
+    ctx.bagUpdate()
+    ctx.equipped[5] = secret()
+    check("sources: a bag item behind an unknown worn item prints nothing yet", #ctx.loot(1), 0)
+    check("sources: another item is waited on", ctx.addon.Upgrade.Better(900), nil)
+    ctx.equipped[5] = "|cff0070dd|Hitem:3::::::::::::::|h[Leather Vest]|h|r"
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("sources: any waiting item's info judges an untied pending item again", ctx.since(from)[1],
+        upgradeLine("Chest", 1, BLUE, 45, 30))
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("sources: the untied item is judged once", #ctx.since(from), 1)
+end
+
+do
+    local ctx = withSources(loadUpgrade())
+    ctx.bagUpdate()
+    ctx.bagLinks["0:1"] = "|Hitem:900::::::::40:::1::|h"
+    ctx.bagLinks["0:2"] = "|Hitem:900::::::::40:::2::|h"
+    ctx.bagTips["0:1"] = { "Late Plate of the Bear", ctx.strength(60) }
+    ctx.bagTips["0:2"] = { "Late Plate of the Monkey", ctx.strength(50) }
+    check("sources: two loading variants print nothing yet", #ctx.loot(900, 900), 0)
+    ctx.cache[900] = { "Late Plate", nil, 4, 60 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("sources: one item info judges both waiting variants once", lineScores(ctx.since(from)), "50.0,60.0")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 900, true)
+    check("sources: the item info again prints nothing", #ctx.since(from), 2)
+end
+
+do
+    local ctx = withSources(loadTooltip())
+    local link = itemLink(1)
+    ctx.linkTips[link] = { "Plate Chest of the Monkey", ctx.strength(20) }
+    check("sources: the tooltip judges its hyperlink", ctx.text({ id = 1, hyperlink = link }), "")
+    check("sources: the tooltip without a hyperlink judges the id", ctx.text({ id = 1 }),
+        "Tandem: upgrade over what you wear (score 45.0 over 30.0)")
+end
+
+do
+    local ctx = withSources(loadItemBorders())
+    ctx.bagLinks["0:1"] = itemLink(1)
+    ctx.bagTips["0:1"] = { "Plate Chest of the Monkey", ctx.strength(10) }
+    local _, b = ctx.classic(1, 0, { 1, 1 }, 2)
+    ctx.bagUpdate()
+    check("sources: a bag border judges the slot's item", ctx.border(b[1]), "none")
+    check("sources: a slot without a link falls back to the id", ctx.border(b[2]), "red")
+end
+
+do
+    local ctx = withSources(loadLootBorders({ buttons = true }))
+    ctx.links[1], ctx.links[2] = itemLink(1), "|cffffffff|Hitem:1::::::::60:::2::|h[Item 1]|h|r"
+    ctx.linkTips[itemLink(1)] = { "Plate Chest of the Monkey", ctx.strength(10) }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("LOOT_OPENED")
+    check("sources: a loot border judges the slot's link", ctx.border(ctx.buttons[1]), "none")
+    check("sources: a link without lines falls back to the id", ctx.border(ctx.buttons[2]), "red")
+end
 
 -- Layout: the Tandem Edit Mode layout and /tandem layout (stage 12, U2, D2, D4).
 local LAYOUT_ENUM = {
