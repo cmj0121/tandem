@@ -313,7 +313,8 @@ Tandem's entry in the addon compartment menu does the same as a click.
   Edit Mode's chat size settings it only moves; without a chat system it stays put. On a narrow screen it narrows to
   the room left of the bars (down to 260 wide) and otherwise goes above the player frame.
 - The [bag row](#bag-row) sits in the bottom-right corner.
-- The micro menu goes to the top left; the quest tracker stays where your previous layout had it.
+- The micro menu goes to the top left, with Blizzard's damage meter just under it; the quest tracker stays where
+  your previous layout had it.
 - The minimap goes to the top right, with the buffs just left of it.
 - The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
   minimap's); otherwise they stay where they are.
@@ -346,9 +347,9 @@ bags. It replaces the default bag bar while the layout is on, and needs the `Bag
 
 At every login, layout on or off, Tandem turns on the client's combined bags (the `combinedBags` setting), so `B`
 opens one window with all your bags. You can switch it off in the options; it comes back on at the next login.
-Tandem also points every key bound to "Open all bags" (`B` by default) at its own opener, which opens and closes the
-reagent bag together with the others; when the reagent bag has slots, it gets its own icon at the left end of the bag
-row, titled `Reagent bag`, and clicking any icon opens it too.
+Tandem also points every key bound to "Open all bags" or "Open backpack" (`B` is one of them) at its own opener,
+which opens and closes the reagent bag together with the others; when the reagent bag has slots, it gets its own icon
+at the left end of the bag row, titled `Reagent bag`, and clicking any icon opens it too.
 
 ### Shaman class area
 

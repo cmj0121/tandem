@@ -16,6 +16,9 @@ local BACKPACK = "Interface\\Icons\\INV_Misc_Bag_08"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local WHITE, YELLOW, RED = { 1, 1, 1 }, { 1, 0.82, 0 }, { 1, 0.1, 0.1 }
 
+-- The key binding actions whose keys open all bags through Tandem's opener.
+local BAG_ACTIONS = { "OPENALLBAGS", "TOGGLEBACKPACK" }
+
 local row, on, opener, pendingBind
 local icons = {}
 
@@ -93,8 +96,8 @@ function BagButton.OpenAll()
     end
 end
 
--- Points every key bound to "open all bags" (B by default) at Tandem's opener with an override binding; waits for
--- the end of combat, when bindings cannot change.
+-- Points every key bound to "open all bags" or "open backpack" (B is either, by client) at Tandem's opener with an
+-- override binding; waits for the end of combat, when bindings cannot change.
 local function bindKeys()
     if type(CreateFrame) ~= "function" or type(_G.SetOverrideBindingClick) ~= "function" then
         return
@@ -109,12 +112,14 @@ local function bindKeys()
         opener:SetScript("OnClick", BagButton.OpenAll)
     end
     pcall(_G.ClearOverrideBindings, opener)
-    local keys = { pcall(_G.GetBindingKey, "OPENALLBAGS") }
     local bound = {}
-    for i = 2, #keys do
-        if type(keys[i]) == "string" then
-            pcall(_G.SetOverrideBindingClick, opener, false, keys[i], "TandemOpenAllBags")
-            bound[#bound + 1] = keys[i]
+    for _, action in ipairs(BAG_ACTIONS) do
+        local keys = { pcall(_G.GetBindingKey, action) }
+        for i = 2, #keys do
+            if type(keys[i]) == "string" then
+                pcall(_G.SetOverrideBindingClick, opener, false, keys[i], "TandemOpenAllBags")
+                bound[#bound + 1] = keys[i]
+            end
         end
     end
     ns.Debug.Log("bags: open-all keys bound: " .. (#bound > 0 and table.concat(bound, " ") or "none"))

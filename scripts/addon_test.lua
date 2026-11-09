@@ -3386,6 +3386,7 @@ local function cornerEnum()
     local e = copyTable(LAYOUT_ENUM)
     e.EditModeSystem.MicroMenu, e.EditModeSystem.Minimap, e.EditModeSystem.AuraFrame = 10, 11, 12
     e.EditModeSystem.ObjectiveTracker = 13
+    e.EditModeSystem.DamageMeter = 15
     e.EditModeAuraFrameSystemIndices = { BuffFrame = 1, DebuffFrame = 2 }
     return e
 end
@@ -3405,7 +3406,7 @@ local function editLayout(name, layoutType)
             settings = {} }
     end
     systems[#systems + 1] = { system = 9, systemIndex = 1, anchorInfo = at(99), settings = {} }
-    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 }, { 14, 1 }, { 14, 2 } }) do
+    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 }, { 14, 1 }, { 14, 2 }, { 15, 1 } }) do
         systems[#systems + 1] = { system = s[1], systemIndex = s[2], anchorInfo = at(99), settings = {} }
     end
     return { layoutName = name or "view", layoutType = layoutType or 1, systems = systems }
@@ -3656,6 +3657,8 @@ do
     check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
         "TOPLEFT UIParent TOPLEFT 12 -12")
     check("layout corners: quest tracker left where the player has it", systemOf(t, 13, 1).anchorInfo.offsetX, 99)
+    check("layout corners: damage meter under the micro menu", anchorText(systemOf(t, 15, 1)),
+        "TOPLEFT UIParent TOPLEFT 12 -64")
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3683,8 +3686,9 @@ do
     ctx = loadLayout({ env = { Enum = noMicro }, sizes = { MicroMenuContainer = { 250, 30 } } })
     ctx.run("layout on")
     t = savedTandem(ctx.state)
-    check("layout corners: no micro menu system leaves the micro menu and the quest tracker",
-        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX, "99 99")
+    check("layout corners: no micro menu system leaves the micro menu, quest tracker and damage meter",
+        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX .. " "
+        .. systemOf(t, 15, 1).anchorInfo.offsetX, "99 99 99")
 
     local noSize = copyTable(LAYOUT_ENUM)
     noSize.EditModeChatFrameSetting = nil
@@ -4547,7 +4551,13 @@ do
             ctx.toggled = ctx.toggled + 1
             open[0] = not open[0] or nil
         end,
-        GetBindingKey = function(action) if action == "OPENALLBAGS" then return "B", "SHIFT-B" end end,
+        GetBindingKey = function(action)
+            if action == "OPENALLBAGS" then
+                return "SHIFT-B"
+            elseif action == "TOGGLEBACKPACK" then
+                return "B"
+            end
+        end,
         SetOverrideBindingClick = function(owner, priority, key, button)
             binds[#binds + 1] = key .. ">" .. button .. ">" .. tostring(owner.name) .. ">" .. tostring(priority)
         end,
@@ -4566,8 +4576,9 @@ do
     r.scripts.OnClick(r, "LeftButton")
     check("reagent bag: closes with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "nil nil")
     ctx.fire("PLAYER_LOGIN")
-    check("reagent bag: every open-all-bags key clicks Tandem's opener", table.concat(binds, " ") .. " " .. cleared,
-        "B>TandemOpenAllBags>TandemOpenAllBags>false SHIFT-B>TandemOpenAllBags>TandemOpenAllBags>false 1")
+    check("reagent bag: every open-all-bags and open-backpack key clicks Tandem's opener",
+        table.concat(binds, " ") .. " " .. cleared,
+        "SHIFT-B>TandemOpenAllBags>TandemOpenAllBags>false B>TandemOpenAllBags>TandemOpenAllBags>false 1")
     ctx.bags[5] = nil
     open = {}
     r.scripts.OnClick(r, "LeftButton")
