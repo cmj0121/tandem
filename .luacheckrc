@@ -49,6 +49,7 @@ read_globals = {
     "Enum",
     "GameTooltip",
     "GetContainerItemID",
+    "GetContainerItemLink",
     "GetContainerNumSlots",
     "GetContainerNumFreeSlots",
     "ToggleAllBags",

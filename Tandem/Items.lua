@@ -88,13 +88,15 @@ end
 
 local stats = {}
 
--- Items.Stats(id) -> { statKey = number } | nil
--- The item's tooltip stats, kept for the session once read; nil while they cannot be read (asked again next time).
-function Items.Stats(id)
-    local s = stats[id]
+-- Items.Stats(src) -> { statKey = number } | nil
+-- The tooltip stats of a StatSearch source (an item id, or a worn, bag or linked item), kept for the session per
+-- StatSearch.Key once read; nil while they cannot be read (asked again next time).
+function Items.Stats(src)
+    local key = ns.StatSearch.Key(src)
+    local s = stats[key]
     if s == nil and ns.StatPatterns and ns.StatSearch.Ready() then
-        s = ns.StatSearch.ReadStats(id)
-        stats[id] = s
+        s = ns.StatSearch.ReadStats(src)
+        stats[key] = s
     end
     return s
 end
@@ -104,9 +106,9 @@ function Items.Reset()
     stats = {}
 end
 
--- Returns the item's weighted score for the class at the level (its active spec), or nil while it has no stats.
-function Items.Score(id, class, level)
-    return ns.Weights.Score(Items.Stats(id), class, (ns.Weights.Active(class, level)))
+-- Returns the source's weighted score for the class at the level (its active spec), or nil while it has no stats.
+function Items.Score(src, class, level)
+    return ns.Weights.Score(Items.Stats(src), class, (ns.Weights.Active(class, level)))
 end
 
 local function dualWields(class, level)
@@ -172,8 +174,9 @@ end
 
 -- Returns what the player wears in a slot token: { ids = {[id] = true}, list = { {id, ilvl, score} | {ilvl = 0,
 -- score = 0} | {unknown} }, ilvl, score } where ilvl is the lower of a pair (0 when a slot is empty) or nil when
--- unknown, and score the lower stat score of the pair, nil unless every worn item has one. An off hand behind a
--- two-hander, or behind a main hand the client does not reveal, has nothing to beat: its ilvl and score are nil.
+-- unknown, and score the lower stat score of the pair (each from its worn slot's own tooltip), nil unless every worn
+-- item has one. An off hand behind a two-hander, or behind a main hand the client does not reveal, has nothing to
+-- beat: its ilvl and score are nil.
 function Items.Equipped(slot)
     local out = { ids = {}, list = {}, ilvl = math.huge, score = math.huge }
     local _, classFile, level = ns.View.Player(true)
@@ -183,7 +186,7 @@ function Items.Equipped(slot)
         if id then
             local info = Items.Info(id)
             e.id, e.ilvl = id, info and info[1] or nil
-            e.score = classFile and Items.Score(id, classFile, level) or nil
+            e.score = classFile and Items.Score({ inv = inv, id = id }, classFile, level) or nil
             out.ids[id] = true
         elseif id == false then
             e.ilvl, e.score = 0, 0
