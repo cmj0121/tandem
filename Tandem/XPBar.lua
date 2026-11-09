@@ -88,6 +88,9 @@ function XPBar.Update(newLevel)
     if not bar then
         return
     end
+    if on then
+        ns.Layout.Refade()
+    end
     local xp, max = number(call(UnitXP, "player")), number(call(UnitXPMax, "player"))
     local level, cap = number(newLevel) or number(call(UnitLevel, "player")), maxLevel()
     if not on or not xp or not max or max <= 0 or (level and cap and level >= cap) then

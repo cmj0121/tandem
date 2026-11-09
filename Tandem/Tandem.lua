@@ -83,9 +83,16 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Launcher.OnLogin()
         ns.Debug.OnLogin()
         ns.BagButton.OnLogin()
+        -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
+        if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+            C_Timer.After(3, ns.Layout.Refade)
+        end
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
+        if event == "PLAYER_ENTERING_WORLD" then
+            ns.Layout.Refade()
+        end
         if event == "PLAYER_LEVEL_UP" then
             ns.XPBar.Update(...)
             ns.Upgrade.Invalidate()
