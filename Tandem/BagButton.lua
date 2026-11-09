@@ -22,15 +22,7 @@ local BAG_ACTIONS = { "OPENALLBAGS", "TOGGLEBACKPACK" }
 local row, on, opener, pendingBind
 local icons = {}
 
-local function call(fn, ...)
-    if type(fn) ~= "function" then
-        return nil
-    end
-    local ok, v, w = pcall(fn, ...)
-    if ok then
-        return ns.Store.Safe(v), ns.Store.Safe(w)
-    end
-end
+local call = ns.Store.Call
 
 local function number(v)
     return type(v) == "number" and v or 0
@@ -43,9 +35,7 @@ end
 
 -- The reagent bag's container index, or nil on a client without one.
 local function reagentBag()
-    local v = call(function()
-        return Enum.BagIndex.ReagentBag
-    end)
+    local v = ns.Check.Get("Enum.BagIndex.ReagentBag")
     return type(v) == "number" and v or nil
 end
 
@@ -83,9 +73,11 @@ function BagButton.OpenAll()
         if slots > 0 then
             pcall(open and _G.OpenBag or _G.CloseBag, reagent)
         end
-        ns.Debug.Log(("bags %s: main %s->%s reagent %s slots %d was %s -> %s now %s"):format(when,
-            tostring(before), tostring(after), tostring(reagent), slots, tostring(was), tostring(open),
-            tostring(reagent and bagOpen(reagent))))
+        if ns.Debug.IsOn() then
+            ns.Debug.Log(("bags %s: main %s->%s reagent %s slots %d was %s -> %s now %s"):format(when,
+                tostring(before), tostring(after), tostring(reagent), slots, tostring(was), tostring(open),
+                tostring(reagent and bagOpen(reagent))))
+        end
     end
     apply("now")
     -- Again on the next frame, after Blizzard's bag windows have finished showing (one may close the others).
@@ -136,11 +128,9 @@ end
 -- window with every bag. Only sets a CVar the client has; the player can still switch it off in the options, and it
 -- comes back on at the next login.
 function BagButton.OnLogin()
-    local get = type(C_CVar) == "table" and C_CVar.GetCVar or GetCVar
-    local set = type(C_CVar) == "table" and C_CVar.SetCVar or SetCVar
-    local v = call(get, "combinedBags")
+    local v = ns.Store.GetCVar("combinedBags")
     if type(v) == "string" and v ~= "1" then
-        pcall(set, "combinedBags", "1")
+        ns.Store.SetCVar("combinedBags", "1")
     end
     bindKeys()
 end
@@ -217,11 +207,7 @@ local function showTooltip(icon)
     tip:Show()
 end
 
-local function hideTooltip()
-    if type(GameTooltip) == "table" then
-        GameTooltip:Hide()
-    end
-end
+local hideTooltip = ns.View.HideTooltip
 
 local function iconButton(i)
     local icon = icons[i]

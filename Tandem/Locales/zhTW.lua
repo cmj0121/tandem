@@ -47,8 +47,8 @@ L["Tandem: no free account layout slot; delete one in Edit Mode"] = "Tandem：�
 L["Tandem: the layout could not be changed"] = "Tandem：無法變更介面配置"
 L["  /tandem minimap [on|off] - show or hide the minimap button"] = "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕"
 L["Tandem: minimap button shown"] = "Tandem：已顯示小地圖按鈕"
-L["  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them"] =
-    "  /tandem debug [on|off] - 為開發者記錄圖騰列的移動；/reload 後寫入存檔"
+L["  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them"] =
+    "  /tandem debug [on|off|snap] - 為開發者記錄版面追蹤資料；/reload 後寫入存檔"
 L["Tandem: debug recording on; /reload saves it to disk"] = "Tandem：開始除錯記錄；/reload 後寫入存檔"
 L["Tandem: debug recording off (%d lines kept)"] = "Tandem：停止除錯記錄（保留 %d 行）"
 L["Tandem: minimap button hidden"] = "Tandem：已隱藏小地圖按鈕"

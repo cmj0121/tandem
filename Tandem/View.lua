@@ -19,6 +19,13 @@ local QUALITY_HEX = {
 
 local requested = {}
 
+-- Hides GameTooltip where the client has one; the OnLeave script of Tandem's frames.
+function View.HideTooltip()
+    if type(GameTooltip) == "table" then
+        GameTooltip:Hide()
+    end
+end
+
 -- Prints the refusal and returns true while in combat (decision 9).
 function View.InCombat()
     if InCombatLockdown and InCombatLockdown() then

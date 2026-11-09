@@ -405,7 +405,7 @@ do
         "  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout")
     check("usage lists minimap", help[8], "  /tandem minimap [on|off] - show or hide the minimap button")
     check("usage lists debug", help[9],
-        "  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them")
+        "  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them")
     check("usage line count", #help, 9)
     for _, sub in ipairs({ "scan", "count", "gear", "rank", "browse", "export", "map clear", "forget 1 2" }) do
         check(("removed %q prints usage"):format(sub), run(addon, printed, sub)[1], "Tandem commands:")
@@ -3658,7 +3658,7 @@ do
         "TOPLEFT UIParent TOPLEFT 12 -12")
     check("layout corners: quest tracker left where the player has it", systemOf(t, 13, 1).anchorInfo.offsetX, 99)
     check("layout corners: damage meter under the micro menu", anchorText(systemOf(t, 15, 1)),
-        "TOPLEFT UIParent TOPLEFT 12 -64")
+        "TOPLEFT MicroMenuContainer BOTTOMLEFT 0 -12")
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3868,56 +3868,27 @@ do
     check("totem room: none without the totem bar", ctx.addon.Layout.TotemRoom(), 0)
 end
 
--- The debug recorder (D13): off by default; on hooks the totem bar's moves with their caller and logs events into
--- TandemDebug; off stops recording and keeps the log.
+-- The debug recorder (D13): off by default; on logs what modules pass to Debug.Log into TandemDebug; off stops
+-- recording and keeps the log.
 do
-    local totem = { points = {} }
-    function totem.GetNumPoints(self) return #self.points end
-    function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
-    function totem.ClearAllPoints(self) self.points = {} end
-    function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
-    local listener
-    local function widgets()
-        listener = { events = {} }
-        function listener.RegisterEvent(self, e) self.events[e] = true end
-        function listener.RegisterUnitEvent(self, e) self.events[e] = true end
-        function listener.SetScript(self, _, fn) self.onEvent = fn end
-        return listener
-    end
-    local function hook(t, method, fn)
-        local orig = t[method]
-        t[method] = function(...)
-            local r = { orig(...) }
-            fn(...)
-            return (unpack or rawget(table, "unpack"))(r)
-        end
-    end
-    local ctx = loadLayout({ widgets = widgets, env = { MultiCastActionBarFrame = totem, hooksecurefunc = hook,
-        UIParent = {},
-        debugstack = function() return "Interface/AddOns/Blizzard_ActionBar/MultiCast.lua:42: in function\n  x" end,
-        GetTime = function() return 12.5 end } })
+    local ctx = loadLayout({ env = { UIParent = {}, GetTime = function() return 12.5 end } })
     local env = ctx.env
-    check("debug: off by default", ctx.addon.Debug.IsOn(), false)
-    totem:SetPoint("CENTER", "UIParent", "CENTER", 0, 0)
+    local Debug = ctx.addon.Debug
+    check("debug: off by default", Debug.IsOn(), false)
+    Debug.Log("ignored")
     check("debug: nothing logged while off", env.TandemDebug, nil)
     check("debug: on replies", ctx.run("debug on"), "Tandem: debug recording on; /reload saves it to disk")
     check("debug: on is saved", env.TandemDebug.on, true)
-    totem:SetPoint("BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4)
+    Debug.Log("bags: opened")
     local log = env.TandemDebug.log
-    check("debug: a Blizzard move is logged with its caller", log[#log],
-        "12.50 combat=false SetPoint(BOTTOMLEFT, MainActionBar, TOPLEFT, 0, 4) | at nil,nil strata nil parent nil "
-        .. "[CENTER UIParent CENTER 0 0; BOTTOMLEFT MainActionBar TOPLEFT 0 4] | Blizzard_ActionBar/MultiCast.lua:42: "
-        .. "in function < x")
-    listener.onEvent(listener, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 8071)
-    check("debug: a cast is logged", env.TandemDebug.log[#env.TandemDebug.log]:match("event [%w_]+ spell %d+"),
-        "event UNIT_SPELLCAST_SUCCEEDED spell 8071")
+    check("debug: a line is time, combat and what", log[#log], "12.50 combat=false bags: opened")
     for _ = 1, 400 do
-        totem:ClearAllPoints()
+        Debug.Log("x")
     end
     check("debug: the log keeps the last 300 lines", #env.TandemDebug.log, 300)
     check("debug: off replies with the lines kept", ctx.run("debug off"),
         "Tandem: debug recording off (300 lines kept)")
-    totem:ClearAllPoints()
+    Debug.Log("x")
     check("debug: nothing logged after off", #env.TandemDebug.log, 300)
     check("debug: on again starts a fresh log", (ctx.run("debug on") and #env.TandemDebug.log), 1)
     check("debug: bad argument prints usage", ctx.run("debug maybe"):match("^Tandem commands:") ~= nil, true)
@@ -5117,7 +5088,7 @@ do
     check("zhTW minimap command", ctx.run("minimap"), "Tandem：已隱藏小地圖按鈕")
     local help = run(ctx.addon, ctx.printed, "help")
     check("zhTW usage lists minimap", help[#help - 1], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
-    check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off] - 為開發者記錄圖騰列的移動；/reload 後寫入存檔")
+    check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off|snap] - 為開發者記錄版面追蹤資料；/reload 後寫入存檔")
 end
 
 do

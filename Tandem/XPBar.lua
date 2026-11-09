@@ -14,15 +14,7 @@ local REST_COLOR, XP_COLOR = { 0, 0.39, 0.88 }, { 0.58, 0, 0.55 }
 
 local bar, on
 
-local function call(fn, ...)
-    if type(fn) ~= "function" then
-        return nil
-    end
-    local ok, v = pcall(fn, ...)
-    if ok then
-        return ns.Store.Safe(v)
-    end
-end
+local call = ns.Store.Call
 
 local function number(v)
     return type(v) == "number" and v or nil
@@ -51,11 +43,7 @@ local function showTooltip(owner)
     tip:Show()
 end
 
-local function hideTooltip()
-    if type(GameTooltip) == "table" then
-        GameTooltip:Hide()
-    end
-end
+local hideTooltip = ns.View.HideTooltip
 
 local function create()
     bar = CreateFrame("StatusBar", nil, UIParent)

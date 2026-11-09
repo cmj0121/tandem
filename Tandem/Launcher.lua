@@ -25,11 +25,7 @@ local function showTooltip(owner)
     GameTooltip:Show()
 end
 
-local function hideTooltip()
-    if type(GameTooltip) == "table" then
-        GameTooltip:Hide()
-    end
-end
+local hideTooltip = ns.View.HideTooltip
 
 -- Turns the layout on or off and prints the reply /tandem layout prints; in combat Layout defers itself.
 local function click()

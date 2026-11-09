@@ -18,17 +18,9 @@ local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 -- ClassArea.Set with what to show.
 local modules = {}
 local area, module, ticker, on
-local slots, entries, line = {}, {}, nil
+local slots, entries = {}, {}
 
-local function call(fn, ...)
-    if type(fn) ~= "function" then
-        return nil
-    end
-    local ok, a, b = pcall(fn, ...)
-    if ok then
-        return ns.Store.Safe(a), ns.Store.Safe(b)
-    end
-end
+local call = ns.Store.Call
 
 function ClassArea.Register(classFile, mod)
     modules[classFile] = mod
@@ -71,11 +63,7 @@ local function showTooltip(slot)
     tip:Show()
 end
 
-local function hideTooltip()
-    if type(GameTooltip) == "table" then
-        GameTooltip:Hide()
-    end
-end
+local hideTooltip = ns.View.HideTooltip
 
 local function slot(i)
     if slots[i] then
@@ -127,14 +115,46 @@ local function render()
     end
 end
 
+-- Whether two entry lists show the same slots (icon, label, expiry and count, in order).
+local function same(a, b)
+    if #a ~= #b then
+        return false
+    end
+    for i, x in ipairs(a) do
+        local y = b[i]
+        if x.icon ~= y.icon or x.label ~= y.label or x.expires ~= y.expires or x.count ~= y.count then
+            return false
+        end
+    end
+    return true
+end
+
+-- Each tick only counts the shown timers down; a slot running out re-lays the rail out.
+local function tick()
+    local t = now()
+    for _, s in ipairs(slots) do
+        local e = s.entry
+        if e and e.expires then
+            if e.expires <= t then
+                render()
+                return
+            end
+            s.time:SetText(ClassArea.Short(e.expires - t))
+        end
+    end
+end
+
 -- Sets what the rail shows: list is an ordered array of { icon, label, expires (GetTime based) | nil, count | nil };
--- bar is { value, max, color = { r, g, b } } for the line along the bottom, or nil for none.
+-- bar is { value, max, color = { r, g, b } } for the line along the bottom, or nil for none. The slots are laid out
+-- again only when the list differs from the last one (a mana update alone moves only the line).
 function ClassArea.Set(list, bar)
     if not area then
         return
     end
-    entries = list or {}
-    line = bar and type(bar.max) == "number" and bar.max > 0 and bar or nil
+    list = list or {}
+    local changed = not same(list, entries)
+    entries = list
+    local line = bar and type(bar.max) == "number" and bar.max > 0 and bar or nil
     if line then
         area.line:SetMinMaxValues(0, line.max)
         area.line:SetValue(line.value or 0)
@@ -143,7 +163,7 @@ function ClassArea.Set(list, bar)
     else
         area.line:Hide()
     end
-    if on then
+    if on and (changed or not area:IsShown()) then
         render()
     end
 end
@@ -156,7 +176,7 @@ end
 
 local function startTicker()
     if not ticker and type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
-        ticker = C_Timer.NewTicker(TICK, render)
+        ticker = C_Timer.NewTicker(TICK, tick)
     end
 end
 

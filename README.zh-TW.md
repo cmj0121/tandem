@@ -340,7 +340,7 @@ Tandem: layout on
 
 ### 除錯紀錄
 
-`/tandem debug on` 開始為開發者記錄：薩滿圖騰列的每次移動與呼叫來源、相關的遊戲事件，以及畫面下方框架與 Blizzard
+`/tandem debug on` 開始為開發者記錄：每次開啟背包時的判斷，以及畫面下方框架與 Blizzard
 狀態列的快照（登入 2 秒後、每次切換介面配置時，以及執行 `/tandem debug snap` 時）。記錄時不會印出任何訊息。紀錄最多
 300 行，在你 `/reload` 或登出時存進 `TandemDebug` 存檔變數。`/tandem debug off` 停止記錄並印出保留的行數；
 `/tandem debug` 不加參數則切換開關；`snap` 會在需要時開啟記錄並拍一次快照。

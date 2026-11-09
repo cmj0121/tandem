@@ -18,25 +18,7 @@ local MANA_COLOR = { 0, 0.44, 0.87 }
 local totems, shield, mana = {}, nil, nil
 local shieldNames = {}
 
-local function safeAll(...)
-    if select("#", ...) == 0 then
-        return
-    end
-    return ns.Store.Safe((...)), safeAll(select(2, ...))
-end
-
-local function safe(ok, ...)
-    if ok then
-        return safeAll(...)
-    end
-end
-
-local function call(fn, ...)
-    if type(fn) ~= "function" then
-        return
-    end
-    return safe(pcall(fn, ...))
-end
+local call = ns.Store.Call
 
 local function number(v)
     return type(v) == "number" and v or nil

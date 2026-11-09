@@ -371,9 +371,9 @@ the rest still works.
 
 ### Debug log
 
-`/tandem debug on` starts recording, for the developer, every move of the Shaman totem bar with its caller, the
-related game events and a snapshot of the frames near the bottom of the screen and Blizzard's status bars (2 seconds
-after login, on every layout change, and on `/tandem debug snap`). Nothing is printed while it records. The log, at
+`/tandem debug on` starts recording, for the developer, what the bag opener decides on each press and a snapshot of
+the frames near the bottom of the screen and Blizzard's status bars (2 seconds after login, on every layout change,
+and on `/tandem debug snap`). Nothing is printed while it records. The log, at
 most 300 lines, is saved in the `TandemDebug` saved variable when you `/reload` or log out. `/tandem debug off` stops
 recording and prints how many lines it kept; `/tandem debug` alone toggles it, and `snap` turns recording on if
 needed and takes a snapshot.
