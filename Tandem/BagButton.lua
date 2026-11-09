@@ -232,7 +232,6 @@ end
 local function create()
     row = CreateFrame("Frame", nil, UIParent)
     row:SetFrameStrata("MEDIUM")
-    row:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", OFFSET_X, OFFSET_Y)
     row:Hide()
 end
 
@@ -277,6 +276,9 @@ local function onChange(layoutOn)
         if not row then
             create()
         end
+        -- Above the micro menu, which the layout puts in the bottom-right corner.
+        row:ClearAllPoints()
+        row:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", OFFSET_X, OFFSET_Y + ns.Layout.MicroRoom())
     end
     BagButton.Update()
 end

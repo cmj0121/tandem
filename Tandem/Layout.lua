@@ -4,7 +4,7 @@ local _, ns = ...
 -- bottom action bars at the bottom centre over Blizzard's (faded) XP status bars, the main bar on top (Blizzard
 -- keeps a Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target
 -- frames in a row well above them, left and right of centre with the class rail between (the unit row), moves the
--- chat frame bottom-left, the micro menu top-left with the damage meter under it and the minimap and buffs
+-- chat frame bottom-left, the micro menu bottom-right under the bag row and the minimap and buffs
 -- top-right (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move
 -- only through Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with
 -- SetAlpha(0) and EnableMouse(false), both undone on off.
@@ -21,6 +21,8 @@ local STATUS_HEIGHT, UNIT_SPREAD, UNIT_LIFT = 17, 120, 60
 local CHAT_WIDTH, CHAT_HEIGHT, CHAT_MIN = 380, 120, 260
 -- Corner inset and gap kept clear beside the bars.
 local INSET, CLEAR = 16, 8
+-- The micro menu's gap above the screen's bottom edge, in the bottom-right corner.
+local MICRO_Y = 4
 local TOT_CVAR = "showTargetOfTarget"
 -- How far above the main bar's bottom edge Edit Mode puts the totem bar.
 local TOTEM_Y = 70
@@ -103,6 +105,15 @@ function Layout.UnitRow()
     return XP_ROOM + block + Layout.TotemRoom() + UNIT_LIFT, UNIT_SPREAD
 end
 
+-- Height kept free at the bottom-right corner under Tandem's bag row: the micro menu's, where the client's Edit Mode
+-- can move it there, plus a gap; 0 otherwise.
+function Layout.MicroRoom()
+    if enum("EditModeSystem", "MicroMenu") == nil then
+        return 0
+    end
+    return MICRO_Y + measure("MicroMenuContainer", "GetHeight", 40) + CLEAR
+end
+
 function Layout.IsOn()
     return ns.Store.Layout().on == true
 end
@@ -147,6 +158,14 @@ local function unfade()
             end
         end
         faded[name] = nil
+    end
+end
+
+-- Fades the concealed frames again while the layout is attached and out of combat: Blizzard re-shows some of them
+-- (the status bars on a fresh login) after the layout attached.
+function Layout.Refade()
+    if attached and not inCombat() then
+        fade()
     end
 end
 
@@ -258,13 +277,7 @@ local function corners(info)
     local microSystem = enum("EditModeSystem", "MicroMenu")
     local micro = microSystem ~= nil and findSystem(info, microSystem)
     if micro then
-        move(micro, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, -12))
-    end
-    -- Blizzard's damage meter goes top-left under the micro menu, which would otherwise cover it there.
-    local meterSystem = enum("EditModeSystem", "DamageMeter")
-    local meter = micro and meterSystem ~= nil and findSystem(info, meterSystem)
-    if meter then
-        move(meter, anchor("TOPLEFT", "MicroMenuContainer", "BOTTOMLEFT", 0, -12))
+        move(micro, anchor("BOTTOMRIGHT", "UIParent", "BOTTOMRIGHT", -12, MICRO_Y))
     end
     local minimapSystem = enum("EditModeSystem", "Minimap")
     local minimap = minimapSystem ~= nil and findSystem(info, minimapSystem)

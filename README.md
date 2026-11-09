@@ -293,14 +293,14 @@ Tandem's entry in the addon compartment menu does the same as a click.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│ [micro menu]           [====|====| XP 62% |====]    [buffs][map] │
+│                        [====|====| XP 62% |====]    [buffs][map] │
 │                                                                  │
 │      [player]          [class rail]          [target][ToT]       │
 │                                                                  │
 │                      [ Shaman totem bar ]                        │
 │ [chat]               [ main action bar  ]                        │
-│ [chat]               [ action bar 2     ]                        │
-│ [chat]               [ action bar 3     ]              [bag row] │
+│ [chat]               [ action bar 2     ]              [bag row] │
+│ [chat]               [ action bar 3     ]           [micro menu] │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -312,9 +312,8 @@ Tandem's entry in the addon compartment menu does the same as a click.
 - The chat window goes to the bottom left, about 380 by 120, when the client's Edit Mode has a chat system; without
   Edit Mode's chat size settings it only moves; without a chat system it stays put. On a narrow screen it narrows to
   the room left of the bars (down to 260 wide) and otherwise goes above the player frame.
-- The [bag row](#bag-row) sits in the bottom-right corner.
-- The micro menu goes to the top left, with Blizzard's damage meter just under it; the quest tracker stays where
-  your previous layout had it.
+- The micro menu goes to the bottom-right corner, with the [bag row](#bag-row) just above it. The quest tracker and
+  Blizzard's damage meter stay where your previous layout had them.
 - The minimap goes to the top right, with the buffs just left of it.
 - The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
   minimap's); otherwise they stay where they are.
@@ -520,7 +519,7 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 
 1. Out of combat, run `/tandem layout on`. Chat shows `Tandem: layout on`. The three bottom action bars sit at the
    bottom centre without gryphons, the player and target frames in a row above them, the chat window bottom left,
-   the bag row in the bottom-right corner, the micro menu top left and the minimap top right with the buffs to its
+   the micro menu in the bottom-right corner with the bag row above it, and the minimap top right with the buffs to its
    left (where the client lets Edit Mode move them); the right bars and the bag bar are gone. Target something: its
    target of target shows.
 2. At the top centre, the XP bar, half the screen wide in ten cells, shows its percent, purple, or blue when rested.

@@ -3654,11 +3654,11 @@ do
     local ctx = loadLayout({ env = { Enum = cornerEnum() }, frames = { "MinimapCluster" } })
     ctx.run("layout on")
     local t = savedTandem(ctx.state)
-    check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
-        "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout corners: micro menu bottom-right", anchorText(systemOf(t, 10, 1)),
+        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
     check("layout corners: quest tracker left where the player has it", systemOf(t, 13, 1).anchorInfo.offsetX, 99)
-    check("layout corners: damage meter under the micro menu", anchorText(systemOf(t, 15, 1)),
-        "TOPLEFT MicroMenuContainer BOTTOMLEFT 0 -12")
+    check("layout corners: damage meter left where the player has it", systemOf(t, 15, 1).anchorInfo.offsetX, 99)
+    check("layout: MicroRoom is the micro menu's 40px, its 4px gap and 8px clear", ctx.addon.Layout.MicroRoom(), 52)
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3679,13 +3679,14 @@ do
     check("layout corners: no minimap system leaves the minimap and buffs",
         systemOf(t, 11, 1).anchorInfo.offsetX .. " " .. systemOf(t, 12, 1).anchorInfo.offsetX, "99 99")
     check("layout corners: micro menu still moved", anchorText(systemOf(t, 10, 1)),
-        "TOPLEFT UIParent TOPLEFT 12 -12")
+        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
 
     local noMicro = cornerEnum()
     noMicro.EditModeSystem.MicroMenu = nil
     ctx = loadLayout({ env = { Enum = noMicro }, sizes = { MicroMenuContainer = { 250, 30 } } })
     ctx.run("layout on")
     t = savedTandem(ctx.state)
+    check("layout: no micro menu system keeps no room under the bag row", ctx.addon.Layout.MicroRoom(), 0)
     check("layout corners: no micro menu system leaves the micro menu, quest tracker and damage meter",
         systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX .. " "
         .. systemOf(t, 15, 1).anchorInfo.offsetX, "99 99 99")
@@ -3707,7 +3708,7 @@ do
 end
 
 -- Narrow screens (D12, D13 fit): the chat stays beside the bars, narrows to the room left, else goes above the band
--- and the unit frames over it; the micro menu is top-left whatever the width.
+-- and the unit frames over it; the micro menu is bottom-right whatever the width.
 do
     local function corners(uiWidth, measured, barWidth)
         local sizes = { UIParent = { uiWidth, 768 }, MultiBarBottomRight = barWidth and { barWidth, 40 } or nil }
@@ -3725,7 +3726,7 @@ do
     end
     local chat, micro = corners(1920)
     check("layout fit 1920: chat bottom-left at full width", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
-    check("layout fit 1920: micro menu top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout fit 1920: micro menu bottom-right", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
     chat = corners(1366)
     check("layout fit 1366: chat keeps its full width beside the bars", chat,
         "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
@@ -3734,7 +3735,7 @@ do
     chat, micro = corners(1024)
     check("layout fit 1024: chat above the band and the unit frames", chat,
         "BOTTOMLEFT UIParent BOTTOMLEFT 16 300 380")
-    check("layout fit 1024: micro menu still top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout fit 1024: micro menu still bottom-right", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
     chat = corners(1366, true)
     check("layout fit measured 1366: chat beside the measured bars", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
     chat = corners(1200, false, 45)
@@ -4245,6 +4246,13 @@ do
         .. tostring(ctx.state.frames.MainStatusTrackingBarContainer.mouse), "0 false")
     check("xp bar: the second (reputation) status bar faded too",
         ctx.state.frames.SecondaryStatusTrackingBarContainer.alpha, 0)
+    ctx.state.frames.MainStatusTrackingBarContainer.alpha = 1
+    ctx.fire("PLAYER_ENTERING_WORLD")
+    check("xp bar: a status bar Blizzard shows again is faded on entering the world",
+        ctx.state.frames.MainStatusTrackingBarContainer.alpha, 0)
+    ctx.state.frames.MainStatusTrackingBarContainer.alpha = 1
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: and on an XP update", ctx.state.frames.MainStatusTrackingBarContainer.alpha, 0)
     ctx.xp.level = 59
     ctx.fire("PLAYER_LEVEL_UP", 60)
     check("xp bar: PLAYER_LEVEL_UP's level wins over a stale UnitLevel", bar.shown, false)
@@ -4409,6 +4417,12 @@ do
     check("bag row: shown at the bottom right", tostring(row.shown) .. " " .. tostring(row.parent == ctx.env.UIParent)
         .. " " .. #row.points .. " " .. table.concat({ row.points[1][1], tostring(row.points[1][2] == ctx.env.UIParent),
         row.points[1][3], row.points[1][4], row.points[1][5] }, " "), "true true 1 BOTTOMRIGHT true BOTTOMRIGHT -12 8")
+    local micro = loadBags({ env = { Enum = cornerEnum() } })
+    micro.run("layout on")
+    check("bag row: above the micro menu in the bottom-right corner", micro.row().points[1][5], 60)
+    micro.run("layout off")
+    micro.run("layout on")
+    check("bag row: placed again, one anchor", #micro.row().points, 1)
     check("bag row: general bags first, backpack icon, free/total across bags", ctx.text(), GENERAL_ICON .. " 19/38")
     local general = ctx.icons()[1]
     check("bag row: 28px icon, rightmost", general.width .. "x" .. general.height .. " " .. general.points[1][1] .. " "
