@@ -14,6 +14,9 @@ local Safe = ns.Store.Safe
 
 local BAGS = 4
 
+-- Bag items are keyed per StatSearch.Key of their slot (the item's link, or its id without one), so two suffix
+-- variants of one item id are judged apart. waiting maps an item id to the keys waiting on it, since
+-- GET_ITEM_INFO_RECEIVED gives an id.
 local seen
 local alerted = {}
 local waiting = {}
@@ -25,20 +28,21 @@ local function bagFunctions()
     return c.GetContainerNumSlots or GetContainerNumSlots, c.GetContainerItemID or GetContainerItemID
 end
 
--- Returns the set of item ids in bags 0..4.
+-- Returns the items in bags 0..4: { [key] = { id, bag, slot } } by StatSearch.Key of the slot.
 local function snapshot()
     local numSlots, itemID = bagFunctions()
-    local ids = {}
+    local items = {}
     for bag = 0, BAGS do
         local n = Safe(numSlots(bag))
         for slot = 1, type(n) == "number" and n or 0 do
             local id = Safe(itemID(bag, slot))
             if type(id) == "number" then
-                ids[id] = true
+                local src = { id = id, bag = bag, slot = slot }
+                items[ns.StatSearch.Key(src)] = src
             end
         end
     end
-    return ids
+    return items
 end
 
 local function say(line)
@@ -49,23 +53,29 @@ local function say(line)
     end
 end
 
--- Better's answers by item id, for one class:level:spec:Weights.revision; worn items, skills and the player's level
--- are not all in the key, so an equipment, level or skill line change calls Invalidate.
+-- Better's answers by StatSearch.Key of the judged source, for one class:level:spec:Weights.revision; worn items,
+-- skills and the player's level are not all in the key, so an equipment, level or skill line change calls Invalidate.
 local cache = { answers = {} }
 
 local function cacheKey(class, level)
     return class .. ":" .. level .. ":" .. tostring(ns.Weights.Active(class, level)) .. ":" .. ns.Weights.revision
 end
 
--- Judges the item against what is worn by rule D2 (Items.Beats): returns { better, done, info, score, place, over }
--- where better is nil while the item, its tooltip or a worn item is not known yet (the client is asked for them),
--- done says the answer was made on complete data, and info, score, place and over (the worn score) are set behind a
--- true answer.
-local function assess(id)
+-- Marks key as waiting on the item id's GET_ITEM_INFO_RECEIVED.
+local function wait(id, key)
+    waiting[id] = waiting[id] or {}
+    waiting[id][key] = true
+end
+
+-- Judges the item (scored and checked from src, a StatSearch source for it, under key) against what is worn by rule
+-- D2 (Items.Beats): returns { better, done, info, score, place, over } where better is nil while the item, its
+-- tooltip or a worn item is not known yet (the client is asked for them), done says the answer was made on complete
+-- data, and info, score, place and over (the worn score) are set behind a true answer.
+local function assess(id, src, key)
     local Items = ns.Items
     local info = Items.Info(id)
     if info == nil then
-        waiting[id] = true
+        wait(id, key)
         return { done = false }
     end
     local _, class, level = ns.View.Player(true)
@@ -83,20 +93,22 @@ local function assess(id)
     if worn.ids[id] then
         return { better = false, done = true }
     end
-    local blocked = ns.StatSearch.Blocked(id)
+    local blocked = ns.StatSearch.Blocked(src)
     if blocked == nil then
-        waiting[id] = true
+        wait(id, key)
         return { done = false }
     elseif blocked then
         return { better = false, done = true }
     end
-    local score = Items.Score(id, class, level)
+    local score = Items.Score(src, class, level)
     local better, over = Items.Beats(score, info[1], worn)
     if better == nil then
-        waiting[id] = true
+        if score == nil then
+            wait(id, key)
+        end
         for _, e in ipairs(worn.list) do
             if e.id and (e.ilvl == nil or e.score == nil) then
-                waiting[e.id] = true
+                wait(e.id, key)
             end
         end
         return { done = false }
@@ -107,29 +119,34 @@ local function assess(id)
     return { better = true, done = true, info = info, score = score, place = place, over = over }
 end
 
--- Returns the item's assessment, kept while the cache key holds when it was made on complete data.
-local function verdict(id)
+-- Returns the item's assessment from src (the id when nil), kept per StatSearch.Key of the source while the cache key
+-- holds when it was made on complete data.
+local function verdict(id, src)
     local _, class, level = ns.View.Player(true)
     local key = class and cacheKey(class, level)
     if cache.key ~= key then
         cache = { key = key, answers = {} }
     end
-    local v = cache.answers[id]
+    src = src or id
+    local answer = ns.StatSearch.Key(src)
+    local v = cache.answers[answer]
     if v then
         return v
     end
-    v = assess(id)
+    v = assess(id, src, answer)
     if v.done and key then
-        cache.answers[id] = v
+        cache.answers[answer] = v
     end
     return v
 end
 
--- Returns true when the item beats the weakest worn item of its slot by rule D2, false when it does not (not usable,
--- a red tooltip line, not equippable, no slot, already worn, no better), nil while the item, its stats or a worn
--- item's are unknown. Behind a true answer it also returns the item's score and the worn score it beats.
-function Upgrade.Better(id)
-    local v = verdict(id)
+-- Upgrade.Better(id [, src]) -> true, score, over | false | nil
+-- True when the item beats the weakest worn item of its slot by rule D2, false when it does not (not usable, a red
+-- tooltip line, not equippable, no slot, already worn, no better), nil while the item, its stats or a worn item's are
+-- unknown. src, a StatSearch source for the item (its bag slot or link), is scored and checked instead of the bare id
+-- when given. Behind a true answer it also returns the item's score and the worn score it beats.
+function Upgrade.Better(id, src)
+    local v = verdict(id, src)
     if v.better then
         return true, v.score, v.over
     end
@@ -177,22 +194,25 @@ function Upgrade.OnSkillLines()
     return true
 end
 
--- Prints a line for a new bag item when it is an upgrade; remembers it in pending while it cannot be judged yet.
-local function judge(id)
-    local v = verdict(id)
+-- Prints a line for the new bag item seen under key when it is an upgrade, judged from its bag slot and named by its
+-- own link when the key is one; remembers the key in pending while it cannot be judged yet.
+local function judge(key)
+    local item = seen[key]
+    local v = verdict(item.id, item)
     if v.better == nil then
-        pending[id] = true
+        pending[key] = true
     end
     if not v.better then
         return
     end
-    alerted[id] = true
+    alerted[key] = true
     local View = ns.View
     say(L["Tandem: upgrade for %s: %s (score %s over %s)"]:format(View.SlotLabel(v.place.slot),
-        View.ItemLink(id, v.info[3]), View.ScoreText(v.score), View.ScoreText(v.over)))
+        type(key) == "string" and key or View.ItemLink(item.id, v.info[3]), View.ScoreText(v.score),
+        View.ScoreText(v.over)))
 end
 
--- BAG_UPDATE_DELAYED: judges the item ids not in the last snapshot.
+-- BAG_UPDATE_DELAYED: judges the bag items whose key is not in the last snapshot.
 function Upgrade.OnBagUpdate()
     if not (ns.Check.Ready("Upgrade alert") and C_Item and C_Item.GetItemInfo) then
         return
@@ -203,34 +223,39 @@ function Upgrade.OnBagUpdate()
     if not before then
         return
     end
-    for id in pairs(now) do
-        if not before[id] and not alerted[id] then
-            judge(id)
+    for key in pairs(now) do
+        if not before[key] and not alerted[key] then
+            judge(key)
         end
     end
 end
 
 -- GET_ITEM_INFO_RECEIVED: returns true for a waiting item (a new bag item, one Better asked for, or a worn item whose
--- stats were missing). The new bag item judge was waiting on, or for a worn or other item every one it waits on, is
--- judged again and gets its line when it is an upgrade.
+-- stats were missing). Every pending bag item still in the bags that waited on it, or that waits on no item id (behind
+-- a worn item the client does not reveal), is judged again, once, and gets its line when it is an upgrade.
 function Upgrade.OnItemInfo(id)
     id = Safe(id)
-    if not (id and waiting[id]) then
+    local keys = id and waiting[id]
+    if not keys then
         return false
     end
     waiting[id] = nil
-    local due = {}
-    if pending[id] then
-        due[id] = true
-    else
-        for p in pairs(pending) do
-            due[p] = true
+    local tied = {}
+    for _, others in pairs(waiting) do
+        for key in pairs(others) do
+            tied[key] = true
         end
     end
-    for p in pairs(due) do
-        pending[p] = nil
-        if seen and seen[p] and not alerted[p] then
-            judge(p)
+    local due = {}
+    for key in pairs(pending) do
+        if keys[key] or not tied[key] then
+            due[key] = true
+        end
+    end
+    for key in pairs(due) do
+        pending[key] = nil
+        if seen and seen[key] and not alerted[key] then
+            judge(key)
         end
     end
     return true

@@ -122,11 +122,12 @@ local function buttonsOf(frame, f)
     return list
 end
 
--- Paints the button's border from the item's verdict; a missing item or a Better that raises leaves it bare.
-local function paintItem(button, id)
+-- Paints the button's border from the verdict on the item judged from src (a StatSearch source for it); a missing
+-- item or a Better that raises leaves it bare.
+local function paintItem(button, id, src)
     local ok, better = false, nil
     if type(id) == "number" then
-        ok, better = pcall(ns.Upgrade.Better, id)
+        ok, better = pcall(ns.Upgrade.Better, id, src)
     end
     ItemBorders.Paint(button, ok and better == true)
 end
@@ -141,7 +142,9 @@ local function paintFrame(frame, f)
             if type(bag) ~= "number" and f then
                 bag = call(frame, "GetID")
             end
-            paintItem(button, itemID(bag, call(button, "GetID")))
+            local slot = call(button, "GetID")
+            local id = itemID(bag, slot)
+            paintItem(button, id, { bag = bag, slot = slot, id = id })
         end
     end
 end
@@ -169,14 +172,17 @@ function ItemBorders.Bags()
     paintFrame(ContainerFrameCombinedBags)
 end
 
--- Returns the item id in a loot slot from its link, or nil for coin, an empty slot or a missing API.
-local function lootID(slot)
+-- Returns the item id in a loot slot and its link, or nil for coin, an empty slot or a missing API.
+local function lootItem(slot)
     if type(slot) ~= "number" or not GetLootSlotLink then
         return nil
     end
     local ok, link = pcall(GetLootSlotLink, slot)
     link = ok and Safe(link)
-    return type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
+    if type(link) ~= "string" then
+        return nil
+    end
+    return tonumber(link:match("item:(%d+)")), link
 end
 
 local function paintLoot(button)
@@ -187,7 +193,8 @@ local function paintLoot(button)
     if type(slot) ~= "number" then
         slot = Safe(button.slot)
     end
-    paintItem(button, lootID(slot))
+    local id, link = lootItem(slot)
+    paintItem(button, id, { link = link, id = id })
 end
 
 -- Returns LootFrame.ScrollBox, or nil when it is missing or looking it up raises.

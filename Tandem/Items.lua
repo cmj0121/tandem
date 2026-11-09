@@ -55,7 +55,7 @@ local ALL_CLASSES = { [ARMOR] = subs({ 0, 1 }), [WEAPON] = subs({ 14 }) }
 local INVENTORY = {
     head = { 1 }, neck = { 2 }, shoulder = { 3 }, back = { 15 }, chest = { 5 }, wrist = { 9 }, hands = { 10 },
     waist = { 6 }, legs = { 7 }, feet = { 8 }, finger = { 11, 12 }, trinket = { 13, 14 }, mainhand = { 16 },
-    offhand = { 17 }, twohand = { 16 }, ranged = { 18 },
+    offhand = { 17 }, ranged = { 18 },
 }
 
 local function isEquipLoc(equipLoc)
@@ -88,13 +88,15 @@ end
 
 local stats = {}
 
--- Items.Stats(id) -> { statKey = number } | nil
--- The item's tooltip stats, kept for the session once read; nil while they cannot be read (asked again next time).
-function Items.Stats(id)
-    local s = stats[id]
+-- Items.Stats(src) -> { statKey = number } | nil
+-- The tooltip stats of a StatSearch source (an item id, or a worn, bag or linked item), kept for the session per
+-- StatSearch.Key once read; nil while they cannot be read (asked again next time).
+function Items.Stats(src)
+    local key = ns.StatSearch.Key(src)
+    local s = stats[key]
     if s == nil and ns.StatPatterns and ns.StatSearch.Ready() then
-        s = ns.StatSearch.ReadStats(id)
-        stats[id] = s
+        s = ns.StatSearch.ReadStats(src)
+        stats[key] = s
     end
     return s
 end
@@ -104,9 +106,9 @@ function Items.Reset()
     stats = {}
 end
 
--- Returns the item's weighted score for the class at the level (its active spec), or nil while it has no stats.
-function Items.Score(id, class, level)
-    return ns.Weights.Score(Items.Stats(id), class, (ns.Weights.Active(class, level)))
+-- Returns the source's weighted score for the class at the level (its active spec), or nil while it has no stats.
+function Items.Score(src, class, level)
+    return ns.Weights.Score(Items.Stats(src), class, (ns.Weights.Active(class, level)))
 end
 
 local function dualWields(class, level)
@@ -170,27 +172,78 @@ local function equipLocOf(id)
     end
 end
 
+-- Returns a worn slot's entry: {id, ilvl, score} (score from the slot's own tooltip, through scoreOf(src, class,
+-- level) when given, else Items.Score), {ilvl = 0, score = 0} when it is empty, or {unknown = true} when the client
+-- does not tell.
+local function wornEntry(inv, classFile, level, scoreOf)
+    local id = wornID(inv)
+    if id == false then
+        return { ilvl = 0, score = 0 }
+    elseif not id then
+        return { unknown = true }
+    end
+    local info = Items.Info(id)
+    local score = classFile and (scoreOf or Items.Score)({ inv = inv, id = id }, classFile, level) or nil
+    return { id = id, ilvl = info and info[1] or nil, score = score }
+end
+
+-- Returns the off hand's score with its dps at half weight, or nil while it has no stats.
+local function offhandScore(src, classFile, level)
+    local s = Items.Stats(src)
+    if type(s) ~= "table" then
+        return nil
+    end
+    local half = {}
+    for k, v in pairs(s) do
+        half[k] = v
+    end
+    if type(half.dps) == "number" then
+        half.dps = half.dps / 2
+    end
+    return ns.Weights.Score(half, classFile, (ns.Weights.Active(classFile, level)))
+end
+
+-- Returns both hands as one entry for a two-hander (rule D3): a worn two-hander alone is its own entry; otherwise the
+-- main hand's score plus the off hand's (its dps at half weight) at the lower of their item levels. While a hand lacks
+-- its item level or score, or is unknown, the list holds the hands themselves so Beats answers nil.
+local function bothHands(out, classFile, level)
+    local main = wornEntry(16, classFile, level)
+    if main.id then
+        out.ids[main.id] = true
+    end
+    if main.id and equipLocOf(main.id) == "INVTYPE_2HWEAPON" then
+        return { main }
+    end
+    local off = wornEntry(17, classFile, level, offhandScore)
+    if off.id then
+        out.ids[off.id] = true
+    end
+    if main.ilvl and main.score and off.ilvl and off.score then
+        return { { ilvl = math.min(main.ilvl, off.ilvl), score = main.score + off.score } }
+    end
+    return { main, off }
+end
+
 -- Returns what the player wears in a slot token: { ids = {[id] = true}, list = { {id, ilvl, score} | {ilvl = 0,
 -- score = 0} | {unknown} }, ilvl, score } where ilvl is the lower of a pair (0 when a slot is empty) or nil when
--- unknown, and score the lower stat score of the pair, nil unless every worn item has one. An off hand behind a
--- two-hander, or behind a main hand the client does not reveal, has nothing to beat: its ilvl and score are nil.
+-- unknown, and score the lower stat score of the pair (each from its worn slot's own tooltip), nil unless every worn
+-- item has one. An off hand behind a two-hander, or behind a main hand the client does not reveal, has nothing to
+-- beat: its ilvl and score are nil. "twohand" is both hands as one entry (see bothHands).
 function Items.Equipped(slot)
     local out = { ids = {}, list = {}, ilvl = math.huge, score = math.huge }
     local _, classFile, level = ns.View.Player(true)
-    for _, inv in ipairs(INVENTORY[slot]) do
-        local id = wornID(inv)
-        local e = {}
-        if id then
-            local info = Items.Info(id)
-            e.id, e.ilvl = id, info and info[1] or nil
-            e.score = classFile and Items.Score(id, classFile, level) or nil
-            out.ids[id] = true
-        elseif id == false then
-            e.ilvl, e.score = 0, 0
-        else
-            e.unknown = true
+    if slot == "twohand" then
+        out.list = bothHands(out, classFile, level)
+    else
+        for _, inv in ipairs(INVENTORY[slot]) do
+            local e = wornEntry(inv, classFile, level)
+            if e.id then
+                out.ids[e.id] = true
+            end
+            out.list[#out.list + 1] = e
         end
-        out.list[#out.list + 1] = e
+    end
+    for _, e in ipairs(out.list) do
         out.ilvl = out.ilvl and e.ilvl and math.min(out.ilvl, e.ilvl) or nil
         out.score = out.score and e.score and math.min(out.score, e.score) or nil
     end

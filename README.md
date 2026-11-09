@@ -170,13 +170,19 @@ item level. A score of 0, an item whose stats your weights ignore, still counts.
 - An empty slot scores 0 at item level 0, so any usable item with stats beats it.
 - A ring or trinket is compared with the weaker of the two you wear: the lower score, or at an equal score the lower
   item level. A one-hander you can dual-wield is compared with your weaker hand in the same way.
+- A two-hander is compared with your main hand and off hand together: their scores added up, with the off-hand
+  weapon's dps at half weight, at the lower of their two item levels. An empty hand adds 0. If you already wield a
+  two-hander, it is compared with that one alone.
 - An off-hand item is never an upgrade while you wield a two-hander.
 
-Everything is read live from the client: item level, required level, slot and type from its item info, stats from its
-tooltip (this needs the `Stat search` line of [`/tandem check`](#tandem-check)). Stats read are kept for the session
-and never saved. An item the client has not loaded yet is asked for and judged when it arrives
-(`GET_ITEM_INFO_RECEIVED`); until the stats of the item and of what you wear are known, it is not judged. Nothing is
-judged while the client does not reveal what you wear, or does not tell your class or level.
+Everything is read live from the client: item level, required level, slot and type from its item info, stats from the
+item's own tooltip (this needs the `Stat search` line of [`/tandem check`](#tandem-check)). What you wear is read from
+its equipment slot, a bag item from its bag slot, and a looted or hovered item from its link, so random-suffix items
+("of the Monkey") and enchanted items count all their stats. When the client lacks those tooltip APIs, the stats of
+the plain item are read instead. Stats read are kept for the session and never saved. An item the client has not
+loaded yet is asked for and judged when it arrives (`GET_ITEM_INFO_RECEIVED`); until the stats of the item and of what
+you wear are known, it is not judged. Nothing is judged while the client does not reveal what you wear, or does not
+tell your class or level.
 
 ### Upgrade alert
 
@@ -186,7 +192,7 @@ When an upgrade lands in your bags (`BAG_UPDATE_DELAYED`, bags 0 to 4), chat sho
 Tandem: upgrade for Chest: [Plate Chest] (score 24.5 over 18.0)
 ```
 
-The second score is that of the item it beats.
+The line names the bag item's own link, suffix included. The second score is that of the item it beats.
 
 - Each item is announced at most once per session, and only when it is new in the bags: the bags you log in with are
   read silently, and moving an item between bags says nothing.
