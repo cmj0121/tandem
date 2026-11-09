@@ -4,10 +4,10 @@ local _, ns = ...
 -- bottom action bars at the bottom centre over Blizzard's (faded) XP status bars, the main bar on top (Blizzard
 -- keeps a Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target
 -- frames in a row well above them, left and right of centre with the class rail between (the unit row), moves the
--- chat frame bottom-left, the micro menu top-left and the minimap and buffs top-right (each only
--- when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through
--- Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and
--- EnableMouse(false), both undone on off.
+-- chat frame bottom-left, the micro menu top-left with the damage meter under it and the minimap and buffs
+-- top-right (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move
+-- only through Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with
+-- SetAlpha(0) and EnableMouse(false), both undone on off.
 local Layout = {}
 ns.Layout = Layout
 
@@ -281,6 +281,13 @@ local function corners(info)
     local micro = microSystem ~= nil and findSystem(info, microSystem)
     if micro then
         move(micro, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, -12))
+    end
+    -- Blizzard's damage meter goes top-left under the micro menu, which would otherwise cover it there.
+    local meterSystem = enum("EditModeSystem", "DamageMeter")
+    local meter = micro and meterSystem ~= nil and findSystem(info, meterSystem)
+    if meter then
+        move(meter, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, -(12 + measure("MicroMenuContainer", "GetHeight",
+            40) + 12)))
     end
     local minimapSystem = enum("EditModeSystem", "Minimap")
     local minimap = minimapSystem ~= nil and findSystem(info, minimapSystem)
