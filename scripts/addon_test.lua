@@ -405,7 +405,7 @@ do
         "  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout")
     check("usage lists minimap", help[8], "  /tandem minimap [on|off] - show or hide the minimap button")
     check("usage lists debug", help[9],
-        "  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them")
+        "  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them")
     check("usage line count", #help, 9)
     for _, sub in ipairs({ "scan", "count", "gear", "rank", "browse", "export", "map clear", "forget 1 2" }) do
         check(("removed %q prints usage"):format(sub), run(addon, printed, sub)[1], "Tandem commands:")
@@ -3386,6 +3386,7 @@ local function cornerEnum()
     local e = copyTable(LAYOUT_ENUM)
     e.EditModeSystem.MicroMenu, e.EditModeSystem.Minimap, e.EditModeSystem.AuraFrame = 10, 11, 12
     e.EditModeSystem.ObjectiveTracker = 13
+    e.EditModeSystem.DamageMeter = 15
     e.EditModeAuraFrameSystemIndices = { BuffFrame = 1, DebuffFrame = 2 }
     return e
 end
@@ -3405,7 +3406,7 @@ local function editLayout(name, layoutType)
             settings = {} }
     end
     systems[#systems + 1] = { system = 9, systemIndex = 1, anchorInfo = at(99), settings = {} }
-    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 }, { 14, 1 }, { 14, 2 } }) do
+    for _, s in ipairs({ { 10, 1 }, { 11, 1 }, { 12, 1 }, { 12, 2 }, { 13, 1 }, { 14, 1 }, { 14, 2 }, { 15, 1 } }) do
         systems[#systems + 1] = { system = s[1], systemIndex = s[2], anchorInfo = at(99), settings = {} }
     end
     return { layoutName = name or "view", layoutType = layoutType or 1, systems = systems }
@@ -3653,9 +3654,11 @@ do
     local ctx = loadLayout({ env = { Enum = cornerEnum() }, frames = { "MinimapCluster" } })
     ctx.run("layout on")
     local t = savedTandem(ctx.state)
-    check("layout corners: micro menu top-left", anchorText(systemOf(t, 10, 1)),
-        "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout corners: micro menu bottom-right", anchorText(systemOf(t, 10, 1)),
+        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
     check("layout corners: quest tracker left where the player has it", systemOf(t, 13, 1).anchorInfo.offsetX, 99)
+    check("layout corners: damage meter left where the player has it", systemOf(t, 15, 1).anchorInfo.offsetX, 99)
+    check("layout: MicroRoom is the micro menu's 40px, its 4px gap and 8px clear", ctx.addon.Layout.MicroRoom(), 52)
     check("layout corners: minimap top-right", anchorText(systemOf(t, 11, 1)), "TOPRIGHT UIParent TOPRIGHT -16 -16")
     check("layout corners: buffs left of the minimap", anchorText(systemOf(t, 12, 1)),
         "TOPRIGHT MinimapCluster TOPLEFT -8 0")
@@ -3676,15 +3679,17 @@ do
     check("layout corners: no minimap system leaves the minimap and buffs",
         systemOf(t, 11, 1).anchorInfo.offsetX .. " " .. systemOf(t, 12, 1).anchorInfo.offsetX, "99 99")
     check("layout corners: micro menu still moved", anchorText(systemOf(t, 10, 1)),
-        "TOPLEFT UIParent TOPLEFT 12 -12")
+        "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
 
     local noMicro = cornerEnum()
     noMicro.EditModeSystem.MicroMenu = nil
     ctx = loadLayout({ env = { Enum = noMicro }, sizes = { MicroMenuContainer = { 250, 30 } } })
     ctx.run("layout on")
     t = savedTandem(ctx.state)
-    check("layout corners: no micro menu system leaves the micro menu and the quest tracker",
-        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX, "99 99")
+    check("layout: no micro menu system keeps no room under the bag row", ctx.addon.Layout.MicroRoom(), 0)
+    check("layout corners: no micro menu system leaves the micro menu, quest tracker and damage meter",
+        systemOf(t, 10, 1).anchorInfo.offsetX .. " " .. systemOf(t, 13, 1).anchorInfo.offsetX .. " "
+        .. systemOf(t, 15, 1).anchorInfo.offsetX, "99 99 99")
 
     local noSize = copyTable(LAYOUT_ENUM)
     noSize.EditModeChatFrameSetting = nil
@@ -3703,7 +3708,7 @@ do
 end
 
 -- Narrow screens (D12, D13 fit): the chat stays beside the bars, narrows to the room left, else goes above the band
--- and the unit frames over it; the micro menu is top-left whatever the width.
+-- and the unit frames over it; the micro menu is bottom-right whatever the width.
 do
     local function corners(uiWidth, measured, barWidth)
         local sizes = { UIParent = { uiWidth, 768 }, MultiBarBottomRight = barWidth and { barWidth, 40 } or nil }
@@ -3721,7 +3726,7 @@ do
     end
     local chat, micro = corners(1920)
     check("layout fit 1920: chat bottom-left at full width", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
-    check("layout fit 1920: micro menu top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout fit 1920: micro menu bottom-right", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
     chat = corners(1366)
     check("layout fit 1366: chat keeps its full width beside the bars", chat,
         "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
@@ -3730,7 +3735,7 @@ do
     chat, micro = corners(1024)
     check("layout fit 1024: chat above the band and the unit frames", chat,
         "BOTTOMLEFT UIParent BOTTOMLEFT 16 300 380")
-    check("layout fit 1024: micro menu still top-left", micro, "TOPLEFT UIParent TOPLEFT 12 -12")
+    check("layout fit 1024: micro menu still bottom-right", micro, "BOTTOMRIGHT UIParent BOTTOMRIGHT -12 4")
     chat = corners(1366, true)
     check("layout fit measured 1366: chat beside the measured bars", chat, "BOTTOMLEFT UIParent BOTTOMLEFT 16 8 380")
     chat = corners(1200, false, 45)
@@ -3864,56 +3869,27 @@ do
     check("totem room: none without the totem bar", ctx.addon.Layout.TotemRoom(), 0)
 end
 
--- The debug recorder (D13): off by default; on hooks the totem bar's moves with their caller and logs events into
--- TandemDebug; off stops recording and keeps the log.
+-- The debug recorder (D13): off by default; on logs what modules pass to Debug.Log into TandemDebug; off stops
+-- recording and keeps the log.
 do
-    local totem = { points = {} }
-    function totem.GetNumPoints(self) return #self.points end
-    function totem.GetPoint(self, i) return (unpack or rawget(table, "unpack"))(self.points[i]) end
-    function totem.ClearAllPoints(self) self.points = {} end
-    function totem.SetPoint(self, ...) self.points[#self.points + 1] = { ... } end
-    local listener
-    local function widgets()
-        listener = { events = {} }
-        function listener.RegisterEvent(self, e) self.events[e] = true end
-        function listener.RegisterUnitEvent(self, e) self.events[e] = true end
-        function listener.SetScript(self, _, fn) self.onEvent = fn end
-        return listener
-    end
-    local function hook(t, method, fn)
-        local orig = t[method]
-        t[method] = function(...)
-            local r = { orig(...) }
-            fn(...)
-            return (unpack or rawget(table, "unpack"))(r)
-        end
-    end
-    local ctx = loadLayout({ widgets = widgets, env = { MultiCastActionBarFrame = totem, hooksecurefunc = hook,
-        UIParent = {},
-        debugstack = function() return "Interface/AddOns/Blizzard_ActionBar/MultiCast.lua:42: in function\n  x" end,
-        GetTime = function() return 12.5 end } })
+    local ctx = loadLayout({ env = { UIParent = {}, GetTime = function() return 12.5 end } })
     local env = ctx.env
-    check("debug: off by default", ctx.addon.Debug.IsOn(), false)
-    totem:SetPoint("CENTER", "UIParent", "CENTER", 0, 0)
+    local Debug = ctx.addon.Debug
+    check("debug: off by default", Debug.IsOn(), false)
+    Debug.Log("ignored")
     check("debug: nothing logged while off", env.TandemDebug, nil)
     check("debug: on replies", ctx.run("debug on"), "Tandem: debug recording on; /reload saves it to disk")
     check("debug: on is saved", env.TandemDebug.on, true)
-    totem:SetPoint("BOTTOMLEFT", "MainActionBar", "TOPLEFT", 0, 4)
+    Debug.Log("bags: opened")
     local log = env.TandemDebug.log
-    check("debug: a Blizzard move is logged with its caller", log[#log],
-        "12.50 combat=false SetPoint(BOTTOMLEFT, MainActionBar, TOPLEFT, 0, 4) | at nil,nil strata nil parent nil "
-        .. "[CENTER UIParent CENTER 0 0; BOTTOMLEFT MainActionBar TOPLEFT 0 4] | Blizzard_ActionBar/MultiCast.lua:42: "
-        .. "in function < x")
-    listener.onEvent(listener, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 8071)
-    check("debug: a cast is logged", env.TandemDebug.log[#env.TandemDebug.log]:match("event [%w_]+ spell %d+"),
-        "event UNIT_SPELLCAST_SUCCEEDED spell 8071")
+    check("debug: a line is time, combat and what", log[#log], "12.50 combat=false bags: opened")
     for _ = 1, 400 do
-        totem:ClearAllPoints()
+        Debug.Log("x")
     end
     check("debug: the log keeps the last 300 lines", #env.TandemDebug.log, 300)
     check("debug: off replies with the lines kept", ctx.run("debug off"),
         "Tandem: debug recording off (300 lines kept)")
-    totem:ClearAllPoints()
+    Debug.Log("x")
     check("debug: nothing logged after off", #env.TandemDebug.log, 300)
     check("debug: on again starts a fresh log", (ctx.run("debug on") and #env.TandemDebug.log), 1)
     check("debug: bad argument prints usage", ctx.run("debug maybe"):match("^Tandem commands:") ~= nil, true)
@@ -4232,7 +4208,7 @@ do
         .. " " .. #bar.points .. " " .. tostring(bar.points[1][2] == ctx.env.UIParent) .. " "
         .. bar.points[1][1] .. " " .. bar.points[1][3] .. " " .. bar.points[1][4] .. " " .. bar.points[1][5],
         "true true 1 true TOP TOP 0 -4")
-    check("xp bar: 12px, half the 1600 wide screen", bar.height .. " " .. bar.width, "12 800")
+    check("xp bar: 12px, 30% of the 1600 wide screen", bar.height .. " " .. bar.width, "12 480")
     local cuts = {}
     for _, w in ipairs(ctx.ui.widgets) do
         if w.kind == "Texture" and w.parent == bar and w.width == 1 then
@@ -4240,8 +4216,8 @@ do
         end
     end
     check("xp bar: nine 1px dividers make ten cells", table.concat(cuts, " "),
-        "80/BOTTOMLEFT 160/BOTTOMLEFT 240/BOTTOMLEFT 320/BOTTOMLEFT 400/BOTTOMLEFT 480/BOTTOMLEFT 560/BOTTOMLEFT "
-        .. "640/BOTTOMLEFT 720/BOTTOMLEFT")
+        "48/BOTTOMLEFT 96/BOTTOMLEFT 144/BOTTOMLEFT 192/BOTTOMLEFT 240/BOTTOMLEFT 288/BOTTOMLEFT 336/BOTTOMLEFT "
+        .. "384/BOTTOMLEFT 432/BOTTOMLEFT")
     check("xp bar: value and max", bar.value .. " " .. bar.min .. " " .. bar.max, "1200 0 4000")
     check("xp bar: only the percent on the bar", ctx.text(), "30%")
     check("xp bar: purple without rested", rgb(bar.barColor), "0.58,0.00,0.55")
@@ -4270,6 +4246,13 @@ do
         .. tostring(ctx.state.frames.MainStatusTrackingBarContainer.mouse), "0 false")
     check("xp bar: the second (reputation) status bar faded too",
         ctx.state.frames.SecondaryStatusTrackingBarContainer.alpha, 0)
+    ctx.state.frames.MainStatusTrackingBarContainer.alpha = 1
+    ctx.fire("PLAYER_ENTERING_WORLD")
+    check("xp bar: a status bar Blizzard shows again is faded on entering the world",
+        ctx.state.frames.MainStatusTrackingBarContainer.alpha, 0)
+    ctx.state.frames.MainStatusTrackingBarContainer.alpha = 1
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("xp bar: and on an XP update", ctx.state.frames.MainStatusTrackingBarContainer.alpha, 0)
     ctx.xp.level = 59
     ctx.fire("PLAYER_LEVEL_UP", 60)
     check("xp bar: PLAYER_LEVEL_UP's level wins over a stale UnitLevel", bar.shown, false)
@@ -4334,6 +4317,26 @@ do
     ctx.fire("PLAYER_LOGIN")
     check("xp bar: relogin with the layout on shows it", tostring(ctx.bar().shown) .. " " .. ctx.text(),
         "true 30%")
+end
+
+-- Combined bags at login (B opens one window with every bag).
+do
+    local cvars = { combinedBags = "0" }
+    local env = {
+        GetCVar = function(name) return cvars[name] end,
+        SetCVar = function(name, v) cvars[name] = v end,
+    }
+    local ctx = loadLayout({ env = env })
+    ctx.fire("PLAYER_LOGIN")
+    check("combined bags: turned on at login", cvars.combinedBags, "1")
+    cvars.combinedBags = nil
+    ctx.fire("PLAYER_LOGIN")
+    check("combined bags: a client without the CVar gets none", cvars.combinedBags, nil)
+    local c = { combinedBags = "0" }
+    ctx = loadLayout({ env = { C_CVar = { GetCVar = function(n) return c[n] end,
+        SetCVar = function(n, v) c[n] = v end } } })
+    ctx.fire("PLAYER_LOGIN")
+    check("combined bags: C_CVar preferred", c.combinedBags, "1")
 end
 
 -- Bag row at the bottom right while the layout is on (stage 12, U4, D5, D12).
@@ -4414,6 +4417,12 @@ do
     check("bag row: shown at the bottom right", tostring(row.shown) .. " " .. tostring(row.parent == ctx.env.UIParent)
         .. " " .. #row.points .. " " .. table.concat({ row.points[1][1], tostring(row.points[1][2] == ctx.env.UIParent),
         row.points[1][3], row.points[1][4], row.points[1][5] }, " "), "true true 1 BOTTOMRIGHT true BOTTOMRIGHT -12 8")
+    local micro = loadBags({ env = { Enum = cornerEnum() } })
+    micro.run("layout on")
+    check("bag row: above the micro menu in the bottom-right corner", micro.row().points[1][5], 60)
+    micro.run("layout off")
+    micro.run("layout on")
+    check("bag row: placed again, one anchor", #micro.row().points, 1)
     check("bag row: general bags first, backpack icon, free/total across bags", ctx.text(), GENERAL_ICON .. " 19/38")
     local general = ctx.icons()[1]
     check("bag row: 28px icon, rightmost", general.width .. "x" .. general.height .. " " .. general.points[1][1] .. " "
@@ -4510,6 +4519,80 @@ do
     ctx.fire("PLAYER_LOGIN")
     check("bag row: relogin with the layout on shows it", tostring(ctx.row().shown) .. " " .. ctx.text(),
         "true " .. GENERAL_ICON .. " 19/38")
+end
+
+-- The reagent bag: its own bag row icon, opened and closed with the other bags, and B pointed at the same opener.
+do
+    local open, binds, cleared = {}, {}, 0
+    local enum = copyTable(LAYOUT_ENUM)
+    enum.BagIndex = { ReagentBag = 5 }
+    local ctx
+    ctx = loadBags({ env = {
+        Enum = enum,
+        IsBagOpen = function(bag) return open[bag] end,
+        OpenBag = function(bag) open[bag] = true end,
+        CloseBag = function(bag) open[bag] = nil end,
+        ToggleAllBags = function()
+            ctx.toggled = ctx.toggled + 1
+            open[0] = not open[0] or nil
+        end,
+        GetBindingKey = function(action)
+            if action == "OPENALLBAGS" then
+                return "SHIFT-B"
+            elseif action == "TOGGLEBACKPACK" then
+                return "B"
+            end
+        end,
+        SetOverrideBindingClick = function(owner, priority, key, button)
+            binds[#binds + 1] = key .. ">" .. button .. ">" .. tostring(owner.name) .. ">" .. tostring(priority)
+        end,
+        ClearOverrideBindings = function() cleared = cleared + 1 end,
+    } })
+    ctx.bags[5] = { 20, 7, 0 }
+    ctx.run("layout on")
+    check("reagent bag: its own icon after the profession bags", ctx.text(),
+        GENERAL_ICON .. " 19/38 | icon35 7/20")
+    local r = ctx.icons()[2]
+    r.scripts.OnEnter(r)
+    check("reagent bag: tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Reagent bag / Bag5 / 7/20 free / Click to open your bags")
+    r.scripts.OnClick(r, "LeftButton")
+    check("reagent bag: opens with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "true true")
+    r.scripts.OnClick(r, "LeftButton")
+    check("reagent bag: closes with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "nil nil")
+    ctx.fire("PLAYER_LOGIN")
+    check("reagent bag: every open-all-bags and open-backpack key clicks Tandem's opener",
+        table.concat(binds, " ") .. " " .. cleared,
+        "SHIFT-B>TandemOpenAllBags>TandemOpenAllBags>false B>TandemOpenAllBags>TandemOpenAllBags>false 1")
+    ctx.bags[5] = nil
+    open = {}
+    r.scripts.OnClick(r, "LeftButton")
+    check("reagent bag: none equipped opens only the others", tostring(open[0]) .. " " .. tostring(open[5]),
+        "true nil")
+
+    binds = {}
+    ctx.state.combat = true
+    ctx.fire("PLAYER_LOGIN")
+    check("reagent bag: no binding change in combat", #binds, 0)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("reagent bag: bound when combat ends", #binds, 2)
+
+    -- A client whose bag window state reads the same before and after the toggle: the reagent bag simply toggles.
+    local shut = {}
+    ctx = loadBags({ env = {
+        Enum = enum,
+        IsBagOpen = function(bag) return bag == 5 and shut[5] or nil end,
+        OpenBag = function(bag) shut[bag] = true end,
+        CloseBag = function(bag) shut[bag] = nil end,
+    } })
+    ctx.bags[5] = { 20, 7, 0 }
+    ctx.run("layout on")
+    local icon = ctx.icons()[1]
+    icon.scripts.OnClick(icon, "LeftButton")
+    check("reagent bag: unseen main window still opens it", tostring(shut[5]) .. " " .. ctx.toggled, "true 1")
+    icon.scripts.OnClick(icon, "LeftButton")
+    check("reagent bag: and closes it on the next press", tostring(shut[5]) .. " " .. ctx.toggled, "nil 2")
 end
 
 -- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).
@@ -5019,7 +5102,7 @@ do
     check("zhTW minimap command", ctx.run("minimap"), "Tandem：已隱藏小地圖按鈕")
     local help = run(ctx.addon, ctx.printed, "help")
     check("zhTW usage lists minimap", help[#help - 1], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
-    check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off] - 為開發者記錄圖騰列的移動；/reload 後寫入存檔")
+    check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off|snap] - 為開發者記錄版面追蹤資料；/reload 後寫入存檔")
 end
 
 do

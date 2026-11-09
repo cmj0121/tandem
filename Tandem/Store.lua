@@ -284,6 +284,38 @@ function Store.Safe(v)
     return v
 end
 
+local function safeAll(...)
+    if select("#", ...) == 0 then
+        return
+    end
+    return Store.Safe((...)), safeAll(select(2, ...))
+end
+
+local function safeCall(ok, ...)
+    if ok then
+        return safeAll(...)
+    end
+end
+
+-- Calls fn under pcall and returns all its results, each passed through Safe; nothing when fn is not a function or
+-- raises.
+function Store.Call(fn, ...)
+    if type(fn) ~= "function" then
+        return
+    end
+    return safeCall(pcall(fn, ...))
+end
+
+-- Returns the named CVar's value through C_CVar where the client has it, else the global GetCVar.
+function Store.GetCVar(name)
+    return (Store.Call(type(C_CVar) == "table" and C_CVar.GetCVar or GetCVar, name))
+end
+
+-- Sets the named CVar, as GetCVar reads it; a failure is ignored.
+function Store.SetCVar(name, value)
+    pcall(type(C_CVar) == "table" and C_CVar.SetCVar or SetCVar, name, value)
+end
+
 -- Registers event on frame; returns false, registering nothing, when the client rejects the name.
 function Store.RegisterEvent(frame, event)
     return (pcall(frame.RegisterEvent, frame, event))

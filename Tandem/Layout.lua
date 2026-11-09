@@ -4,10 +4,10 @@ local _, ns = ...
 -- bottom action bars at the bottom centre over Blizzard's (faded) XP status bars, the main bar on top (Blizzard
 -- keeps a Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target
 -- frames in a row well above them, left and right of centre with the class rail between (the unit row), moves the
--- chat frame bottom-left, the micro menu top-left and the minimap and buffs top-right (each only
--- when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move only through
--- Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with SetAlpha(0) and
--- EnableMouse(false), both undone on off.
+-- chat frame bottom-left, the micro menu bottom-right under the bag row and the minimap and buffs
+-- top-right (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move
+-- only through Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with
+-- SetAlpha(0) and EnableMouse(false), both undone on off.
 local Layout = {}
 ns.Layout = Layout
 
@@ -21,6 +21,8 @@ local STATUS_HEIGHT, UNIT_SPREAD, UNIT_LIFT = 17, 120, 60
 local CHAT_WIDTH, CHAT_HEIGHT, CHAT_MIN = 380, 120, 260
 -- Corner inset and gap kept clear beside the bars.
 local INSET, CLEAR = 16, 8
+-- The micro menu's gap above the screen's bottom edge, in the bottom-right corner.
+local MICRO_Y = 4
 local TOT_CVAR = "showTargetOfTarget"
 -- How far above the main bar's bottom edge Edit Mode puts the totem bar.
 local TOTEM_Y = 70
@@ -45,17 +47,10 @@ function Layout.Reply(on, ok, reason)
     return ns.L[ok and REPLY[on] or REPLY[reason] or REPLY.error]
 end
 
-local function call(fn, ...)
-    local ok, v = pcall(fn, ...)
-    if ok then
-        return ns.Store.Safe(v)
-    end
-end
+local call = ns.Store.Call
 
 local function enum(group, key)
-    return call(function()
-        return Enum[group][key]
-    end)
+    return ns.Check.Get("Enum." .. group .. "." .. key)
 end
 
 local function inCombat()
@@ -72,36 +67,51 @@ local END_CAPS = {
     "MainMenuBarLeftEndCap", "MainMenuBarRightEndCap",
 }
 
+-- The bars the layout hides: Edit Mode's index name, and the frame faded where Edit Mode cannot hide it.
+local HIDDEN_BARS = {
+    { "RightBar1", "MultiBarRight" }, { "RightBar2", "MultiBarLeft" }, { "ExtraBar1", "MultiBar5" },
+    { "ExtraBar2", "MultiBar6" }, { "ExtraBar3", "MultiBar7" },
+}
+
 local function mainBarName()
     return type(_G.MainActionBar) == "table" and "MainActionBar" or "MainMenuBar"
 end
 
+-- Returns the named frame's width or height (method "GetWidth"/"GetHeight"), or fallback when unknown.
+local function measure(name, method, fallback)
+    local f = _G[name]
+    local v = type(f) == "table" and call(f[method], f)
+    return type(v) == "number" and v > 0 and v or fallback
+end
 
 -- Height above the top bar kept free for Blizzard's totem bar: Edit Mode puts MultiCastActionBarFrame TOTEM_Y above
 -- the main bar's bottom edge (seen in game) whenever it lays the bars out, also in combat; 0 for other classes.
 function Layout.TotemRoom()
-    local ok, _, classFile = pcall(UnitClass, "player")
-    local totem = _G.MultiCastActionBarFrame
-    if not ok or classFile ~= "SHAMAN" or type(totem) ~= "table" then
+    local _, classFile = call(UnitClass, "player")
+    if classFile ~= "SHAMAN" or type(_G.MultiCastActionBarFrame) ~= "table" then
         return 0
     end
-    local function size(f, fallback)
-        local v = type(f) == "table" and call(f.GetHeight, f)
-        return type(v) == "number" and v > 0 and v or fallback
-    end
-    return math.max(0, TOTEM_Y + size(totem, 40) - size(_G[mainBarName()], 40))
+    return math.max(0, TOTEM_Y + measure("MultiCastActionBarFrame", "GetHeight", 40)
+        - measure(mainBarName(), "GetHeight", 40))
 end
 
 -- Returns the height (from UIParent's bottom) of the unit row's bottom edge, and the half gap between the player and
 -- target frames, as the bars measure now: the XP room, the three bars, the totem bar room and UNIT_LIFT.
 function Layout.UnitRow()
-    local f = _G
-    local function height(name)
-        local v = type(f[name]) == "table" and call(f[name].GetHeight, f[name])
-        return type(v) == "number" and v > 0 and v or 40
+    local block = 2 * BAR_GAP
+    for _, name in ipairs({ mainBarName(), "MultiBarBottomLeft", "MultiBarBottomRight" }) do
+        block = block + measure(name, "GetHeight", 40)
     end
-    local block = 2 * BAR_GAP + height(mainBarName()) + height("MultiBarBottomLeft") + height("MultiBarBottomRight")
     return XP_ROOM + block + Layout.TotemRoom() + UNIT_LIFT, UNIT_SPREAD
+end
+
+-- Height kept free at the bottom-right corner under Tandem's bag row: the micro menu's, where the client's Edit Mode
+-- can move it there, plus a gap; 0 otherwise.
+function Layout.MicroRoom()
+    if enum("EditModeSystem", "MicroMenu") == nil then
+        return 0
+    end
+    return MICRO_Y + measure("MicroMenuContainer", "GetHeight", 40) + CLEAR
 end
 
 function Layout.IsOn()
@@ -121,14 +131,8 @@ end
 
 -- Resolves a global frame name, or a dotted path to a child frame such as "MainActionBar.EndCaps".
 local function frameOf(name)
-    local f
-    for part in name:gmatch("[^.]+") do
-        f = (f == nil and _G or f)[part]
-        if type(f) ~= "table" then
-            return nil
-        end
-    end
-    return f
+    local f = ns.Check.Get(name)
+    return type(f) == "table" and f or nil
 end
 
 local function fade()
@@ -157,20 +161,20 @@ local function unfade()
     end
 end
 
+-- Fades the concealed frames again while the layout is attached and out of combat: Blizzard re-shows some of them
+-- (the status bars on a fresh login) after the layout attached.
+function Layout.Refade()
+    if attached and not inCombat() then
+        fade()
+    end
+end
+
 -- Fades the named Blizzard frame while the layout is on (for a frame without an Edit Mode visibility setting).
 function Layout.Conceal(name)
     concealed[name] = true
     if attached and not inCombat() then
         fade()
     end
-end
-
-local function getCVar(name)
-    return call((C_CVar and C_CVar.GetCVar) or GetCVar, name)
-end
-
-local function setCVar(name, value)
-    pcall((C_CVar and C_CVar.SetCVar) or SetCVar, name, value)
 end
 
 local function presets()
@@ -248,13 +252,6 @@ local function setSize(s, hundreds, tensAndOnes, value)
     end
 end
 
--- Returns the named frame's width or height (method "GetWidth"/"GetHeight"), or fallback when unknown.
-local function measure(name, method, fallback)
-    local f = _G[name]
-    local v = type(f) == "table" and call(f[method], f)
-    return type(v) == "number" and v > 0 and v or fallback
-end
-
 -- Moves the chat frame, micro menu, minimap and buffs (D12, D13) when the client's Edit Mode has their systems. The
 -- chat sits beside the bars when the screen leaves room, else above the band; the bars' width is MultiBarBottomRight's
 -- as measured now (from the layout being replaced, never under one row of 12, as that layout may have bar 3 vertical
@@ -280,7 +277,7 @@ local function corners(info)
     local microSystem = enum("EditModeSystem", "MicroMenu")
     local micro = microSystem ~= nil and findSystem(info, microSystem)
     if micro then
-        move(micro, anchor("TOPLEFT", "UIParent", "TOPLEFT", 12, -12))
+        move(micro, anchor("BOTTOMRIGHT", "UIParent", "BOTTOMRIGHT", -12, MICRO_Y))
     end
     local minimapSystem = enum("EditModeSystem", "Minimap")
     local minimap = minimapSystem ~= nil and findSystem(info, minimapSystem)
@@ -327,8 +324,7 @@ local function override(info)
     for _, name in ipairs(END_CAPS) do
         faders[#faders + 1] = name
     end
-    for _, row in ipairs({ { "RightBar1", "MultiBarRight" }, { "RightBar2", "MultiBarLeft" },
-        { "ExtraBar1", "MultiBar5" }, { "ExtraBar2", "MultiBar6" }, { "ExtraBar3", "MultiBar7" } }) do
+    for _, row in ipairs(HIDDEN_BARS) do
         local s = bar and findSystem(info, bar, enum("EditModeActionBarSystemIndices", row[1]))
         if s and visible ~= nil and hidden ~= nil then
             setSetting(s, visible, hidden)
@@ -365,8 +361,8 @@ local function maxPerType()
 end
 
 local function setFaders(list)
-    for _, name in ipairs({ "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7" }) do
-        concealed[name] = nil
+    for _, row in ipairs(HIDDEN_BARS) do
+        concealed[row[2]] = nil
     end
     for _, name in ipairs(END_CAPS) do
         concealed[name] = nil
@@ -374,6 +370,17 @@ local function setFaders(list)
     for _, name in ipairs(list) do
         concealed[name] = true
     end
+end
+
+-- Fades the bars the layout could not hide (faders, when given), fades every concealed frame and tells the
+-- listeners the layout is on.
+local function attach(faders)
+    if faders then
+        setFaders(faders)
+    end
+    attached = true
+    fade()
+    notify(true)
 end
 
 local function apply()
@@ -436,17 +443,14 @@ local function apply()
         store.SetLayout("previous", previous)
     end
     if store.Layout().tot == nil then
-        local tot = getCVar(TOT_CVAR)
+        local tot = ns.Store.GetCVar(TOT_CVAR)
         if type(tot) == "string" and tot ~= "1" then
             store.SetLayout("tot", tot)
         end
     end
-    setCVar(TOT_CVAR, "1")
+    ns.Store.SetCVar(TOT_CVAR, "1")
     store.SetLayout("on", true)
-    setFaders(faders)
-    fade()
-    attached = true
-    notify(true)
+    attach(faders)
     return true
 end
 
@@ -455,7 +459,7 @@ local function detach()
     local store = ns.Store
     local tot = store.Layout().tot
     if tot then
-        setCVar(TOT_CVAR, tot)
+        ns.Store.SetCVar(TOT_CVAR, tot)
     end
     store.SetLayout("tot", nil)
     store.SetLayout("previous", nil)
@@ -556,12 +560,7 @@ function Layout.Sync()
     end
     if not attached then
         info = deepCopy(info)
-        if type(info.systems) == "table" then
-            setFaders(override(info))
-        end
-        attached = true
-        fade()
-        notify(true)
+        attach(type(info.systems) == "table" and override(info) or nil)
     else
         fade()
     end

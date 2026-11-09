@@ -1,28 +1,20 @@
 local _, ns = ...
 
--- The XP bar (stage 12, D5, D12, D14): a StatusBar centred at the top of the screen, half its width, while the
+-- The XP bar (stage 12, D5, D12, D14): a StatusBar centred at the top of the screen, 30% of its width, while the
 -- Tandem layout is on, purple (blue while rested) with the percent on it; value/max and rested percent show on hover.
 -- Blizzard's status (XP / reputation) bars are faded through Layout.Conceal, never hidden.
 local XPBar = {}
 ns.XPBar = XPBar
 
 -- Height, gap under the screen's top edge, and share of the screen's width.
-local HEIGHT, GAP, SHARE = 12, 4, 0.5
+local HEIGHT, GAP, SHARE = 12, 4, 0.3
 -- The bar is split into this many cells by thin dark lines, like Blizzard's classic XP bar.
 local CELLS = 10
 local REST_COLOR, XP_COLOR = { 0, 0.39, 0.88 }, { 0.58, 0, 0.55 }
 
 local bar, on
 
-local function call(fn, ...)
-    if type(fn) ~= "function" then
-        return nil
-    end
-    local ok, v = pcall(fn, ...)
-    if ok then
-        return ns.Store.Safe(v)
-    end
-end
+local call = ns.Store.Call
 
 local function number(v)
     return type(v) == "number" and v or nil
@@ -51,11 +43,7 @@ local function showTooltip(owner)
     tip:Show()
 end
 
-local function hideTooltip()
-    if type(GameTooltip) == "table" then
-        GameTooltip:Hide()
-    end
-end
+local hideTooltip = ns.View.HideTooltip
 
 local function create()
     bar = CreateFrame("StatusBar", nil, UIParent)
@@ -99,6 +87,9 @@ end
 function XPBar.Update(newLevel)
     if not bar then
         return
+    end
+    if on then
+        ns.Layout.Refade()
     end
     local xp, max = number(call(UnitXP, "player")), number(call(UnitXPMax, "player"))
     local level, cap = number(newLevel) or number(call(UnitLevel, "player")), maxLevel()

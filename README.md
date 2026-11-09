@@ -293,14 +293,14 @@ Tandem's entry in the addon compartment menu does the same as a click.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│ [micro menu]           [====|====| XP 62% |====]    [buffs][map] │
+│                        [====|====| XP 62% |====]    [buffs][map] │
 │                                                                  │
 │      [player]          [class rail]          [target][ToT]       │
 │                                                                  │
 │                      [ Shaman totem bar ]                        │
 │ [chat]               [ main action bar  ]                        │
-│ [chat]               [ action bar 2     ]                        │
-│ [chat]               [ action bar 3     ]              [bag row] │
+│ [chat]               [ action bar 2     ]              [bag row] │
+│ [chat]               [ action bar 3     ]           [micro menu] │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -312,8 +312,8 @@ Tandem's entry in the addon compartment menu does the same as a click.
 - The chat window goes to the bottom left, about 380 by 120, when the client's Edit Mode has a chat system; without
   Edit Mode's chat size settings it only moves; without a chat system it stays put. On a narrow screen it narrows to
   the room left of the bars (down to 260 wide) and otherwise goes above the player frame.
-- The [bag row](#bag-row) sits in the bottom-right corner.
-- The micro menu goes to the top left; the quest tracker stays where your previous layout had it.
+- The micro menu goes to the bottom-right corner, with the [bag row](#bag-row) just above it. The quest tracker and
+  Blizzard's damage meter stay where your previous layout had them.
 - The minimap goes to the top right, with the buffs just left of it.
 - The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
   minimap's); otherwise they stay where they are.
@@ -324,7 +324,7 @@ display only and update in combat too.
 
 ### XP bar
 
-A bar at the top centre of the screen, half the screen wide, shows your experience with the percent on it, such as
+A bar at the top centre of the screen, 30% of the screen wide, shows your experience with the percent on it, such as
 `42%`, split into ten cells by thin lines like the classic XP bar. Hover it for value / max and the rested bonus:
 
 ```text
@@ -343,6 +343,12 @@ one icon per profession bag type to its left, with that bag's icon, such as a he
 under 10 free slots and red when full. Hover an icon for its bags' names and free / total; click any icon to open all
 bags. It replaces the default bag bar while the layout is on, and needs the `Bag button` line of
 [`/tandem check`](#tandem-check).
+
+At every login, layout on or off, Tandem turns on the client's combined bags (the `combinedBags` setting), so `B`
+opens one window with all your bags. You can switch it off in the options; it comes back on at the next login.
+Tandem also points every key bound to "Open all bags" or "Open backpack" (`B` is one of them) at its own opener,
+which opens and closes the reagent bag together with the others; when the reagent bag has slots, it gets its own icon
+at the left end of the bag row, titled `Reagent bag`, and clicking any icon opens it too.
 
 ### Shaman class area
 
@@ -364,9 +370,9 @@ the rest still works.
 
 ### Debug log
 
-`/tandem debug on` starts recording, for the developer, every move of the Shaman totem bar with its caller, the
-related game events and a snapshot of the frames near the bottom of the screen and Blizzard's status bars (2 seconds
-after login, on every layout change, and on `/tandem debug snap`). Nothing is printed while it records. The log, at
+`/tandem debug on` starts recording, for the developer, what the bag opener decides on each press and a snapshot of
+the frames near the bottom of the screen and Blizzard's status bars (2 seconds after login, on every layout change,
+and on `/tandem debug snap`). Nothing is printed while it records. The log, at
 most 300 lines, is saved in the `TandemDebug` saved variable when you `/reload` or log out. `/tandem debug off` stops
 recording and prints how many lines it kept; `/tandem debug` alone toggles it, and `snap` turns recording on if
 needed and takes a snapshot.
@@ -513,10 +519,10 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 
 1. Out of combat, run `/tandem layout on`. Chat shows `Tandem: layout on`. The three bottom action bars sit at the
    bottom centre without gryphons, the player and target frames in a row above them, the chat window bottom left,
-   the bag row in the bottom-right corner, the micro menu top left and the minimap top right with the buffs to its
+   the micro menu in the bottom-right corner with the bag row above it, and the minimap top right with the buffs to its
    left (where the client lets Edit Mode move them); the right bars and the bag bar are gone. Target something: its
    target of target shows.
-2. At the top centre, the XP bar, half the screen wide in ten cells, shows its percent, purple, or blue when rested.
+2. At the top centre, the XP bar, 30% of the screen wide in ten cells, shows its percent, purple, or blue when rested.
    Only one XP bar shows. Hover it: `<value> / <max> (<n>%)` and, when rested, `Rested +<n>%`. Kill something: it
    moves.
 3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one

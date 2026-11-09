@@ -68,20 +68,29 @@ Check.PROBES = {
     "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
 }
 
--- Returns true when the dotted global path resolves to a value; never raises on a missing or non-table step.
--- A step that raises (an __index metamethod on a client frame) counts as missing.
-function Check.Has(path)
-    local ok, found = pcall(function()
-        local v = _G
-        for key in path:gmatch("[^.]+") do
-            if type(v) ~= "table" then
-                return false
-            end
-            v = v[key]
+local function walk(path)
+    local v = _G
+    for key in path:gmatch("[^.]+") do
+        if type(v) ~= "table" then
+            return nil
         end
-        return v ~= nil
-    end)
-    return ok and found
+        v = v[key]
+    end
+    return v
+end
+
+-- Returns the value at the dotted global path, or nil; never raises on a missing or non-table step. A step that
+-- raises (an __index metamethod on a client frame) counts as missing.
+function Check.Get(path)
+    local ok, v = pcall(walk, path)
+    if ok then
+        return v
+    end
+end
+
+-- Returns true when the dotted global path resolves to a value.
+function Check.Has(path)
+    return Check.Get(path) ~= nil
 end
 
 -- Returns true when every need of the named feature is met; a feature gates on this before touching its API.

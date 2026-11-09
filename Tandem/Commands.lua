@@ -16,7 +16,7 @@ local function printUsage()
     print(L["  /tandem weights reset - drop your own weights for the active tree"])
     print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
-    print(L["  /tandem debug [on|off] - record totem bar moves for the developer; /reload saves them"])
+    print(L["  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them"])
 end
 
 -- Returns a whole number >= min parsed from s, or nil.
