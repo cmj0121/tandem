@@ -4208,7 +4208,7 @@ do
         .. " " .. #bar.points .. " " .. tostring(bar.points[1][2] == ctx.env.UIParent) .. " "
         .. bar.points[1][1] .. " " .. bar.points[1][3] .. " " .. bar.points[1][4] .. " " .. bar.points[1][5],
         "true true 1 true TOP TOP 0 -4")
-    check("xp bar: 12px, half the 1600 wide screen", bar.height .. " " .. bar.width, "12 800")
+    check("xp bar: 12px, 30% of the 1600 wide screen", bar.height .. " " .. bar.width, "12 480")
     local cuts = {}
     for _, w in ipairs(ctx.ui.widgets) do
         if w.kind == "Texture" and w.parent == bar and w.width == 1 then
@@ -4216,8 +4216,8 @@ do
         end
     end
     check("xp bar: nine 1px dividers make ten cells", table.concat(cuts, " "),
-        "80/BOTTOMLEFT 160/BOTTOMLEFT 240/BOTTOMLEFT 320/BOTTOMLEFT 400/BOTTOMLEFT 480/BOTTOMLEFT 560/BOTTOMLEFT "
-        .. "640/BOTTOMLEFT 720/BOTTOMLEFT")
+        "48/BOTTOMLEFT 96/BOTTOMLEFT 144/BOTTOMLEFT 192/BOTTOMLEFT 240/BOTTOMLEFT 288/BOTTOMLEFT 336/BOTTOMLEFT "
+        .. "384/BOTTOMLEFT 432/BOTTOMLEFT")
     check("xp bar: value and max", bar.value .. " " .. bar.min .. " " .. bar.max, "1200 0 4000")
     check("xp bar: only the percent on the bar", ctx.text(), "30%")
     check("xp bar: purple without rested", rgb(bar.barColor), "0.58,0.00,0.55")

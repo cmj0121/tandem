@@ -324,7 +324,7 @@ display only and update in combat too.
 
 ### XP bar
 
-A bar at the top centre of the screen, half the screen wide, shows your experience with the percent on it, such as
+A bar at the top centre of the screen, 30% of the screen wide, shows your experience with the percent on it, such as
 `42%`, split into ten cells by thin lines like the classic XP bar. Hover it for value / max and the rested bonus:
 
 ```text
@@ -522,7 +522,7 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    the micro menu in the bottom-right corner with the bag row above it, and the minimap top right with the buffs to its
    left (where the client lets Edit Mode move them); the right bars and the bag bar are gone. Target something: its
    target of target shows.
-2. At the top centre, the XP bar, half the screen wide in ten cells, shows its percent, purple, or blue when rested.
+2. At the top centre, the XP bar, 30% of the screen wide in ten cells, shows its percent, purple, or blue when rested.
    Only one XP bar shows. Hover it: `<value> / <max> (<n>%)` and, when rested, `Rested +<n>%`. Kill something: it
    moves.
 3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one

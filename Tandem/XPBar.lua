@@ -1,13 +1,13 @@
 local _, ns = ...
 
--- The XP bar (stage 12, D5, D12, D14): a StatusBar centred at the top of the screen, half its width, while the
+-- The XP bar (stage 12, D5, D12, D14): a StatusBar centred at the top of the screen, 30% of its width, while the
 -- Tandem layout is on, purple (blue while rested) with the percent on it; value/max and rested percent show on hover.
 -- Blizzard's status (XP / reputation) bars are faded through Layout.Conceal, never hidden.
 local XPBar = {}
 ns.XPBar = XPBar
 
 -- Height, gap under the screen's top edge, and share of the screen's width.
-local HEIGHT, GAP, SHARE = 12, 4, 0.5
+local HEIGHT, GAP, SHARE = 12, 4, 0.3
 -- The bar is split into this many cells by thin dark lines, like Blizzard's classic XP bar.
 local CELLS = 10
 local REST_COLOR, XP_COLOR = { 0, 0.39, 0.88 }, { 0.58, 0, 0.55 }
