@@ -1035,7 +1035,7 @@ do
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
     check("check: fourteen features", #addon.Check.FEATURES, 14)
-    check("check: twenty probes", #addon.Check.PROBES, 20)
+    check("check: eighteen probes", #addon.Check.PROBES, 18)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -1282,7 +1282,7 @@ do
     check("quest pick: QUEST_FINISHED hides the mark", ctx.marked(), "")
     ctx.quest.choices = { 2, 3 }
     ctx.complete()
-    check("quest pick: same item level, higher quality wins", ctx.marked(), "2")
+    check("quest pick: an equal score marks none, whatever the quality", ctx.marked(), "")
     ctx.quest.choices = { 1, 2 }
     ctx.complete()
     check("quest pick: a new window moves the mark", ctx.marked(), "1")
@@ -1321,11 +1321,11 @@ do
     ctx.tips[1], ctx.tips[3] = { "A", ctx.strength(2) }, { "B", ctx.strength(9) }
     ctx.tips[12] = { "C", ctx.strength(9) }
     ctx.complete()
-    check("quest pick score: a tie on score goes to the higher item level", ctx.marked(), "2")
+    check("quest pick score: a tie on score marks none, whatever the item level", ctx.marked(), "")
     ctx.quest.choices = { 2, 4 }
     ctx.tips[2], ctx.tips[4] = { "D", ctx.strength(5) }, { "E", ctx.strength(5) }
     ctx.complete()
-    check("quest pick score: a tie on score and item level goes to the higher quality", ctx.marked(), "2")
+    check("quest pick score: a tie on score and armor marks none", ctx.marked(), "")
     ctx.quest.choices = { 3, 2 }
     ctx.tips[2] = nil
     ctx.complete()
@@ -1333,9 +1333,17 @@ do
 end
 
 do
+    local ctx = loadQuest({ 1, 3, 12 })
+    ctx.tips[1], ctx.tips[3] = { "A", ctx.strength(2) }, { "B", ctx.strength(9) }
+    ctx.tips[12] = { "C", ctx.strength(9), "20 Armor" }
+    ctx.complete()
+    check("quest pick score: a tie on score goes to more armor", ctx.marked(), "3")
+end
+
+do
     local ctx = loadQuest({ 12, 1, 3 }, { noTips = true })
     ctx.complete()
-    check("quest pick score: without tooltip stats, item level decides", ctx.marked(), "2")
+    check("quest pick score: without tooltip stats, nothing is marked", ctx.marked(), "")
 end
 
 do
@@ -2059,10 +2067,10 @@ end
 local PROBES = {
     "LootButton1", "LootFrame.ScrollBox", "LootFrame_Update", "ContainerFrame1Item1.IconBorder",
     "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon", "Enum.EditModeSystem.ChatFrame",
-    "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
-    "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
-    "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
-    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
+    "MainStatusTrackingBarContainer", "BagsBar", "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap",
+    "Enum.EditModeSystem.AuraFrame", "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps",
+    "MainMenuBar.EndCaps", "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
+    "Enum.EditModeSystem.ObjectiveTracker",
 }
 
 do
@@ -2104,7 +2112,6 @@ do
         MainStatusTrackingBarContainer = {}, BagsBar = {},
         MainActionBar = { EndCaps = {} }, MainMenuBar = { EndCaps = {} },
         MainMenuBarArtFrame = { LeftEndCap = {} }, MainMenuBarLeftEndCap = {},
-        C_UnitAuras = { GetAuraDataBySpellName = fn }, UnitBuff = fn,
     } })
     out = run(addon, printed, "check")
     for i, path in ipairs(PROBES) do
@@ -3175,24 +3182,29 @@ end
 
 do
     local Items = loadUpgrade().addon.Items
-    local worn = { ids = { [3] = true }, ilvl = 30, list = { { id = 3, ilvl = 30, score = 30 } } }
-    local better, over = Items.Beats(31, 1, worn)
-    check("beats: a higher score wins at a lower item level", tostring(better) .. " " .. tostring(over), "true 30")
-    check("beats: an equal score wins at a higher item level", Items.Beats(30, 35, worn), true)
-    check("beats: an equal score at the same item level loses", Items.Beats(30, 30, worn), false)
-    check("beats: an equal score at a lower item level loses", Items.Beats(30, 25, worn), false)
-    check("beats: a lower score loses at a higher item level", Items.Beats(29, 99, worn), false)
+    local worn = { ids = { [3] = true }, ilvl = 30, list = { { id = 3, ilvl = 30, score = 30, armor = 20 } } }
+    local better, over = Items.Beats(31, 0, worn)
+    check("beats: a higher score wins with less armor", tostring(better) .. " " .. tostring(over), "true 30")
+    check("beats: an equal score wins with more armor", Items.Beats(30, 21, worn), true)
+    check("beats: an equal score and armor loses", Items.Beats(30, 20, worn), false)
+    check("beats: an equal score with less armor loses", Items.Beats(30, 5, worn), false)
+    check("beats: a lower score loses with more armor", Items.Beats(29, 99, worn), false)
     check("beats: an unscored item is unknown", Items.Beats(nil, 30, worn), nil)
     check("beats: an unknown worn item is unknown", Items.Beats(99, 99, { list = { { unknown = true } } }), nil)
     check("beats: an unscored worn item is unknown", Items.Beats(99, 99, { ilvl = 1, list = { { id = 3, ilvl = 1 } } }),
         nil)
     check("beats: an off hand behind a two-hander has nothing to beat",
         Items.Beats(99, 99, { list = { { ilvl = 0, score = 0 } } }), false)
-    local pair = { ilvl = 10, list = { { id = 1, ilvl = 20, score = 10 }, { id = 2, ilvl = 10, score = 10 } } }
-    check("beats: the weakest of equal scores is the lower item level", Items.Beats(10, 15, pair), true)
-    check("beats: ... and must still be beaten", Items.Beats(10, 10, pair), false)
-    check("beats: an empty slot scores 0 at item level 0", Items.Beats(0, 1, { ilvl = 0, list = { { ilvl = 0,
-        score = 0 } } }), true)
+    local pair = { ilvl = 10, list = { { id = 1, ilvl = 10, score = 10, armor = 30 },
+                                       { id = 2, ilvl = 20, score = 10, armor = 15 } } }
+    check("beats: the weakest of equal scores has less armor", Items.Beats(10, 20, pair), true)
+    check("beats: ... and must still be beaten", Items.Beats(10, 15, pair), false)
+    check("beats: item level never decides", Items.Beats(10, 15, { ilvl = 1, list = { { id = 1, ilvl = 1,
+        score = 10, armor = 15 } } }), false)
+    check("beats: an empty slot scores 0 with 0 armor", Items.Beats(0, 1, { ilvl = 0, list = { { ilvl = 0,
+        score = 0, armor = 0 } } }), true)
+    check("beats: nothing does not beat an empty slot", Items.Beats(0, 0, { ilvl = 0, list = { { ilvl = 0,
+        score = 0, armor = 0 } } }), false)
 end
 
 do
@@ -3200,16 +3212,16 @@ do
     local function add(id, cache, tip)
         ctx.items[id], ctx.cache[id], ctx.tips[id] = { "INVTYPE_CHEST", 4, 2 }, cache, tip
     end
-    add(20, { "Vest", nil, 3, 35, 30 }, { "Vest", ctx.strength(30) })
-    add(21, { "Vest", nil, 3, 25, 20 }, { "Vest", ctx.strength(30) })
+    add(20, { "Vest", nil, 3, 35, 30 }, { "Vest", ctx.strength(30), "50 Armor" })
+    add(21, { "Vest", nil, 3, 45, 20 }, { "Vest", ctx.strength(30) })
     add(22, { "Vest", nil, 3, 60, 45 }, { "Vest", ctx.strength(60) })
     add(23, { "Vest", nil, 3, 50, 1 }, { "Vest", ctx.strength(60), { "Requires Level 50", nil, RED } })
     local before = dump(ctx.env.TandemDB)
     local _, b = ctx.classic(1, 0, { 20, 4, 21, 22, 23 })
     ctx.bagUpdate()
-    check("live borders: an equal score at a higher item level gets the border", ctx.border(b[1]), "red")
-    check("live borders: an equal score at the same item level gets none", ctx.border(b[2]), "none")
-    check("live borders: an equal score at a lower item level gets none", ctx.border(b[3]), "none")
+    check("live borders: an equal score with more armor gets the border", ctx.border(b[1]), "red")
+    check("live borders: an equal score and armor gets none", ctx.border(b[2]), "none")
+    check("live borders: an equal score at a higher item level gets none", ctx.border(b[3]), "none")
     check("live borders: a required level not met gets none", ctx.border(b[4]), "none")
     check("live borders: a red tooltip line gets none", ctx.border(b[5]), "none")
     check("live borders: TandemDB is unchanged after painting", dump(ctx.env.TandemDB), before)
@@ -3232,7 +3244,7 @@ do
     ctx.tips[12], ctx.tips[3] = { "A", ctx.strength(9) }, { "B", ctx.strength(9) }
     ctx.tips[4] = { "C", ctx.strength(1) }
     ctx.complete()
-    check("live quest pick: a tie on score goes to the higher item level", ctx.marked(), "2")
+    check("live quest pick: a tie on score marks none, whatever the item level", ctx.marked(), "")
     check("live quest pick: TandemDB is unchanged", dump(ctx.env.TandemDB), before)
 end
 
@@ -5313,17 +5325,14 @@ end
 
 -- Loads the layout as a Shaman: ctx.t is GetTime; ctx.totems[slot] = { have, name, start, duration, icon };
 -- ctx.weapon is GetWeaponEnchantInfo's returns (n of them); ctx.auras[name] = aura data for
--- C_UnitAuras.GetAuraDataBySpellName, or with opts.unitBuff the UnitBuff list { name, icon, count, expiration };
--- ctx.mana = { cur, max }; ctx.tickers lists C_Timer.NewTicker calls; ctx.calls counts totem, weapon, weapon icon,
--- aura and power API calls; ctx.tip is GameTooltip. opts.class is the class file.
+-- C_UnitAuras.GetAuraDataBySpellName and ctx.buffs the UnitBuff list { name, icon, count, expiration }, so a buff
+-- the rail must not show can be up; ctx.mana = { cur, max }; ctx.tickers lists C_Timer.NewTicker calls; ctx.calls
+-- counts totem, weapon, weapon icon, aura and power API calls; ctx.tip is GameTooltip. opts.class is the class file.
 local function loadShaman(opts)
     opts = opts or {}
     local ui = { widgets = {} }
     local ctx
     local spells = { [324] = "Lightning Shield", [24398] = "Water Shield" }
-    for id, name in pairs(opts.spells or {}) do
-        spells[id] = name or nil
-    end
     local env = {
         UIParent = { name = "UIParent" },
         GameTooltip = barTooltip(),
@@ -5361,20 +5370,17 @@ local function loadShaman(opts)
             return t
         end },
     }
-    if opts.unitBuff then
-        env.UnitBuff = function(unit, i)
-            ctx.calls = ctx.calls + 1
-            local b = unit == "player" and ctx.buffs[i]
-            if b then
-                return b[1], b[2], b[3], nil, nil, b[4]
-            end
+    env.UnitBuff = function(unit, i)
+        ctx.calls = ctx.calls + 1
+        local b = unit == "player" and ctx.buffs[i]
+        if b then
+            return b[1], b[2], b[3], nil, nil, b[4]
         end
-    else
-        env.C_UnitAuras = { GetAuraDataBySpellName = function(unit, name, filter)
-            ctx.calls = ctx.calls + 1
-            return unit == "player" and filter == "HELPFUL" and ctx.auras[name] or nil
-        end }
     end
+    env.C_UnitAuras = { GetAuraDataBySpellName = function(unit, name, filter)
+        ctx.calls = ctx.calls + 1
+        return unit == "player" and filter == "HELPFUL" and ctx.auras[name] or nil
+    end }
     for k, v in pairs(opts.env or {}) do
         env[k] = v
     end
@@ -5443,7 +5449,7 @@ do
         .. tostring(a.template) .. " " .. #a.points .. " " .. a.points[1][1] .. " "
         .. tostring(a.points[1][2] == ctx.env.UIParent) .. " " .. table.concat(a.points[1], " ", 3),
         "false 36x232 nil 1 BOTTOM true BOTTOM 0 222")
-    check("class rail: no totem, enchant or shield shows no slot", ctx.slots(), "")
+    check("class rail: no totem or enchant shows no slot", ctx.slots(), "")
     check("class rail: mana line along the bottom", a.line.kind .. " " .. a.line.height .. " " .. a.line.points[1][1]
         .. " " .. a.line.points[2][1] .. " " .. a.line.value .. " " .. a.line.min .. " " .. a.line.max .. " "
         .. tostring(a.line.shown) .. " " .. rgb(a.line.barColor), "StatusBar 4 BOTTOMLEFT BOTTOMRIGHT 800 0 1000 true "
@@ -5483,36 +5489,14 @@ do
     ctx.weapon = { n = 8 }
 
     ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 640, icon = "lsIcon" }
-    ctx.fire("UNIT_AURA", "target")
-    check("class rail: another unit's aura is ignored", ctx.slots(), "")
+    ctx.buffs = { { "Lightning Shield", "lsIcon", 3, 640 } }
     ctx.fire("UNIT_AURA", "player")
-    check("class rail: Lightning Shield with charges as count, no timer (D10)", ctx.slots() .. " / " .. ctx.tooltip(1),
-        "lsIcon  x3 / Lightning Shield")
-    check("class rail: the count sits at the slot's bottom right", ctx.shownSlots()[1].count.points[1][1],
-        "BOTTOMRIGHT")
-    ctx.t, ctx.calls = 340, 0
-    ctx.tickers[1].fn()
-    check("class rail: a tick leaves the shield without a timer, no API calls", ctx.slots() .. " / " .. ctx.calls,
-        "lsIcon  x3 / 0")
-    ctx.t = 640
-    ctx.tickers[1].fn()
-    check("class rail: the shield's slot outlasts its expiration time until UNIT_AURA", ctx.slots(), "lsIcon  x3")
-    ctx.auras["Lightning Shield"] = nil
-    ctx.fire("UNIT_AURA", "player")
-    check("class rail: the shield's slot goes when the buff drops", ctx.slots(), "")
-    ctx.t = 100
-    ctx.auras["Water Shield"] = { applications = 0, expirationTime = 0, icon = "wsIcon" }
-    ctx.fire("UNIT_AURA", "player")
-    check("class rail: Water Shield without expiry or charges", ctx.slots() .. " / " .. ctx.tooltip(1),
-        "wsIcon  / Water Shield")
-
+    check("class rail: Lightning Shield up shows no slot", ctx.slots(), "")
+    ctx.auras["Water Shield"] = { applications = 3, expirationTime = 640, icon = "wsIcon" }
     ctx.totems[3] = { true, "Healing Stream Totem", 100, 60, "waterIcon" }
     ctx.fire("PLAYER_TOTEM_UPDATE")
-    check("class rail: totems, then the shield", ctx.slots(), "waterIcon 60 | wsIcon ")
-    ctx.t = 130
-    ctx.tickers[1].fn()
-    check("class rail: the totem still counts down beside the shield", ctx.slots(), "waterIcon 30 | wsIcon ")
-    ctx.t = 100
+    check("class rail: a shield up beside a totem shows only the totem", ctx.slots() .. " / " .. ctx.tooltip(1),
+        "waterIcon 60 / Healing Stream Totem / 1:00")
 
     ctx.mana = { 450, 1200 }
     ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
@@ -5544,23 +5528,7 @@ do
 end
 
 do
-    local ctx = loadShaman({ unitBuff = true, spells = { [24398] = false } })
-    ctx.buffs = { { "Mark of the Wild", "motwIcon", 0, 900 }, { "Lightning Shield", "lsIcon", 2, 160 } }
-    ctx.run("layout on")
-    check("class rail: shield by UnitBuff scan; no Water Shield spell is fine", ctx.slots(), "lsIcon  x2")
-    ctx.buffs = {}
-    ctx.fire("UNIT_AURA", "player")
-    check("class rail: shield gone by UnitBuff scan", ctx.slots(), "")
-
-    ctx = loadShaman({ env = { C_Spell = {}, GetSpellInfo = function(id)
-        return id == 324 and "Lightning Shield" or nil
-    end } })
-    ctx.auras["Lightning Shield"] = { applications = 1, expirationTime = 130 }
-    ctx.run("layout on")
-    check("class rail: shield name from GetSpellInfo; no icon falls back", ctx.slots() .. " / " .. ctx.tooltip(1),
-        "Interface\\Icons\\INV_Misc_QuestionMark  x1 / Lightning Shield")
-
-    ctx = loadShaman({ env = { UnitPowerMax = function() return 0 end } })
+    local ctx = loadShaman({ env = { UnitPowerMax = function() return 0 end } })
     ctx.run("layout on")
     check("class rail: no mana and no slot hides the rail and the line", tostring(ctx.area().shown) .. " "
         .. tostring(ctx.area().line.shown) .. " " .. ctx.live(), "false false 0")
@@ -5602,8 +5570,8 @@ do
     ctx.weapon = { true, 60000, 0, 1, true, 60000, 0, 2, n = 8 }
     ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 160, icon = "lsIcon" }
     ctx.run("layout on")
-    check("class rail: five slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
-        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[5].points[1][4]), "5 -72 72")
+    check("class rail: four slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
+        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[4].points[1][4]), "4 -54 54")
 
     local many = {}
     for i = 1, 14 do
@@ -5619,9 +5587,9 @@ do
     ctx.fire("PLAYER_LOGIN")
     check("class rail: relogin with the layout on shows it", ctx.area().shown, true)
     local reg = ctx.frame.registered
-    check("class rail: unit events registered (falling back to every unit)", tostring(reg.UNIT_AURA) .. " "
-        .. tostring(reg.UNIT_POWER_UPDATE) .. " " .. tostring(reg.UNIT_MAXPOWER) .. " "
-        .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " " .. tostring(reg.UNIT_INVENTORY_CHANGED), "true true true true nil")
+    check("class rail: unit events registered (falling back to every unit); no UNIT_AURA",
+        tostring(reg.UNIT_AURA) .. " " .. tostring(reg.UNIT_POWER_UPDATE) .. " " .. tostring(reg.UNIT_MAXPOWER) .. " "
+        .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " " .. tostring(reg.UNIT_INVENTORY_CHANGED), "nil true true true nil")
 end
 
 -- Store.RegisterUnitEvent: the player only where the client has RegisterUnitEvent, else every unit (U5 review).

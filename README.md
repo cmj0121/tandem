@@ -105,8 +105,8 @@ whose API is missing stays off instead of raising an error.
 
 Then one `Probe: <path> present|missing` line each for `LootButton1`, `LootFrame.ScrollBox`, `LootFrame_Update`,
 `ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture`, `ContainerFrame1Item1.UpgradeIcon`,
-`Enum.EditModeSystem.ChatFrame`, `MainStatusTrackingBarContainer`, `BagsBar`, `C_UnitAuras.GetAuraDataBySpellName`,
-`UnitBuff`, `Enum.EditModeSystem.MicroMenu`, `Enum.EditModeSystem.Minimap` and `Enum.EditModeSystem.AuraFrame`. They
+`Enum.EditModeSystem.ChatFrame`, `MainStatusTrackingBarContainer`, `BagsBar`, `Enum.EditModeSystem.MicroMenu`,
+`Enum.EditModeSystem.Minimap` and `Enum.EditModeSystem.AuraFrame`. They
 tell which bag, loot, Edit Mode and aura parts the client has, and turn nothing on or off.
 
 ### `/tandem weights`
@@ -160,18 +160,19 @@ An item is an upgrade when both hold:
     dual-wield from level 20, rogues from level 10, and only they can use off-hand-only weapons;
   - its tooltip has no red requirement line, such as a class, a weapon skill you have not trained, a race, a
     profession or a reputation you lack.
-- It beats what you wear in that slot: a higher stat score wins, and an equal score wins only with a higher item
-  level. A lower score never wins, whatever the item level.
+- It beats what you wear in that slot: a higher stat score wins, and an equal score wins only with more armor.
+  The item level and the required level never decide: a lower score never wins, and an equal score with no more
+  armor is no upgrade, however high the item's level.
 
 The stat score is each stat on the item times its weight for your class and talent tree (see
 [`/tandem weights`](#tandem-weights)), added up. So a strength item beats a caster item for a warrior even at a lower
 item level. A score of 0, an item whose stats your weights ignore, still counts.
 
-- An empty slot scores 0 at item level 0, so any usable item with stats beats it.
-- A ring or trinket is compared with the weaker of the two you wear: the lower score, or at an equal score the lower
-  item level. A one-hander you can dual-wield is compared with your weaker hand in the same way.
+- An empty slot scores 0 with 0 armor, so any usable item with a score above 0 or with armor beats it.
+- A ring or trinket is compared with the weaker of the two you wear: the lower score, or at an equal score the one
+  with less armor. A one-hander you can dual-wield is compared with your weaker hand in the same way.
 - A two-hander is compared with your main hand and off hand together: their scores added up, with the off-hand
-  weapon's dps at half weight, at the lower of their two item levels. An empty hand adds 0. If you already wield a
+  weapon's dps at half weight, and their armor (a shield's) added up too. An empty hand adds 0. If you already wield a
   two-hander, it is compared with that one alone.
 - An off-hand item is never an upgrade while you wield a two-hander.
 
@@ -233,9 +234,9 @@ When you hand in a quest that lets you choose one of two or more rewards (`QUEST
 icon on the top right of the best choice's button. The best choice is the one you can equip, as in
 [What counts as an upgrade](#what-counts-as-an-upgrade), that beats every other such choice:
 
-- by stat score when every usable choice has stats, an equal score going to the higher item level, then the better
-  quality;
-- by item level, then quality, when any usable choice has no stats.
+- by stat score, an equal score going to the one with more armor;
+- never by item level or quality: a tie on score and armor, or a usable choice whose stats cannot be read, marks
+  none.
 
 It is not compared with what you wear: hover the choice to see whether its [item tooltip](#item-tooltip) calls it an
 upgrade.
@@ -389,15 +390,12 @@ the layout off restores them.
 
 ### Shaman class area
 
-For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each of:
-
-- each totem that is down, in Earth, Fire, Water, Air order, with its time left;
-- Lightning Shield, or Water Shield where the client has it, with its charges in the lower-right corner and no
-  timer; its icon goes when the buff drops.
+For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each totem that is
+down, in Earth, Fire, Water, Air order, with its time left. Lightning Shield and Water Shield get no icon.
 
 A totem's time left reads `m:ss` above a minute, else whole seconds, and counts down; its icon goes when its time runs
-out. Hover an icon for its name (the totem's or the shield's) and, for a totem, its time left. While any icon
-shows, a thin blue mana line runs along the rail's bottom; with no icon, the whole rail hides.
+out. Hover an icon for the totem's name and time left. While any icon shows, a thin blue mana line runs along the
+rail's bottom; with no icon, the whole rail hides.
 
 It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
 rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
@@ -490,9 +488,9 @@ from step 4, and any Lua error.
 1. Out of combat, hand in a quest that offers a choice of two or more rewards, at least one of which your class can
    use. In the reward window, a small Tandem icon sits on the top right of one choice's button. Nothing is printed and
    no reward is selected.
-2. Note the stats, item level and quality of each choice you can use: the marked one has the highest score for your
-   weights, or at an equal score the higher item level; when a usable choice has no stats, the highest item level,
-   then the better quality.
+2. Note the stats and armor of each choice you can use: the marked one has the highest score for your weights, or at
+   an equal score more armor; when two usable choices tie on both, no icon shows, whatever their item level or
+   quality.
 3. Close the reward window without choosing, then talk to the quest giver again: the icon shows again on the same
    choice.
 4. For a quest whose usable choices tie, or that offers nothing your class can use, no icon shows.
@@ -565,11 +563,10 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one
    icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
-   shows between the unit frames at first. Drop a totem and cast Lightning Shield: an icon for each appears on the
-   rail between the player and target frames, the totem with its time left counting down, the shield with its
-   charges and no timer, and a thin blue mana line under them. Hover one: its name. When one runs out or the shield
-   drops, its icon goes; when the
-   last goes, the rail and its mana line go. Clicking the rail does nothing.
+   shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
+   appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
+   line under it. Hover it: its name. When a totem runs out, its icon goes; when the last goes, the rail and its mana
+   line go. Clicking the rail does nothing.
 5. Centred just below the XP bar, one line reads your coordinates and time at this level, such as
    `(42.31, 67.80) · 1H20m`; walk and the coordinates change. Hover it: the zone, the subzone if any, `Played:`,
    `This level:` and `This session:`. Hover the bar: the XP tooltip. Enter an instance: the coordinates
