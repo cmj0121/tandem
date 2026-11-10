@@ -904,8 +904,11 @@ function WIDGET.SetHighlightTexture(w, t) w.highlight = t end
 function WIDGET.SetEnabled(w, enabled) w.enabled = enabled end
 function WIDGET.IsEnabled(w) return w.enabled end
 function WIDGET.SetMaxLetters(w, n) w.maxLetters = n end
+function WIDGET.SetParent(w, parent) w.parent = parent end
 function WIDGET.SetFrameLevel(w, level) w.level = level end
 function WIDGET.GetFrameLevel(w) return w.level or 1 end
+function WIDGET.SetFrameStrata(w, strata) w.strata = strata end
+function WIDGET.GetFrameStrata(w) return w.strata end
 function WIDGET.SetHitRectInsets(w, ...) w.hitInsets = { ... } end
 function WIDGET.SetMinMaxValues(w, lo, hi) w.min, w.max = lo, hi end
 function WIDGET.SetValue(w, v) w.value = v end
@@ -1001,6 +1004,7 @@ local function checkAPIs()
         EditModePresetLayoutManager = { GetCopyOfPresetLayouts = fn },
         MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, ToggleAllBags = fn,
         GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn,
+        C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn }, RequestTimePlayed = fn,
     }
 end
 
@@ -1030,7 +1034,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: thirteen features", #addon.Check.FEATURES, 13)
+    check("check: fourteen features", #addon.Check.FEATURES, 14)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1040,7 +1044,7 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
-        "Shaman area" }) do
+        "Map info", "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1102,7 +1106,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on eleven features", count, 11)
+    check("check: kept code gates on twelve features", count, 12)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -1122,6 +1126,7 @@ do
     check("zhTW check: header", out[1], "Tandem API 檢查：")
     check("zhTW check: feature line", lineFor(out, "物品屬性"),
         "物品屬性：可用（C_Item.GetItemStats 可用, GetItemStats 缺少）")
+    check("zhTW check: map info line", lineFor(out, "地圖資訊"):sub(1, #"地圖資訊：可用"), "地圖資訊：可用")
 end
 
 -- Live item data (stage 11, D1): the client as the judges read it, with an empty TandemDB.
@@ -3624,12 +3629,13 @@ end
 -- Loads the addon with a stubbed Edit Mode: state.layouts is what GetLayouts returns (copied), state.active the active
 -- index (the two presets first). Frames record alpha, mouse, and every Hide/Show/SetPoint call in state.touched.
 -- opts.db is TandemDB, opts.env adds globals, opts.locale the locale, opts.frames more fake Blizzard frame names,
--- opts.widgets goes to loadAddon, opts.sizes = { name = { width, height } } gives frames a size. Returns ctx with
+-- opts.widgets goes to loadAddon, opts.sizes = { name = { width, height } } gives frames a size, opts.coords the
+-- minimapShowPlayerCoords CVar (state.coords; absent when nil). Returns ctx with
 -- addon, printed, fire, state, env, run(msg).
 local function loadLayout(opts)
     opts = opts or {}
     local state = { layouts = opts.layouts or { editLayout() }, active = opts.active or 3, saved = 0, activated = {},
-        combat = false, touched = {}, cvar = opts.tot or "0", frames = {} }
+        combat = false, touched = {}, cvar = opts.tot or "0", coords = opts.coords, frames = {} }
     local presetList = { editLayout("Modern", 0), editLayout("Classic", 0) }
     for i = 3, opts.presets or 2 do
         presetList[i] = editLayout("Preset" .. i, 0)
@@ -3650,10 +3656,17 @@ local function loadLayout(opts)
         Enum = copyTable(LAYOUT_ENUM),
         InCombatLockdown = function() return state.combat end,
         hooksecurefunc = function() state.hooked = true end,
-        GetCVar = function(name) return name == "showTargetOfTarget" and state.cvar or nil end,
+        GetCVar = function(name)
+            if name == "showTargetOfTarget" then
+                return state.cvar
+            end
+            return name == "minimapShowPlayerCoords" and state.coords or nil
+        end,
         SetCVar = function(name, v)
             if name == "showTargetOfTarget" then
                 state.cvar = v
+            elseif name == "minimapShowPlayerCoords" then
+                state.coords = v
             end
         end,
         C_EditMode = {
@@ -4121,6 +4134,121 @@ do
         env.TandemDebug.log[#env.TandemDebug.log]:match("frame MainMenuExpBar") ~= nil, true)
 end
 
+-- The snapshot's minimap probe (D11): MinimapCluster and Minimap walked breadth first to depth 6, named nodes and
+-- FontStrings with text logged as mmtree lines, minimap and coordinate CVars as mmcvar lines.
+local unpack = rawget(table, "unpack") or rawget(_G, "unpack")
+local function probeNode(spec)
+    spec.children, spec.regions = spec.children or {}, spec.regions or {}
+    local n = { spec = spec }
+    function n.GetName() return spec.name end
+    function n.GetObjectType() return spec.kind or "Frame" end
+    function n.IsShown() return spec.shown ~= false end
+    function n.GetText() return spec.text end
+    if spec.raises then
+        n.GetChildren = function() error("forbidden") end
+    else
+        n.GetChildren = function() return unpack(spec.children) end
+    end
+    n.GetRegions = function() return unpack(spec.regions) end
+    return n
+end
+
+local function probeLog(env, snap)
+    env.TandemDebug = { on = true, log = {} }
+    snap("debug snap")
+    local out = {}
+    for _, l in ipairs(env.TandemDebug.log) do
+        local m = l:match("^[%d.]+ combat=%a+   (mm%a+ .*)$")
+        if m then
+            out[#out + 1] = m
+        end
+    end
+    return out
+end
+
+do
+    local ctx = loadLayout({ env = { UIParent = {}, GetTime = function() return 1 end } })
+    local env = ctx.env
+    local coords = probeNode({ kind = "FontString", text = "37.0, 43.8" })
+    local deep = probeNode({ regions = { coords } })
+    local minimap = probeNode({ name = "Minimap", children = { probeNode({ children = { deep } }) } })
+    local container = probeNode({ name = "MinimapContainer", children = { minimap } })
+    local zone = probeNode({ kind = "FontString", text = "Elwynn |cffffffffForest|r" })
+    local empty = probeNode({ kind = "FontString", text = "" })
+    local odd = probeNode({ name = "OddFrame", raises = true, shown = false })
+    env.MinimapCluster = probeNode({ name = "MinimapCluster", children = { container, odd },
+        regions = { zone, empty } })
+    env.Minimap = minimap
+    local log = probeLog(env, ctx.run)
+    check("mm probe: the named roots, children and regions",
+        table.concat(log, "\n"), table.concat({
+            "mmtree MinimapCluster Frame shown true text ",
+            "mmtree Minimap Frame shown true text ",
+            "mmtree MinimapCluster.MinimapContainer Frame shown true text ",
+            "mmtree MinimapCluster.OddFrame Frame shown false text ",
+            "mmtree MinimapCluster.r1 FontString shown true text Elwynn ||cffffffffForest||r",
+            "mmtree Minimap.c1.c1.r1 FontString shown true text 37.0, 43.8",
+        }, "\n"))
+
+    -- Seven levels down is past the depth cap.
+    local tip = probeNode({ kind = "FontString", text = "too deep" })
+    local chain = tip
+    for _ = 1, 6 do
+        chain = probeNode({ children = { chain } })
+    end
+    env.MinimapCluster, env.Minimap = probeNode({ name = "MinimapCluster", children = { chain } }), nil
+    log = probeLog(env, ctx.run)
+    check("mm probe: nothing past depth 6", table.concat(log, "\n"), "mmtree MinimapCluster Frame shown true text ")
+
+    local many = {}
+    for i = 1, 100 do
+        many[i] = probeNode({ name = "Named" .. i })
+    end
+    env.MinimapCluster = probeNode({ name = "MinimapCluster", children = many })
+    log = probeLog(env, ctx.run)
+    check("mm probe: at most 60 lines", #log .. " " .. log[60],
+        "60 mmtree MinimapCluster.Named59 Frame shown true text ")
+
+    local wide = {}
+    for i = 1, 700 do
+        wide[i] = probeNode({})
+    end
+    wide[700] = probeNode({ kind = "FontString", text = "past the cap" })
+    env.MinimapCluster = probeNode({ children = wide })
+    log = probeLog(env, ctx.run)
+    check("mm probe: at most 600 nodes read", #log, 0)
+
+    env.MinimapCluster = nil
+    local cvars = { minimapShowCoords = "1", rotateMinimap = "0", showCoordinates = "1", nameplateShowAll = "1" }
+    env.C_CVar = { GetCVar = function(n) return cvars[n] end }
+    env.C_Console = { GetAllCommands = function()
+        return { { command = "minimapShowCoords" }, { command = "nameplateShowAll" }, { command = "rotateMinimap" },
+            { command = "showCoordinates" } }
+    end }
+    log = probeLog(env, ctx.run)
+    check("mm probe: C_Console CVars with coord or minimap", table.concat(log, " "),
+        "mmcvar minimapShowCoords=1 mmcvar rotateMinimap=0 mmcvar showCoordinates=1")
+    env.C_Console, env.C_CVar = nil, nil
+    env.ConsoleGetAllCommands = function() return { "MINIMAPZoom", "fooBar" } end
+    env.GetCVar = function(n) return n == "MINIMAPZoom" and "2" or nil end
+    log = probeLog(env, ctx.run)
+    check("mm probe: ConsoleGetAllCommands and GetCVar", table.concat(log, " "), "mmcvar MINIMAPZoom=2")
+    local lots = {}
+    for i = 1, 40 do
+        lots[i] = { command = "coord" .. i }
+    end
+    env.ConsoleGetAllCommands = function() return lots end
+    log = probeLog(env, ctx.run)
+    check("mm probe: at most 30 CVars", #log .. " " .. log[30], "30 mmcvar coord30=nil")
+
+    env.ConsoleGetAllCommands, env.GetCVar = nil, nil
+    env.C_Console = {}
+    log = probeLog(env, ctx.run)
+    local tail = env.TandemDebug.log[#env.TandemDebug.log]
+    check("mm probe: no minimap, no console API: no lines, the snapshot still runs",
+        #log .. " " .. tostring(tail:match("watch ") ~= nil), "0 true")
+end
+
 -- Bars Edit Mode cannot hide fade instead, again after Edit Mode re-applies, and come back on off.
 do
     local enumNoVisible = copyTable(LAYOUT_ENUM)
@@ -4163,6 +4291,56 @@ do
 
     ctx = loadLayout({ rejectEvents = { EDIT_MODE_LAYOUTS_UPDATED = true } })
     check("layout fade: an unknown event leaves the load working", ctx.run("layout on"), "Tandem: layout on")
+end
+
+-- D12: the client's minimap coordinates are hidden while the layout is on and restored when it goes off.
+do
+    local ctx = loadLayout({ coords = "1" })
+    ctx.run("layout on")
+    check("layout coords: on hides the client's coordinates", ctx.state.coords, "0")
+    check("layout coords: on saves the old value", ctx.addon.Store.Layout().coords, "1")
+    ctx.state.coords = "2"
+    ctx.run("layout on")
+    check("layout coords: reapply keeps the first value", ctx.addon.Store.Layout().coords, "1")
+    ctx.run("layout off")
+    check("layout coords: off restores the old value", ctx.state.coords, "1")
+    check("layout coords: off clears the field", ctx.addon.Store.Layout().coords, nil)
+
+    ctx = loadLayout({ coords = "0", layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 }, coords = "1" } } })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.state.coords = "2"
+    ctx.run("layout on")
+    check("layout coords: a saved value survives a reload", ctx.addon.Store.Layout().coords, "1")
+    ctx.run("layout off")
+    check("layout coords: off after a reload restores the saved value", ctx.state.coords, "1")
+
+    ctx = loadLayout({ coords = "1", layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+    ctx.fire("PLAYER_LOGIN")
+    check("layout coords: on at login hides the client's coordinates", ctx.state.coords, "0")
+    check("layout coords: on at login saves the old value", ctx.addon.Store.Layout().coords, "1")
+    ctx.run("layout off")
+    check("layout coords: off after an on login restores the old value", ctx.state.coords, "1")
+
+    ctx = loadLayout({ coords = "0" })
+    ctx.run("layout on")
+    check("layout coords: already off saves nothing", ctx.addon.Store.Layout().coords, nil)
+    ctx.run("layout off")
+    check("layout coords: already off stays off", ctx.state.coords, "0")
+
+    ctx = loadLayout()
+    local set = {}
+    local setCVar = ctx.env.SetCVar
+    ctx.env.SetCVar = function(name, v)
+        set[#set + 1] = name
+        setCVar(name, v)
+    end
+    ctx.run("layout on")
+    ctx.run("layout off")
+    check("layout coords: a client without the CVar is never touched", table.concat(set, ","),
+        "showTargetOfTarget,showTargetOfTarget")
+    check("layout coords: nothing saved without the CVar", ctx.state.coords, nil)
 end
 
 -- Relogin with the layout on re-attaches without saving again.
@@ -4526,6 +4704,333 @@ do
     ctx.fire("PLAYER_LOGIN")
     check("xp bar: relogin with the layout on shows it", tostring(ctx.bar().shown) .. " " .. ctx.text(),
         "true 30%")
+end
+
+-- Map info inside the XP bar while the layout is on (stage 13, U1, U4, D3, D9).
+
+-- Loads the layout with a fake C_Map: ctx.pos = { x, y } is the player's position on map ctx.map (nil for none);
+-- ctx.tickers lists C_Timer.NewTicker calls; ctx.t is GetTime, ctx.requests counts RequestTimePlayed calls,
+-- ctx.zone and ctx.subzone are the zone texts and ctx.tip is GameTooltip. ctx.xp is the XP API's state, as in
+-- loadXP; ctx.bar() is the XP bar. opts.frames are the named frames the client has.
+local function loadMapInfo(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local ctx
+    local env = {
+        UIParent = { name = "UIParent", GetWidth = function() return 1600 end },
+        UnitXP = function() return ctx.xp.xp end,
+        UnitXPMax = function() return ctx.xp.max end,
+        GetXPExhaustion = function() return 0 end,
+        UnitLevel = function() return ctx.xp.level end,
+        GetMaxPlayerLevel = function() return 60 end,
+        RequestTimePlayed = function() ctx.requests = ctx.requests + 1 end,
+        GetTime = function() return ctx.t end,
+        GetZoneText = function() return ctx.zone end,
+        GetSubZoneText = function() return ctx.subzone end,
+        GameTooltip = barTooltip(),
+        C_Map = {
+            GetBestMapForUnit = function(unit) return unit == "player" and ctx.map or nil end,
+            GetPlayerMapPosition = function(map, unit)
+                if map ~= ctx.map or unit ~= "player" or not ctx.pos then
+                    return nil
+                end
+                return { GetXY = function() return ctx.pos[1], ctx.pos[2] end }
+            end,
+        },
+        C_Timer = { NewTicker = function(interval, fn)
+            local t = { interval = interval, fn = fn }
+            function t.Cancel(self) self.cancelled = true end
+            ctx.tickers[#ctx.tickers + 1] = t
+            return t
+        end },
+    }
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    ctx = loadLayout({ env = env, locale = opts.locale, frames = opts.frames or { "MinimapCluster", "Minimap" },
+        widgets = function(kind, name, parent, template)
+            return newWidget(ui, kind, name, parent, template)
+        end })
+    ctx.ui, ctx.map, ctx.pos, ctx.tickers = ui, 1429, { 0.4231, 0.678 }, {}
+    ctx.xp = { xp = 1200, max = 4000, level = 20 }
+    ctx.requests, ctx.t, ctx.zone, ctx.subzone, ctx.tip = 0, 1000, "Elwynn Forest", "Goldshire", ctx.env.GameTooltip
+    function ctx.line()
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "Frame" and w.text then
+                return w
+            end
+        end
+    end
+    function ctx.text()
+        local l = ctx.line()
+        return l and l.text.text
+    end
+    function ctx.bar()
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "StatusBar" then
+                return w
+            end
+        end
+    end
+    -- The line's parent and first point as "parent point relative relativePoint x y".
+    function ctx.where()
+        local l = ctx.line()
+        local p = l.points[1]
+        local function name(f)
+            return f == ctx.bar() and "bar" or f == ctx.env.UIParent and "UIParent" or tostring(f)
+        end
+        return name(l.parent) .. " " .. #l.points .. " " .. p[1] .. " " .. name(p[2]) .. " " .. p[3] .. " " .. p[4]
+            .. " " .. p[5]
+    end
+    return ctx
+end
+
+do
+    local ctx = loadMapInfo()
+    check("map info: nothing made while the layout is off", (ctx.line()), nil)
+    ctx.fire("ZONE_CHANGED")
+    check("map info: zone events while off are harmless", (ctx.line()), nil)
+    ctx.run("layout on")
+    local line = ctx.line()
+    check("map info: shown centred just below the XP bar", tostring(line.shown) .. " " .. ctx.where(),
+        "true UIParent 1 TOP bar BOTTOM 0 -2")
+    check("map info: coordinates in percent, two decimals", ctx.text(), "(42.31, 67.80)")
+    check("map info: one 0.5 s ticker while shown", #ctx.tickers .. " " .. ctx.tickers[1].interval, "1 0.5")
+    ctx.pos = { 0.5, 0.25 }
+    ctx.tickers[1].fn()
+    check("map info: the ticker refreshes", ctx.text(), "(50.00, 25.00)")
+    ctx.pos = nil
+    ctx.fire("ZONE_CHANGED_NEW_AREA")
+    check("map info: no position shows dashes", ctx.text(), "(--, --)")
+    ctx.pos = { 0.1, 0.2 }
+    ctx.fire("ZONE_CHANGED_INDOORS")
+    check("map info: ZONE_CHANGED_INDOORS refreshes", ctx.text(), "(10.00, 20.00)")
+    ctx.pos = { 0, 0 }
+    ctx.fire("ZONE_CHANGED")
+    check("map info: a 0,0 position shows dashes", ctx.text(), "(--, --)")
+    ctx.pos, ctx.map = { 0.3, 0.3 }, nil
+    ctx.fire("ZONE_CHANGED")
+    check("map info: no map shows dashes", ctx.text(), "(--, --)")
+    ctx.map = 1429
+    ctx.run("layout off")
+    check("map info: hidden when the layout is off", line.shown, false)
+    check("map info: ticker stopped while hidden", tostring(ctx.tickers[1].cancelled) .. " " .. #ctx.tickers,
+        "true 1")
+    ctx.tickers[1].fn()
+    ctx.fire("ZONE_CHANGED")
+    check("map info: updates while off keep it hidden", line.shown, false)
+    check("map info: no Blizzard frame touched or hooked", #ctx.state.touched .. " " .. tostring(ctx.state.hooked),
+        "0 nil")
+    ctx.run("layout on")
+    check("map info: shown again, one line, a new ticker", tostring(line.shown) .. " "
+        .. tostring(ctx.line() == line) .. " " .. #ctx.tickers .. " " .. tostring(ctx.tickers[2].cancelled),
+        "true true 2 nil")
+end
+
+do
+    local ctx = loadMapInfo()
+    ctx.run("layout on")
+    local line, bar = ctx.line(), ctx.bar()
+    check("map info: above the XP bar's frame level", line.level .. " " .. bar:GetFrameLevel(), "2 1")
+    check("map info: a UIParent child, not the bar's", tostring(line.parent == ctx.env.UIParent), "true")
+    check("map info: the XP percent stays centred", bar.text.text .. " " .. bar.text.points[1][1] .. " "
+        .. bar.text.points[1][3], "30% CENTER CENTER")
+    check("map info: its own mouse area, sized to the text", tostring(line.mouse) .. " " .. line.width .. " "
+        .. line.height, "true 84 12")
+    ctx.fire("TIME_PLAYED_MSG", 1054800, 4800)
+    check("map info: the line with /played below the bar", ctx.text() .. " | " .. ctx.where(),
+        "(42.31, 67.80) · 1H20m | UIParent 1 TOP bar BOTTOM 0 -2")
+    line.scripts.OnEnter(line)
+    check("map info: hover on the line shows the map tooltip", tostring(ctx.tip.owner == line) .. " "
+        .. ctx.tip.title, "true Elwynn Forest")
+    line.scripts.OnLeave(line)
+    bar.scripts.OnEnter(bar)
+    check("map info: the XP tooltip still works on the bar", tostring(ctx.tip.owner == bar) .. " " .. ctx.tip.title
+        .. " " .. tostring(ctx.tip.shown), "true 1200 / 4000 (30%) true")
+    bar.scripts.OnLeave(bar)
+    local points = 0
+    local clear = line.ClearAllPoints
+    line.ClearAllPoints = function(w)
+        points = points + 1
+        clear(w)
+    end
+    ctx.tickers[1].fn()
+    ctx.fire("ZONE_CHANGED")
+    check("map info: not re-placed while the bar's state holds", points, 0)
+    ctx.xp.level = 60
+    ctx.fire("PLAYER_LEVEL_UP", 60)
+    check("map info: at the maximum level, at the screen's top", tostring(bar.shown) .. " " .. ctx.where()
+        .. " " .. tostring(line.shown) .. " " .. points, "false UIParent 1 TOP UIParent TOP 0 -4 true 1")
+    ctx.xp.level = 59
+    ctx.fire("PLAYER_XP_UPDATE")
+    ctx.tickers[1].fn()
+    check("map info: back below the bar once it shows again", ctx.where() .. " " .. points,
+        "UIParent 1 TOP bar BOTTOM 0 -2 2")
+    ctx.xp.max = 0
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("map info: an XP update that hides the bar moves the line to the screen's top", tostring(bar.shown) .. " "
+        .. ctx.where() .. " " .. points, "false UIParent 1 TOP UIParent TOP 0 -4 3")
+    ctx.xp.max = 4000
+    ctx.fire("UPDATE_EXHAUSTION")
+    check("map info: an XP update that shows the bar moves the line back", ctx.where() .. " " .. points,
+        "UIParent 1 TOP bar BOTTOM 0 -2 4")
+    bar:Hide()
+    check("map info: the bar hiding alone leaves the line shown", tostring(line.shown), "true")
+    ctx.fire("PLAYER_XP_UPDATE")
+    ctx.run("layout off")
+    check("map info: hidden with the layout off, the bar too", tostring(line.shown) .. " " .. tostring(bar.shown),
+        "false false")
+    ctx.run("layout on")
+    check("map info: placed again on layout on", tostring(line.shown) .. " " .. ctx.where() .. " " .. points,
+        "true UIParent 1 TOP bar BOTTOM 0 -2 5")
+
+    ctx = loadMapInfo()
+    ctx.run("layout on")
+    ctx.bar().strata = "MEDIUM"
+    ctx.bar().level = 5
+    ctx.xp.level = 60
+    ctx.fire("PLAYER_LEVEL_UP", 60)
+    ctx.xp.level = 20
+    ctx.fire("PLAYER_XP_UPDATE")
+    check("map info: the bar's strata, a level above it", ctx.line().strata .. " " .. ctx.line().level, "MEDIUM 6")
+
+    ctx = loadMapInfo()
+    ctx.xp.level = 60
+    ctx.run("layout on")
+    check("map info: at the screen's top at the maximum level", ctx.where(), "UIParent 1 TOP UIParent TOP 0 -4")
+
+    ctx = loadMapInfo()
+    ctx.env.UnitXP = nil
+    ctx.run("layout on")
+    check("map info: at the screen's top without the XP API", tostring((ctx.bar())) .. " " .. ctx.where() .. " "
+        .. ctx.text(), "nil UIParent 1 TOP UIParent TOP 0 -4 (42.31, 67.80)")
+
+    for _, missing in ipairs({ "GetPlayerMapPosition", "RequestTimePlayed" }) do
+        ctx = loadMapInfo()
+        if missing == "RequestTimePlayed" then
+            ctx.env.RequestTimePlayed = nil
+        else
+            ctx.env.C_Map[missing] = nil
+        end
+        ctx.run("layout on")
+        check("map info: dark without " .. missing, tostring((ctx.line())) .. " " .. #ctx.tickers, "nil 0")
+    end
+
+    ctx = loadMapInfo({ env = { C_Timer = false } })
+    ctx.run("layout on")
+    check("map info: no C_Timer still shows", tostring(ctx.line().shown) .. " " .. ctx.text(),
+        "true (42.31, 67.80)")
+
+    ctx = loadMapInfo()
+    ctx.pos = { "x", 0.5 }
+    ctx.run("layout on")
+    check("map info: a non-number position shows dashes", ctx.text(), "(--, --)")
+end
+
+do
+    local ctx = loadMapInfo()
+    ctx.env.C_Map.GetPlayerMapPosition = function() error("no map") end
+    ctx.run("layout on")
+    check("map info: a raising map API shows dashes", ctx.text(), "(--, --)")
+    local events = {}
+    for _, ev in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" }) do
+        events[#events + 1] = tostring(ctx.frame.registered[ev])
+    end
+    check("map info: zone events registered", table.concat(events, " "), "true true true")
+end
+
+do
+    local ctx = loadLayout({ rejectEvents = { ZONE_CHANGED_INDOORS = true } })
+    check("map info: an unknown zone event is skipped", tostring(ctx.frame.registered.ZONE_CHANGED_INDOORS) .. " "
+        .. tostring(ctx.frame.registered.ZONE_CHANGED_NEW_AREA), "nil true")
+end
+
+-- /played in the map info line and its tooltip (stage 13, U2, D1, D4, D5).
+do
+    local S = loadMapInfo().addon.MapInfo
+    local short, long = {}, {}
+    for _, s in ipairs({ 0, 59, 1200, 3600, 4800, 86399, 86400, 104400, 1054800, -5 }) do
+        short[#short + 1] = S.Short(s)
+        long[#long + 1] = S.Played(s)
+    end
+    check("played: short text", table.concat(short, " "), "0m 0m 20m 1H0m 1H20m 23H59m 1d0H 1d5H 12d5H 0m")
+    check("played: tooltip text", table.concat(long, ", "),
+        "0m, 0m, 20m, 1h 0m, 1h 20m, 23h 59m, 1d 0h, 1d 5h, 12d 5h, 0m")
+    local Z = loadMapInfo({ locale = "zhTW" }).addon.MapInfo
+    check("zhTW played: tooltip text", Z.Played(1054800) .. ", " .. Z.Played(4800) .. ", " .. Z.Played(1200),
+        "12天 5時, 1時 20分, 20分")
+end
+
+do
+    local ctx = loadMapInfo()
+    ctx.run("layout on")
+    ctx.fire("PLAYER_LOGIN")
+    check("played: RequestTimePlayed once at login", ctx.requests, 1)
+    check("played: only coordinates before /played arrives", ctx.text(), "(42.31, 67.80)")
+    local line = ctx.line()
+    line.scripts.OnEnter(line)
+    check("played: tooltip before /played lists zone and session", ctx.tip.anchor .. " / " .. ctx.tip.title
+        .. " / " .. texts(ctx.tip), "ANCHOR_BOTTOM / Elwynn Forest / Goldshire / This session: 0m")
+    ctx.t = 1600
+    ctx.fire("TIME_PLAYED_MSG", 1054800, 4800)
+    check("played: the line ends with this level", ctx.text(), "(42.31, 67.80) · 1H20m")
+    ctx.t = 1600 + 3600
+    ctx.tickers[1].fn()
+    check("played: this level counts up with GetTime", ctx.text(), "(42.31, 67.80) · 2H20m")
+    line.scripts.OnEnter(line)
+    check("played: tooltip lists zone, played, this level and session", ctx.tip.title .. " / " .. texts(ctx.tip)
+        .. " / " .. tostring(ctx.tip.shown),
+        "Elwynn Forest / Goldshire / Played: 12d 6h / This level: 2h 20m / This session: 1h 10m / true")
+    line.scripts.OnLeave(line)
+    check("played: tooltip hidden on leave", ctx.tip.shown, false)
+    ctx.fire("PLAYER_LEVEL_UP", 21)
+    check("played: a level up resets this level", ctx.text(), "(42.31, 67.80) · 0m")
+    ctx.t = ctx.t + 1200
+    ctx.subzone = ""
+    line.scripts.OnEnter(line)
+    check("played: after a level up the total keeps counting, no empty subzone", texts(ctx.tip),
+        "Played: 12d 6h / This level: 20m / This session: 1h 30m")
+    check("played: no new RequestTimePlayed on level up", ctx.requests, 1)
+    ctx.fire("PLAYER_LOGIN")
+    check("played: RequestTimePlayed only once", ctx.requests, 1)
+    ctx.fire("TIME_PLAYED_MSG", nil, "x")
+    ctx.tickers[1].fn()
+    check("played: a malformed message is ignored", ctx.text(), "(42.31, 67.80) · 20m")
+    check("played: TIME_PLAYED_MSG registered, nothing hooked", tostring(ctx.frame.registered.TIME_PLAYED_MSG)
+        .. " " .. tostring(ctx.state.hooked), "true nil")
+end
+
+do
+    local ctx = loadMapInfo()
+    ctx.env.C_Map.GetPlayerMapPosition = nil
+    ctx.fire("PLAYER_LOGIN")
+    check("played: no RequestTimePlayed while the gate is dark", ctx.requests, 0)
+
+    ctx = loadMapInfo()
+    ctx.env.RequestTimePlayed = function() error("throttled") end
+    check("played: a raising RequestTimePlayed is harmless", (pcall(ctx.fire, "PLAYER_LOGIN")), true)
+
+    ctx = loadMapInfo({ locale = "zhTW" })
+    ctx.run("layout on")
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("TIME_PLAYED_MSG", 1054800, 4800)
+    local line = ctx.line()
+    line.scripts.OnEnter(line)
+    check("zhTW played: tooltip", texts(ctx.tip), "Goldshire / 遊玩時間：12天 5時 / 本等級：1時 20分 / 本次上線：0分")
+    check("zhTW played: the line is not localized", ctx.text(), "(42.31, 67.80) · 1H20m")
+
+    ctx = loadMapInfo({ env = { GameTooltip = false } })
+    ctx.run("layout on")
+    line = ctx.line()
+    line.scripts.OnEnter(line)
+    line.scripts.OnLeave(line)
+    check("played: no GameTooltip is harmless", line.shown, true)
+end
+
+do
+    local ctx = loadLayout({ rejectEvents = { TIME_PLAYED_MSG = true } })
+    check("played: an unknown TIME_PLAYED_MSG is skipped", tostring(ctx.frame.registered.TIME_PLAYED_MSG) .. " "
+        .. tostring(ctx.frame.registered.ZONE_CHANGED), "nil true")
 end
 
 -- Combined bags at login (B opens one window with every bag).
@@ -4981,19 +5486,21 @@ do
     ctx.fire("UNIT_AURA", "target")
     check("class rail: another unit's aura is ignored", ctx.slots(), "")
     ctx.fire("UNIT_AURA", "player")
-    check("class rail: Lightning Shield with charges as count", ctx.slots() .. " / " .. ctx.tooltip(1),
-        "lsIcon 9:00 x3 / Lightning Shield / 9:00")
+    check("class rail: Lightning Shield with charges as count, no timer (D10)", ctx.slots() .. " / " .. ctx.tooltip(1),
+        "lsIcon  x3 / Lightning Shield")
     check("class rail: the count sits at the slot's bottom right", ctx.shownSlots()[1].count.points[1][1],
         "BOTTOMRIGHT")
     ctx.t, ctx.calls = 340, 0
     ctx.tickers[1].fn()
-    check("class rail: a tick counts the shield down without API calls", ctx.slots() .. " / " .. ctx.calls,
-        "lsIcon 5:00 x3 / 0")
+    check("class rail: a tick leaves the shield without a timer, no API calls", ctx.slots() .. " / " .. ctx.calls,
+        "lsIcon  x3 / 0")
     ctx.t = 640
     ctx.tickers[1].fn()
-    check("class rail: an expired shield's slot goes", ctx.slots(), "")
-    ctx.t = 100
+    check("class rail: the shield's slot outlasts its expiration time until UNIT_AURA", ctx.slots(), "lsIcon  x3")
     ctx.auras["Lightning Shield"] = nil
+    ctx.fire("UNIT_AURA", "player")
+    check("class rail: the shield's slot goes when the buff drops", ctx.slots(), "")
+    ctx.t = 100
     ctx.auras["Water Shield"] = { applications = 0, expirationTime = 0, icon = "wsIcon" }
     ctx.fire("UNIT_AURA", "player")
     check("class rail: Water Shield without expiry or charges", ctx.slots() .. " / " .. ctx.tooltip(1),
@@ -5002,6 +5509,10 @@ do
     ctx.totems[3] = { true, "Healing Stream Totem", 100, 60, "waterIcon" }
     ctx.fire("PLAYER_TOTEM_UPDATE")
     check("class rail: totems, then the shield", ctx.slots(), "waterIcon 60 | wsIcon ")
+    ctx.t = 130
+    ctx.tickers[1].fn()
+    check("class rail: the totem still counts down beside the shield", ctx.slots(), "waterIcon 30 | wsIcon ")
+    ctx.t = 100
 
     ctx.mana = { 450, 1200 }
     ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
@@ -5036,7 +5547,7 @@ do
     local ctx = loadShaman({ unitBuff = true, spells = { [24398] = false } })
     ctx.buffs = { { "Mark of the Wild", "motwIcon", 0, 900 }, { "Lightning Shield", "lsIcon", 2, 160 } }
     ctx.run("layout on")
-    check("class rail: shield by UnitBuff scan; no Water Shield spell is fine", ctx.slots(), "lsIcon 60 x2")
+    check("class rail: shield by UnitBuff scan; no Water Shield spell is fine", ctx.slots(), "lsIcon  x2")
     ctx.buffs = {}
     ctx.fire("UNIT_AURA", "player")
     check("class rail: shield gone by UnitBuff scan", ctx.slots(), "")
@@ -5047,7 +5558,7 @@ do
     ctx.auras["Lightning Shield"] = { applications = 1, expirationTime = 130 }
     ctx.run("layout on")
     check("class rail: shield name from GetSpellInfo; no icon falls back", ctx.slots() .. " / " .. ctx.tooltip(1),
-        "Interface\\Icons\\INV_Misc_QuestionMark 30 x1 / Lightning Shield / 0:30")
+        "Interface\\Icons\\INV_Misc_QuestionMark  x1 / Lightning Shield")
 
     ctx = loadShaman({ env = { UnitPowerMax = function() return 0 end } })
     ctx.run("layout on")
