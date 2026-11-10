@@ -1,9 +1,8 @@
 local _, ns = ...
 
--- The Shaman class rail (stage 12, D5, D12, D13): a slot per active totem in Earth, Fire, Water, Air order and for
--- Lightning Shield or Water Shield with its charges, plus the mana line along the rail bottom. The shield slot has
--- no timer (D10): it stays until UNIT_AURA no longer finds the buff. Weapon enchants are left out: the user does not
--- want their timers shown.
+-- The Shaman class rail (stage 12, D5, D12, D13): a slot per active totem in Earth, Fire, Water, Air order, plus the
+-- mana line along the rail bottom. Lightning Shield and Water Shield are not shown, by user request 2026-11-10 (this
+-- replaces D10's untimed shield slot). Weapon enchants are left out: the user does not want their timers shown.
 -- State and timers only (PLAN decision 6). Each event refreshes its section's cache from the client; the rail's
 -- ticker only re-renders the cached expirations.
 local Shaman = {}
@@ -11,13 +10,10 @@ local Shaman = {}
 -- GetTotemInfo slots: FIRE_TOTEM_SLOT = 1, EARTH_TOTEM_SLOT = 2, WATER_TOTEM_SLOT = 3, AIR_TOTEM_SLOT = 4; shown
 -- in Earth, Fire, Water, Air order.
 local TOTEMS = { 2, 1, 3, 4 }
--- Lightning Shield (rank 1) and Water Shield; a client without Water Shield names only Lightning Shield.
-local SHIELDS = { 324, 24398 }
 local MANA = 0
 local MANA_COLOR = { 0, 0.44, 0.87 }
 
-local totems, shield, mana = {}, nil, nil
-local shieldNames = {}
+local totems, mana = {}, nil
 
 local call = ns.Store.Call
 
@@ -37,51 +33,6 @@ local function updateTotems()
     end
 end
 
-local function shieldName(id)
-    if not shieldNames[id] then
-        local spell = type(C_Spell) == "table" and C_Spell.GetSpellName
-        local name = call(spell, id) or call(GetSpellInfo, id)
-        shieldNames[id] = type(name) == "string" and name ~= "" and name or nil
-    end
-    return shieldNames[id]
-end
-
--- Returns charges and icon of the player's buff named name, or nil when it is not up.
-local function buff(name)
-    local byName = type(C_UnitAuras) == "table" and C_UnitAuras.GetAuraDataBySpellName
-    if type(byName) == "function" then
-        local data = call(byName, "player", name, "HELPFUL")
-        if type(data) == "table" then
-            return number(ns.Store.Safe(data.applications)) or 0, ns.Store.Safe(data.icon)
-        end
-        return nil
-    end
-    for i = 1, 40 do
-        local found, icon, count = call(UnitBuff, "player", i)
-        if not found then
-            return nil
-        end
-        if found == name then
-            return number(count) or 0, icon
-        end
-    end
-end
-
-local function updateShield()
-    shield = nil
-    for _, id in ipairs(SHIELDS) do
-        local name = shieldName(id)
-        local charges, icon
-        if name then
-            charges, icon = buff(name)
-        end
-        if charges then
-            shield = { label = name, icon = icon, count = charges }
-            return
-        end
-    end
-end
-
 local function updateMana()
     local cur, max = number(call(UnitPower, "player", MANA)), number(call(UnitPowerMax, "player", MANA))
     mana = cur and max and max > 0 and { value = cur, max = max, color = MANA_COLOR } or nil
@@ -89,29 +40,22 @@ end
 
 local SECTIONS = {
     PLAYER_TOTEM_UPDATE = { updateTotems },
-    UNIT_AURA = { updateShield },
     UNIT_POWER_UPDATE = { updateMana },
     UNIT_MAXPOWER = { updateMana },
 }
-local ALL = { updateTotems, updateShield, updateMana }
+local ALL = { updateTotems, updateMana }
 
 function Shaman.Ready()
     return ns.Check.Ready("Shaman area")
 end
 
--- Refreshes the sections event touches from the client, every section for nil, and hands the rail its slots:
--- totems, then the shield.
+-- Refreshes the sections event touches from the client, every section for nil, and hands the rail its slots: the
+-- totems.
 function Shaman.Update(event)
     for _, fn in ipairs(event and SECTIONS[event] or ALL) do
         fn()
     end
-    local list = {}
-    for _, group in ipairs({ totems, { shield } }) do
-        for _, e in ipairs(group) do
-            list[#list + 1] = e
-        end
-    end
-    ns.ClassArea.Set(list, mana)
+    ns.ClassArea.Set(totems, mana)
 end
 
 ns.ClassArea.Register("SHAMAN", Shaman)

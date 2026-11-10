@@ -105,8 +105,8 @@ whose API is missing stays off instead of raising an error.
 
 Then one `Probe: <path> present|missing` line each for `LootButton1`, `LootFrame.ScrollBox`, `LootFrame_Update`,
 `ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture`, `ContainerFrame1Item1.UpgradeIcon`,
-`Enum.EditModeSystem.ChatFrame`, `MainStatusTrackingBarContainer`, `BagsBar`, `C_UnitAuras.GetAuraDataBySpellName`,
-`UnitBuff`, `Enum.EditModeSystem.MicroMenu`, `Enum.EditModeSystem.Minimap` and `Enum.EditModeSystem.AuraFrame`. They
+`Enum.EditModeSystem.ChatFrame`, `MainStatusTrackingBarContainer`, `BagsBar`, `Enum.EditModeSystem.MicroMenu`,
+`Enum.EditModeSystem.Minimap` and `Enum.EditModeSystem.AuraFrame`. They
 tell which bag, loot, Edit Mode and aura parts the client has, and turn nothing on or off.
 
 ### `/tandem weights`
@@ -390,15 +390,12 @@ the layout off restores them.
 
 ### Shaman class area
 
-For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each of:
-
-- each totem that is down, in Earth, Fire, Water, Air order, with its time left;
-- Lightning Shield, or Water Shield where the client has it, with its charges in the lower-right corner and no
-  timer; its icon goes when the buff drops.
+For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each totem that is
+down, in Earth, Fire, Water, Air order, with its time left. Lightning Shield and Water Shield get no icon.
 
 A totem's time left reads `m:ss` above a minute, else whole seconds, and counts down; its icon goes when its time runs
-out. Hover an icon for its name (the totem's or the shield's) and, for a totem, its time left. While any icon
-shows, a thin blue mana line runs along the rail's bottom; with no icon, the whole rail hides.
+out. Hover an icon for the totem's name and time left. While any icon shows, a thin blue mana line runs along the
+rail's bottom; with no icon, the whole rail hides.
 
 It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
 rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
@@ -566,11 +563,10 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one
    icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
-   shows between the unit frames at first. Drop a totem and cast Lightning Shield: an icon for each appears on the
-   rail between the player and target frames, the totem with its time left counting down, the shield with its
-   charges and no timer, and a thin blue mana line under them. Hover one: its name. When one runs out or the shield
-   drops, its icon goes; when the
-   last goes, the rail and its mana line go. Clicking the rail does nothing.
+   shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
+   appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
+   line under it. Hover it: its name. When a totem runs out, its icon goes; when the last goes, the rail and its mana
+   line go. Clicking the rail does nothing.
 5. Centred just below the XP bar, one line reads your coordinates and time at this level, such as
    `(42.31, 67.80) · 1H20m`; walk and the coordinates change. Hover it: the zone, the subzone if any, `Played:`,
    `This level:` and `This session:`. Hover the bar: the XP tooltip. Enter an instance: the coordinates

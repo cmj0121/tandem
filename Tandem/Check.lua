@@ -65,10 +65,10 @@ Check.FEATURES = {
 Check.PROBES = {
     "LootButton1", "LootFrame.ScrollBox", "LootFrame_Update", "ContainerFrame1Item1.IconBorder",
     "ContainerFrame1Item1.NewItemTexture", "ContainerFrame1Item1.UpgradeIcon", "Enum.EditModeSystem.ChatFrame",
-    "MainStatusTrackingBarContainer", "BagsBar", "C_UnitAuras.GetAuraDataBySpellName", "UnitBuff",
-    "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap", "Enum.EditModeSystem.AuraFrame",
-    "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps", "MainMenuBar.EndCaps",
-    "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap", "Enum.EditModeSystem.ObjectiveTracker",
+    "MainStatusTrackingBarContainer", "BagsBar", "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap",
+    "Enum.EditModeSystem.AuraFrame", "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps",
+    "MainMenuBar.EndCaps", "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
+    "Enum.EditModeSystem.ObjectiveTracker",
 }
 
 local function walk(path)

@@ -101,9 +101,8 @@ Probe: LootFrame.ScrollBox missing
 
 接著是 `LootButton1`、`LootFrame.ScrollBox`、`LootFrame_Update`、`ContainerFrame1Item1.IconBorder`、
 `ContainerFrame1Item1.NewItemTexture`、`ContainerFrame1Item1.UpgradeIcon`、`Enum.EditModeSystem.ChatFrame`、
-`MainStatusTrackingBarContainer`、`BagsBar`、`C_UnitAuras.GetAuraDataBySpellName`、`UnitBuff`、
-`Enum.EditModeSystem.MicroMenu`、`Enum.EditModeSystem.Minimap` 與 `Enum.EditModeSystem.AuraFrame` 各一行
-`Probe: <path> present|missing`。它們顯示用戶端有哪些背包、拾取視窗、編輯模式與光環元件，不會開啟或關閉任何功能。
+`MainStatusTrackingBarContainer`、`BagsBar`、`Enum.EditModeSystem.MicroMenu`、`Enum.EditModeSystem.Minimap` 與
+`Enum.EditModeSystem.AuraFrame` 各一行 `Probe: <path> present|missing`。它們顯示用戶端有哪些背包、拾取視窗、編輯模式與光環元件，不會開啟或關閉任何功能。
 
 ### `/tandem weights`
 
@@ -355,14 +354,11 @@ Tandem: layout on
 
 ### 薩滿職業區
 
-薩滿在玩家與目標頭像之間會有一排置中的圖示，每項一個：
+薩滿在玩家與目標頭像之間會有一排置中的圖示，每個已放下的圖騰一個，依大地、火焰、水、空氣的順序，附剩餘時間。
+閃電之盾與水之盾不顯示圖示。
 
-- 每個已放下的圖騰，依大地、火焰、水、空氣的順序，附剩餘時間；
-- 閃電之盾（用戶端有水之盾時也包括水之盾），右下角顯示層數，不顯示計時；增益消失時圖示就會消失。
-
-圖騰的剩餘時間超過一分鐘時顯示 `m:ss`，否則顯示秒數，並持續倒數；時間到時圖示就會消失。滑鼠移到圖示上會顯示它的
-名稱（圖騰或護盾的名稱），圖騰另顯示剩餘時間。有圖示時，這排圖示底部有一條細的藍色法力線；沒有任何
-圖示時，整排連同法力線一起隱藏。
+圖騰的剩餘時間超過一分鐘時顯示 `m:ss`，否則顯示秒數，並持續倒數；時間到時圖示就會消失。滑鼠移到圖示上會顯示
+圖騰的名稱與剩餘時間。有圖示時，這排圖示底部有一條細的藍色法力線；沒有任何圖示時，整排連同法力線一起隱藏。
 
 它只顯示狀態與計時：裡面沒有任何可點擊的東西，也絕不建議你該施放什麼。其他職業沒有這排圖示。它需要
 [`/tandem check`](#tandem-check) 的 `Shaman area` 這行。
@@ -502,10 +498,10 @@ Lua 錯誤。
 3. 右下角的背包圖示列在背包圖示上顯示一般背包的剩餘 / 總格數，左邊每種專業背包各一個圖示。點擊任一圖示：所有背包
    都會開啟。拾取一件
    物品：剩餘格數減一。
-4. 薩滿的圖騰列在主快捷列正上方自成一排，戰鬥中施法後也不會移動；頭像之間一開始什麼都沒有。放下一個圖騰並施放
-   閃電之盾：玩家與目標頭像之間各出現一個圖示，
-   圖騰顯示倒數中的剩餘時間，護盾只顯示層數、不顯示計時，下方有一條細的藍色法力線。滑鼠移到圖示上：顯示它的名稱。
-   時間到或護盾消失時圖示消失；最後一個消失時，整排連同法力線一起消失。點擊這排圖示不會有任何反應。
+4. 薩滿的圖騰列在主快捷列正上方自成一排，戰鬥中施法後也不會移動；頭像之間一開始什麼都沒有。施放閃電之盾：
+   那裡仍然什麼都沒有。放下一個圖騰：玩家與目標頭像之間出現它的圖示，顯示倒數中的剩餘時間，下方有一條細的
+   藍色法力線。滑鼠移到圖示上：顯示它的名稱。圖騰時間到時圖示消失；最後一個消失時，整排連同法力線一起消失。
+   點擊這排圖示不會有任何反應。
 5. 經驗條正下方置中有一行顯示你的座標與本等級時間，例如 `(42.31, 67.80) · 1H20m`；走動時座標會改變。滑鼠移上去：
    區域、子區域（有的話）、`遊玩時間：`、`本等級：` 與 `本次上線：`。滑鼠移到經驗條上：顯示經驗提示。
    進入副本：座標顯示 `(--, --)`。登入後聊天視窗只出現過一次 Blizzard 的 `/played` 訊息。
