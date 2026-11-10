@@ -1,19 +1,20 @@
 local _, ns = ...
 
--- Map info (stage 13, D1-D5, D9): one line of small text while the Tandem layout is on, right-aligned inside Tandem's
--- XP bar (at the screen's top centre when the bar is hidden, as at the maximum level), with the player's coordinates
--- on the current zone map in percent and the time played at this level. Refreshed twice a second while shown and on
--- zone changes; the tooltip adds the zone, total played and this session's time.
+-- Map info (stage 13, D1-D5, D9, D11): one line of small text while the Tandem layout is on, centred just below
+-- Tandem's XP bar (at the screen's top centre when the bar is hidden, as at the maximum level), with the player's
+-- coordinates on the current zone map in percent and the time played at this level. Refreshed twice a second while
+-- shown and on zone changes; the tooltip adds the zone, total played and this session's time.
 local MapInfo = {}
 ns.MapInfo = MapInfo
 
 local GAP = 4
+local BELOW = 2
 local TICK = 0.5
 local LINE_HEIGHT = 12
 local NO_POSITION = "(--, --)"
 
 local line, on, ticker
--- The XP bar the line sits in, false at the screen's top, nil until placed.
+-- The XP bar the line sits under, false at the screen's top, nil until placed.
 local placedIn
 -- GetTime at login, and the /played values with the GetTime each was last set at.
 local session, total, totalAt, level, levelAt, requested
@@ -85,7 +86,7 @@ function MapInfo.OnLevelUp()
     if total then
         level, levelAt = 0, now()
     end
-    -- The XP bar hides at the maximum level, taking the line with it until it is placed again.
+    -- The XP bar hides at the maximum level; the line moves to the screen's top.
     MapInfo.Update()
 end
 
@@ -160,7 +161,8 @@ local function create()
     line:SetScript("OnLeave", ns.View.HideTooltip)
 end
 
--- Right-aligned inside the XP bar while it shows, else at the screen's top centre; only when that changed.
+-- Centred just below the XP bar while it shows, else at the screen's top centre; only when that changed. Always a
+-- UIParent child, so the bar hiding does not hide it.
 local function place()
     local bar = ns.XPBar.Frame() or false
     if bar == placedIn then
@@ -168,12 +170,15 @@ local function place()
     end
     placedIn = bar
     line:ClearAllPoints()
+    line:SetParent(UIParent)
     if bar then
-        line:SetParent(bar)
+        local strata = call(bar.GetFrameStrata, bar)
+        if type(strata) == "string" then
+            line:SetFrameStrata(strata)
+        end
         line:SetFrameLevel((tonumber((call(bar.GetFrameLevel, bar))) or 0) + 1)
-        line:SetPoint("RIGHT", bar, "RIGHT", -GAP, 0)
+        line:SetPoint("TOP", bar, "BOTTOM", 0, -BELOW)
     else
-        line:SetParent(UIParent)
         line:SetPoint("TOP", UIParent, "TOP", 0, -GAP)
     end
 end

@@ -4,7 +4,8 @@ local _, ns = ...
 -- Debug.Log (time, combat state and what) into the TandemDebug saved variable, which the client writes to disk on
 -- /reload or logout for a developer to read. Nothing is printed while it records. A snapshot (2 s after login, on
 -- every layout change, or `/tandem debug snap`) lists every named, visible child of UIParent in the bottom band and
--- the known status (XP) bar frames, to find which Blizzard frame shows where. It hooks nothing.
+-- the known status (XP) bar frames, to find which Blizzard frame shows where; it also walks the minimap's frames and
+-- lists the minimap and coordinate CVars, to find the client's own coordinates text (D11). It hooks nothing.
 local Debug = {}
 ns.Debug = Debug
 
@@ -16,6 +17,9 @@ local WATCHED = { "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarC
 local BAND = 300
 -- A snapshot reads at most this many UIParent children.
 local MAX_CHILDREN = 400
+-- The minimap probe walks this deep under MinimapCluster and Minimap, reads at most this many frames and regions, and
+-- logs at most this many of them; it logs at most this many CVars.
+local MM_DEPTH, MM_NODES, MM_LINES, MM_CVARS = 6, 600, 60, 30
 
 local call = ns.Store.Call
 
@@ -69,7 +73,83 @@ local function childLine(f)
     end
 end
 
--- Logs the watched status bar frames, then every named, visible UIParent child in the bottom band.
+-- Reads one probed node: logs it when it is named or a FontString with text, and queues its children and regions
+-- while above MM_DEPTH. Returns the lines logged (0 or 1).
+local function visit(node, queue, seen)
+    local f, chain, depth = node[1], node[2], node[3]
+    local name, kind, label = call(f.GetName, f), call(f.GetObjectType, f), call(f.GetText, f)
+    label = type(label) == "string" and label or ""
+    local logged = 0
+    if type(name) == "string" or (kind == "FontString" and label ~= "") then
+        Debug.Log(("  mmtree %s %s shown %s text %s"):format(chain, text(kind), text(call(f.IsShown, f)),
+            (label:gsub("|", "||"))))
+        logged = 1
+    end
+    if depth < MM_DEPTH then
+        for _, list in ipairs({ { "c", f.GetChildren }, { "r", f.GetRegions } }) do
+            for i, kid in ipairs({ call(list[2], f) }) do
+                if #queue >= MM_NODES then
+                    return logged
+                end
+                if type(kid) == "table" and not seen[kid] then
+                    seen[kid] = true
+                    local kidName = call(kid.GetName, kid)
+                    queue[#queue + 1] = { kid, chain .. "." .. (type(kidName) == "string" and kidName or list[1] .. i),
+                        depth + 1 }
+                end
+            end
+        end
+    end
+    return logged
+end
+
+-- Walks MinimapCluster and Minimap breadth first, so each node is seen at its shallowest depth, logging every named
+-- node and every FontString with text as "mmtree <chain> <type> shown <shown> text <text>". A node that raises is
+-- skipped.
+local function probeMinimap()
+    local queue, seen, lines = {}, {}, 0
+    for _, name in ipairs({ "MinimapCluster", "Minimap" }) do
+        local f = _G[name]
+        if type(f) == "table" and not seen[f] then
+            seen[f] = true
+            queue[#queue + 1] = { f, name, 0 }
+        end
+    end
+    local i = 1
+    while queue[i] and lines < MM_LINES do
+        local ok, logged = pcall(visit, queue[i], queue, seen)
+        lines = lines + (ok and logged or 0)
+        i = i + 1
+    end
+end
+
+-- Logs "mmcvar <name>=<value>" for each console CVar whose name holds "coord" or "minimap", any case.
+local function probeCVars()
+    local console = _G.C_Console
+    local all = type(console) == "table" and console.GetAllCommands
+    if type(all) ~= "function" then
+        all = _G.ConsoleGetAllCommands
+    end
+    all = call(all)
+    if type(all) ~= "table" then
+        return
+    end
+    local lines = 0
+    for _, command in ipairs(all) do
+        local name = type(command) == "table" and command.command or command
+        local low = type(name) == "string" and name:lower() or ""
+        if low:find("coord", 1, true) or low:find("minimap", 1, true) then
+            Debug.Log(("  mmcvar %s=%s"):format(name, text(ns.Store.GetCVar(name))))
+            lines = lines + 1
+            if lines >= MM_CVARS then
+                return
+            end
+        end
+    end
+end
+
+-- Logs the watched status bar frames, the minimap probe and its CVars, then every named, visible UIParent child in
+-- the bottom band.
 function Debug.Snapshot(why)
     if not Debug.IsOn() then
         return
@@ -80,6 +160,8 @@ function Debug.Snapshot(why)
         local ok, state = pcall(describe, f)
         Debug.Log("  watch " .. name .. ": " .. (type(f) ~= "table" and "missing" or ok and state or "unreadable"))
     end
+    probeMinimap()
+    pcall(probeCVars)
     local parent = _G.UIParent
     local children = type(parent) == "table" and { pcall(parent.GetChildren, parent) } or { false }
     if not children[1] then
