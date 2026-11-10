@@ -109,8 +109,8 @@ local function isAngle(v)
 end
 
 -- The check for each layout field: on is a boolean, previous { name, type } the layout active before Tandem's, tot
--- the showTargetOfTarget CVar value before Tandem set it, minimap { angle = degrees|nil, hidden = bool|nil } the
--- minimap button's place and visibility.
+-- the showTargetOfTarget CVar value before Tandem set it, coords the minimapShowPlayerCoords value before Tandem
+-- cleared it, minimap { angle = degrees|nil, hidden = bool|nil } the minimap button's place and visibility.
 local LAYOUT_FIELDS = {
     on = function(v)
         return type(v) == "boolean"
@@ -120,6 +120,9 @@ local LAYOUT_FIELDS = {
             and isInt(v.type, 0)
     end,
     tot = function(v)
+        return type(v) == "string"
+    end,
+    coords = function(v)
         return type(v) == "string"
     end,
     minimap = function(v)
@@ -259,13 +262,13 @@ function Store.TrainerSpells(classFile)
     end
 end
 
--- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil, minimap = { angle,
--- hidden }|nil }; empty (off) when the db is newer (kept raw).
+-- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil, coords = string|nil,
+-- minimap = { angle, hidden }|nil }; empty (off) when the db is newer (kept raw).
 function Store.Layout()
     return not Store.readOnly and Store.db.layout or {}
 end
 
--- Sets one layout field (on, previous, tot or minimap) to value, or clears it with nil; false when invalid or
+-- Sets one layout field (on, previous, tot, coords or minimap) to value, or clears it with nil; false when invalid or
 -- read-only.
 function Store.SetLayout(field, value)
     local valid = LAYOUT_FIELDS[field]
