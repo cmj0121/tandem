@@ -9,9 +9,9 @@ in the loot window and among quest rewards from what the client says about it ri
 armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
-screen around the action bars, with an XP bar, a bag row and, for a Shaman, a class area. It never acts for the
-player: it only advises, and it saves nothing but your own stat weights, what your class trainer teaches and whether
-its layout is on.
+screen around the action bars, with an XP bar, a bag row, a map info line and, for a Shaman, a class area. It never
+acts for the player: it only advises, and it saves nothing but your own stat weights, what your class trainer teaches
+and whether its layout is on.
 
 ## Install
 
@@ -98,8 +98,8 @@ Probe: LootFrame.ScrollBox missing
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
-`Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button` and `Shaman area`. A feature whose API is
-missing stays off instead of raising an error.
+`Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Map info` and `Shaman area`. A feature
+whose API is missing stays off instead of raising an error.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
 
@@ -299,8 +299,7 @@ Tandem's entry in the addon compartment menu does the same as a click.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│                        [====|====| XP 62% |====]    [buffs][map] │
-│                                                                  │
+│              [==| XP 62% |(42.31, 67.80) · 1H20m]   [buffs][map] │
 │      [player]          [class rail]          [target][ToT]       │
 │                                                                  │
 │                      [ Shaman totem bar ]                        │
@@ -314,19 +313,20 @@ Tandem's entry in the addon compartment menu does the same as a click.
   the gryphon art. A Shaman's totem bar keeps its own row just above the main bar, where Blizzard puts it.
 - The player frame and the target frame sit in a row well above the bars, left and right of centre, with the
   [class area](#shaman-class-area) between them. The target of target is shown, next to the target frame.
-- The [XP bar](#xp-bar) sits at the top centre of the screen.
+- The [XP bar](#xp-bar) sits at the top centre of the screen, with the [map info](#map-info) line centred just below it.
 - The chat window goes to the bottom left, about 380 by 120, when the client's Edit Mode has a chat system; without
   Edit Mode's chat size settings it only moves; without a chat system it stays put. On a narrow screen it narrows to
   the room left of the bars (down to 260 wide) and otherwise goes above the player frame.
 - The micro menu goes to the bottom-right corner, with the [bag row](#bag-row) just above it. The quest tracker and
   Blizzard's damage meter stay where your previous layout had them.
-- The minimap goes to the top right, with the buffs just left of it.
+- The minimap goes to the top right, with the buffs just left of it. The client's own coordinates on the minimap are
+  hidden, since the [map info](#map-info) line shows them.
 - The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
   minimap's); otherwise they stay where they are.
 - The right action bars and action bars 5 to 7 are hidden.
 
-Turning the layout off restores the target of target setting and every frame Tandem hid. Tandem's own frames are
-display only and update in combat too.
+Turning the layout off restores the target of target and minimap coordinates settings and every frame Tandem hid.
+Tandem's own frames are display only and update in combat too.
 
 ### XP bar
 
@@ -356,23 +356,54 @@ Tandem also points every key bound to "Open all bags" or "Open backpack" (`B` is
 which opens and closes the reagent bag together with the others; when the reagent bag has slots, it gets its own icon
 at the left end of the bag row, titled `Reagent bag`, and clicking any icon opens it too.
 
+### Map info
+
+One line of small text centred just below the [XP bar](#xp-bar) shows where you are on the zone map, in
+percent, and how long you have played at this level:
+
+```text
+(42.31, 67.80) · 1H20m
+```
+
+The time reads `1d5H` from a day up, `1H20m` from an hour up, else `20m`. Where the map has no position for you, as in
+most instances, the coordinates read `(--, --)`. When the XP bar is hidden, as at the maximum level, the line sits
+alone at the top centre of the screen. The line shows only while the layout is on and updates twice a second.
+Hovering the bar still shows the XP tooltip. Hover the line
+for the zone, the subzone, and your time played in total, at this level and this session:
+
+```text
+Elwynn Forest
+Goldshire
+Played: 12d 5h
+This level: 1h 20m
+This session: 45m
+```
+
+To get the times, Tandem asks the server for `/played` once per login, so Blizzard's two `Total time played` /
+`Time played this level` chat lines print once each login; Tandem does not hide them. From then on it counts up
+itself, and a level up resets this level to `0m` without asking again. Until the answer arrives the line shows only the
+coordinates. It needs the `Map info` line of [`/tandem check`](#tandem-check).
+
+While the layout is on, Tandem hides the client's own coordinates on the minimap so they don't show twice; turning
+the layout off restores them.
+
 ### Shaman class area
 
 For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each of:
 
 - each totem that is down, in Earth, Fire, Water, Air order, with its time left;
-- Lightning Shield, or Water Shield where the client has it, with its charges in the lower-right corner and its time
-  left.
+- Lightning Shield, or Water Shield where the client has it, with its charges in the lower-right corner and no
+  timer; its icon goes when the buff drops.
 
-The time left reads `m:ss` above a minute, else whole seconds, and counts down; an icon goes when its time runs out.
-Hover an icon for its name (the totem's or the shield's) and time left. While any icon
+A totem's time left reads `m:ss` above a minute, else whole seconds, and counts down; its icon goes when its time runs
+out. Hover an icon for its name (the totem's or the shield's) and, for a totem, its time left. While any icon
 shows, a thin blue mana line runs along the rail's bottom; with no icon, the whole rail hides.
 
 It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
 rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
 
-Each part, the layout, XP bar, bag row and Shaman area, stays dark when its `/tandem check` line is `missing`, and
-the rest still works.
+Each part, the layout, XP bar, bag row, map info and Shaman area, stays dark when its `/tandem check` line is `missing`,
+and the rest still works.
 
 ### Debug log
 
@@ -392,7 +423,7 @@ Tandem saves one account-wide table, `TandemDB`, as
 | ---------- | -------------------------------------------------------------------------------------------------------------- |
 | `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec          |
 | `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
-| `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target, the `minimap` button's `angle` and `hidden`   |
+| `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target and `coords`, the `minimap` `angle`, `hidden`  |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
@@ -433,10 +464,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and thirteen lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and fourteen lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
-   `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button` and `Shaman area`, each followed by `ok`
-   or `missing` and its APIs. Fourteen `Probe:` lines follow, each `present` or `missing`.
+   `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Map info` and `Shaman area`, each
+   followed by `ok` or `missing` and its APIs. Fourteen `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -535,16 +566,23 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
    shows between the unit frames at first. Drop a totem and cast Lightning Shield: an icon for each appears on the
-   rail between the player and target frames with its time left counting down, the shield with its
-   charges, and a thin blue mana line under them. Hover one: its name. When one runs out, its icon goes; when the
+   rail between the player and target frames, the totem with its time left counting down, the shield with its
+   charges and no timer, and a thin blue mana line under them. Hover one: its name. When one runs out or the shield
+   drops, its icon goes; when the
    last goes, the rail and its mana line go. Clicking the rail does nothing.
-5. Run `/reload`: everything is still in place.
-6. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
-   fight ends your previous layout is back, with its bars, bag bar, status bar and target of target as before.
-7. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row and class area go.
+5. Centred just below the XP bar, one line reads your coordinates and time at this level, such as
+   `(42.31, 67.80) · 1H20m`; walk and the coordinates change. Hover it: the zone, the subzone if any, `Played:`,
+   `This level:` and `This session:`. Hover the bar: the XP tooltip. Enter an instance: the coordinates
+   read `(--, --)`. After the login, chat showed Blizzard's `/played` lines once.
+6. Run `/reload`: everything is still in place.
+7. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
+   fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
+   coordinates as before.
+8. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, map info line and
+   class area go.
 
-Report back the `Layout`, `XP bar`, `Bag button`, `Shaman area` and `Probe:` lines of `/tandem check`, any frame that
-landed in the wrong place or overlaps another, anything not restored by `off`, and any Lua error.
+Report back the `Layout`, `XP bar`, `Bag button`, `Map info`, `Shaman area` and `Probe:` lines of `/tandem check`, any
+frame that landed in the wrong place or overlaps another, anything not restored by `off`, and any Lua error.
 
 ## Interface number
 
@@ -580,8 +618,8 @@ only.
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
 migration, `/tandem` parsing and output, stat weights, tooltip stat reading, trainer recording, the upgrade judge with
 stubbed class, level, equipped and bag items, the upgrade alert and borders, the quest reward pick, the action bar
-borders, the item tooltip line, the layout, the XP bar, the bag row and the Shaman class area. These tests prove
-the logic only; the client's real API is checked in game.
+borders, the item tooltip line, the layout, the XP bar, the bag row, the map info line and the Shaman class area. These
+tests prove the logic only; the client's real API is checked in game.
 
 ### Translations
 
