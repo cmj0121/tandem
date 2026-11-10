@@ -1282,7 +1282,7 @@ do
     check("quest pick: QUEST_FINISHED hides the mark", ctx.marked(), "")
     ctx.quest.choices = { 2, 3 }
     ctx.complete()
-    check("quest pick: same item level, higher quality wins", ctx.marked(), "2")
+    check("quest pick: an equal score marks none, whatever the quality", ctx.marked(), "")
     ctx.quest.choices = { 1, 2 }
     ctx.complete()
     check("quest pick: a new window moves the mark", ctx.marked(), "1")
@@ -1321,11 +1321,11 @@ do
     ctx.tips[1], ctx.tips[3] = { "A", ctx.strength(2) }, { "B", ctx.strength(9) }
     ctx.tips[12] = { "C", ctx.strength(9) }
     ctx.complete()
-    check("quest pick score: a tie on score goes to the higher item level", ctx.marked(), "2")
+    check("quest pick score: a tie on score marks none, whatever the item level", ctx.marked(), "")
     ctx.quest.choices = { 2, 4 }
     ctx.tips[2], ctx.tips[4] = { "D", ctx.strength(5) }, { "E", ctx.strength(5) }
     ctx.complete()
-    check("quest pick score: a tie on score and item level goes to the higher quality", ctx.marked(), "2")
+    check("quest pick score: a tie on score and armor marks none", ctx.marked(), "")
     ctx.quest.choices = { 3, 2 }
     ctx.tips[2] = nil
     ctx.complete()
@@ -1333,9 +1333,17 @@ do
 end
 
 do
+    local ctx = loadQuest({ 1, 3, 12 })
+    ctx.tips[1], ctx.tips[3] = { "A", ctx.strength(2) }, { "B", ctx.strength(9) }
+    ctx.tips[12] = { "C", ctx.strength(9), "20 Armor" }
+    ctx.complete()
+    check("quest pick score: a tie on score goes to more armor", ctx.marked(), "3")
+end
+
+do
     local ctx = loadQuest({ 12, 1, 3 }, { noTips = true })
     ctx.complete()
-    check("quest pick score: without tooltip stats, item level decides", ctx.marked(), "2")
+    check("quest pick score: without tooltip stats, nothing is marked", ctx.marked(), "")
 end
 
 do
@@ -3175,24 +3183,29 @@ end
 
 do
     local Items = loadUpgrade().addon.Items
-    local worn = { ids = { [3] = true }, ilvl = 30, list = { { id = 3, ilvl = 30, score = 30 } } }
-    local better, over = Items.Beats(31, 1, worn)
-    check("beats: a higher score wins at a lower item level", tostring(better) .. " " .. tostring(over), "true 30")
-    check("beats: an equal score wins at a higher item level", Items.Beats(30, 35, worn), true)
-    check("beats: an equal score at the same item level loses", Items.Beats(30, 30, worn), false)
-    check("beats: an equal score at a lower item level loses", Items.Beats(30, 25, worn), false)
-    check("beats: a lower score loses at a higher item level", Items.Beats(29, 99, worn), false)
+    local worn = { ids = { [3] = true }, ilvl = 30, list = { { id = 3, ilvl = 30, score = 30, armor = 20 } } }
+    local better, over = Items.Beats(31, 0, worn)
+    check("beats: a higher score wins with less armor", tostring(better) .. " " .. tostring(over), "true 30")
+    check("beats: an equal score wins with more armor", Items.Beats(30, 21, worn), true)
+    check("beats: an equal score and armor loses", Items.Beats(30, 20, worn), false)
+    check("beats: an equal score with less armor loses", Items.Beats(30, 5, worn), false)
+    check("beats: a lower score loses with more armor", Items.Beats(29, 99, worn), false)
     check("beats: an unscored item is unknown", Items.Beats(nil, 30, worn), nil)
     check("beats: an unknown worn item is unknown", Items.Beats(99, 99, { list = { { unknown = true } } }), nil)
     check("beats: an unscored worn item is unknown", Items.Beats(99, 99, { ilvl = 1, list = { { id = 3, ilvl = 1 } } }),
         nil)
     check("beats: an off hand behind a two-hander has nothing to beat",
         Items.Beats(99, 99, { list = { { ilvl = 0, score = 0 } } }), false)
-    local pair = { ilvl = 10, list = { { id = 1, ilvl = 20, score = 10 }, { id = 2, ilvl = 10, score = 10 } } }
-    check("beats: the weakest of equal scores is the lower item level", Items.Beats(10, 15, pair), true)
-    check("beats: ... and must still be beaten", Items.Beats(10, 10, pair), false)
-    check("beats: an empty slot scores 0 at item level 0", Items.Beats(0, 1, { ilvl = 0, list = { { ilvl = 0,
-        score = 0 } } }), true)
+    local pair = { ilvl = 10, list = { { id = 1, ilvl = 10, score = 10, armor = 30 },
+                                       { id = 2, ilvl = 20, score = 10, armor = 15 } } }
+    check("beats: the weakest of equal scores has less armor", Items.Beats(10, 20, pair), true)
+    check("beats: ... and must still be beaten", Items.Beats(10, 15, pair), false)
+    check("beats: item level never decides", Items.Beats(10, 15, { ilvl = 1, list = { { id = 1, ilvl = 1,
+        score = 10, armor = 15 } } }), false)
+    check("beats: an empty slot scores 0 with 0 armor", Items.Beats(0, 1, { ilvl = 0, list = { { ilvl = 0,
+        score = 0, armor = 0 } } }), true)
+    check("beats: nothing does not beat an empty slot", Items.Beats(0, 0, { ilvl = 0, list = { { ilvl = 0,
+        score = 0, armor = 0 } } }), false)
 end
 
 do
@@ -3200,16 +3213,16 @@ do
     local function add(id, cache, tip)
         ctx.items[id], ctx.cache[id], ctx.tips[id] = { "INVTYPE_CHEST", 4, 2 }, cache, tip
     end
-    add(20, { "Vest", nil, 3, 35, 30 }, { "Vest", ctx.strength(30) })
-    add(21, { "Vest", nil, 3, 25, 20 }, { "Vest", ctx.strength(30) })
+    add(20, { "Vest", nil, 3, 35, 30 }, { "Vest", ctx.strength(30), "50 Armor" })
+    add(21, { "Vest", nil, 3, 45, 20 }, { "Vest", ctx.strength(30) })
     add(22, { "Vest", nil, 3, 60, 45 }, { "Vest", ctx.strength(60) })
     add(23, { "Vest", nil, 3, 50, 1 }, { "Vest", ctx.strength(60), { "Requires Level 50", nil, RED } })
     local before = dump(ctx.env.TandemDB)
     local _, b = ctx.classic(1, 0, { 20, 4, 21, 22, 23 })
     ctx.bagUpdate()
-    check("live borders: an equal score at a higher item level gets the border", ctx.border(b[1]), "red")
-    check("live borders: an equal score at the same item level gets none", ctx.border(b[2]), "none")
-    check("live borders: an equal score at a lower item level gets none", ctx.border(b[3]), "none")
+    check("live borders: an equal score with more armor gets the border", ctx.border(b[1]), "red")
+    check("live borders: an equal score and armor gets none", ctx.border(b[2]), "none")
+    check("live borders: an equal score at a higher item level gets none", ctx.border(b[3]), "none")
     check("live borders: a required level not met gets none", ctx.border(b[4]), "none")
     check("live borders: a red tooltip line gets none", ctx.border(b[5]), "none")
     check("live borders: TandemDB is unchanged after painting", dump(ctx.env.TandemDB), before)
@@ -3232,7 +3245,7 @@ do
     ctx.tips[12], ctx.tips[3] = { "A", ctx.strength(9) }, { "B", ctx.strength(9) }
     ctx.tips[4] = { "C", ctx.strength(1) }
     ctx.complete()
-    check("live quest pick: a tie on score goes to the higher item level", ctx.marked(), "2")
+    check("live quest pick: a tie on score marks none, whatever the item level", ctx.marked(), "")
     check("live quest pick: TandemDB is unchanged", dump(ctx.env.TandemDB), before)
 end
 

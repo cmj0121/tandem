@@ -172,19 +172,26 @@ local function equipLocOf(id)
     end
 end
 
--- Returns a worn slot's entry: {id, ilvl, score} (score from the slot's own tooltip, through scoreOf(src, class,
--- level) when given, else Items.Score), {ilvl = 0, score = 0} when it is empty, or {unknown = true} when the client
--- does not tell.
+-- Returns the source's armor from its tooltip stats, 0 when it has none or they are not read yet.
+function Items.Armor(src)
+    local s = Items.Stats(src)
+    return type(s) == "table" and type(s.armor) == "number" and s.armor or 0
+end
+
+-- Returns a worn slot's entry: {id, ilvl, score, armor} (score and armor from the slot's own tooltip, the score
+-- through scoreOf(src, class, level) when given, else Items.Score), {ilvl = 0, score = 0, armor = 0} when it is
+-- empty, or {unknown = true} when the client does not tell.
 local function wornEntry(inv, classFile, level, scoreOf)
     local id = wornID(inv)
     if id == false then
-        return { ilvl = 0, score = 0 }
+        return { ilvl = 0, score = 0, armor = 0 }
     elseif not id then
         return { unknown = true }
     end
     local info = Items.Info(id)
-    local score = classFile and (scoreOf or Items.Score)({ inv = inv, id = id }, classFile, level) or nil
-    return { id = id, ilvl = info and info[1] or nil, score = score }
+    local src = { inv = inv, id = id }
+    local score = classFile and (scoreOf or Items.Score)(src, classFile, level) or nil
+    return { id = id, ilvl = info and info[1] or nil, score = score, armor = Items.Armor(src) }
 end
 
 -- Returns the off hand's score with its dps at half weight, or nil while it has no stats.
@@ -204,8 +211,9 @@ local function offhandScore(src, classFile, level)
 end
 
 -- Returns both hands as one entry for a two-hander (rule D3): a worn two-hander alone is its own entry; otherwise the
--- main hand's score plus the off hand's (its dps at half weight) at the lower of their item levels. While a hand lacks
--- its item level or score, or is unknown, the list holds the hands themselves so Beats answers nil.
+-- main hand's score plus the off hand's (its dps at half weight) and their armor summed, at the lower of their item
+-- levels. While a hand lacks its item level or score, or is unknown, the list holds the hands themselves so Beats
+-- answers nil.
 local function bothHands(out, classFile, level)
     local main = wornEntry(16, classFile, level)
     if main.id then
@@ -219,7 +227,8 @@ local function bothHands(out, classFile, level)
         out.ids[off.id] = true
     end
     if main.ilvl and main.score and off.ilvl and off.score then
-        return { { ilvl = math.min(main.ilvl, off.ilvl), score = main.score + off.score } }
+        return { { ilvl = math.min(main.ilvl, off.ilvl), score = main.score + off.score,
+                   armor = (main.armor or 0) + (off.armor or 0) } }
     end
     return { main, off }
 end
@@ -289,28 +298,29 @@ function Items.EquippedHands()
     return out
 end
 
--- Items.Beats(score, ilvl, worn) -> true | false | nil, over
--- Rule D2 against an Equipped or EquippedHands table: the weakest worn entry is the one with the lowest score, ties
--- by the lowest item level (an empty slot scores 0 at item level 0). A higher score beats it, an equal score only at
--- a higher item level. nil while a worn entry or the item lacks a score or item level; false when there is nothing
--- to beat (an off hand behind a two-hander). Behind true it also returns the weakest entry's score.
-function Items.Beats(score, ilvl, worn)
+-- Items.Beats(score, armor, worn) -> true | false | nil, over
+-- Rule D2 against an Equipped or EquippedHands table, judged on the items themselves, never their level: the weakest
+-- worn entry is the one with the lowest score, ties by the lowest armor (an empty slot scores 0 with 0 armor). A
+-- higher score beats it, an equal score only with more armor. nil while a worn entry or the item lacks a score or a
+-- worn entry its item level (not loaded yet); false when there is nothing to beat (an off hand behind a two-hander).
+-- Behind true it also returns the weakest entry's score.
+function Items.Beats(score, armor, worn)
     local weak
     for _, e in ipairs(worn.list) do
         if e.unknown or e.ilvl == nil or e.score == nil then
             return nil
         end
-        if not weak or e.score < weak.score or (e.score == weak.score and e.ilvl < weak.ilvl) then
+        if not weak or e.score < weak.score or (e.score == weak.score and (e.armor or 0) < (weak.armor or 0)) then
             weak = e
         end
     end
     if worn.ilvl == nil or not weak then
         return false
     end
-    if score == nil or ilvl == nil then
+    if score == nil then
         return nil
     end
-    if score > weak.score or (score == weak.score and ilvl > weak.ilvl) then
+    if score > weak.score or (score == weak.score and (armor or 0) > (weak.armor or 0)) then
         return true, weak.score
     end
     return false

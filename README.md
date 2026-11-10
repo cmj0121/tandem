@@ -160,18 +160,19 @@ An item is an upgrade when both hold:
     dual-wield from level 20, rogues from level 10, and only they can use off-hand-only weapons;
   - its tooltip has no red requirement line, such as a class, a weapon skill you have not trained, a race, a
     profession or a reputation you lack.
-- It beats what you wear in that slot: a higher stat score wins, and an equal score wins only with a higher item
-  level. A lower score never wins, whatever the item level.
+- It beats what you wear in that slot: a higher stat score wins, and an equal score wins only with more armor.
+  The item level and the required level never decide: a lower score never wins, and an equal score with no more
+  armor is no upgrade, however high the item's level.
 
 The stat score is each stat on the item times its weight for your class and talent tree (see
 [`/tandem weights`](#tandem-weights)), added up. So a strength item beats a caster item for a warrior even at a lower
 item level. A score of 0, an item whose stats your weights ignore, still counts.
 
-- An empty slot scores 0 at item level 0, so any usable item with stats beats it.
-- A ring or trinket is compared with the weaker of the two you wear: the lower score, or at an equal score the lower
-  item level. A one-hander you can dual-wield is compared with your weaker hand in the same way.
+- An empty slot scores 0 with 0 armor, so any usable item with a score above 0 or with armor beats it.
+- A ring or trinket is compared with the weaker of the two you wear: the lower score, or at an equal score the one
+  with less armor. A one-hander you can dual-wield is compared with your weaker hand in the same way.
 - A two-hander is compared with your main hand and off hand together: their scores added up, with the off-hand
-  weapon's dps at half weight, at the lower of their two item levels. An empty hand adds 0. If you already wield a
+  weapon's dps at half weight, and their armor (a shield's) added up too. An empty hand adds 0. If you already wield a
   two-hander, it is compared with that one alone.
 - An off-hand item is never an upgrade while you wield a two-hander.
 
@@ -233,9 +234,9 @@ When you hand in a quest that lets you choose one of two or more rewards (`QUEST
 icon on the top right of the best choice's button. The best choice is the one you can equip, as in
 [What counts as an upgrade](#what-counts-as-an-upgrade), that beats every other such choice:
 
-- by stat score when every usable choice has stats, an equal score going to the higher item level, then the better
-  quality;
-- by item level, then quality, when any usable choice has no stats.
+- by stat score, an equal score going to the one with more armor;
+- never by item level or quality: a tie on score and armor, or a usable choice whose stats cannot be read, marks
+  none.
 
 It is not compared with what you wear: hover the choice to see whether its [item tooltip](#item-tooltip) calls it an
 upgrade.
@@ -490,9 +491,9 @@ from step 4, and any Lua error.
 1. Out of combat, hand in a quest that offers a choice of two or more rewards, at least one of which your class can
    use. In the reward window, a small Tandem icon sits on the top right of one choice's button. Nothing is printed and
    no reward is selected.
-2. Note the stats, item level and quality of each choice you can use: the marked one has the highest score for your
-   weights, or at an equal score the higher item level; when a usable choice has no stats, the highest item level,
-   then the better quality.
+2. Note the stats and armor of each choice you can use: the marked one has the highest score for your weights, or at
+   an equal score more armor; when two usable choices tie on both, no icon shows, whatever their item level or
+   quality.
 3. Close the reward window without choosing, then talk to the quest giver again: the icon shows again on the same
    choice.
 4. For a quest whose usable choices tie, or that offers nothing your class can use, no icon shows.

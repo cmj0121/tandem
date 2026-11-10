@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- Says in chat when an item new in the bags beats what the player wears (decision 4, rule D2 of stage 11): one line
--- per item, at most once per item per session, by stat score with item level breaking a tie, from live item data
+-- per item, at most once per item per session, by stat score with armor breaking a tie, from live item data
 -- only, and never for an item the player cannot equip now.
 -- Advises only:
 -- nothing is equipped, and a line due in combat waits until combat ends. The first bag snapshot after login is taken
@@ -101,7 +101,23 @@ local function assess(id, src, key)
         return { better = false, done = true }
     end
     local score = Items.Score(src, class, level)
-    local better, over = Items.Beats(score, info[1], worn)
+    local better, over = Items.Beats(score, Items.Armor(src), worn)
+    if ns.Debug.IsOn() then
+        local parts = {}
+        for k, v in pairs(Items.Stats(src) or {}) do
+            parts[#parts + 1] = k .. "=" .. tostring(v)
+        end
+        table.sort(parts)
+        local wornParts = {}
+        for _, e in ipairs(worn.list) do
+            wornParts[#wornParts + 1] = ("%s:ilvl%s:score%s:armor%s"):format(tostring(e.id), tostring(e.ilvl),
+                tostring(e.score), tostring(e.armor))
+        end
+        ns.Debug.Log(("upgrade %s slot %s ilvl %s req %s spec %s score %s stats {%s} worn {%s} -> %s"):format(
+            tostring(ns.StatSearch.Key(src)), tostring(place.slot), tostring(info[1]), tostring(info[2]),
+            tostring(ns.Weights.Active(class, level)), tostring(score), table.concat(parts, " "),
+            table.concat(wornParts, " "), tostring(better)))
+    end
     if better == nil then
         if score == nil then
             wait(id, key)
