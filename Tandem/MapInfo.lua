@@ -1,8 +1,9 @@
 local _, ns = ...
 
--- Map info (stage 13, D1-D5): one line of small text just under the minimap while the Tandem layout is on, with
--- the player's coordinates on the current zone map in percent and the time played at this level. Refreshed twice a
--- second while shown and on zone changes; the tooltip adds the zone, total played and this session's time.
+-- Map info (stage 13, D1-D5, D9): one line of small text while the Tandem layout is on, right-aligned inside Tandem's
+-- XP bar (at the screen's top centre when the bar is hidden, as at the maximum level), with the player's coordinates
+-- on the current zone map in percent and the time played at this level. Refreshed twice a second while shown and on
+-- zone changes; the tooltip adds the zone, total played and this session's time.
 local MapInfo = {}
 ns.MapInfo = MapInfo
 
@@ -12,6 +13,8 @@ local LINE_HEIGHT = 12
 local NO_POSITION = "(--, --)"
 
 local line, on, ticker
+-- The XP bar the line sits in, false at the screen's top, nil until placed.
+local placedIn
 -- GetTime at login, and the /played values with the GetTime each was last set at.
 local session, total, totalAt, level, levelAt, requested
 
@@ -26,7 +29,7 @@ local function parts(seconds)
     return math.floor(seconds / 86400), math.floor(seconds % 86400 / 3600), math.floor(seconds % 3600 / 60)
 end
 
--- Returns seconds as "1d5H", "1H20m" or "20m", for the line under the minimap.
+-- Returns seconds as "1d5H", "1H20m" or "20m", for the map info line.
 function MapInfo.Short(seconds)
     local d, h, m = parts(seconds)
     if d > 0 then
@@ -81,8 +84,9 @@ end
 function MapInfo.OnLevelUp()
     if total then
         level, levelAt = 0, now()
-        MapInfo.Update()
     end
+    -- The XP bar hides at the maximum level, taking the line with it until it is placed again.
+    MapInfo.Update()
 end
 
 -- Returns the player's position on the current zone map as "(x, y)" in percent, or "(--, --)" where the map has
@@ -156,17 +160,22 @@ local function create()
     line:SetScript("OnLeave", ns.View.HideTooltip)
 end
 
--- Under the minimap cluster, else the minimap, else the screen's top-right corner.
+-- Right-aligned inside the XP bar while it shows, else at the screen's top centre; only when that changed.
 local function place()
-    line:ClearAllPoints()
-    for _, name in ipairs({ "MinimapCluster", "Minimap" }) do
-        local anchor = _G[name]
-        if type(anchor) == "table" then
-            line:SetPoint("TOP", anchor, "BOTTOM", 0, -GAP)
-            return
-        end
+    local bar = ns.XPBar.Frame() or false
+    if bar == placedIn then
+        return
     end
-    line:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -16, -200)
+    placedIn = bar
+    line:ClearAllPoints()
+    if bar then
+        line:SetParent(bar)
+        line:SetFrameLevel((tonumber((call(bar.GetFrameLevel, bar))) or 0) + 1)
+        line:SetPoint("RIGHT", bar, "RIGHT", -GAP, 0)
+    else
+        line:SetParent(UIParent)
+        line:SetPoint("TOP", UIParent, "TOP", 0, -GAP)
+    end
 end
 
 -- Refreshes the line; hides it while the layout is off or the client lacks the map API.
@@ -178,6 +187,7 @@ function MapInfo.Update()
         line:Hide()
         return
     end
+    place()
     local text = MapInfo.Coords()
     local _, here = played()
     if here then
@@ -194,7 +204,7 @@ local function onChange(layoutOn)
         if not line then
             create()
         end
-        place()
+        placedIn = nil
     end
     MapInfo.Update()
 end

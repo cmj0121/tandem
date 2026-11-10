@@ -111,6 +111,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
         ns.XPBar.Update()
+        ns.MapInfo.Update()
     elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "ZONE_CHANGED_NEW_AREA" then
         ns.MapInfo.Update()
     elseif event == "TIME_PLAYED_MSG" then
