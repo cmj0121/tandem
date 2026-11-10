@@ -29,6 +29,7 @@ read_globals = {
     "IsPlayerSpell",
     "IsSpellKnown",
     "C_Container",
+    "C_Map",
     "C_CVar",
     "C_EditMode",
     "Constants",
@@ -94,4 +95,7 @@ read_globals = {
     "UnitBuff",
     "UnitPower",
     "UnitPowerMax",
+    "RequestTimePlayed",
+    "GetZoneText",
+    "GetSubZoneText",
 }

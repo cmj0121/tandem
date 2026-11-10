@@ -33,6 +33,7 @@ L["Upgrade borders"] = "升級邊框"
 L["Layout"] = "介面配置"
 L["XP bar"] = "經驗條"
 L["Bag button"] = "背包按鈕"
+L["Map info"] = "地圖資訊"
 L["Shaman area"] = "薩滿區"
 L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"] =
     "  /tandem layout [on|off] - 為 Tandem 排列快捷列、頭像框與聊天框，或還原你的版面"
