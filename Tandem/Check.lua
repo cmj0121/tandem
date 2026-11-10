@@ -53,6 +53,9 @@ Check.FEATURES = {
     { name = "Bag button", needs = {
         { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "ToggleAllBags" },
     } },
+    { name = "Map info", needs = {
+        { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
+    } },
     { name = "Shaman area", needs = {
         { "GetTotemInfo" }, { "UnitPower" },
     } },

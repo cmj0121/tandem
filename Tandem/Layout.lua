@@ -24,6 +24,8 @@ local INSET, CLEAR = 16, 8
 -- The micro menu's gap above the screen's bottom edge, in the bottom-right corner.
 local MICRO_Y = 4
 local TOT_CVAR = "showTargetOfTarget"
+-- The client's own minimap coordinates, hidden while the layout is on since the map info line shows them.
+local COORDS_CVAR = "minimapShowPlayerCoords"
 -- How far above the main bar's bottom edge Edit Mode puts the totem bar.
 local TOTEM_Y = 70
 
@@ -372,12 +374,26 @@ local function setFaders(list)
     end
 end
 
--- Fades the bars the layout could not hide (faders, when given), fades every concealed frame and tells the
--- listeners the layout is on.
+-- Hides the client's minimap coordinates, saving their first non-"0" value; a client without the CVar is left alone.
+local function hideCoords()
+    local store = ns.Store
+    local coords = store.GetCVar(COORDS_CVAR)
+    if coords == nil then
+        return
+    end
+    if store.Layout().coords == nil and type(coords) == "string" and coords ~= "0" then
+        store.SetLayout("coords", coords)
+    end
+    store.SetCVar(COORDS_CVAR, "0")
+end
+
+-- Fades the bars the layout could not hide (faders, when given), fades every concealed frame, hides the client's
+-- minimap coordinates and tells the listeners the layout is on.
 local function attach(faders)
     if faders then
         setFaders(faders)
     end
+    hideCoords()
     attached = true
     fade()
     notify(true)
@@ -454,7 +470,7 @@ local function apply()
     return true
 end
 
--- Undoes every side effect of the layout (ToT CVar, faded frames, saved state) and tells the listeners.
+-- Undoes every side effect of the layout (ToT and coordinates CVars, faded frames, saved state), tells the listeners.
 local function detach()
     local store = ns.Store
     local tot = store.Layout().tot
@@ -462,6 +478,11 @@ local function detach()
         ns.Store.SetCVar(TOT_CVAR, tot)
     end
     store.SetLayout("tot", nil)
+    local coords = store.Layout().coords
+    if coords then
+        ns.Store.SetCVar(COORDS_CVAR, coords)
+    end
+    store.SetLayout("coords", nil)
     store.SetLayout("previous", nil)
     store.SetLayout("on", false)
     unfade()

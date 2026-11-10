@@ -107,6 +107,13 @@ function XPBar.Update(newLevel)
     bar:Show()
 end
 
+-- Returns the bar while it exists and shows, else nil.
+function XPBar.Frame()
+    if bar and call(bar.IsShown, bar) then
+        return bar
+    end
+end
+
 local function onChange(layoutOn)
     on = layoutOn and ns.Check.Ready("XP bar")
     if on then
