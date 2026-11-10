@@ -1,8 +1,9 @@
 local _, ns = ...
 
 -- The Shaman class rail (stage 12, D5, D12, D13): a slot per active totem in Earth, Fire, Water, Air order and for
--- Lightning Shield or Water Shield with its charges, plus the mana line along the rail bottom. Weapon enchants are
--- left out: the user does not want their timers shown.
+-- Lightning Shield or Water Shield with its charges, plus the mana line along the rail bottom. The shield slot has
+-- no timer (D10): it stays until UNIT_AURA no longer finds the buff. Weapon enchants are left out: the user does not
+-- want their timers shown.
 -- State and timers only (PLAN decision 6). Each event refreshes its section's cache from the client; the rail's
 -- ticker only re-renders the cached expirations.
 local Shaman = {}
@@ -45,24 +46,23 @@ local function shieldName(id)
     return shieldNames[id]
 end
 
--- Returns charges, expiration time and icon of the player's buff named name, or nil when it is not up.
+-- Returns charges and icon of the player's buff named name, or nil when it is not up.
 local function buff(name)
     local byName = type(C_UnitAuras) == "table" and C_UnitAuras.GetAuraDataBySpellName
     if type(byName) == "function" then
         local data = call(byName, "player", name, "HELPFUL")
         if type(data) == "table" then
-            return number(ns.Store.Safe(data.applications)) or 0, number(ns.Store.Safe(data.expirationTime)),
-                ns.Store.Safe(data.icon)
+            return number(ns.Store.Safe(data.applications)) or 0, ns.Store.Safe(data.icon)
         end
         return nil
     end
     for i = 1, 40 do
-        local found, icon, count, _, _, expiration = call(UnitBuff, "player", i)
+        local found, icon, count = call(UnitBuff, "player", i)
         if not found then
             return nil
         end
         if found == name then
-            return number(count) or 0, number(expiration), icon
+            return number(count) or 0, icon
         end
     end
 end
@@ -71,13 +71,12 @@ local function updateShield()
     shield = nil
     for _, id in ipairs(SHIELDS) do
         local name = shieldName(id)
-        local charges, expiration, icon
+        local charges, icon
         if name then
-            charges, expiration, icon = buff(name)
+            charges, icon = buff(name)
         end
         if charges then
-            shield = { label = name, icon = icon, count = charges,
-                expires = expiration and expiration > 0 and expiration or nil }
+            shield = { label = name, icon = icon, count = charges }
             return
         end
     end
