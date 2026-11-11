@@ -74,6 +74,9 @@ Check.FEATURES = {
         { "CreateMacro" }, { "EditMacro" }, { "GetMacroIndexByName" }, { "GetMacroInfo" }, { "PickupMacro" },
         { "GetNumMacros" },
     } },
+    { name = "Mute button", needs = {
+        { "C_CVar.GetCVar", "GetCVar" }, { "C_CVar.SetCVar", "SetCVar" },
+    } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },

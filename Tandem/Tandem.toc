@@ -28,6 +28,7 @@ BagButton.lua
 Macro.lua
 Rod.lua
 Cure.lua
+Mute.lua
 MapInfo.lua
 ClassArea.lua
 Classes\Shaman.lua

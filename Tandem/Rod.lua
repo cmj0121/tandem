@@ -420,6 +420,10 @@ function Rod.Update()
     if ns.Cure then
         ns.Cure.Update()
     end
+    -- The mute button sits left of the cure buttons, so it follows their places and visibility.
+    if ns.Mute then
+        ns.Mute.Update()
+    end
     if debugOn() then
         local ok, line = pcall(updateLine)
         if ok and line ~= lastUpdate then

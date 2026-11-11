@@ -4,9 +4,10 @@ local _, ns = ...
 -- left of the fishing rod button while the layout is on. A click casts the cure on the mouseover friend, else the
 -- friendly target, else the player; dragging places a "Tandem <kind>" character macro doing the same. The player or a
 -- party member carrying a debuff the cure removes lights the button's border with the count of them, and its tooltip
--- names them. The hint is advice only: nothing is cast but on the player's own click.
--- Like the rod button, a button's attributes, anchor and visibility change only out of combat (a change asked for in
--- combat waits for Cure.OnCombatEnd); the border and count are plain regions and follow the debuffs in combat too.
+-- names them, out of combat only: Forever keeps aura data secret from addons in combat ("Auras cannot be accessed
+-- when secret"), so a fight leaves the hint dark until it ends. The hint is advice only: nothing is cast but on the
+-- player's own click. Like the rod button, a button's attributes, anchor and visibility change only out of combat (a
+-- change asked for in combat waits for Cure.OnCombatEnd).
 local Cure = {}
 ns.Cure = Cure
 
@@ -133,15 +134,22 @@ local function light()
     end
 end
 
--- UNIT_AURA (watched units only), GROUP_ROSTER_UPDATE: reads the debuffs again and lights the buttons. While
--- debugging, logs the scan when it differs from the last one logged.
+-- UNIT_AURA (watched units only), GROUP_ROSTER_UPDATE: reads the debuffs again and lights the buttons; in combat it
+-- reads nothing and darkens them (the aura data is secret there). While debugging, logs the scan when it differs from
+-- the last one logged.
 function Cure.Scan(unit)
     if #buttons == 0 or (unit ~= nil and not WATCHED[unit]) then
         return
     end
-    local ok, err = pcall(readDebuffs)
-    if not ok then
+    local ok, err = true, nil
+    local fighting = inCombat()
+    if fighting then
         afflicted = {}
+    else
+        ok, err = pcall(readDebuffs)
+        if not ok then
+            afflicted = {}
+        end
     end
     light()
     if debugOn() then
@@ -150,7 +158,8 @@ function Cure.Scan(unit)
             local list = afflicted[c.kind]
             parts[#parts + 1] = c.kind .. "=" .. (list and table.concat(list, ",") or "0")
         end
-        local line = ok and ("cure scan: " .. table.concat(parts, " ")) or ("cure scan failed: " .. tostring(err))
+        local line = fighting and "cure scan: skipped in combat"
+            or ok and ("cure scan: " .. table.concat(parts, " ")) or ("cure scan failed: " .. tostring(err))
         if line ~= lastScan then
             lastScan = line
             log(line)
@@ -246,6 +255,18 @@ local function place()
     return shown
 end
 
+-- Cure.NextX() -> x: the BOTTOMRIGHT x offset for the right edge of a button left of the shown cure buttons, or
+-- Rod.NextX() while none is shown; the y offset is the rod button's.
+function Cure.NextX()
+    local x = ns.Rod.NextX()
+    for _, b in ipairs(buttons) do
+        if call(b.IsShown, b) == true then
+            x = x - SIZE - GAP
+        end
+    end
+    return x
+end
+
 local lastPlace
 
 -- Refreshes the buttons' macros, icons, places and visibility and the existing cure macros; in combat only marks the
@@ -271,11 +292,12 @@ function Cure.Update()
     end
 end
 
--- PLAYER_REGEN_ENABLED: applies the change combat held back.
+-- PLAYER_REGEN_ENABLED: applies the change combat held back and reads the debuffs again.
 function Cure.OnCombatEnd()
     if pending or macroPending then
         Cure.Update()
     end
+    Cure.Scan()
 end
 
 -- PLAYER_LOGIN: makes one button per cure of the player's class (never later, so never first made in combat), then

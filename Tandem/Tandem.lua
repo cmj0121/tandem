@@ -11,7 +11,7 @@ for _, event in ipairs({
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
     "PLAYER_TOTEM_UPDATE", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
-    "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN",
+    "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "CVAR_UPDATE",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
@@ -94,6 +94,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.Store.RegisterEvent(self, "UNIT_AURA")
             ns.Store.RegisterEvent(self, "GROUP_ROSTER_UPDATE")
         end
+        -- Before the rod button too, whose update places it left of the cure buttons.
+        ns.Mute.OnLogin()
         ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
@@ -105,8 +107,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
         if event ~= "ACTIONBAR_SLOT_CHANGED" and event ~= "ACTIONBAR_PAGE_CHANGED"
             and event ~= "UPDATE_BONUS_ACTIONBAR" then
-            -- A cure spell learned shows its button.
+            -- A cure spell learned shows its button, which moves the mute button.
             ns.Cure.Update()
+            ns.Mute.Update()
         end
         if event == "PLAYER_ENTERING_WORLD" then
             ns.Layout.Refade()
@@ -125,6 +128,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.BagButton.OnCombatEnd()
         ns.Rod.OnCombatEnd()
         ns.Cure.OnCombatEnd()
+        ns.Mute.OnCombatEnd()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
@@ -136,6 +140,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MapInfo.OnTimePlayed(...)
     elseif event == "UNIT_AURA" or event == "GROUP_ROSTER_UPDATE" then
         ns.Cure.Scan(event == "UNIT_AURA" and (...) or nil)
+    elseif event == "CVAR_UPDATE" then
+        ns.Mute.Refresh()
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         ns.Debug.OnBlocked(event, ...)
     end
