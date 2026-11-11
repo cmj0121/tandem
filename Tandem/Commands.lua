@@ -41,6 +41,7 @@ local function check()
     for _, probe in ipairs(ns.Check.Probes()) do
         print(L["Probe: %s %s"]:format(probe.path, probe.ok and L["present"] or L["missing"]))
     end
+    ns.Debug.Check()
 end
 
 local IS_STAT = {}

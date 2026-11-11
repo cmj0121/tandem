@@ -22,6 +22,20 @@ local alerted = {}
 local waiting = {}
 local pending = {}
 local queued = {}
+-- Bag keys of weapon-slot items left unjudged while the rod was worn, judged again on a bag update once it is not.
+local deferred = {}
+
+local HANDS = { mainhand = true, offhand = true, twohand = true }
+
+-- Whether the fishing rod is in the main hand; false when Rod is not loaded or raises.
+local function fishing()
+    local Rod = ns.Rod
+    if not (Rod and Rod.Fishing) then
+        return false
+    end
+    local ok, on = pcall(Rod.Fishing)
+    return ok and on == true
+end
 
 local function bagFunctions()
     local c = C_Container or {}
@@ -68,9 +82,10 @@ local function wait(id, key)
 end
 
 -- Judges the item (scored and checked from src, a StatSearch source for it, under key) against what is worn by rule
--- D2 (Items.Beats): returns { better, done, info, score, place, over } where better is nil while the item, its
--- tooltip or a worn item is not known yet (the client is asked for them), done says the answer was made on complete
--- data, and info, score, place and over (the worn score) are set behind a true answer.
+-- D2 (Items.Beats): returns { better, done, info, score, place, over, fishing } where better is nil while the item,
+-- its tooltip or a worn item is not known yet (the client is asked for them), done says the answer was made on
+-- complete data, and info, score, place and over (the worn score) are set behind a true answer. A weapon-slot item is
+-- no upgrade while the rod is worn (fishing true, not done, so the answer is not kept).
 local function assess(id, src, key)
     local Items = ns.Items
     local info = Items.Info(id)
@@ -88,6 +103,9 @@ local function assess(id, src, key)
     local place = Items.Place(info, class, level)
     if not (place.slot and place.usable) then
         return { better = false, done = true }
+    end
+    if HANDS[place.slot] and fishing() then
+        return { better = false, done = false, fishing = true }
     end
     local worn = place.offhand and Items.EquippedHands() or Items.Equipped(place.slot)
     if worn.ids[id] then
@@ -215,6 +233,10 @@ end
 local function judge(key)
     local item = seen[key]
     local v = verdict(item.id, item)
+    if v.fishing then
+        deferred[key] = true
+        return
+    end
     if v.better == nil then
         pending[key] = true
     end
@@ -228,7 +250,8 @@ local function judge(key)
         View.ScoreText(v.over)))
 end
 
--- BAG_UPDATE_DELAYED: judges the bag items whose key is not in the last snapshot.
+-- BAG_UPDATE_DELAYED: judges the bag items whose key is not in the last snapshot, and, once the rod is off, the ones
+-- deferred while it was worn that are still in the bags.
 function Upgrade.OnBagUpdate()
     if not (ns.Check.Ready("Upgrade alert") and C_Item and C_Item.GetItemInfo) then
         return
@@ -242,6 +265,15 @@ function Upgrade.OnBagUpdate()
     for key in pairs(now) do
         if not before[key] and not alerted[key] then
             judge(key)
+        end
+    end
+    if next(deferred) and not fishing() then
+        local due = deferred
+        deferred = {}
+        for key in pairs(due) do
+            if now[key] and not alerted[key] then
+                judge(key)
+            end
         end
     end
 end
