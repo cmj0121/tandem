@@ -199,21 +199,57 @@ function Debug.Check()
     end
 end
 
--- Turns recording on or off (on starts a fresh log); returns the number of lines kept.
+-- The client's taint log CVar: 1 writes Logs/taint.log, naming the addon code that tainted a blocked action.
+local TAINT_CVAR = "taintLog"
+-- TandemDebug.blocked keeps the last this many blocked actions, apart from the busy log.
+local MAX_BLOCKED = 50
+-- A blocked line carries at most this many characters of the call stack.
+local MAX_STACK = 600
+
+-- Turns recording on or off (on starts a fresh log and blocked list); returns the number of lines kept. On also
+-- turns the client's taint log on, off turns it off again.
 function Debug.Set(on)
     local d = db()
     d.on = on == true
     if d.on then
         d.log = {}
+        d.blocked = {}
         Debug.Log("debug on")
     end
+    ns.Store.SetCVar(TAINT_CVAR, d.on and "1" or "0")
     return #d.log
+end
+
+-- ADDON_ACTION_BLOCKED, ADDON_ACTION_FORBIDDEN: while recording, logs "blocked <event> addon=<name> func=<func>"
+-- with the call stack, to the log and to TandemDebug.blocked (the last MAX_BLOCKED), which the busy log cannot push
+-- out.
+function Debug.OnBlocked(event, addon, func)
+    if not Debug.IsOn() then
+        return
+    end
+    local line = ("blocked %s addon=%s func=%s"):format(tostring(event), tostring(addon), tostring(func))
+    Debug.Log(line)
+    local stack = call(debugstack, 2, 12, 0)
+    local d = db()
+    if type(d.blocked) ~= "table" then
+        d.blocked = {}
+    end
+    local entry = ("%.2f %s"):format(tonumber((call(GetTime))) or 0, line)
+    if type(stack) == "string" and stack ~= "" then
+        entry = entry .. " stack=" .. stack:sub(1, MAX_STACK):gsub("\n", " | ")
+    end
+    d.blocked[#d.blocked + 1] = entry
+    while #d.blocked > MAX_BLOCKED do
+        table.remove(d.blocked, 1)
+    end
 end
 
 -- At login: keeps recording across /reload while it is on, with a snapshot once the UI has settled.
 function Debug.OnLogin()
     if Debug.IsOn() then
+        ns.Store.SetCVar(TAINT_CVAR, "1")
         Debug.Log("login")
+        Debug.Log(("taint log: %s=%s"):format(TAINT_CVAR, tostring(ns.Store.GetCVar(TAINT_CVAR))))
         Debug.Check()
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(2, function()

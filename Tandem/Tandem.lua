@@ -11,7 +11,7 @@ for _, event in ipairs({
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
     "PLAYER_TOTEM_UPDATE", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
-    "TIME_PLAYED_MSG",
+    "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
@@ -123,5 +123,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MapInfo.Update()
     elseif event == "TIME_PLAYED_MSG" then
         ns.MapInfo.OnTimePlayed(...)
+    elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        ns.Debug.OnBlocked(event, ...)
     end
 end)
