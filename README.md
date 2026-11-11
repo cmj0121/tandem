@@ -98,8 +98,8 @@ Probe: LootFrame.ScrollBox missing
 One line per feature, `ok` when every API it needs is found, followed by each API and whether it was found. Where
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
-`Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Map info` and
-`Shaman area`. A feature
+`Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
+`Map info` and `Shaman area`. A feature
 whose API is missing stays off instead of raising an error.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
@@ -371,6 +371,15 @@ have no free slot, a red `Bags full: no room for your off hand` line warns you f
 In combat the icon cannot change, so a click runs the swap it showed before the fight. It shows only while the layout is
 on, and needs the `Fishing rod` line of [`/tandem check`](#tandem-check).
 
+The first time Tandem sees a fishing rod, it makes a character macro named `Tandem Fishing`: while the rod is not worn
+it equips it, while it is worn it casts Fishing, and its icon follows. Drag the rod icon to put the macro on an action
+bar; its tooltip says `Drag to place the fishing macro on your action bar`. Tandem updates the macro out of combat when
+your rod changes (a fight holds the change until it ends), and keeps the last rod it saw when you have none; with no rod
+seen at all it names the plain Fishing Pole, which shows grey. When your character macro slots are full no macro is
+made, and the tooltip says `Character macros full: no room for the fishing macro`. Once made, the macro is yours: Tandem
+never deletes it. It needs the `Fishing macro` line of `/tandem check`; without it the rod icon still swaps, it just
+cannot be dragged.
+
 ### Map info
 
 One line of small text centred just below the [XP bar](#xp-bar) shows where you are on the zone map, in
@@ -476,10 +485,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and fifteen lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and sixteen lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
-   `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Map info` and
-   `Shaman area`, each
+   `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
+   `Map info` and `Shaman area`, each
    followed by `ok` or `missing` and its APIs. Fourteen `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
@@ -578,7 +587,8 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 3. At the bottom right, the bag row shows your general free / total slots on a backpack icon and, to its left, one
    icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one. With a fishing rod
    in your bags, a rod icon sits left of the bag row: click it and the rod is equipped; click it again and your
-   weapons are back.
+   weapons are back. Drag the rod icon onto an action bar: a `Tandem Fishing` macro lands there; click it to equip the
+   rod, click it again to cast Fishing.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
    shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
    appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
@@ -595,7 +605,7 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 8. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, map info line and
    class area go.
 
-Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Map info`, `Shaman area` and `Probe:` lines of
+Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Map info`, `Shaman area` and `Probe:` lines of
 `/tandem check`, any
 frame that landed in the wrong place or overlaps another, anything not restored by `off`, and any Lua error.
 

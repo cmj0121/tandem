@@ -18,6 +18,7 @@ local MAIN_HAND = { INVTYPE_WEAPON = true, INVTYPE_WEAPONMAINHAND = true, [TWO_H
 
 local remembered = {}
 local restoring = false
+local lastRod
 
 local function worn(inv)
     local id = call(_G.GetInventoryItemID, "player", inv)
@@ -75,15 +76,18 @@ function Rod.IsRod(id)
 end
 
 -- Rod.Find() -> rodID|nil, worn
--- The worn main hand when it is a rod (worn true), else the first rod in bags 0..4.
+-- The worn main hand when it is a rod (worn true), else the first rod in bags 0..4. A rod found is kept as the last rod
+-- seen this session, for the fishing macro.
 function Rod.Find()
     local main = worn(MAIN)
-    if main and Rod.IsRod(main) then
-        return main, true
+    local rod, isWorn = main, true
+    if not (main and Rod.IsRod(main)) then
+        rod, isWorn = eachBagItem(function(id)
+            return Rod.IsRod(id) and id or nil
+        end), false
     end
-    return eachBagItem(function(id)
-        return Rod.IsRod(id) and id or nil
-    end), false
+    lastRod = rod or lastRod
+    return rod, isWorn
 end
 
 -- Rod.Fishing() -> bool: the rod is in the main hand.
@@ -202,6 +206,21 @@ local SIZE, GAP = 28, 4
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local button, on, pending, lastUpdate
+-- Whether the button was told to fire on mouse-up whatever ActionButtonUseKeyDown says; set on its first update out of
+-- combat (a button made in combat waits for Rod.OnCombatEnd).
+local keyUp
+
+-- The fishing macro (D5): one character macro the player drags from the button onto an action bar. It equips the rod
+-- when it is not worn and casts Fishing when it is. Written only out of combat, and only when its body changed.
+local MACRO_NAME = "Tandem Fishing"
+local MACRO_ICON = "INV_Misc_QuestionMark"
+local FISHING_SPELL = 7620
+-- Fishing Pole: the client greys an item the player does not own, so the macro's icon is grey with no rod.
+local DEFAULT_ROD = 6256
+-- The client's account and character macro slots when it does not say (MAX_ACCOUNT_MACROS and MAX_CHARACTER_MACROS
+-- live in the load-on-demand macro UI). Character macros have the indexes after the account ones.
+local ACCOUNT_MACROS, CHARACTER_MACROS = 120, 18
+local macroPending, macroFull, lastMacro
 
 local function debugOn()
     return ns.Debug ~= nil and ns.Debug.IsOn()
@@ -210,6 +229,119 @@ end
 local function log(text)
     if debugOn() then
         ns.Debug.Log(text)
+    end
+end
+
+-- The client's localized name for fishing poles, or nil.
+local function poleName()
+    local name = call(C_Item and C_Item.GetItemSubClassInfo or GetItemSubClassInfo, WEAPON, FISHING_POLE)
+    return type(name) == "string" and name ~= "" and name or nil
+end
+
+-- The client's localized name of the Fishing spell (any rank: /cast takes the name alone), or nil.
+local function fishingName()
+    local name = call(C_Spell and C_Spell.GetSpellInfo, FISHING_SPELL)
+    if type(name) == "table" then
+        name = name.name
+    end
+    if type(name) ~= "string" then
+        name = call(GetSpellInfo, FISHING_SPELL)
+    end
+    return type(name) == "string" and name ~= "" and name or nil
+end
+
+-- Rod.MacroBody() -> text|nil
+-- The fishing macro's body: equip the rod while it is not worn, cast Fishing while it is. The rod is the one found now,
+-- else the last one seen this session, else the Fishing Pole. Nil when the client does not give both localized names.
+function Rod.MacroBody()
+    local pole, fishing = poleName(), fishingName()
+    if not (pole and fishing) then
+        return nil
+    end
+    local rod = Rod.Find() or lastRod or DEFAULT_ROD
+    return ("#showtooltip [equipped:%s] %s; item:%d\n/equip [noequipped:%s] item:%d\n/cast [equipped:%s] %s"):format(
+        pole, fishing, rod, pole, rod, pole, fishing)
+end
+
+-- The index of the character macro named Tandem Fishing, or nil; an account macro of that name is not it.
+local function characterMacro()
+    local accounts = type(MAX_ACCOUNT_MACROS) == "number" and MAX_ACCOUNT_MACROS or ACCOUNT_MACROS
+    local index = call(GetMacroIndexByName, MACRO_NAME)
+    if type(index) ~= "number" or index <= 0 then
+        return nil
+    end
+    if index > accounts then
+        return index
+    end
+    local _, characterMacros = call(GetNumMacros)
+    for i = accounts + 1, accounts + (type(characterMacros) == "number" and characterMacros or 0) do
+        if call(GetMacroInfo, i) == MACRO_NAME then
+            return i
+        end
+    end
+end
+
+local function macroLog(line)
+    if line ~= lastMacro then
+        lastMacro = line
+        log("rod macro: " .. line)
+    end
+end
+
+-- Makes or refreshes the fishing macro and returns its index, or nil when there is none to use. Out of combat only (in
+-- combat it marks the change as pending); made only once a rod was seen and a character macro slot is free; edited
+-- only when its body changed.
+local function ensureMacro()
+    if not ns.Check.Ready("Fishing macro") then
+        return nil
+    end
+    if call(InCombatLockdown) then
+        macroPending = true
+        return nil
+    end
+    macroPending = nil
+    local body = Rod.MacroBody()
+    if not body then
+        macroLog(("skipped: no localized names (pole=%s fishing=%s)"):format(tostring(poleName()),
+            tostring(fishingName())))
+        return nil
+    end
+    local index = characterMacro()
+    if index then
+        macroFull = nil
+        if select(3, call(GetMacroInfo, index)) ~= body then
+            call(EditMacro, index, MACRO_NAME, MACRO_ICON, body)
+            lastMacro = nil
+            macroLog(("edited index=%d body=%s"):format(index, (body:gsub("\n", "|"))))
+        end
+        return index
+    end
+    if not lastRod then
+        macroLog("skipped: no rod seen")
+        return nil
+    end
+    local _, characterMacros = call(GetNumMacros)
+    local max = type(MAX_CHARACTER_MACROS) == "number" and MAX_CHARACTER_MACROS or CHARACTER_MACROS
+    if type(characterMacros) == "number" and characterMacros >= max then
+        macroFull = true
+        macroLog(("skipped: character macros full (%d/%d)"):format(characterMacros, max))
+        return nil
+    end
+    macroFull = nil
+    index = call(CreateMacro, MACRO_NAME, MACRO_ICON, body, true)
+    lastMacro = nil
+    macroLog(("created index=%s body=%s"):format(tostring(index), (body:gsub("\n", "|"))))
+    return type(index) == "number" and index > 0 and index or nil
+end
+
+-- OnDragStart: picks the fishing macro up for an action bar, making it first when it is missing; nothing in combat.
+local function dragStart()
+    if call(InCombatLockdown) then
+        return
+    end
+    local index = ensureMacro()
+    if index then
+        call(PickupMacro, index)
     end
 end
 
@@ -249,6 +381,11 @@ local function showTooltip(self)
             tip:AddLine(L["Equip your weapon"], 1, 1, 1)
         end
     end
+    if macroFull then
+        tip:AddLine(L["Character macros full: no room for the fishing macro"], 1, 0.1, 0.1)
+    elseif ns.Check.Ready("Fishing macro") and not call(InCombatLockdown) then
+        tip:AddLine(L["Drag to place the fishing macro on your action bar"], 0.5, 0.5, 0.5)
+    end
     if call(InCombatLockdown) then
         tip:AddLine(L["In combat the button runs the swap it showed before combat"], 0.5, 0.5, 0.5)
     end
@@ -267,6 +404,10 @@ local function update()
         return
     end
     pending = nil
+    if not keyUp then
+        button:SetAttribute("useOnKeyDown", false)
+        keyUp = true
+    end
     local rod = Rod.Find()
     if not (on and rod) then
         button:Hide()
@@ -293,12 +434,14 @@ end
 
 -- Refreshes the button's macro, icon, place and visibility; in combat only marks the change as pending. Runs after
 -- BagButton.Update (BAG_UPDATE_DELAYED) and after the bag row's layout listener, whose row width places it. While
--- debugging, logs the button's state when it differs from the last one logged.
+-- debugging, logs the button's state when it differs from the last one logged. Then makes or refreshes the fishing
+-- macro.
 function Rod.Update()
     if not button then
         return
     end
     update()
+    ensureMacro()
     if debugOn() then
         local ok, line = pcall(updateLine)
         if ok and line ~= lastUpdate then
@@ -330,9 +473,9 @@ function Rod.Schedule()
     end
 end
 
--- PLAYER_REGEN_ENABLED: applies the change combat held back.
+-- PLAYER_REGEN_ENABLED: applies the change combat held back, the button's or the macro's.
 function Rod.OnCombatEnd()
-    if pending then
+    if pending or macroPending then
         Rod.Update()
     end
 end
@@ -347,12 +490,17 @@ function Rod.OnLogin()
             button = made
             button:SetSize(SIZE, SIZE)
             button:SetFrameStrata("MEDIUM")
-            button:RegisterForClicks("AnyUp", "AnyDown")
+            -- Mouse-up only (useOnKeyDown false, set by update): the mouse-down that starts a drag must not swap.
+            button:RegisterForClicks("AnyUp")
             button.icon = button:CreateTexture(nil, "ARTWORK")
             button.icon:SetAllPoints(button)
             button:SetScript("PreClick", preClick)
             button:SetScript("OnEnter", showTooltip)
             button:SetScript("OnLeave", ns.View.HideTooltip)
+            if ns.Check.Ready("Fishing macro") then
+                button:RegisterForDrag("LeftButton")
+                button:SetScript("OnDragStart", dragStart)
+            end
         else
             log("rod login: CreateFrame failed: " .. tostring(made))
         end

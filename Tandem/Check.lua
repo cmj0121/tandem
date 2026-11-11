@@ -60,6 +60,11 @@ Check.FEATURES = {
         { "SecureCmdList.EQUIP_TO_SLOT", "SlashCmdList.EQUIP_TO_SLOT", "SLASH_EQUIP_TO_SLOT1" },
         { "C_Item.EquipItemByName", "EquipItemByName" },
     } },
+    { name = "Fishing macro", needs = {
+        { "CreateMacro" }, { "EditMacro" }, { "GetMacroIndexByName" }, { "GetMacroInfo" }, { "PickupMacro" },
+        { "GetNumMacros" }, { "C_Item.GetItemSubClassInfo", "GetItemSubClassInfo" },
+        { "C_Spell.GetSpellInfo", "GetSpellInfo" },
+    } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },
