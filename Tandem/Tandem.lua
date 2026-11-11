@@ -57,6 +57,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if ns.Upgrade.OnItemInfo(...) then
             ns.ItemBorders.Schedule()
         end
+        ns.Rod.Schedule()
     elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
         ns.ItemBorders.Schedule()
     elseif event == "QUEST_COMPLETE" then

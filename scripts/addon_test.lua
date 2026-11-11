@@ -5833,8 +5833,8 @@ end
 
 -- Loads loadLive() as a level 40 warrior with ctx.worn[inv] = id for GetInventoryItemID, ctx.bags[bag] listing item
 -- ids (bags 0..4), ctx.bound["bag:slot"] for C_Item.IsBound over ItemLocation:CreateFromBagAndSlot, item 70 a second
--- fishing pole, and C_Timer.After queueing its callbacks in ctx.timers (ctx.expire() runs them). Every item's icon
--- is "icon<id>".
+-- fishing pole, items 901 (a fishing pole) and 902 (a sword) the client has no cached item info for, and
+-- C_Timer.After queueing its callbacks in ctx.timers (ctx.expire() runs them). Every item's icon is "icon<id>".
 local function loadRod()
     local ctx
     local bags = { [0] = {} }
@@ -5873,6 +5873,8 @@ local function loadRod()
     ctx.items[70] = { "INVTYPE_2HWEAPON", 2, 20 }
     ctx.cache[70] = { "Strong Pole", nil, 2, 30, 1 }
     ctx.tips[70] = { "Strong Pole", ctx.strength(99) }
+    ctx.items[901] = { "INVTYPE_2HWEAPON", 2, 20 }
+    ctx.items[902] = { "INVTYPE_WEAPON", 2, 7 }
     local instant = ctx.env.C_Item.GetItemInfoInstant
     ctx.env.C_Item.GetItemInfoInstant = function(id)
         local got, a, b, equipLoc, _, classID, subclassID = instant(id)
@@ -5893,6 +5895,7 @@ do
     local Rod = ctx.Rod
     check("rod: a fishing pole is a rod", Rod.IsRod(10), true)
     check("rod: a sword is not a rod", Rod.IsRod(7), false)
+    check("rod: a fishing pole not loaded yet is a rod", Rod.IsRod(901), true)
     check("rod: an item not loaded yet is not a rod", Rod.IsRod(900), false)
     check("rod: an unknown item is not a rod", Rod.IsRod(999), false)
     check("rod: no rod finds nothing", tostring(Rod.Find()), "nil")
@@ -6036,6 +6039,20 @@ do
     ctx.bags[0] = { 15, 14 }
     ctx.bound["0:1"] = true
     check("rod: a remembered sword no longer in the bags falls back", rodMacro(Rod), "/equipslot 16 item:15 | icon15")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16] = 902
+    Rod.Remember()
+    ctx.worn[16] = 901
+    ctx.bags[0] = { 902 }
+    check("rod: an uncached worn sword is remembered", rodMacro(Rod), "/equipslot 16 item:902 | icon902")
+    local C_Item = ctx.env.C_Item
+    ctx.env.C_Item = nil
+    check("rod: no C_Item, no rod", Rod.IsRod(10), false)
+    ctx.env.C_Item = C_Item
 end
 
 -- Fishing rod button (U2, D1, D3, D4): one secure button left of the bag row while the layout is on and a rod is owned.
@@ -6200,6 +6217,57 @@ do
     check("rod button: worn rod with nothing to put back still shows", rodState(b), "true | macro | nil | icon10")
     b.scripts.OnEnter(b)
     check("rod button: asks to equip a weapon", texts(ctx.tip), "Equip your weapon")
+end
+
+do
+    local ctx = loadRodButton()
+    local full = ctx.env.C_Item.GetItemInfo
+    ctx.env.C_Item.GetItemInfo = function(id)
+        if id ~= 10 then
+            return full(id)
+        end
+    end
+    ctx.worn[16] = 7
+    ctx.content[0] = { 10 }
+    ctx.run("layout on")
+    ctx.fire("PLAYER_LOGIN")
+    local b = ctx.button()
+    check("rod button: an uncached bag rod shows at login", rodState(b),
+        "true | macro | /equipslot 16 item:10 | icon10")
+    ctx.watch()
+    ctx.env.C_Item.GetItemInfo = full
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 10, true)
+    check("rod button: item info arriving refreshes it", table.concat(ctx.calls, " "):match("Show") ~= nil, true)
+end
+
+do
+    local timers = {}
+    local ctx = loadRodButton({ env = { C_Timer = { After = function(_, fn)
+        timers[#timers + 1] = fn
+    end } } })
+    ctx.content[0] = { 10 }
+    ctx.run("layout on")
+    ctx.fire("PLAYER_LOGIN")
+    ctx.watch()
+    local updates = 0
+    local b = ctx.button()
+    local show = b.Show
+    b.Show = function(self, ...)
+        updates = updates + 1
+        return show(self, ...)
+    end
+    for i = 1, 50 do
+        ctx.fire("GET_ITEM_INFO_RECEIVED", i, true)
+    end
+    check("rod button: item info events wait for the next frame", updates, 0)
+    local due = timers
+    timers = {}
+    for _, fn in ipairs(due) do
+        fn()
+    end
+    check("rod button: many item info events run one update", updates, 1)
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 10, true)
+    check("rod button: a later item info event schedules again", #timers, 1)
 end
 
 do

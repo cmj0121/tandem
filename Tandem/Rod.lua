@@ -49,6 +49,13 @@ local function inBags(id)
     end) or false
 end
 
+-- equipLoc, classID, subclassID from the client's instant item data, which needs no cached item info; nils when it
+-- does not tell.
+local function instant(id)
+    local _, _, _, equipLoc, _, classID, subclassID = call(C_Item and C_Item.GetItemInfoInstant, id)
+    return equipLoc, classID, subclassID
+end
+
 local function icon(id)
     return (select(5, call(C_Item and C_Item.GetItemInfoInstant, id)))
 end
@@ -61,10 +68,10 @@ local function bound(bag, slot)
 end
 
 -- Rod.IsRod(id) -> bool
--- True when the client knows the item as a fishing pole; an item not equippable or not loaded yet is not a rod.
+-- True when the client's instant item data says the item is a fishing pole, cached item info or not.
 function Rod.IsRod(id)
-    local info = ns.Items.Info(id)
-    return info and info[5] == WEAPON and info[6] == FISHING_POLE or false
+    local _, classID, subclassID = instant(id)
+    return classID == WEAPON and subclassID == FISHING_POLE
 end
 
 -- Rod.Find() -> rodID|nil, worn
@@ -104,15 +111,18 @@ end
 -- player took it off).
 function Rod.Remember()
     local main = worn(MAIN)
-    local info = main and ns.Items.Info(main)
-    if not (info and info[5] == WEAPON) or Rod.IsRod(main) then
+    local equipLoc, classID
+    if main then
+        equipLoc, classID = instant(main)
+    end
+    if classID ~= WEAPON or Rod.IsRod(main) then
         return
     end
     remembered.main = main
     local off = worn(OFF)
     if off then
         remembered.off = off
-    elseif info[4] == TWO_HAND or not restoring then
+    elseif equipLoc == TWO_HAND or not restoring then
         remembered.off = nil
     end
 end
@@ -155,9 +165,8 @@ function Rod.Back()
     if not main then
         return nil
     end
-    local info = ns.Items.Info(main)
     local off = remembered.off
-    if not inBags(off) or (info and info[4] == TWO_HAND) then
+    if not inBags(off) or instant(main) == TWO_HAND then
         off = nil
     end
     return main, off
@@ -266,6 +275,28 @@ function Rod.Update()
     button:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", ns.BagButton.OFFSET_X - ns.BagButton.Width() - GAP,
         ns.BagButton.OFFSET_Y + ns.Layout.MicroRoom())
     button:Show()
+end
+
+local scheduled = false
+
+-- GET_ITEM_INFO_RECEIVED: runs one Rod.Update on the next frame however many arrive before it; at once when C_Timer
+-- is missing.
+function Rod.Schedule()
+    if not (type(C_Timer) == "table" and type(C_Timer.After) == "function") then
+        Rod.Update()
+        return
+    end
+    if scheduled then
+        return
+    end
+    scheduled = true
+    if not pcall(C_Timer.After, 0, function()
+        scheduled = false
+        Rod.Update()
+    end) then
+        scheduled = false
+        Rod.Update()
+    end
 end
 
 -- PLAYER_REGEN_ENABLED: applies the change combat held back.
