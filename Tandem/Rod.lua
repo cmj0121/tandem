@@ -184,3 +184,117 @@ function Rod.Macro()
     end
     return text, icon(main)
 end
+
+-- The rod button (D1, D4): one secure button left of the bag row while the layout is on and a rod is owned; its
+-- click runs Rod.Macro(). It is parented and anchored to UIParent only, never to the bag row, and its attributes,
+-- anchor and visibility change only out of combat; a change asked for in combat waits for Rod.OnCombatEnd().
+
+local SIZE, GAP = 28, 4
+local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+local button, on, pending
+
+local function itemName(id)
+    local name = call(C_Item and C_Item.GetItemInfo, id)
+    return type(name) == "string" and name or ("item:" .. id)
+end
+
+-- Whether the general bags (family 0) have no free slot, so the off hand an equipped rod displaces has nowhere to go.
+local function bagsFull()
+    local general = ns.BagButton.Count()
+    return general.total > 0 and general.free == 0
+end
+
+local function showTooltip(self)
+    local tip = GameTooltip
+    if type(tip) ~= "table" then
+        return
+    end
+    local L = ns.L
+    tip:SetOwner(self, "ANCHOR_TOPLEFT")
+    tip:SetText(L["Fishing rod"])
+    local rod, isWorn = Rod.Find()
+    if rod and not isWorn then
+        tip:AddLine(L["Equip %s"]:format(itemName(rod)), 1, 1, 1)
+        if worn(OFF) and bagsFull() then
+            tip:AddLine(L["Bags full: no room for your off hand"], 1, 0.1, 0.1)
+        end
+        tip:AddLine(L["Click to equip your fishing rod"], 0.5, 0.5, 0.5)
+    elseif rod then
+        local main, off = Rod.Back()
+        if main then
+            local names = itemName(main) .. (off and (" + " .. itemName(off)) or "")
+            tip:AddLine(L["Put back %s"]:format(names), 1, 1, 1)
+            tip:AddLine(L["Click to put your weapons back"], 0.5, 0.5, 0.5)
+        else
+            tip:AddLine(L["Equip your weapon"], 1, 1, 1)
+        end
+    end
+    if call(InCombatLockdown) then
+        tip:AddLine(L["In combat the button runs the swap it showed before combat"], 0.5, 0.5, 0.5)
+    end
+    tip:Show()
+end
+
+local function preClick()
+    if Rod.Fishing() then
+        Rod.Restoring()
+    end
+end
+
+-- Refreshes the button's macro, icon, place and visibility; in combat only marks the change as pending. Runs after
+-- BagButton.Update (BAG_UPDATE_DELAYED) and after the bag row's layout listener, whose row width places it.
+function Rod.Update()
+    if not button then
+        return
+    end
+    if call(InCombatLockdown) then
+        pending = true
+        return
+    end
+    pending = nil
+    local rod = Rod.Find()
+    if not (on and rod) then
+        button:Hide()
+        return
+    end
+    local text, texture = Rod.Macro()
+    button:SetAttribute("type", "macro")
+    button:SetAttribute("macrotext", text)
+    button.icon:SetTexture(texture or icon(rod) or UNKNOWN_ICON)
+    button:ClearAllPoints()
+    button:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", ns.BagButton.OFFSET_X - ns.BagButton.Width() - GAP,
+        ns.BagButton.OFFSET_Y + ns.Layout.MicroRoom())
+    button:Show()
+end
+
+-- PLAYER_REGEN_ENABLED: applies the change combat held back.
+function Rod.OnCombatEnd()
+    if pending then
+        Rod.Update()
+    end
+end
+
+-- PLAYER_LOGIN: makes the button (never later, so it is never first made in combat by a layout change), remembers
+-- the worn weapons and shows the button when it should.
+function Rod.OnLogin()
+    if not button and type(CreateFrame) == "function" and ns.Check.Ready("Fishing rod") then
+        button = CreateFrame("Button", "TandemRodButton", UIParent, "SecureActionButtonTemplate")
+        button:SetSize(SIZE, SIZE)
+        button:SetFrameStrata("MEDIUM")
+        button:RegisterForClicks("AnyUp", "AnyDown")
+        button.icon = button:CreateTexture(nil, "ARTWORK")
+        button.icon:SetAllPoints(button)
+        button:SetScript("PreClick", preClick)
+        button:SetScript("OnEnter", showTooltip)
+        button:SetScript("OnLeave", ns.View.HideTooltip)
+    end
+    Rod.Remember()
+    Rod.Update()
+end
+
+-- Listens after the bag row (Rod.lua follows BagButton.lua in the toc), so BagButton.Width() is already current.
+ns.Layout.OnChange(function(layoutOn)
+    on = layoutOn and ns.Check.Ready("Fishing rod")
+    Rod.Update()
+end)

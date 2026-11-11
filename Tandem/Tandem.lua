@@ -73,10 +73,14 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
         ns.Upgrade.Invalidate()
         ns.ItemBorders.Schedule()
+        ns.Rod.Remember()
+        ns.Rod.Update()
     elseif event == "BAG_UPDATE_DELAYED" then
         ns.Upgrade.OnBagUpdate()
         ns.ItemBorders.Schedule()
+        -- After the bag row, whose new width places the rod button.
         ns.BagButton.Update()
+        ns.Rod.Update()
     elseif event == "PLAYER_LOGIN" then
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
@@ -84,6 +88,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Launcher.OnLogin()
         ns.Debug.OnLogin()
         ns.BagButton.OnLogin()
+        ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
@@ -107,6 +112,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.ActionBorders.Schedule()
         ns.Layout.OnCombatEnd()
         ns.BagButton.OnCombatEnd()
+        ns.Rod.OnCombatEnd()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then

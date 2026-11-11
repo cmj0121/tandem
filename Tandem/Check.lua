@@ -53,6 +53,13 @@ Check.FEATURES = {
     { name = "Bag button", needs = {
         { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "ToggleAllBags" },
     } },
+    { name = "Fishing rod", needs = {
+        { "GetInventoryItemID" }, { "C_Container.GetContainerItemID", "GetContainerItemID" },
+        { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "InCombatLockdown" },
+        { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
+        { "SecureCmdList.EQUIP_TO_SLOT", "SlashCmdList.EQUIP_TO_SLOT", "SLASH_EQUIP_TO_SLOT1" },
+        { "EquipItemByName" },
+    } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },

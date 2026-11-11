@@ -9,6 +9,8 @@ local BagButton = {}
 ns.BagButton = BagButton
 
 local OFFSET_X, OFFSET_Y = -12, 8
+-- The row's anchor offsets from the bottom-right corner, for the fishing rod button to its left.
+BagButton.OFFSET_X, BagButton.OFFSET_Y = OFFSET_X, OFFSET_Y
 local SIZE, SPACING = 28, 4
 local BAGS = 4
 local LOW = 10
@@ -20,6 +22,7 @@ local WHITE, YELLOW, RED = { 1, 1, 1 }, { 1, 0.82, 0 }, { 1, 0.1, 0.1 }
 local BAG_ACTIONS = { "OPENALLBAGS", "TOGGLEBACKPACK" }
 
 local row, on, opener, pendingBind
+local width = 0
 local icons = {}
 
 local call = ns.Store.Call
@@ -242,6 +245,7 @@ function BagButton.Update()
         return
     end
     if not on then
+        width = 0
         row:Hide()
         return
     end
@@ -263,8 +267,14 @@ function BagButton.Update()
         icons[i].group = nil
         icons[i]:Hide()
     end
-    row:SetSize(#groups * SIZE + (#groups - 1) * SPACING, SIZE)
+    width = #groups * SIZE + (#groups - 1) * SPACING
+    row:SetSize(width, SIZE)
     row:Show()
+end
+
+-- BagButton.Width() -> number: the row's width as last laid out, 0 while it is hidden.
+function BagButton.Width()
+    return width
 end
 
 local function onChange(layoutOn)
