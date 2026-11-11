@@ -65,6 +65,15 @@ Check.FEATURES = {
         { "GetNumMacros" }, { "C_Item.GetItemSubClassInfo", "GetItemSubClassInfo" },
         { "C_Spell.GetSpellInfo", "GetSpellInfo" },
     } },
+    { name = "Cure buttons", needs = {
+        { "InCombatLockdown" }, { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
+        { "IsPlayerSpell", "IsSpellKnown" }, { "C_Spell.GetSpellInfo", "GetSpellInfo" },
+        { "C_UnitAuras.GetAuraDataByIndex", "UnitDebuff" }, { "UnitExists" }, { "UnitName" },
+    } },
+    { name = "Cure macro", needs = {
+        { "CreateMacro" }, { "EditMacro" }, { "GetMacroIndexByName" }, { "GetMacroInfo" }, { "PickupMacro" },
+        { "GetNumMacros" },
+    } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },

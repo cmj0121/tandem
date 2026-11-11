@@ -89,6 +89,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Launcher.OnLogin()
         ns.Debug.OnLogin()
         ns.BagButton.OnLogin()
+        -- Before the rod button, whose first update places the cure buttons. Aura events only once there are some.
+        if ns.Cure.OnLogin() then
+            ns.Store.RegisterEvent(self, "UNIT_AURA")
+            ns.Store.RegisterEvent(self, "GROUP_ROSTER_UPDATE")
+        end
         ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
@@ -98,6 +103,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
+        if event ~= "ACTIONBAR_SLOT_CHANGED" and event ~= "ACTIONBAR_PAGE_CHANGED"
+            and event ~= "UPDATE_BONUS_ACTIONBAR" then
+            -- A cure spell learned shows its button.
+            ns.Cure.Update()
+        end
         if event == "PLAYER_ENTERING_WORLD" then
             ns.Layout.Refade()
         end
@@ -114,6 +124,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Layout.OnCombatEnd()
         ns.BagButton.OnCombatEnd()
         ns.Rod.OnCombatEnd()
+        ns.Cure.OnCombatEnd()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
@@ -123,6 +134,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MapInfo.Update()
     elseif event == "TIME_PLAYED_MSG" then
         ns.MapInfo.OnTimePlayed(...)
+    elseif event == "UNIT_AURA" or event == "GROUP_ROSTER_UPDATE" then
+        ns.Cure.Scan(event == "UNIT_AURA" and (...) or nil)
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         ns.Debug.OnBlocked(event, ...)
     end

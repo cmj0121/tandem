@@ -217,9 +217,6 @@ local MACRO_ICON = "INV_Misc_QuestionMark"
 local FISHING_SPELL = 7620
 -- Fishing Pole: the client greys an item the player does not own, so the macro's icon is grey with no rod.
 local DEFAULT_ROD = 6256
--- The client's account and character macro slots when it does not say (MAX_ACCOUNT_MACROS and MAX_CHARACTER_MACROS
--- live in the load-on-demand macro UI). Character macros have the indexes after the account ones.
-local ACCOUNT_MACROS, CHARACTER_MACROS = 120, 18
 local macroPending, macroFull, lastMacro
 
 local function debugOn()
@@ -263,24 +260,6 @@ function Rod.MacroBody()
         pole, fishing, rod, pole, rod, pole, fishing)
 end
 
--- The index of the character macro named Tandem Fishing, or nil; an account macro of that name is not it.
-local function characterMacro()
-    local accounts = type(MAX_ACCOUNT_MACROS) == "number" and MAX_ACCOUNT_MACROS or ACCOUNT_MACROS
-    local index = call(GetMacroIndexByName, MACRO_NAME)
-    if type(index) ~= "number" or index <= 0 then
-        return nil
-    end
-    if index > accounts then
-        return index
-    end
-    local _, characterMacros = call(GetNumMacros)
-    for i = accounts + 1, accounts + (type(characterMacros) == "number" and characterMacros or 0) do
-        if call(GetMacroInfo, i) == MACRO_NAME then
-            return i
-        end
-    end
-end
-
 local function macroLog(line)
     if line ~= lastMacro then
         lastMacro = line
@@ -306,32 +285,17 @@ local function ensureMacro()
             tostring(fishingName())))
         return nil
     end
-    local index = characterMacro()
-    if index then
-        macroFull = nil
-        if select(3, call(GetMacroInfo, index)) ~= body then
-            call(EditMacro, index, MACRO_NAME, MACRO_ICON, body)
-            lastMacro = nil
-            macroLog(("edited index=%d body=%s"):format(index, (body:gsub("\n", "|"))))
-        end
-        return index
-    end
-    if not lastRod then
+    local index, what, used, max = ns.Macro.Ensure(MACRO_NAME, MACRO_ICON, body, lastRod ~= nil)
+    macroFull = what == "full" or nil
+    if what == "edited" or what == "created" then
+        lastMacro = nil
+        macroLog(("%s index=%s body=%s"):format(what, tostring(index), (body:gsub("\n", "|"))))
+    elseif what == "absent" then
         macroLog("skipped: no rod seen")
-        return nil
+    elseif what == "full" then
+        macroLog(("skipped: character macros full (%d/%d)"):format(used, max))
     end
-    local _, characterMacros = call(GetNumMacros)
-    local max = type(MAX_CHARACTER_MACROS) == "number" and MAX_CHARACTER_MACROS or CHARACTER_MACROS
-    if type(characterMacros) == "number" and characterMacros >= max then
-        macroFull = true
-        macroLog(("skipped: character macros full (%d/%d)"):format(characterMacros, max))
-        return nil
-    end
-    macroFull = nil
-    index = call(CreateMacro, MACRO_NAME, MACRO_ICON, body, true)
-    lastMacro = nil
-    macroLog(("created index=%s body=%s"):format(tostring(index), (body:gsub("\n", "|"))))
-    return type(index) == "number" and index > 0 and index or nil
+    return index
 end
 
 -- OnDragStart: picks the fishing macro up for an action bar, making it first when it is missing; nothing in combat.
@@ -423,6 +387,16 @@ local function update()
     button:Show()
 end
 
+-- Rod.NextX() -> x: the BOTTOMRIGHT x offset from UIParent's bottom-right corner for the right edge of a button left
+-- of the rod button, or of the bag row while the rod button is hidden; the y offset is the rod button's.
+function Rod.NextX()
+    local x = ns.BagButton.OFFSET_X - ns.BagButton.Width() - GAP
+    if button and call(button.IsShown, button) == true then
+        x = x - SIZE - GAP
+    end
+    return x
+end
+
 local function updateLine()
     local rod, isWorn = Rod.Find()
     local text = rod and Rod.Macro()
@@ -442,6 +416,10 @@ function Rod.Update()
     end
     update()
     ensureMacro()
+    -- The cure buttons sit left of this one, so they follow its place and visibility.
+    if ns.Cure then
+        ns.Cure.Update()
+    end
     if debugOn() then
         local ok, line = pcall(updateLine)
         if ok and line ~= lastUpdate then
