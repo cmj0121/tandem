@@ -95,7 +95,7 @@ Probe: LootFrame.ScrollBox missing
 
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
-`Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、
+`Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
 `Map info` 與 `Shaman area`。缺少 API 的功能會保持關閉，而不會引發錯誤。`Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
 
@@ -163,6 +163,7 @@ str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10
 - 雙手武器與你的主手加副手一起比較：兩者分數相加，副手武器的 dps 以一半權重計算，護甲（例如盾牌的）也相加。空手
   計為 0。若你已在使用雙手武器，則只與那把雙手武器比較。
 - 正在使用雙手武器時，副手物品絕不算升級。
+- 主手拿著魚竿時，主手、副手與雙手物品都不算升級：在你換回武器之前，提示框、邊框與提醒都不會顯示武器升級。
 
 所有資料都即時從用戶端讀取：物品等級、需求等級、部位與類型來自物品資訊，屬性來自該物品本身的提示框（需要
 [`/tandem check`](#tandem-check) 的 `Stat search` 這行）。身上的裝備從其裝備欄位讀取，背包物品從其背包格讀取，拾取
@@ -183,6 +184,7 @@ Tandem：胸部的升級：[Plate Chest]（分數 24.5，高於 18.0）
 
 - 每件物品每次登入最多提醒一次，且只在它新進入背包時：登入時背包裡的物品會被靜默記下，在背包之間移動物品也不會提醒。
 - 戰鬥中提醒會先保留，戰鬥結束時（`PLAYER_REGEN_ENABLED`）才印出；戰鬥中不會印出任何訊息。
+- 釣魚時進入背包的武器也會先保留：卸下魚竿後背包第一次變動時，若它仍在背包中才判斷。
 - 提醒只是建議：Tandem 絕不會替你裝備任何東西。
 - [`/tandem check`](#tandem-check) 的 `Upgrade alert` 這行為 `missing` 時，不會有任何動作。
 
@@ -324,6 +326,12 @@ Tandem: layout on
 指向自己的開啟按鈕，讓材料包與其他背包一起開關；材料包有格子時，背包圖示列最左側會多一個標題為 `材料包` 的圖示，
 點擊任一圖示也會一併開啟它。
 
+身上有魚竿時，背包圖示列左邊會多一個圖示。拿著武器時它顯示魚竿：點擊即裝備魚竿。裝備魚竿時它顯示你的主手：點擊即
+換回魚竿取代的主手與副手（若副手是你自己卸下的，則不會換回）。釣魚時執行 `/reload` 後，點擊它會換上背包中最好的已綁定主手；
+沒有的話，提示框會顯示 `請裝備你的武器`。滑鼠移上去會顯示點擊後要裝備什麼；要裝備魚竿時若身上有副手且一般背包沒有空格，
+會先以紅字 `背包已滿：沒有空間放副手` 提醒你。Tandem 只在你點擊時才切換。戰鬥中圖示無法變更，因此點擊會執行戰鬥前顯示
+的切換。它只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Fishing rod` 這行。
+
 ### 地圖資訊
 
 [經驗條](#經驗條)正下方置中有一行小字，以百分比顯示你在區域地圖上的座標，以及你在目前等級玩了多久：
@@ -418,9 +426,10 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十四行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十五行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
-   `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Map info` 與 `Shaman area`，每行後面接著 `ok`
+   `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Map info` 與
+   `Shaman area`，每行後面接著 `ok`
    或 `missing` 以及它的 API。之後是十四行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
@@ -497,7 +506,7 @@ Lua 錯誤。
    經驗時還有 `休息 +<n>%`。殺一隻怪：經驗條會前進。
 3. 右下角的背包圖示列在背包圖示上顯示一般背包的剩餘 / 總格數，左邊每種專業背包各一個圖示。點擊任一圖示：所有背包
    都會開啟。拾取一件
-   物品：剩餘格數減一。
+   物品：剩餘格數減一。背包中有魚竿時，背包圖示列左邊有一個魚竿圖示：點擊後裝備魚竿；再點一次，武器就換回來。
 4. 薩滿的圖騰列在主快捷列正上方自成一排，戰鬥中施法後也不會移動；頭像之間一開始什麼都沒有。施放閃電之盾：
    那裡仍然什麼都沒有。放下一個圖騰：玩家與目標頭像之間出現它的圖示，顯示倒數中的剩餘時間，下方有一條細的
    藍色法力線。滑鼠移到圖示上：顯示它的名稱。圖騰時間到時圖示消失；最後一個消失時，整排連同法力線一起消失。
@@ -510,7 +519,7 @@ Lua 錯誤。
    你先前的版面，快捷列、背包列、狀態列、目標的目標與小地圖座標設定都和之前一樣。
 8. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、地圖資訊與職業區都會消失。
 
-請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Map info`、`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架
+請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Map info`、`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架
 重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
 
 ## Interface number
