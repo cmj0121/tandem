@@ -5,7 +5,8 @@ local _, ns = ...
 -- /reload or logout for a developer to read. Nothing is printed while it records. A snapshot (2 s after login, on
 -- every layout change, or `/tandem debug snap`) lists every named, visible child of UIParent in the bottom band and
 -- the known status (XP) bar frames, to find which Blizzard frame shows where; it also walks the minimap's frames and
--- lists the minimap and coordinate CVars, to find the client's own coordinates text (D11). It hooks nothing.
+-- lists the minimap and coordinate CVars, to find the client's own coordinates text (D11). It hooks only the client's
+-- error handler, to keep Lua errors with their stack while it records.
 local Debug = {}
 ns.Debug = Debug
 
@@ -206,6 +207,49 @@ local MAX_BLOCKED = 50
 -- A blocked line carries at most this many characters of the call stack.
 local MAX_STACK = 600
 
+-- TandemDebug.errors keeps the last this many Lua errors; each carries at most MAX_STACK characters of stack and of
+-- locals.
+local MAX_ERRORS = 20
+local errorsHooked = false
+
+-- While recording, keeps "<time> <message> stack=<stack> locals=<locals>" for a Lua error in TandemDebug.errors,
+-- then hands it to the client's own handler as before.
+local function recordError(msg)
+    local d = db()
+    if type(d.errors) ~= "table" then
+        d.errors = {}
+    end
+    local entry = ("%.2f %s"):format(tonumber((call(GetTime))) or 0, tostring(msg))
+    local stack = call(debugstack, 3, 12, 0)
+    if type(stack) == "string" and stack ~= "" then
+        entry = entry .. " stack=" .. stack:sub(1, MAX_STACK):gsub("\n", " | ")
+    end
+    local locals = call(debuglocals, 4)
+    if type(locals) == "string" and locals ~= "" then
+        entry = entry .. " locals=" .. locals:sub(1, MAX_STACK):gsub("\n", " | ")
+    end
+    d.errors[#d.errors + 1] = entry
+    while #d.errors > MAX_ERRORS do
+        table.remove(d.errors, 1)
+    end
+end
+
+-- Wraps the client's error handler once, so a Lua error is recorded (while debug is on) and still shown as before.
+local function hookErrors()
+    if errorsHooked or type(geterrorhandler) ~= "function" or type(seterrorhandler) ~= "function" then
+        return
+    end
+    local previous = geterrorhandler()
+    errorsHooked = pcall(seterrorhandler, function(msg, ...)
+        if Debug.IsOn() then
+            pcall(recordError, msg)
+        end
+        if type(previous) == "function" then
+            return previous(msg, ...)
+        end
+    end)
+end
+
 -- Turns recording on or off (on starts a fresh log and blocked list); returns the number of lines kept. On also
 -- turns the client's taint log on, off turns it off again.
 function Debug.Set(on)
@@ -214,7 +258,9 @@ function Debug.Set(on)
     if d.on then
         d.log = {}
         d.blocked = {}
+        d.errors = {}
         Debug.Log("debug on")
+        hookErrors()
     end
     ns.Store.SetCVar(TAINT_CVAR, d.on and "1" or "0")
     return #d.log
@@ -249,6 +295,7 @@ function Debug.OnLogin()
     if Debug.IsOn() then
         ns.Store.SetCVar(TAINT_CVAR, "1")
         Debug.Log("login")
+        hookErrors()
         Debug.Log(("taint log: %s=%s"):format(TAINT_CVAR, tostring(ns.Store.GetCVar(TAINT_CVAR))))
         Debug.Check()
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
