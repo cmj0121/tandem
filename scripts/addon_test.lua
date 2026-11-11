@@ -917,6 +917,11 @@ function WIDGET.SetTextColor(w, r, g, b) w.textColor = { r, g, b } end
 function WIDGET.SetStatusBarColor(w, r, g, b) w.barColor = { r, g, b } end
 function WIDGET.SetHeight(w, h) w.height = h end
 function WIDGET.SetWidth(w, v) w.width = v end
+function WIDGET.RegisterForClicks(w, ...) w.clicks = { ... } end
+function WIDGET.SetAttribute(w, key, value)
+    w.attrs = w.attrs or {}
+    w.attrs[key] = value
+end
 -- Six pixels a character stands in for the font's measure.
 function WIDGET.GetStringWidth(w) return 6 * #(w.text or "") end
 
@@ -1004,6 +1009,8 @@ local function checkAPIs()
         EditModePresetLayoutManager = { GetCopyOfPresetLayouts = fn },
         MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, ToggleAllBags = fn,
         GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn,
+        GetInventoryItemID = fn, InCombatLockdown = fn, SecureActionButtonMixin = {},
+        SecureCmdList = { EQUIP_TO_SLOT = fn }, EquipItemByName = fn,
         C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn }, RequestTimePlayed = fn,
     }
 end
@@ -1034,7 +1041,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: fourteen features", #addon.Check.FEATURES, 14)
+    check("check: fifteen features", #addon.Check.FEATURES, 15)
     check("check: eighteen probes", #addon.Check.PROBES, 18)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1044,7 +1051,7 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
-        "Map info", "Shaman area" }) do
+        "Fishing rod", "Map info", "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1106,7 +1113,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on twelve features", count, 12)
+    check("check: kept code gates on thirteen features", count, 13)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -5819,6 +5826,517 @@ do
     end
     check("minimap store: a newer db is not written",
         loadWithDB({ schemaVersion = 8 }).Store.SetLayout("minimap", { angle = 1 }), false)
+end
+
+
+-- Fishing rod swap (U1, D2, D3): Rod.lua's pure logic over a fake client.
+
+-- Loads loadLive() as a level 40 warrior with ctx.worn[inv] = id for GetInventoryItemID, ctx.bags[bag] listing item
+-- ids (bags 0..4), ctx.bound["bag:slot"] for C_Item.IsBound over ItemLocation:CreateFromBagAndSlot, item 70 a second
+-- fishing pole, and C_Timer.After queueing its callbacks in ctx.timers (ctx.expire() runs them). Every item's icon
+-- is "icon<id>".
+local function loadRod()
+    local ctx
+    local bags = { [0] = {} }
+    local env = {
+        GetInventoryItemID = function(unit, inv)
+            assert(unit == "player")
+            return ctx.worn[inv]
+        end,
+        C_Container = {
+            GetContainerNumSlots = function(bag)
+                return bags[bag] and #bags[bag] or 0
+            end,
+            GetContainerItemID = function(bag, slot)
+                return bags[bag] and bags[bag][slot]
+            end,
+        },
+        ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot)
+            return { key = bag .. ":" .. slot }
+        end },
+        C_Timer = { After = function(_, fn)
+            ctx.timers[#ctx.timers + 1] = fn
+        end },
+    }
+    ctx = loadLive("enUS", { env = env })
+    ctx.worn, ctx.bags, ctx.bound, ctx.timers = {}, bags, {}, {}
+    function ctx.expire()
+        local due = ctx.timers
+        ctx.timers = {}
+        for _, fn in ipairs(due) do
+            fn()
+        end
+    end
+    ctx.env.C_Item.IsBound = function(loc)
+        return ctx.bound[loc.key] == true
+    end
+    ctx.items[70] = { "INVTYPE_2HWEAPON", 2, 20 }
+    ctx.cache[70] = { "Strong Pole", nil, 2, 30, 1 }
+    ctx.tips[70] = { "Strong Pole", ctx.strength(99) }
+    local instant = ctx.env.C_Item.GetItemInfoInstant
+    ctx.env.C_Item.GetItemInfoInstant = function(id)
+        local got, a, b, equipLoc, _, classID, subclassID = instant(id)
+        return got, a, b, equipLoc, "icon" .. tostring(id), classID, subclassID
+    end
+    ctx.Rod = ctx.addon.Rod
+    return ctx
+end
+
+-- Returns Rod.Macro()'s text and icon as one string.
+local function rodMacro(Rod)
+    local text, icon = Rod.Macro()
+    return tostring(text) .. " | " .. tostring(icon)
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    check("rod: a fishing pole is a rod", Rod.IsRod(10), true)
+    check("rod: a sword is not a rod", Rod.IsRod(7), false)
+    check("rod: an item not loaded yet is not a rod", Rod.IsRod(900), false)
+    check("rod: an unknown item is not a rod", Rod.IsRod(999), false)
+    check("rod: no rod finds nothing", tostring(Rod.Find()), "nil")
+    check("rod: no rod has no macro", rodMacro(Rod), "nil | nil")
+    check("rod: no rod is not fishing", Rod.Fishing(), false)
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    ctx.bags[0] = { 9, 10 }
+    Rod.Remember()
+    local id, worn = Rod.Find()
+    check("rod: a bag rod is found, not worn", tostring(id) .. " " .. tostring(worn), "10 false")
+    check("rod: a bag rod with a sword worn equips the rod", rodMacro(Rod), "/equipslot 16 item:10 | icon10")
+    check("rod: nothing to put back while not fishing", tostring(Rod.Back()), "nil")
+    ctx.worn[16], ctx.worn[17] = 10, nil
+    ctx.bags[0] = { 9, 7, 14 }
+    Rod.Remember()
+    id, worn = Rod.Find()
+    check("rod: a worn rod is found worn", tostring(id) .. " " .. tostring(worn), "10 true")
+    check("rod: the worn rod is fishing", Rod.Fishing(), true)
+    check("rod: a worn rod puts the sword and off hand back", rodMacro(Rod),
+        "/equipslot 16 item:7\n/equipslot 17 item:14 | icon7")
+    ctx.worn[16] = nil
+    ctx.bags[0] = { 9, 7, 14, 10 }
+    Rod.Remember()
+    ctx.worn[16] = 10
+    check("rod: an empty main hand never overwrites", rodMacro(Rod),
+        "/equipslot 16 item:7\n/equipslot 17 item:14 | icon7")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    Rod.Remember()
+    ctx.worn[16], ctx.worn[17] = 10, nil
+    ctx.bags[0] = { 7, 14 }
+    Rod.Restoring()
+    ctx.worn[16] = 7
+    ctx.bags[0] = { 14, 10 }
+    Rod.Remember()
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 7, 14 }
+    check("rod: an empty off hand seen mid-restore keeps the off hand", rodMacro(Rod),
+        "/equipslot 16 item:7\n/equipslot 17 item:14 | icon7")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    Rod.Remember()
+    ctx.worn[17] = nil
+    ctx.bags[0] = { 14, 10 }
+    Rod.Remember()
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 14, 7 }
+    check("rod: an off hand taken off is not put back", rodMacro(Rod), "/equipslot 16 item:7 | icon7")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    Rod.Remember()
+    Rod.Restoring()
+    ctx.expire()
+    ctx.worn[17] = nil
+    Rod.Remember()
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 14, 7 }
+    check("rod: an off hand taken off after the restore window is forgotten", rodMacro(Rod),
+        "/equipslot 16 item:7 | icon7")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    Rod.Remember()
+    Rod.Restoring()
+    ctx.worn[16], ctx.worn[17] = 15, nil
+    Rod.Remember()
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 14, 7, 15 }
+    check("rod: a two-hander forgets the off hand even mid-restore", rodMacro(Rod), "/equipslot 16 item:15 | icon15")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 7, 15, 70 }
+    check("rod: no soulbound weapon, nothing to put back", rodMacro(Rod), "nil | nil")
+    ctx.bound["0:1"], ctx.bound["0:3"] = true, true
+    check("rod: the fallback is a soulbound usable weapon, never a fishing pole", rodMacro(Rod),
+        "/equipslot 16 item:7 | icon7")
+    ctx.bound["0:2"] = true
+    check("rod: the fallback is the highest-scored weapon", rodMacro(Rod), "/equipslot 16 item:15 | icon15")
+    ctx.items[71] = { "INVTYPE_WEAPON", 2, 7 }
+    ctx.cache[71] = { "Plated Sword", nil, 2, 20, 1 }
+    ctx.tips[71] = { "Plated Sword", ctx.strength(29), "100 Armor" }
+    ctx.bags[0] = { 15, 71 }
+    ctx.bound["0:1"], ctx.bound["0:2"] = true, true
+    check("rod: a score tie goes to more armor", rodMacro(Rod), "/equipslot 16 item:71 | icon71")
+    ctx.bags[0] = { 71, 15 }
+    check("rod: the armor tie-break does not depend on bag order", rodMacro(Rod), "/equipslot 16 item:71 | icon71")
+    ctx.env.C_Item.IsBound = nil
+    check("rod: no C_Item.IsBound, no fallback", rodMacro(Rod), "nil | nil")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 7 }
+    ctx.bound["0:1"] = true
+    ctx.env.ItemLocation = nil
+    check("rod: no ItemLocation, no fallback", rodMacro(Rod), "nil | nil")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16] = 10
+    ctx.bags[0] = { 7 }
+    ctx.bound["0:1"] = true
+    ctx.tips[7] = nil
+    check("rod: a weapon with no score yet is no fallback", rodMacro(Rod), "nil | nil")
+end
+
+do
+    local ctx = loadRod()
+    local Rod = ctx.Rod
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    Rod.Remember()
+    ctx.worn[16], ctx.worn[17] = 10, nil
+    ctx.bags[0] = { 15, 14 }
+    ctx.bound["0:1"] = true
+    check("rod: a remembered sword no longer in the bags falls back", rodMacro(Rod), "/equipslot 16 item:15 | icon15")
+end
+
+-- Fishing rod button (U2, D1, D3, D4): one secure button left of the bag row while the layout is on and a rod is owned.
+
+-- Loads loadBags() with the Fishing rod APIs: ctx.worn[inv] = id for GetInventoryItemID, ctx.content[bag] listing
+-- item ids, item 10 a fishing pole, 7 a sword, 14 an off-hand sword (icons "icon<id>", names "Item <id>").
+-- ctx.button() is TandemRodButton; ctx.calls logs its SetAttribute/SetPoint/Show/Hide calls once ctx.watch() ran.
+local ROD_ITEMS = {
+    [7] = { "INVTYPE_WEAPON", 2, 7 }, [10] = { "INVTYPE_2HWEAPON", 2, 20 }, [14] = { "INVTYPE_WEAPONOFFHAND", 2, 7 },
+}
+local function loadRodButton(opts)
+    opts = opts or {}
+    local fn = function() end
+    local ctx
+    local env = {
+        GetInventoryItemID = function(_, inv) return ctx.worn[inv] end,
+        SecureActionButtonMixin = {}, SecureCmdList = { EQUIP_TO_SLOT = fn }, EquipItemByName = fn,
+        C_Item = {
+            GetItemInfoInstant = function(id)
+                local it = ROD_ITEMS[id]
+                if it then
+                    return id, nil, nil, it[1], "icon" .. id, it[2], it[3]
+                end
+            end,
+            GetItemInfo = function(id)
+                if ROD_ITEMS[id] then
+                    return "Item " .. id, nil, 2, 10, 1
+                end
+            end,
+        },
+    }
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    ctx = loadBags({ env = env, locale = opts.locale })
+    ctx.worn, ctx.content, ctx.calls = {}, { [0] = {} }, {}
+    ctx.env.C_Container.GetContainerItemID = function(bag, slot)
+        return ctx.content[bag] and ctx.content[bag][slot]
+    end
+    local slots = ctx.env.C_Container.GetContainerNumSlots
+    ctx.env.C_Container.GetContainerNumSlots = function(bag)
+        return math.max(slots(bag), ctx.content[bag] and #ctx.content[bag] or 0)
+    end
+    function ctx.button()
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemRodButton" then
+                return w
+            end
+        end
+    end
+    function ctx.watch()
+        local b = ctx.button()
+        for _, method in ipairs({ "SetAttribute", "SetPoint", "Show", "Hide" }) do
+            local orig = WIDGET[method]
+            b[method] = function(self, ...)
+                ctx.calls[#ctx.calls + 1] = method
+                return orig(self, ...)
+            end
+        end
+    end
+    return ctx
+end
+
+local function rodState(b)
+    return table.concat({ tostring(b.shown), tostring(b.attrs and b.attrs.type),
+        tostring(b.attrs and b.attrs.macrotext), tostring(b.icon.texture) }, " | ")
+end
+
+do
+    local ctx = loadRodButton()
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    local b = ctx.button()
+    check("rod button: made at login as a secure button on UIParent", tostring(b ~= nil) .. " " .. b.kind .. " "
+        .. tostring(b.template) .. " " .. tostring(b.parent == ctx.env.UIParent) .. " " .. b.width .. "x" .. b.height,
+        "true Button SecureActionButtonTemplate true 28x28")
+    check("rod button: clicks registered on up and down", table.concat(b.clicks, " "), "AnyUp AnyDown")
+    check("rod button: hidden while the layout is off", b.shown, false)
+    ctx.run("layout on")
+    check("rod button: shown with the equip macro", rodState(b),
+        "true | macro | /equipslot 16 item:10 | icon10")
+    local p = b.points[1]
+    check("rod button: anchored to UIParent left of the bag row", #b.points .. " " .. table.concat({ p[1],
+        tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -44 8")
+    check("rod button: never parented or anchored to the bag row",
+        tostring(b.parent == ctx.row()) .. " " .. tostring(p[2] == ctx.row()), "false false")
+    ctx.bags[3] = { 20, 7, 8 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("rod button: moves left as the bag row grows", b.points[1][4], -76)
+
+    b.scripts.OnEnter(b)
+    check("rod button: tooltip to equip the rod", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Fishing rod / Equip Item 10 / Click to equip your fishing rod")
+    ctx.bags[0][2], ctx.bags[1][2], ctx.bags[2][2] = 0, 0, 0
+    b.scripts.OnEnter(b)
+    check("rod button: bags full with an off hand worn", texts(ctx.tip),
+        "Equip Item 10 / Bags full: no room for your off hand / Click to equip your fishing rod")
+    check("rod button: the bags-full line is red", colour(ctx.tip.lines[2]), "1,0.1,0.1")
+    ctx.worn[17] = nil
+    b.scripts.OnEnter(b)
+    check("rod button: no off hand, no bags-full line", texts(ctx.tip),
+        "Equip Item 10 / Click to equip your fishing rod")
+    ctx.worn[17] = 14
+    ctx.bags[2][2] = 3
+    b.scripts.OnEnter(b)
+    check("rod button: a free general slot, no bags-full line", texts(ctx.tip),
+        "Equip Item 10 / Click to equip your fishing rod")
+    ctx.bags[2][2] = 0
+    b.scripts.OnEnter(b)
+    check("rod button: a profession bag's free slots do not count", texts(ctx.tip):match("Bags full") ~= nil, true)
+
+    ctx.worn[16], ctx.worn[17] = 10, nil
+    ctx.content[0] = { 7, 14 }
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    check("rod button: rod worn puts the weapons back", rodState(b),
+        "true | macro | /equipslot 16 item:7\n/equipslot 17 item:14 | icon7")
+    b.scripts.OnEnter(b)
+    check("rod button: tooltip to put the weapons back", texts(ctx.tip),
+        "Put back Item 7 + Item 14 / Click to put your weapons back")
+
+    ctx.watch()
+    ctx.state.combat = true
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    ctx.fire("BAG_UPDATE_DELAYED")
+    ctx.content[0] = {}
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("rod button: nothing changed in combat", #ctx.calls .. " " .. rodState(b),
+        "0 true | macro | /equipslot 16 item:7\n/equipslot 17 item:14 | icon7")
+    b.scripts.OnEnter(b)
+    check("rod button: in-combat tooltip note", ctx.tip.lines[#ctx.tip.lines].text,
+        "In combat the button runs the swap it showed before combat")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("rod button: the rod gone hides it when combat ends", b.shown, false)
+    ctx.calls = {}
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("rod button: nothing pending, nothing applied", #ctx.calls, 0)
+
+    ctx.content[0] = { 10 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("rod button: shown again with a rod back in the bags", b.shown, true)
+    ctx.run("layout off")
+    check("rod button: hidden when the layout is off", b.shown, false)
+    ctx.state.combat = true
+    ctx.calls = {}
+    ctx.run("layout on")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("rod button: the layout turned on in combat shows it after", b.shown, true)
+end
+
+do
+    local ctx = loadRodButton()
+    ctx.worn[16] = 10
+    ctx.content[0] = {}
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b = ctx.button()
+    check("rod button: worn rod with nothing to put back still shows", rodState(b), "true | macro | nil | icon10")
+    b.scripts.OnEnter(b)
+    check("rod button: asks to equip a weapon", texts(ctx.tip), "Equip your weapon")
+end
+
+do
+    local ctx = loadRodButton()
+    local restoring = 0
+    ctx.worn[16] = 10
+    ctx.content[0] = { 7 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.addon.Rod.Restoring = function() restoring = restoring + 1 end
+    local b = ctx.button()
+    b.scripts.PreClick(b, "LeftButton", true)
+    ctx.worn[16] = 7
+    b.scripts.PreClick(b, "LeftButton", true)
+    check("rod button: PreClick marks only a restore click", restoring, 1)
+end
+
+do
+    local ctx = loadRodButton()
+    ctx.env.EquipItemByName = nil
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("rod button: not ready makes no button", ctx.button(), nil)
+    for _, need in ipairs({ "GetInventoryItemID", "InCombatLockdown", "SecureActionButtonMixin", "SecureCmdList" }) do
+        local env = checkAPIs()
+        env[need] = nil
+        check(("fishing rod: not ready without %s"):format(need),
+            loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), false)
+    end
+    local env = checkAPIs()
+    env.SecureCmdList, env.SLASH_EQUIP_TO_SLOT1 = nil, "/equipslot"
+    env.SecureActionButtonMixin, env.SecureActionButton_OnClick = nil, function() end
+    check("fishing rod: ready with the other alternatives",
+        loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), true)
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    check("check: fishing rod line", runCheck(addon, printed)["Fishing rod"],
+        "Fishing rod: ok (GetInventoryItemID ok, C_Container.GetContainerItemID ok, GetContainerItemID missing, "
+            .. "C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, InCombatLockdown ok, "
+            .. "SecureActionButton_OnClick missing, SecureActionButtonMixin ok, SecureCmdList.EQUIP_TO_SLOT ok, "
+            .. "SlashCmdList.EQUIP_TO_SLOT missing, SLASH_EQUIP_TO_SLOT1 missing, EquipItemByName ok)")
+end
+
+do
+    local ctx = loadRodButton({ locale = "zhTW" })
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    ctx.content[0] = { 10 }
+    ctx.bags[0][2], ctx.bags[1][2], ctx.bags[2][2] = 0, 0, 0
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b = ctx.button()
+    b.scripts.OnEnter(b)
+    check("zhTW rod button tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "魚竿 / 裝備 Item 10 / 背包已滿：沒有空間放副手 / 點擊裝備魚竿")
+end
+
+-- Upgrade judge while fishing (U3): with the rod in the main hand no weapon-slot item is an upgrade, and those items
+-- are judged again once the weapons are worn again. GetInventoryItemID reads the id from ctx.equipped's link.
+do
+    local ctx
+    ctx = loadItemBorders({ env = { GetInventoryItemID = function(_, inv)
+        local link = ctx.equipped[inv]
+        return link and tonumber(link:match("item:(%d+)"))
+    end } })
+    local function wear(main, off)
+        ctx.equipped[16] = main and ("|Hitem:" .. main .. ":|h") or nil
+        ctx.equipped[17] = off and ("|Hitem:" .. off .. ":|h") or nil
+        ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    end
+    local function show(items)
+        local from = #ctx.printed
+        local _, b = ctx.classic(1, 0, items)
+        ctx.bagUpdate()
+        return ctx.since(from), b
+    end
+    ctx.items[60] = { "INVTYPE_WEAPON", 2, 7 }
+    ctx.cache[60] = { "Big Sword", nil, 3, 40, 30 }
+    ctx.tips[60] = { "Big Sword", ctx.strength(40) }
+    ctx.items[61] = { "INVTYPE_HEAD", 4, 4 }
+    ctx.cache[61] = { "Helm", nil, 3, 40, 30 }
+    ctx.tips[61] = { "Helm", ctx.strength(10) }
+    wear(7, 5)
+    show({ 9 })
+    wear(10, nil)
+    check("fishing: the rod worn is fishing", ctx.addon.Rod.Fishing(), true)
+    local out = show({ 9, 7, 5 })
+    check("fishing: the weapons taken off print nothing", #out, 0)
+    local b
+    out, b = show({ 9, 7, 5, 60, 61 })
+    check("fishing: only the helm prints while fishing", #out, 1)
+    check("fishing: the helm line", out[1], upgradeLine("Head", 61, BLUE, 10, 0))
+    check("fishing: a better weapon gets no border", ctx.border(b[4]), "none")
+    check("fishing: the sword gets no border", ctx.border(b[2]), "none")
+    check("fishing: the off hand gets no border", ctx.border(b[3]), "none")
+    check("fishing: the helm still gets a border", ctx.border(b[5]), "red")
+    check("fishing: a better weapon is not an upgrade", ctx.addon.Upgrade.Better(60), false)
+    wear(7, 5)
+    out, b = show({ 9, 10, 60, 61 })
+    check("fishing: after the swap back the better weapon prints once", #out, 1)
+    check("fishing: the weapon line", out[1], upgradeLine("Main hand", 60, BLUE, 40, 20))
+    check("fishing: after the swap back the better weapon gets a border", ctx.border(b[3]), "red")
+    check("fishing: the next bag update prints nothing", #show({ 9, 10, 60, 61 }), 0)
+    wear(10, nil)
+    ctx.addon.Rod = nil
+    check("fishing: no Rod module judges weapons as before", ctx.addon.Upgrade.Better(60), true)
+end
+
+-- U3: an item still loading when looted while fishing is deferred when its info arrives, and alerts after the swap.
+do
+    local ctx
+    ctx = loadUpgrade({ env = { GetInventoryItemID = function(_, inv)
+        local link = ctx.equipped[inv]
+        return link and tonumber(link:match("item:(%d+)"))
+    end } })
+    local function wear(main, off)
+        ctx.equipped[16] = main and ("|Hitem:" .. main .. ":|h") or nil
+        ctx.equipped[17] = off and ("|Hitem:" .. off .. ":|h") or nil
+        ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    end
+    ctx.items[62] = { "INVTYPE_WEAPON", 2, 7 }
+    ctx.tips[62] = { "Late Sword", ctx.strength(40) }
+    wear(7, 5)
+    ctx.bagUpdate()
+    wear(10, nil)
+    ctx.bags[0] = { 7, 5 }
+    ctx.bagUpdate()
+    check("fishing info: a loading weapon prints nothing", #ctx.loot(62), 0)
+    ctx.cache[62] = { "Late Sword", nil, 3, 40, 30 }
+    local from = #ctx.printed
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 62, true)
+    check("fishing info: its info arriving while fishing prints nothing", #ctx.since(from), 0)
+    wear(7, 5)
+    ctx.bags[0] = { 10, 62 }
+    from = #ctx.printed
+    ctx.bagUpdate()
+    local out = ctx.since(from)
+    check("fishing info: after the swap back it prints once", #out, 1)
+    check("fishing info: the weapon line", out[1], upgradeLine("Main hand", 62, BLUE, 40, 20))
 end
 
 if failures > 0 then
