@@ -7,8 +7,8 @@
 Tandem 是一個 World of Warcraft addon，會在物品勝過你身上的裝備時告訴你。它依用戶端當下提供的資料判斷背包、拾取
 視窗與任務獎勵中的每件物品：部位、需求等級、護甲或武器類型、提示框中的需求，以及依你的職業與天賦樹加權的屬性。升級
 物品會在背包或拾取按鈕上出現紅色邊框與綠色向上箭頭，聊天視窗顯示一行訊息，提示框也多一行綠字。Tandem 也會標出最佳的
-任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、地圖
-資訊，薩滿還有職業區。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的內容，以及介面配置是否
+任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、靜音
+按鈕、地圖資訊，薩滿還有職業區。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的內容，以及介面配置是否
 開啟之外，不儲存任何資料。
 
 ## 安裝
@@ -96,7 +96,7 @@ Probe: LootFrame.ScrollBox missing
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
 `Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
-`Fishing macro`、`Map info` 與 `Shaman area`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Fishing macro`、`Cure buttons`、`Cure macro`、`Mute button`、`Map info` 與 `Shaman area`。缺少 API 的功能會保持關閉，而不會引發錯誤。
 `Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
 
@@ -339,6 +339,20 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 釣魚竿，圖示會是灰色。角色巨集格已滿時不會建立巨集，提示框會顯示 `角色巨集已滿：沒有空間放釣魚巨集`。巨集建立後就歸你
 所有：Tandem 絕不刪除它。它需要 `/tandem check` 的 `Fishing macro` 這行；沒有時魚竿圖示仍可切換，只是不能拖曳。
 
+薩滿每學會一個驅散法術，魚竿圖示左邊（沒有魚竿時是背包圖示列左邊）就多一個圖示：先是治療中毒，再來是治療疾病。點擊會對
+滑鼠指向的友方施放，沒有時對你的友方目標，再沒有時對你自己。你或隊友身上有中毒（或疾病）效果時，圖示會亮起並顯示中了
+幾個人，提示框會列出誰身上有哪個負面效果。戰鬥中用戶端不讓插件讀取負面效果，因此圖示會暗掉，直到戰鬥結束。把圖示拖到快捷列上，即可放上做同樣事情的 `Tandem Poison`
+（或 `Tandem Disease`）角色巨集；Tandem 在第一次拖曳時建立它，並在戰鬥外保持更新。角色巨集格已滿時，提示框會顯示
+`角色巨集已滿：沒有空間放驅散巨集`。Tandem 只在你點擊時施放。戰鬥中圖示無法移動、出現或隱藏，因此戰鬥中學會的法術或
+換上的魚竿要等戰鬥結束才會反映。它們只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Cure buttons`
+這行（拖曳還需要 `Cure macro`）。
+
+最後一個圖示在驅散圖示左邊（沒有驅散圖示時是魚竿圖示左邊，兩者都沒有時是背包圖示列左邊），用來靜音：點擊一次關閉所有
+聲音，再點一次恢復，戰鬥中也可以。它切換的是用戶端的 `Sound_EnableAllSound` 設定，也就是用戶端聲音設定裡的聲音勾選框，
+因此 `/reload` 或關閉介面配置後仍維持你的選擇。圖示是彩色的號角，聲音關閉時變成灰色；提示框顯示 `聲音開啟` 或 `聲音關閉`，
+以及 `點擊靜音` 或 `點擊取消靜音`。戰鬥中它無法移動，因此戰鬥中出現或消失的驅散圖示或魚竿圖示，要等戰鬥結束它才會
+跟著移位。它只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Mute button` 這行。
+
 ### 地圖資訊
 
 [經驗條](#經驗條)正下方置中有一行小字，以百分比顯示你在區域地圖上的座標，以及你在目前等級玩了多久：
@@ -387,6 +401,10 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 300 行，在你 `/reload` 或登出時存進 `TandemDebug` 存檔變數。`/tandem debug off` 停止記錄並印出保留的行數；
 `/tandem debug` 不加參數則切換開關；`snap` 會在需要時開啟記錄並拍一次快照。
 
+記錄時，用戶端每次出現「介面功能因插件而失效」都會記下插件、被擋的函式與呼叫堆疊，並另外保留在 `blocked`（最近 50 筆），
+不會被大量的紀錄擠掉。`on` 也會把用戶端的 `taintLog` 設定設為 `1`，讓用戶端寫出 `Logs/taint.log`，指出汙染該動作的
+程式碼；`off` 會把它設回 `0`。
+
 ## 存檔資料
 
 Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
@@ -410,7 +428,7 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 `Tandem：存檔資料已從結構版本 <n> 升級到 7` 與 `Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`；schema 6 的資料在
 沒有捨棄任何項目時會靜默升級。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會儲存任何資料。
 
-同一個檔案也存放 `TandemDebug`，即[除錯紀錄](#除錯紀錄)：`on` 與最多 300 行 `log`，只在你開啟後才有。
+同一個檔案也存放 `TandemDebug`，即[除錯紀錄](#除錯紀錄)：`on`、最多 300 行 `log` 與 50 筆 `blocked`，只在你開啟後才有。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。
 
@@ -433,10 +451,10 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十六行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十九行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
    `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、
-   `Map info` 與 `Shaman area`，每行後面接著 `ok`
+   `Cure buttons`、`Cure macro`、`Mute button`、`Map info` 與 `Shaman area`，每行後面接著 `ok`
    或 `missing` 以及它的 API。之後是十四行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
@@ -514,7 +532,8 @@ Lua 錯誤。
 3. 右下角的背包圖示列在背包圖示上顯示一般背包的剩餘 / 總格數，左邊每種專業背包各一個圖示。點擊任一圖示：所有背包
    都會開啟。拾取一件
    物品：剩餘格數減一。背包中有魚竿時，背包圖示列左邊有一個魚竿圖示：點擊後裝備魚竿；再點一次，武器就換回來。把魚竿圖示拖到快捷列：
-   會放上 `Tandem Fishing` 巨集；點擊它裝備魚竿，再點一次施放釣魚。
+   會放上 `Tandem Fishing` 巨集；點擊它裝備魚竿，再點一次施放釣魚。魚竿圖示左邊（沒有魚竿時是背包圖示列左邊；薩滿則在
+   驅散圖示左邊）有一個號角圖示：點擊後所有遊戲聲音關閉，號角變成灰色；再點一次，聲音就恢復。
 4. 薩滿的圖騰列在主快捷列正上方自成一排，戰鬥中施法後也不會移動；頭像之間一開始什麼都沒有。施放閃電之盾：
    那裡仍然什麼都沒有。放下一個圖騰：玩家與目標頭像之間出現它的圖示，顯示倒數中的剩餘時間，下方有一條細的
    藍色法力線。滑鼠移到圖示上：顯示它的名稱。圖騰時間到時圖示消失；最後一個消失時，整排連同法力線一起消失。
@@ -525,10 +544,10 @@ Lua 錯誤。
 6. 執行 `/reload`：一切都還在原位。
 7. 開始戰鬥並執行 `/tandem layout off`：聊天視窗顯示 `Tandem: the layout will change after combat`。戰鬥結束時恢復
    你先前的版面，快捷列、背包列、狀態列、目標的目標與小地圖座標設定都和之前一樣。
-8. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、地圖資訊與職業區都會消失。
+8. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、靜音按鈕、地圖資訊與職業區都會消失。
 
-請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、`Map info`、`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架
-重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
+請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、`Mute button`、`Map info`、
+`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
 
 ## Interface number
 
