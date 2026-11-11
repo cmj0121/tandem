@@ -23,6 +23,7 @@ read_globals = {
     "GetSpellBookItemInfo",
     "GetSkillLineInfo",
     "GetInventoryItemTexture",
+    "ItemLocation",
     "GetSpellInfo",
     "GetSpellSubtext",
     "GetSpellTabInfo",

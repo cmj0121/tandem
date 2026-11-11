@@ -25,6 +25,7 @@ Layout.lua
 Debug.lua
 XPBar.lua
 BagButton.lua
+Rod.lua
 MapInfo.lua
 ClassArea.lua
 Classes\Shaman.lua
