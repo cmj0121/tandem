@@ -6302,12 +6302,24 @@ do
     env.SecureActionButtonMixin, env.SecureActionButton_OnClick = nil, function() end
     check("fishing rod: ready with the other alternatives",
         loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), true)
+    env = checkAPIs()
+    env.EquipItemByName, env.C_Item.EquipItemByName = nil, function() end
+    check("fishing rod: ready with only C_Item.EquipItemByName",
+        loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), true)
+    env = checkAPIs()
+    check("fishing rod: ready with only the global EquipItemByName",
+        env.C_Item.EquipItemByName == nil and loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), true)
+    env = checkAPIs()
+    env.EquipItemByName = nil
+    check("fishing rod: not ready without either EquipItemByName",
+        loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), false)
     local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
     check("check: fishing rod line", runCheck(addon, printed)["Fishing rod"],
         "Fishing rod: ok (GetInventoryItemID ok, C_Container.GetContainerItemID ok, GetContainerItemID missing, "
             .. "C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, InCombatLockdown ok, "
             .. "SecureActionButton_OnClick missing, SecureActionButtonMixin ok, SecureCmdList.EQUIP_TO_SLOT ok, "
-            .. "SlashCmdList.EQUIP_TO_SLOT missing, SLASH_EQUIP_TO_SLOT1 missing, EquipItemByName ok)")
+            .. "SlashCmdList.EQUIP_TO_SLOT missing, SLASH_EQUIP_TO_SLOT1 missing, C_Item.EquipItemByName missing, "
+            .. "EquipItemByName ok)")
 end
 
 do

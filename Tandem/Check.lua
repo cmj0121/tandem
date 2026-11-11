@@ -58,7 +58,7 @@ Check.FEATURES = {
         { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "InCombatLockdown" },
         { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
         { "SecureCmdList.EQUIP_TO_SLOT", "SlashCmdList.EQUIP_TO_SLOT", "SLASH_EQUIP_TO_SLOT1" },
-        { "EquipItemByName" },
+        { "C_Item.EquipItemByName", "EquipItemByName" },
     } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
