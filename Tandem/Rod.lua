@@ -201,7 +201,17 @@ end
 local SIZE, GAP = 28, 4
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
-local button, on, pending
+local button, on, pending, lastUpdate
+
+local function debugOn()
+    return ns.Debug ~= nil and ns.Debug.IsOn()
+end
+
+local function log(text)
+    if debugOn() then
+        ns.Debug.Log(text)
+    end
+end
 
 local function itemName(id)
     local name = call(C_Item and C_Item.GetItemInfo, id)
@@ -251,12 +261,7 @@ local function preClick()
     end
 end
 
--- Refreshes the button's macro, icon, place and visibility; in combat only marks the change as pending. Runs after
--- BagButton.Update (BAG_UPDATE_DELAYED) and after the bag row's layout listener, whose row width places it.
-function Rod.Update()
-    if not button then
-        return
-    end
+local function update()
     if call(InCombatLockdown) then
         pending = true
         return
@@ -275,6 +280,32 @@ function Rod.Update()
     button:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", ns.BagButton.OFFSET_X - ns.BagButton.Width() - GAP,
         ns.BagButton.OFFSET_Y + ns.Layout.MicroRoom())
     button:Show()
+end
+
+local function updateLine()
+    local rod, isWorn = Rod.Find()
+    local text = rod and Rod.Macro()
+    local _, _, _, x, y = call(button.GetPoint, button)
+    return ("rod update: combat=%s on=%s rod=%s worn=%s macro=%s shown=%s point=%s,%s"):format(
+        tostring(call(InCombatLockdown) == true), tostring(on == true), tostring(rod), tostring(isWorn == true),
+        (tostring(text):gsub("\n", "|")), tostring(call(button.IsShown, button) == true), tostring(x), tostring(y))
+end
+
+-- Refreshes the button's macro, icon, place and visibility; in combat only marks the change as pending. Runs after
+-- BagButton.Update (BAG_UPDATE_DELAYED) and after the bag row's layout listener, whose row width places it. While
+-- debugging, logs the button's state when it differs from the last one logged.
+function Rod.Update()
+    if not button then
+        return
+    end
+    update()
+    if debugOn() then
+        local ok, line = pcall(updateLine)
+        if ok and line ~= lastUpdate then
+            lastUpdate = line
+            log(line)
+        end
+    end
 end
 
 local scheduled = false
@@ -309,17 +340,25 @@ end
 -- PLAYER_LOGIN: makes the button (never later, so it is never first made in combat by a layout change), remembers
 -- the worn weapons and shows the button when it should.
 function Rod.OnLogin()
-    if not button and type(CreateFrame) == "function" and ns.Check.Ready("Fishing rod") then
-        button = CreateFrame("Button", "TandemRodButton", UIParent, "SecureActionButtonTemplate")
-        button:SetSize(SIZE, SIZE)
-        button:SetFrameStrata("MEDIUM")
-        button:RegisterForClicks("AnyUp", "AnyDown")
-        button.icon = button:CreateTexture(nil, "ARTWORK")
-        button.icon:SetAllPoints(button)
-        button:SetScript("PreClick", preClick)
-        button:SetScript("OnEnter", showTooltip)
-        button:SetScript("OnLeave", ns.View.HideTooltip)
+    local ready = ns.Check.Ready("Fishing rod")
+    if not button and type(CreateFrame) == "function" and ready then
+        local ok, made = pcall(CreateFrame, "Button", "TandemRodButton", UIParent, "SecureActionButtonTemplate")
+        if ok then
+            button = made
+            button:SetSize(SIZE, SIZE)
+            button:SetFrameStrata("MEDIUM")
+            button:RegisterForClicks("AnyUp", "AnyDown")
+            button.icon = button:CreateTexture(nil, "ARTWORK")
+            button.icon:SetAllPoints(button)
+            button:SetScript("PreClick", preClick)
+            button:SetScript("OnEnter", showTooltip)
+            button:SetScript("OnLeave", ns.View.HideTooltip)
+        else
+            log("rod login: CreateFrame failed: " .. tostring(made))
+        end
     end
+    log(("rod login: ready=%s button=%s CreateFrame=%s"):format(tostring(ready),
+        button and "made" or "none", type(CreateFrame)))
     Rod.Remember()
     Rod.Update()
 end
@@ -327,5 +366,6 @@ end
 -- Listens after the bag row (Rod.lua follows BagButton.lua in the toc), so BagButton.Width() is already current.
 ns.Layout.OnChange(function(layoutOn)
     on = layoutOn and ns.Check.Ready("Fishing rod")
+    log("rod layout: on=" .. tostring(on))
     Rod.Update()
 end)

@@ -4150,7 +4150,7 @@ do
     check("debug snap: a frame high on screen is not", text:match("frame Minimap") == nil, true)
     ctx.run("layout on")
     check("debug snap: a layout change takes one",
-        env.TandemDebug.log[#env.TandemDebug.log]:match("frame MainMenuExpBar") ~= nil, true)
+        table.concat(env.TandemDebug.log, "\n"):match("snapshot layout on.*frame MainMenuExpBar") ~= nil, true)
 end
 
 -- The snapshot's minimap probe (D11): MinimapCluster and Minimap walked breadth first to depth 6, named nodes and
@@ -6333,6 +6333,69 @@ do
     b.scripts.OnEnter(b)
     check("zhTW rod button tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
         "魚竿 / 裝備 Item 10 / 背包已滿：沒有空間放副手 / 點擊裝備魚竿")
+end
+
+-- The rod button's debug lines: the check lines at login and on /tandem check, then rod login, layout and update
+-- lines while recording, an update logged only when it changed; nothing while off.
+local function debugText(env)
+    return table.concat(env.TandemDebug and env.TandemDebug.log or {}, "\n")
+end
+
+do
+    local ctx = loadRodButton()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.worn[16], ctx.worn[17] = 7, 14
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    local text = debugText(ctx.env)
+    check("rod debug: the fishing rod check line at login",
+        text:match("check Fishing rod: ok %(GetInventoryItemID ok, ") ~= nil, true)
+    check("rod debug: a probe line at login", text:match("probe LootButton1: missing") ~= nil, true)
+    check("rod debug: the login line", text:match("rod login: ready=true button=made CreateFrame=function") ~= nil,
+        true)
+    ctx.run("layout on")
+    local log = ctx.env.TandemDebug.log
+    check("rod debug: the layout line", debugText(ctx.env):match("rod layout: on=true") ~= nil, true)
+    check("rod debug: the update line", log[#log]:match("combat=false (.*)$"),
+        "rod update: combat=false on=true rod=10 worn=false macro=/equipslot 16 item:10 shown=true point=-44,8")
+    local n = #log
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("rod debug: an unchanged update is not logged again", #log, n)
+    ctx.worn[16], ctx.worn[17] = 10, nil
+    ctx.content[0] = { 7, 14 }
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED")
+    check("rod debug: the macro's line breaks show as |", log[#log]:match("macro=(.-) shown"),
+        "/equipslot 16 item:7|/equipslot 17 item:14")
+    n = #log
+    ctx.run("check")
+    check("rod debug: /tandem check logs the check lines",
+        table.concat(log, "\n", n + 1):match("check Fishing rod: ok") ~= nil, true)
+end
+
+do
+    local ctx = loadRodButton()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    local create = ctx.env.CreateFrame
+    ctx.env.CreateFrame = function(kind, name, parent, template)
+        if template == "SecureActionButtonTemplate" then
+            error("blocked")
+        end
+        return create(kind, name, parent, template)
+    end
+    ctx.fire("PLAYER_LOGIN")
+    local text = debugText(ctx.env)
+    check("rod debug: a failing CreateFrame logs its error",
+        text:match("rod login: CreateFrame failed: .*blocked") ~= nil, true)
+    check("rod debug: and no button", text:match("rod login: ready=true button=none") ~= nil, true)
+end
+
+do
+    local ctx = loadRodButton()
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    ctx.run("check")
+    check("rod debug: nothing logged while off", ctx.env.TandemDebug == nil or #ctx.env.TandemDebug.log == 0, true)
 end
 
 -- Upgrade judge while fishing (U3): with the rod in the main hand no weapon-slot item is an upgrade, and those items

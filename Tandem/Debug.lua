@@ -50,7 +50,7 @@ function Debug.Log(what)
         return
     end
     local log = db().log
-    log[#log + 1] = ("%.2f combat=%s %s"):format(tonumber(call(GetTime)) or 0,
+    log[#log + 1] = ("%.2f combat=%s %s"):format(tonumber((call(GetTime))) or 0,
         tostring(call(InCombatLockdown) == true), what)
     while #log > MAX do
         table.remove(log, 1)
@@ -177,6 +177,28 @@ function Debug.Snapshot(why)
     end
 end
 
+local function checkLines()
+    for _, feature in ipairs(ns.Check.Status()) do
+        local apis = {}
+        for i, api in ipairs(feature.apis) do
+            apis[i] = api.path .. " " .. (api.ok and "ok" or "missing")
+        end
+        Debug.Log(("check %s: %s (%s)"):format(feature.name, feature.ok and "ok" or "missing",
+            table.concat(apis, ", ")))
+    end
+    for _, probe in ipairs(ns.Check.Probes()) do
+        Debug.Log(("probe %s: %s"):format(probe.path, probe.ok and "ok" or "missing"))
+    end
+end
+
+-- Logs what /tandem check prints, in English: "check <feature>: ok|missing (<path> ok|missing, ...)" per feature,
+-- then "probe <path>: ok|missing" per probe.
+function Debug.Check()
+    if Debug.IsOn() then
+        pcall(checkLines)
+    end
+end
+
 -- Turns recording on or off (on starts a fresh log); returns the number of lines kept.
 function Debug.Set(on)
     local d = db()
@@ -192,6 +214,7 @@ end
 function Debug.OnLogin()
     if Debug.IsOn() then
         Debug.Log("login")
+        Debug.Check()
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(2, function()
                 Debug.Snapshot("login")
