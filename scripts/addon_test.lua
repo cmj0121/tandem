@@ -26,7 +26,14 @@ end
 -- registering any of them raise as a client that does not know the event would.
 -- opts.toc replaces the toc's file list; its missing files are skipped, as WoW does. A missing file the real toc
 -- lists fails the load. opts.widgets, a function(kind, name, parent, template), makes every other CreateFrame call
--- than the event frame's.
+-- than the event frame's; without it a named frame is an inert stub whose every method does nothing.
+local function inert()
+    return setmetatable({}, { __index = function()
+        return function()
+            return inert()
+        end
+    end })
+end
 local function loadAddon(locale, opts)
     opts = opts or {}
     local printed = {}
@@ -49,6 +56,9 @@ local function loadAddon(locale, opts)
         CreateFrame = function(kind, name, parent, template)
             if opts.widgets and (kind ~= "Frame" or name or parent or template) then
                 return opts.widgets(kind, name, parent, template)
+            end
+            if name then
+                return inert()
             end
             return frame
         end,
@@ -877,6 +887,7 @@ function WIDGET.GetScript(w, name) return w.scripts[name] end
 function WIDGET.SetText(w, text) w.text = text end
 function WIDGET.GetText(w) return w.text end
 function WIDGET.SetTexture(w, texture) w.texture = texture end
+function WIDGET.SetDesaturated(w, v) w.desaturated = v end
 function WIDGET.SetChecked(w, checked) w.checked = checked end
 function WIDGET.GetChecked(w) return w.checked end
 function WIDGET.SetAlpha(w, alpha) w.alpha = alpha end
@@ -1015,6 +1026,8 @@ local function checkAPIs()
         CreateMacro = fn, EditMacro = fn, GetMacroIndexByName = fn, GetMacroInfo = fn, PickupMacro = fn,
         GetNumMacros = fn, GetItemSubClassInfo = fn,
         C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn }, RequestTimePlayed = fn,
+        C_UnitAuras = { GetAuraDataByIndex = fn }, UnitExists = fn, UnitName = fn,
+        GetCVar = fn, SetCVar = fn,
     }
 end
 
@@ -1044,7 +1057,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: sixteen features", #addon.Check.FEATURES, 16)
+    check("check: nineteen features", #addon.Check.FEATURES, 19)
     check("check: eighteen probes", #addon.Check.PROBES, 18)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1054,7 +1067,7 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
-        "Fishing rod", "Fishing macro", "Map info", "Shaman area" }) do
+        "Fishing rod", "Fishing macro", "Mute button", "Map info", "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1116,7 +1129,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on fourteen features", count, 14)
+    check("check: kept code gates on seventeen features", count, 17)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -4156,6 +4169,39 @@ do
         table.concat(env.TandemDebug.log, "\n"):match("snapshot layout on.*frame MainMenuExpBar") ~= nil, true)
 end
 
+-- Blocked actions: while recording, ADDON_ACTION_BLOCKED and ADDON_ACTION_FORBIDDEN go to the log and to
+-- TandemDebug.blocked with the stack; debug on and off turn the client's taint log on and off.
+do
+    local cvars = {}
+    local ctx = loadLayout({ env = { UIParent = {}, GetTime = function() return 3 end,
+        debugstack = function() return "Interface/AddOns/Tandem/Rod.lua:1\nInterface/FrameXML/x.lua:2" end } })
+    local env = ctx.env
+    local setCVar = env.SetCVar
+    env.SetCVar = function(name, v)
+        cvars[name] = v
+        setCVar(name, v)
+    end
+    check("blocked: both events registered",
+        ctx.frame.registered.ADDON_ACTION_BLOCKED == true and ctx.frame.registered.ADDON_ACTION_FORBIDDEN == true, true)
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "UseAction()")
+    check("blocked: nothing kept while off", env.TandemDebug, nil)
+    ctx.run("debug on")
+    check("blocked: debug on turns the taint log on", cvars.taintLog, "1")
+    ctx.fire("ADDON_ACTION_FORBIDDEN", "Tandem", "PickupContainerItem()")
+    local log = env.TandemDebug.log
+    check("blocked: logged with addon and func", log[#log],
+        "3.00 combat=false blocked ADDON_ACTION_FORBIDDEN addon=Tandem func=PickupContainerItem()")
+    check("blocked: kept apart with the stack", env.TandemDebug.blocked[1],
+        "3.00 blocked ADDON_ACTION_FORBIDDEN addon=Tandem func=PickupContainerItem() stack="
+            .. "Interface/AddOns/Tandem/Rod.lua:1 | Interface/FrameXML/x.lua:2")
+    for _ = 1, 60 do
+        ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "x")
+    end
+    check("blocked: the last 50 are kept", #env.TandemDebug.blocked, 50)
+    ctx.run("debug off")
+    check("blocked: debug off turns the taint log off", cvars.taintLog, "0")
+end
+
 -- The snapshot's minimap probe (D11): MinimapCluster and Minimap walked breadth first to depth 6, named nodes and
 -- FontStrings with text logged as mmtree lines, minimap and coordinate CVars as mmcvar lines.
 local unpack = rawget(table, "unpack") or rawget(_G, "unpack")
@@ -6360,7 +6406,11 @@ do
     ctx.run("layout on")
     local log = ctx.env.TandemDebug.log
     check("rod debug: the layout line", debugText(ctx.env):match("rod layout: on=true") ~= nil, true)
-    check("rod debug: the update line", log[#log]:match("combat=false (.*)$"),
+    local last
+    for _, line in ipairs(log) do
+        last = line:match("rod update: .*$") or last
+    end
+    check("rod debug: the update line", last,
         "rod update: combat=false on=true rod=10 worn=false macro=/equipslot 16 item:10 shown=true point=-44,8")
     local n = #log
     ctx.fire("BAG_UPDATE_DELAYED")
@@ -6683,6 +6733,354 @@ do
     b = ctx.button()
     b.scripts.OnEnter(b)
     check("zhTW rod macro full line", ctx.tip.lines[#ctx.tip.lines].text, "角色巨集已滿：沒有空間放釣魚巨集")
+end
+
+-- Cure buttons: a Shaman's known cures as secure buttons left of the rod button, lit while the player or a party
+-- member carries a debuff they remove, dragged out as "Tandem <kind>" macros.
+
+-- Loads withMacros(loadRodButton()) as a Shaman: ctx.known[id] for IsPlayerSpell, ctx.party[unit] = name for
+-- UnitExists/UnitName, ctx.auras[unit] = { { name, dispelName }, ... } for C_UnitAuras.GetAuraDataByIndex (counted in
+-- ctx.auraCalls); ctx.cure(i) is TandemCureButton<i>.
+local CURE_SPELLS = { [526] = { "Cure Poison", "icon526" }, [2870] = { "Cure Disease", "icon2870" } }
+local function loadCure(opts)
+    opts = opts or {}
+    local ctx
+    local env = {
+        UnitClass = function() return "Shaman", opts.class or "SHAMAN" end,
+        IsPlayerSpell = function(id) return ctx.known[id] == true end,
+        UnitExists = function(unit) return ctx.party[unit] ~= nil end,
+        UnitName = function(unit) return unit == "player" and "Me" or ctx.party[unit] end,
+        C_UnitAuras = { GetAuraDataByIndex = function(unit, i, filter)
+            ctx.auraCalls = ctx.auraCalls + 1
+            if ctx.auraRaises then
+                error("secret")
+            end
+            local a = filter == "HARMFUL" and ctx.auras[unit] and ctx.auras[unit][i]
+            return a and { name = a[1], dispelName = a[2] } or nil
+        end },
+    }
+    ctx = withMacros(loadRodButton({ env = env, locale = opts.locale }))
+    local spellInfo = ctx.env.GetSpellInfo
+    ctx.env.GetSpellInfo = function(id)
+        local s = CURE_SPELLS[id]
+        if s then
+            return s[1], nil, s[2]
+        end
+        return spellInfo(id)
+    end
+    ctx.known, ctx.party, ctx.auras, ctx.auraCalls = {}, {}, {}, 0
+    function ctx.cure(i)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemCureButton" .. i then
+                return w
+            end
+        end
+    end
+    -- The character macro named name, and its index.
+    function ctx.macro(name)
+        for i, m in ipairs(ctx.macros) do
+            if m.name == name then
+                return m, CHAR + i
+            end
+        end
+        return nil
+    end
+    return ctx
+end
+
+local CURE_POISON = "/cast [@mouseover,help,nodead][@target,help,nodead][@player] Cure Poison"
+
+do
+    local ctx = loadCure()
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    local b1, b2 = ctx.cure(1), ctx.cure(2)
+    check("cure: one secure button per Shaman cure on UIParent", tostring(b1 ~= nil and b2 ~= nil) .. " "
+        .. b1.template .. " " .. tostring(b1.parent == ctx.env.UIParent) .. " " .. b1.width .. "x" .. b1.height,
+        "true SecureActionButtonTemplate true 28x28")
+    check("cure: clicks on mouse-up only", table.concat(b1.clicks, " ") .. " " .. tostring(b1.attrs.useOnKeyDown),
+        "AnyUp false")
+    check("cure: aura events registered once the buttons exist",
+        tostring(ctx.frame.registered.UNIT_AURA) .. " " .. tostring(ctx.frame.registered.GROUP_ROSTER_UPDATE),
+        "true true")
+    check("cure: hidden while the layout is off", tostring(b1.shown) .. " " .. tostring(b2.shown), "false false")
+    ctx.run("layout on")
+    check("cure: a known cure shows with its cast line", tostring(b1.shown) .. " | " .. b1.attrs.type .. " | "
+        .. b1.attrs.macrotext .. " | " .. b1.icon.texture, "true | macro | " .. CURE_POISON .. " | icon526")
+    check("cure: an unknown cure stays hidden", b2.shown, false)
+    local p = b1.points[1]
+    check("cure: anchored to UIParent left of the rod button", #b1.points .. " " .. table.concat({ p[1],
+        tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -76 8")
+    ctx.content[0] = {}
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("cure: takes the rod button's place when it hides", b1.points[1][4], -44)
+
+    check("cure: not lit with no debuff", tostring(b1.glow.shown) .. " '" .. tostring(b1.count.text) .. "'",
+        "false ''")
+    ctx.party.party1 = "Bob"
+    ctx.auras.party1 = { { "Weakness", nil }, { "Venom", "Poison" } }
+    ctx.fire("UNIT_AURA", "party1")
+    check("cure: lit with the count of poisoned units", tostring(b1.glow.shown) .. " " .. b1.count.text, "true 1")
+    ctx.auras.player = { { "Sting", "Poison" } }
+    ctx.fire("UNIT_AURA", "player")
+    check("cure: counts the player too", b1.count.text, "2")
+    b1.scripts.OnEnter(b1)
+    check("cure: tooltip names who carries what", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Cure Poison / Me: Sting / Bob: Venom / Click to cast it on your mouseover, your target or yourself"
+            .. " / Drag to place the cure macro on your action bar")
+    local calls = ctx.auraCalls
+    ctx.fire("UNIT_AURA", "target")
+    ctx.fire("UNIT_AURA", "nameplate1")
+    check("cure: other units' auras read nothing", ctx.auraCalls, calls)
+
+    ctx.state.combat = true
+    calls = ctx.auraCalls
+    ctx.fire("UNIT_AURA", "player")
+    check("cure: in combat no aura is read and the hint goes dark",
+        tostring(ctx.auraCalls == calls) .. " " .. tostring(b1.glow.shown) .. " '" .. b1.count.text .. "'",
+        "true false ''")
+    ctx.known[2870] = true
+    ctx.fire("SPELLS_CHANGED")
+    check("cure: a cure learned in combat waits", b2.shown, false)
+    b1.scripts.OnDragStart(b1)
+    check("cure: no macro dragged in combat", tostring(ctx.picked) .. " " .. tostring(ctx.macro("Tandem Poison")),
+        "nil nil")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("cure: shown after combat, left of the first", tostring(b2.shown) .. " " .. b2.points[1][4], "true -76")
+    check("cure: combat's end reads the debuffs again", tostring(b1.glow.shown) .. " " .. b1.count.text, "true 2")
+    ctx.auras.player, ctx.auras.party1 = nil, nil
+    ctx.fire("UNIT_AURA", "player")
+    check("cure: a cured debuff darkens the hint", b1.glow.shown, false)
+
+    b1.scripts.OnDragStart(b1)
+    local m, index = ctx.macro("Tandem Poison")
+    check("cure: drag makes and picks up the cure macro", tostring(m ~= nil) .. " " .. tostring(ctx.picked == index)
+        .. " " .. tostring(m and m.perCharacter), "true true true")
+    check("cure: the macro body", m.body, "#showtooltip\n" .. CURE_POISON)
+    local creates, edits = ctx.creates, ctx.edits
+    b1.scripts.OnDragStart(b1)
+    check("cure: a second drag reuses it", (ctx.creates - creates) .. " " .. (ctx.edits - edits), "0 0")
+    m.body = "old"
+    ctx.fire("SPELLS_CHANGED")
+    check("cure: an existing macro is refreshed out of combat", m.body .. " " .. (ctx.edits - edits),
+        "#showtooltip\n" .. CURE_POISON .. " 1")
+
+    ctx.auras.player = { { "Sting", "Poison" } }
+    ctx.fire("UNIT_AURA", "player")
+    ctx.auraRaises = true
+    ctx.fire("UNIT_AURA", "player")
+    check("cure: aura data the client keeps from addons lights nothing", b1.glow.shown, false)
+end
+
+do
+    local ctx = loadCure()
+    ctx.charMacros = 18
+    ctx.known[526] = true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b1 = ctx.cure(1)
+    b1.scripts.OnDragStart(b1)
+    b1.scripts.OnEnter(b1)
+    check("cure: character macros full, none made, tooltip says so", tostring(ctx.macro("Tandem Poison")) .. " "
+        .. tostring(ctx.picked) .. " /" .. texts(ctx.tip):match("[^/]*$"),
+        "nil nil / Character macros full: no room for the cure macro")
+end
+
+do
+    local ctx = loadCure({ class = "WARRIOR" })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("cure: a class without cures gets no buttons and no aura events",
+        tostring(ctx.cure(1) == nil) .. " " .. tostring(ctx.frame.registered.UNIT_AURA), "true nil")
+end
+
+-- Mute button: left of the cure buttons (or the rod button, or the bag row) while the layout is on, flipping
+-- Sound_EnableAllSound between 1 and 0. Loads loadCure(opts) with ctx.cvars as the CVars GetCVar/SetCVar read and
+-- write (ctx.sets counts the writes); ctx.mute() is TandemMuteButton.
+local function loadMute(opts)
+    local ctx = loadCure(opts)
+    ctx.cvars, ctx.sets = { Sound_EnableAllSound = "1" }, 0
+    local getCVar, setCVar = ctx.env.GetCVar, ctx.env.SetCVar
+    ctx.env.GetCVar = function(name)
+        if name == "Sound_EnableAllSound" then
+            return ctx.cvars[name]
+        end
+        return getCVar(name)
+    end
+    ctx.env.SetCVar = function(name, v)
+        if name == "Sound_EnableAllSound" then
+            ctx.sets = ctx.sets + 1
+            ctx.cvars[name] = v
+            return
+        end
+        setCVar(name, v)
+    end
+    function ctx.mute()
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemMuteButton" then
+                return w
+            end
+        end
+    end
+    return ctx
+end
+
+local HORN = "Interface\\Icons\\INV_Misc_Horn_01"
+local HORN_ON, HORN_OFF = HORN .. " colour", HORN .. " grey"
+
+-- The mute icon's texture, then "grey" when desaturated, else "colour".
+local function muteIcon(m)
+    return tostring(m.icon.texture) .. (m.icon.desaturated and " grey" or " colour")
+end
+
+local function muteState(m)
+    local p = m.points[#m.points]
+    return table.concat({ tostring(m.shown), tostring(muteIcon(m)), tostring(p and p[4]), tostring(p and p[5]) },
+        " | ")
+end
+
+do
+    local ctx = loadMute()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    local m = ctx.mute()
+    check("mute: a plain button on UIParent", tostring(m ~= nil) .. " " .. m.kind .. " " .. tostring(m.template)
+        .. " " .. tostring(m.parent == ctx.env.UIParent) .. " " .. m.width .. "x" .. m.height,
+        "true Button nil true 28x28")
+    check("mute: hidden while the layout is off", m.shown, false)
+    ctx.run("layout on")
+    local p = m.points[#m.points]
+    check("mute: anchored to UIParent left of the cure button", tostring(p[1]) .. " "
+        .. tostring(p[2] == ctx.env.UIParent) .. " " .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
+    check("mute: shown with the horn in colour left of the cures", muteState(m), "true | " .. HORN_ON .. " | -108 | 8")
+
+    m.scripts.OnClick(m, "LeftButton")
+    check("mute: a click turns all sound off", ctx.cvars.Sound_EnableAllSound .. " " .. ctx.sets, "0 1")
+    check("mute: the horn turns grey while muted", muteIcon(m), HORN_OFF)
+    check("mute: the click is logged with the value read back",
+        debugText(ctx.env):match("mute toggle: 1 %-> 0") ~= nil, true)
+    m.scripts.OnEnter(m)
+    check("mute: tooltip while muted", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Sound / Sound off / Click to unmute")
+    check("mute: the state line is white, the hint grey", colour(ctx.tip.lines[1]) .. " " .. colour(ctx.tip.lines[2]),
+        "1,1,1 0.5,0.5,0.5")
+    m.scripts.OnClick(m, "LeftButton")
+    check("mute: a second click turns it back on", ctx.cvars.Sound_EnableAllSound .. " " .. muteIcon(m),
+        "1 " .. HORN_ON)
+    m.scripts.OnEnter(m)
+    check("mute: tooltip while on", ctx.tip.title .. " / " .. texts(ctx.tip), "Sound / Sound on / Click to mute")
+    check("mute: IsMuted reads the CVar", tostring(ctx.addon.Mute.IsMuted()), "false")
+
+    ctx.cvars.Sound_EnableAllSound = "0"
+    m.scripts.OnEnter(m)
+    check("mute: the tooltip reads the CVar live", texts(ctx.tip) .. " " .. muteIcon(m),
+        "Sound off / Click to unmute " .. HORN_OFF)
+    ctx.cvars.Sound_EnableAllSound = "1"
+    ctx.fire("CVAR_UPDATE", "Sound_EnableAllSound", "1")
+    check("mute: CVAR_UPDATE refreshes the icon", muteIcon(m), HORN_ON)
+    check("mute: CVAR_UPDATE registered", ctx.frame.registered.CVAR_UPDATE, true)
+
+    ctx.content[0] = {}
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("mute: follows the cure button when the rod button hides", muteState(m), "true | " .. HORN_ON .. " | -76 | 8")
+
+    ctx.state.combat = true
+    ctx.known[2870] = true
+    ctx.fire("SPELLS_CHANGED")
+    m.scripts.OnClick(m, "LeftButton")
+    check("mute: a click works in combat", ctx.cvars.Sound_EnableAllSound .. " " .. muteIcon(m), "0 " .. HORN_OFF)
+    check("mute: its place waits in combat", m.points[#m.points][4], -76)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("mute: placed after combat left of both cures", muteState(m), "true | " .. HORN_OFF .. " | -108 | 8")
+
+    ctx.run("layout off")
+    check("mute: hidden with the layout off", m.shown, false)
+end
+
+do
+    local ctx = loadMute({ class = "WARRIOR" })
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local m = ctx.mute()
+    check("mute: no cures, left of the rod button", muteState(m), "true | " .. HORN_ON .. " | -76 | 8")
+    ctx.content[0] = {}
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("mute: no cures, takes the rod button's place when it hides", m.points[#m.points][4], -44)
+    ctx.content[0] = { 10 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("mute: no cures, moves back when the rod button shows", m.points[#m.points][4], -76)
+end
+
+do
+    local ctx = loadMute({ class = "WARRIOR" })
+    ctx.env.EquipItemByName = nil
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local m = ctx.mute()
+    check("mute: no rod button, still placed left of the bag row",
+        tostring(ctx.button() == nil) .. " " .. muteState(m), "true true | " .. HORN_ON .. " | -44 | 8")
+end
+
+do
+    local ctx = loadMute()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.cvars.Sound_EnableAllSound = nil
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local m = ctx.mute()
+    check("mute: hidden while the CVar is nil", m.shown, false)
+    check("mute: a nil CVar shows the question mark in colour", muteIcon(m),
+        "Interface\\Icons\\INV_Misc_QuestionMark colour")
+    check("mute: the nil CVar is logged", debugText(ctx.env):match("mute update: on=true cvar=nil shown=false") ~= nil,
+        true)
+    m.scripts.OnClick(m, "LeftButton")
+    check("mute: a click with no CVar sets nothing", ctx.sets, 0)
+end
+
+do
+    local ctx = loadMute()
+    ctx.env.GetCVar, ctx.env.C_CVar = nil, nil
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("mute: not ready without GetCVar makes no button", ctx.mute(), nil)
+    for _, need in ipairs({ "GetCVar", "SetCVar" }) do
+        local env = checkAPIs()
+        env[need] = nil
+        check(("mute button: not ready without %s"):format(need),
+            loadWithDB(nil, "enUS", { env = env }).Check.Ready("Mute button"), false)
+    end
+    local env = checkAPIs()
+    env.GetCVar, env.SetCVar = nil, nil
+    env.C_CVar = { GetCVar = function() end, SetCVar = function() end }
+    check("mute button: ready with C_CVar", loadWithDB(nil, "enUS", { env = env }).Check.Ready("Mute button"), true)
+    local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
+    check("check: mute button line", runCheck(addon, printed)["Mute button"],
+        "Mute button: ok (C_CVar.GetCVar missing, GetCVar ok, C_CVar.SetCVar missing, SetCVar ok)")
+    env = checkAPIs()
+    env.GetCVar = nil
+    check("mute button: the rod button stays ready without it",
+        loadWithDB(nil, "enUS", { env = env }).Check.Ready("Fishing rod"), true)
+end
+
+do
+    local ctx = loadMute({ locale = "zhTW" })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local m = ctx.mute()
+    m.scripts.OnEnter(m)
+    check("zhTW mute tooltip on", ctx.tip.title .. " / " .. texts(ctx.tip), "聲音 / 聲音開啟 / 點擊靜音")
+    m.scripts.OnClick(m, "LeftButton")
+    m.scripts.OnEnter(m)
+    check("zhTW mute tooltip off", texts(ctx.tip), "聲音關閉 / 點擊取消靜音")
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    check("zhTW check: mute button line", lineFor(run(addon, printed, "check"), "靜音按鈕"):sub(1, #"靜音按鈕：可用"),
+        "靜音按鈕：可用")
 end
 
 -- Upgrade judge while fishing (U3): with the rod in the main hand no weapon-slot item is an upgrade, and those items
