@@ -9,9 +9,9 @@ in the loot window and among quest rewards from what the client says about it ri
 armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
-screen around the action bars, with an XP bar, a bag row, a map info line and, for a Shaman, a class area. It never
-acts for the player: it only advises, and it saves nothing but your own stat weights, what your class trainer teaches
-and whether its layout is on.
+screen around the action bars, with an XP bar, a bag row, a mute button, a map info line and, for a Shaman, a class
+area. It never acts for the player: it only advises, and it saves nothing but your own stat weights, what your class
+trainer teaches and whether its layout is on.
 
 ## Install
 
@@ -99,7 +99,7 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Map info` and `Shaman area`. A feature
+`Cure buttons`, `Cure macro`, `Mute button`, `Map info` and `Shaman area`. A feature
 whose API is missing stays off instead of raising an error.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
@@ -380,6 +380,25 @@ made, and the tooltip says `Character macros full: no room for the fishing macro
 never deletes it. It needs the `Fishing macro` line of `/tandem check`; without it the rod icon still swaps, it just
 cannot be dragged.
 
+A Shaman gets one more icon left of the rod icon (or of the bag row, with no rod) for each cure spell learned: Cure
+Poison, then Cure Disease. A click casts the cure on the friend under your mouse, else on your friendly target, else on
+yourself. When you or a party member carries a poison (or a disease), the icon lights up with the number of you who
+carry one, and its tooltip names who carries which debuff. In combat the client keeps debuffs secret from addons, so
+the icons go dark until the fight ends. Drag the icon to put a `Tandem Poison` (or
+`Tandem Disease`) character macro doing the same on an action bar; Tandem makes it on that first drag and keeps it
+current out of combat, and when your character macro slots are full the tooltip says
+`Character macros full: no room for the cure macro`. Tandem only casts on your click. In combat the icons cannot move,
+appear or hide, so a cure learned or a rod swapped in a fight shows once it ends. They show only while the layout is
+on, and need the `Cure buttons` line of [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
+
+One last icon, left of the cure icons (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
+a click turns all sound off, the next click turns it back on, in combat too. It flips the client's
+`Sound_EnableAllSound` setting, the same as the sound checkbox in the client's sound settings, so the choice outlasts
+a `/reload` and turning the layout off. Its icon is a horn, in colour, or greyed out while the sound is off, and its
+tooltip says `Sound on` or `Sound off` with `Click to mute` or `Click to unmute`. In combat it cannot move, so it
+follows a cure icon or rod icon that came or went in the fight once it ends. It shows only while the layout is on,
+and needs the `Mute button` line of [`/tandem check`](#tandem-check).
+
 ### Map info
 
 One line of small text centred just below the [XP bar](#xp-bar) shows where you are on the zone map, in
@@ -435,6 +454,11 @@ most 300 lines, is saved in the `TandemDebug` saved variable when you `/reload` 
 recording and prints how many lines it kept; `/tandem debug` alone toggles it, and `snap` turns recording on if
 needed and takes a snapshot.
 
+While it records, every "Interface action failed because of an AddOn" the client raises is logged with the addon, the
+blocked function and the call stack, and also kept apart in `blocked` (the last 50), so the busy log cannot push it
+out. `on` also sets the client's `taintLog` setting to `1`, so the client writes `Logs/taint.log` naming the code that
+tainted the action; `off` sets it back to `0`.
+
 ## Saved data
 
 Tandem saves one account-wide table, `TandemDB`, as
@@ -461,7 +485,7 @@ Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
 `Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
 
-The same file also holds `TandemDebug`, the [debug log](#debug-log): `on` and up to 300 `log` lines, only after you
+The same file also holds `TandemDebug`, the [debug log](#debug-log): `on`, up to 300 `log` lines and 50 `blocked`, only after you
 turn it on.
 
 The client writes `Tandem.lua` only on logout or `/reload`.
@@ -485,10 +509,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and sixteen lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nineteen lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Map info` and `Shaman area`, each
+   `Cure buttons`, `Cure macro`, `Mute button`, `Map info` and `Shaman area`, each
    followed by `ok` or `missing` and its APIs. Fourteen `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
@@ -588,7 +612,9 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    icon per profession bag. Click any icon: all bags open. Loot an item: the count drops by one. With a fishing rod
    in your bags, a rod icon sits left of the bag row: click it and the rod is equipped; click it again and your
    weapons are back. Drag the rod icon onto an action bar: a `Tandem Fishing` macro lands there; click it to equip the
-   rod, click it again to cast Fishing.
+   rod, click it again to cast Fishing. Left of the rod icon (or of the bag row, with no rod; on a Shaman, left of the
+   cure icons), a horn icon sits: click it and all game sound goes off and the horn turns grey; click it
+   again and the sound is back.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
    shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
    appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
@@ -602,12 +628,12 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 7. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
    fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
    coordinates as before.
-8. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, map info line and
-   class area go.
+8. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, mute button, map info
+   line and class area go.
 
-Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Map info`, `Shaman area` and `Probe:` lines of
-`/tandem check`, any
-frame that landed in the wrong place or overlaps another, anything not restored by `off`, and any Lua error.
+Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Mute button`, `Map info`, `Shaman area`
+and `Probe:` lines of `/tandem check`, any frame that landed in the wrong place or overlaps another, anything not restored
+by `off`, and any Lua error.
 
 ## Interface number
 
