@@ -14,6 +14,9 @@ globals = {
 
 -- WoW API used by the addon; add new ones here as the addon grows.
 read_globals = {
+    "debuglocals",
+    "geterrorhandler",
+    "seterrorhandler",
     "ActionButton_GetPagedID",
     "BOOKTYPE_SPELL",
     "C_Spell",

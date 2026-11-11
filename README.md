@@ -459,6 +459,9 @@ blocked function and the call stack, and also kept apart in `blocked` (the last 
 out. `on` also sets the client's `taintLog` setting to `1`, so the client writes `Logs/taint.log` naming the code that
 tainted the action; `off` sets it back to `0`.
 
+Every Lua error raised while it records is kept in `errors` (the last 20) with its message, call stack and local
+variables, and then shown by the client as before.
+
 ## Saved data
 
 Tandem saves one account-wide table, `TandemDB`, as
@@ -485,8 +488,8 @@ Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
 `Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
 
-The same file also holds `TandemDebug`, the [debug log](#debug-log): `on`, up to 300 `log` lines and 50 `blocked`, only after you
-turn it on.
+The same file also holds `TandemDebug`, the [debug log](#debug-log): `on`, up to 300 `log` lines, 50 `blocked` and 20 `errors`,
+only after you turn it on.
 
 The client writes `Tandem.lua` only on logout or `/reload`.
 

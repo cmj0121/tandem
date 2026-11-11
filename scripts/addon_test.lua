@@ -4317,6 +4317,34 @@ do
         #log .. " " .. tostring(tail:match("watch ") ~= nil), "0 true")
 end
 
+-- While debug is on, Lua errors reach TandemDebug.errors with their stack and locals, then the client's own handler.
+do
+    local shown = {}
+    local handler = function(msg) shown[#shown + 1] = msg end
+    local ctx = loadLayout({ env = { UIParent = {}, GetTime = function() return 3 end,
+        geterrorhandler = function() return handler end,
+        seterrorhandler = function(fn) handler = fn end,
+        debugstack = function() return "Blizzard_TalentUI.lua:10\nnext" end,
+        debuglocals = function() return "(*temporary)=1" end } })
+    local env = ctx.env
+    handler("before debug")
+    check("errors: nothing recorded before debug on", env.TandemDebug, nil)
+    ctx.run("debug on")
+    handler("bad format")
+    check("errors: recorded with stack and locals", env.TandemDebug.errors[1],
+        "3.00 bad format stack=Blizzard_TalentUI.lua:10 | next locals=(*temporary)=1")
+    check("errors: the client's handler still shows them", table.concat(shown, ","), "before debug,bad format")
+    ctx.run("debug off")
+    handler("after")
+    check("errors: nothing recorded while off", #env.TandemDebug.errors, 1)
+    for i = 1, 25 do
+        env.TandemDebug.on = true
+        handler("e" .. i)
+    end
+    check("errors: the last 20 are kept", #env.TandemDebug.errors .. " " .. env.TandemDebug.errors[20]:match("e%d+"),
+        "20 e25")
+end
+
 -- Bars Edit Mode cannot hide fade instead, again after Edit Mode re-applies, and come back on off.
 do
     local enumNoVisible = copyTable(LAYOUT_ENUM)
