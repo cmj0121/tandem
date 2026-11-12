@@ -424,6 +424,10 @@ function Rod.Update()
     if ns.Mute then
         ns.Mute.Update()
     end
+    -- The layout mode button sits left of the mute button, so it follows its place and visibility.
+    if ns.Role then
+        ns.Role.Update()
+    end
     if debugOn() then
         local ok, line = pcall(updateLine)
         if ok and line ~= lastUpdate then

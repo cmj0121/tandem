@@ -96,14 +96,19 @@ Probe: LootFrame.ScrollBox missing
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
 `Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
-`Fishing macro`、`Cure buttons`、`Cure macro`、`Mute button`、`Map info` 與 `Shaman area`。缺少 API 的功能會保持關閉，而不會引發錯誤。
+`Fishing macro`、`Cure buttons`、`Cure macro`、`Mute button`、`Role button`、`Map info` 與 `Shaman area`。缺少 API 的
+功能會保持關閉，而不會引發錯誤。
 `Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
 
 接著是 `LootButton1`、`LootFrame.ScrollBox`、`LootFrame_Update`、`ContainerFrame1Item1.IconBorder`、
 `ContainerFrame1Item1.NewItemTexture`、`ContainerFrame1Item1.UpgradeIcon`、`Enum.EditModeSystem.ChatFrame`、
-`MainStatusTrackingBarContainer`、`BagsBar`、`Enum.EditModeSystem.MicroMenu`、`Enum.EditModeSystem.Minimap` 與
-`Enum.EditModeSystem.AuraFrame` 各一行 `Probe: <path> present|missing`。它們顯示用戶端有哪些背包、拾取視窗、編輯模式與光環元件，不會開啟或關閉任何功能。
+`MainStatusTrackingBarContainer`、`BagsBar`、`Enum.EditModeSystem.MicroMenu`、`Enum.EditModeSystem.Minimap`、
+`Enum.EditModeSystem.AuraFrame`、`Enum.EditModeActionBarSetting.HideBarArt`、`MainActionBar.EndCaps`、
+`MainMenuBar.EndCaps`、`MainMenuBarArtFrame.LeftEndCap`、`MainMenuBarLeftEndCap`、`Enum.EditModeSystem.ObjectiveTracker`、
+`Enum.EditModeUnitFrameSystemIndices.Party` 與 `Enum.EditModeUnitFrameSystemIndices.Raid` 各一行
+`Probe: <path> present|missing`。它們顯示用戶端有哪些背包、拾取視窗、編輯模式、單位框架與光環元件，不會開啟或關閉任何
+功能。
 
 ### `/tandem weights`
 
@@ -258,6 +263,8 @@ Tandem: layout on
 `Tandem: layout off; your previous layout is back`；若那個版面已被刪除或改名，則改用第一個預設版面。只輸入
 `/tandem layout` 會印出 `Tandem: layout on` 或 `Tandem: layout off`。
 
+- 每個角色各有一種版面模式：輸出或治療，用[切換按鈕](#背包圖示列)切換；新角色預設為輸出模式。
+  [治療版面](#移動了什麼)會把隊伍與團隊框架移到中央。
 - 在編輯模式中切換到其他版面，會像 `off` 一樣關閉 Tandem 的介面配置，但保留你選的版面。
 - 戰鬥中的變更會等待：聊天視窗顯示 `Tandem: the layout will change after combat`，戰鬥結束時才變更。
 - 帳號版面已滿時，`on` 會印出 `Tandem: no free account layout slot; delete one in Edit Mode`。
@@ -298,6 +305,26 @@ Tandem: layout on
 - 小地圖移到右上角，增益效果緊貼在它左側。用戶端在小地圖上的座標會隱藏，因為[地圖資訊](#地圖資訊)那一行已顯示座標。
 - 微型選單、小地圖與增益效果只在用戶端的編輯模式有對應系統時移動（增益效果還需要小地圖的系統）；否則維持原位。
 - 右側快捷列與第 5 到 7 條快捷列會隱藏。
+
+治療模式下，除了單位框架之外，畫面都一樣：
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│              [==| XP 62% |(42.31, 67.80) · 1H20m] [增益][小地圖] │
+│                         [ 隊伍 / 團隊 ]                          │
+│      [玩家]              [職業區]                                │
+│                                                                  │
+│                      [ 主快捷列         ]                        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- 隊伍框架與團隊框架移到中央，就在玩家頭像與[職業區](#薩滿職業區)那一列的正上方，讓你要治療的人就在眼前。用戶端的
+  編輯模式缺少某個框架的系統時（[`/tandem check`](#tandem-check) 的 `Enum.EditModeUnitFrameSystemIndices.Party` 或
+  `.Raid` 探測為 `missing`），那個框架維持原位。
+- 目標頭像會淡出且不接受點擊，目標的目標會關閉。
+
+`Tandem` 版面由你的所有角色共用，但每個角色的模式各自獨立：以模式與版面上次建立時不同的角色登入時，會為該角色重新
+建立版面。戰鬥中切換模式會等到戰鬥結束，和 `/tandem layout on` 一樣。
 
 關閉介面配置時，目標的目標與小地圖座標設定，以及 Tandem 隱藏的每個框架都會還原。Tandem 自己的框架只負責顯示，
 戰鬥中也會更新。
@@ -347,11 +374,17 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 換上的魚竿要等戰鬥結束才會反映。它們只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Cure buttons`
 這行（拖曳還需要 `Cure macro`）。
 
-最後一個圖示在驅散圖示左邊（沒有驅散圖示時是魚竿圖示左邊，兩者都沒有時是背包圖示列左邊），用來靜音：點擊一次關閉所有
+另一個圖示在驅散圖示左邊（沒有驅散圖示時是魚竿圖示左邊，兩者都沒有時是背包圖示列左邊），用來靜音：點擊一次關閉所有
 聲音，再點一次恢復，戰鬥中也可以。它切換的是用戶端的 `Sound_EnableAllSound` 設定，也就是用戶端聲音設定裡的聲音勾選框，
 因此 `/reload` 或關閉介面配置後仍維持你的選擇。圖示是彩色的號角，聲音關閉時變成灰色；提示框顯示 `聲音開啟` 或 `聲音關閉`，
 以及 `點擊靜音` 或 `點擊取消靜音`。戰鬥中它無法移動，因此戰鬥中出現或消失的驅散圖示或魚竿圖示，要等戰鬥結束它才會
 跟著移位。它只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Mute button` 這行。
+
+切換按鈕在靜音圖示左邊（靜音圖示隱藏時，則在最左邊那個圖示的左邊），用來切換這個角色的[版面模式](#移動了什麼)。
+輸出模式時顯示一把劍，治療模式時顯示快速治療；提示框顯示 `版面模式`、`輸出` 或 `治療`，以及 `點擊切換為治療版面` 或
+`點擊切換為輸出版面`。點擊會切換到另一種模式，並印出 `Tandem：治療版面` 或 `Tandem：輸出版面`；戰鬥中則印出
+`Tandem: the layout will change after combat`，切換與圖示變更都等到戰鬥結束才發生。它只在介面配置開啟時顯示，需要
+[`/tandem check`](#tandem-check) 的 `Role button` 這行。
 
 ### 地圖資訊
 
@@ -412,11 +445,12 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 `<World of Warcraft>/_forever_/WTF/Account/<account>/SavedVariables/Tandem.lua`。
 
-| Key        | 內容                                                                                                             |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- |
-| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`                 |
-| `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在）              |
-| `layout`   | [介面配置](#介面配置) `on`、先前版面 `previous`、原本的目標的目標與小地圖座標 `coords`、`minimap` 按鈕位置與隱藏 |
+| Key        | 內容                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------ |
+| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`             |
+| `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在）          |
+| `layout`   | [介面配置](#介面配置) `on`、先前版面 `previous`、原本的目標的目標與小地圖座標 `coords`、`minimap` 位置與隱藏 |
+| `modes`    | 每個角色（`Name-Realm`）：[版面模式](#移動了什麼) `heal`；不存在表示輸出                                     |
 
 - 每次在戰鬥外開啟或更新職業訓練師視窗時，都會以你角色的職業記錄它的法術：列出的每個法術（不論是否已學會）、需求
   等級，以及法術等級文字中的數字（`等級 3` 記為 `3`）。分類標題、專業技能訓練師，以及用戶端沒有提供法術 ID 的法術會
@@ -424,8 +458,10 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
   較低的等級。
 - 載入時，無效的 `spec`、override、屬性鍵或數值會單獨捨棄，無效的 `trainers` 法術 ID 或項目也是；角色的項目若不是表、
   職業鍵不是職業代號，或職業的法術不是表，則會整個捨棄。
+- `Tandem` 編輯模式版面為治療模式建立時，`layout.built` 為 `heal`，輸出模式時不存在；登入時會與角色的 `modes` 項目
+  比較，兩者不同就重新建立版面。不是 `heal` 的 `modes` 項目會在載入時捨棄。
 
-`TandemDB.schemaVersion` 為 `7`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers` 與 `layout`，
+`TandemDB.schemaVersion` 為 `7`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers`、`layout` 與 `modes`，
 其他所有鍵（例如舊版的物品快取、掉落紀錄與屬性）都會捨棄。聊天視窗接著顯示
 `Tandem：存檔資料已從結構版本 <n> 升級到 7` 與 `Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`；schema 6 的資料在
 沒有捨棄任何項目時會靜默升級。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會儲存任何資料。
@@ -454,11 +490,11 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與十九行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
    `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、
-   `Cure buttons`、`Cure macro`、`Mute button`、`Map info` 與 `Shaman area`，每行後面接著 `ok`
-   或 `missing` 以及它的 API。之後是十四行 `Probe:`，各為 `present` 或 `missing`。
+   `Cure buttons`、`Cure macro`、`Mute button`、`Role button`、`Map info` 與 `Shaman area`，每行後面接著 `ok`
+   或 `missing` 以及它的 API。之後是二十行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到
    `QuestInfoRewardsFrame.RewardButtons`、`QuestInfoRewardsFrameQuestInfoItem1` 或 `QuestRewardItem1`：獎勵按鈕
    可能要等視窗顯示過一次才會存在。
@@ -536,7 +572,8 @@ Lua 錯誤。
    都會開啟。拾取一件
    物品：剩餘格數減一。背包中有魚竿時，背包圖示列左邊有一個魚竿圖示：點擊後裝備魚竿；再點一次，武器就換回來。把魚竿圖示拖到快捷列：
    會放上 `Tandem Fishing` 巨集；點擊它裝備魚竿，再點一次施放釣魚。魚竿圖示左邊（沒有魚竿時是背包圖示列左邊；薩滿則在
-   驅散圖示左邊）有一個號角圖示：點擊後所有遊戲聲音關閉，號角變成灰色；再點一次，聲音就恢復。
+   驅散圖示左邊）有一個號角圖示：點擊後所有遊戲聲音關閉，號角變成灰色；再點一次，聲音就恢復。號角左邊有一個劍的
+   圖示：滑鼠移上去顯示 `版面模式` 與 `輸出`。
 4. 薩滿的圖騰列在主快捷列正上方自成一排，戰鬥中施法後也不會移動；頭像之間一開始什麼都沒有。施放閃電之盾：
    那裡仍然什麼都沒有。放下一個圖騰：玩家與目標頭像之間出現它的圖示，顯示倒數中的剩餘時間，下方有一條細的
    藍色法力線。滑鼠移到圖示上：顯示它的名稱。圖騰時間到時圖示消失；最後一個消失時，整排連同法力線一起消失。
@@ -545,12 +582,17 @@ Lua 錯誤。
    區域、子區域（有的話）、`遊玩時間：`、`本等級：` 與 `本次上線：`。滑鼠移到經驗條上：顯示經驗提示。
    進入副本：座標顯示 `(--, --)`。登入後聊天視窗只出現過一次 Blizzard 的 `/played` 訊息。
 6. 執行 `/reload`：一切都還在原位。
-7. 開始戰鬥並執行 `/tandem layout off`：聊天視窗顯示 `Tandem: the layout will change after combat`。戰鬥結束時恢復
+7. 加入隊伍，然後點擊劍的圖示：聊天視窗顯示 `Tandem：治療版面`，圖示變成快速治療，隊伍框架在中央、玩家頭像正上方，
+   目標頭像與目標的目標消失。執行 `/reload`：仍然一樣。以另一個角色登入：建立的是它自己的模式（除非你切換過，否則為
+   輸出）。回到第一個角色，會再次建立治療版面。在戰鬥中點擊圖示：聊天視窗顯示
+   `Tandem: the layout will change after combat`，戰鬥結束時才換成輸出版面，圖示也變回劍。
+8. 開始戰鬥並執行 `/tandem layout off`：聊天視窗顯示 `Tandem: the layout will change after combat`。戰鬥結束時恢復
    你先前的版面，快捷列、背包列、狀態列、目標的目標與小地圖座標設定都和之前一樣。
-8. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、靜音按鈕、地圖資訊與職業區都會消失。
+9. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、靜音按鈕、切換按鈕、地圖資訊與
+   職業區都會消失。
 
-請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、`Mute button`、`Map info`、
-`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
+請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、`Mute button`、
+`Role button`、`Map info`、`Shaman area` 與 `Probe:` 行、任何位置錯誤或與其他框架重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
 
 ## Interface number
 

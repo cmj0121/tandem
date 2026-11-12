@@ -77,6 +77,9 @@ Check.FEATURES = {
     { name = "Mute button", needs = {
         { "C_CVar.GetCVar", "GetCVar" }, { "C_CVar.SetCVar", "SetCVar" },
     } },
+    { name = "Role button", needs = {
+        { "C_EditMode.GetLayouts" }, { "C_EditMode.SaveLayouts" }, { "C_EditMode.SetActiveLayout" },
+    } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },
@@ -92,7 +95,8 @@ Check.PROBES = {
     "MainStatusTrackingBarContainer", "BagsBar", "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap",
     "Enum.EditModeSystem.AuraFrame", "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps",
     "MainMenuBar.EndCaps", "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
-    "Enum.EditModeSystem.ObjectiveTracker",
+    "Enum.EditModeSystem.ObjectiveTracker", "Enum.EditModeUnitFrameSystemIndices.Party",
+    "Enum.EditModeUnitFrameSystemIndices.Raid",
 }
 
 local function walk(path)

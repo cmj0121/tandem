@@ -29,6 +29,7 @@ Macro.lua
 Rod.lua
 Cure.lua
 Mute.lua
+Role.lua
 MapInfo.lua
 ClassArea.lua
 Classes\Shaman.lua

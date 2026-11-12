@@ -96,6 +96,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         -- Before the rod button too, whose update places it left of the cure buttons.
         ns.Mute.OnLogin()
+        -- After the mute button, whose place it follows; before the rod button, whose update places both again.
+        ns.Role.OnLogin()
         ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
@@ -110,6 +112,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
             -- A cure spell learned shows its button, which moves the mute button.
             ns.Cure.Update()
             ns.Mute.Update()
+            ns.Role.Update()
         end
         if event == "PLAYER_ENTERING_WORLD" then
             ns.Layout.Refade()
@@ -129,6 +132,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Rod.OnCombatEnd()
         ns.Cure.OnCombatEnd()
         ns.Mute.OnCombatEnd()
+        ns.Role.OnCombatEnd()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then

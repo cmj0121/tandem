@@ -1057,8 +1057,8 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: nineteen features", #addon.Check.FEATURES, 19)
-    check("check: eighteen probes", #addon.Check.PROBES, 18)
+    check("check: twenty features", #addon.Check.FEATURES, 20)
+    check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
     check("check: quest reward pick lists each button lookup", byName["Quest reward pick"],
@@ -1067,7 +1067,7 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
-        "Fishing rod", "Fishing macro", "Mute button", "Map info", "Shaman area" }) do
+        "Fishing rod", "Fishing macro", "Mute button", "Role button", "Map info", "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1129,7 +1129,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on seventeen features", count, 17)
+    check("check: kept code gates on eighteen features", count, 18)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -2093,7 +2093,8 @@ local PROBES = {
     "MainStatusTrackingBarContainer", "BagsBar", "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap",
     "Enum.EditModeSystem.AuraFrame", "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps",
     "MainMenuBar.EndCaps", "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
-    "Enum.EditModeSystem.ObjectiveTracker",
+    "Enum.EditModeSystem.ObjectiveTracker", "Enum.EditModeUnitFrameSystemIndices.Party",
+    "Enum.EditModeUnitFrameSystemIndices.Raid",
 }
 
 do
@@ -2131,7 +2132,7 @@ do
         ContainerFrame1Item1 = { IconBorder = {}, NewItemTexture = {}, UpgradeIcon = {} },
         Enum = { EditModeSystem = { ChatFrame = 2, MicroMenu = 10, Minimap = 11, AuraFrame = 12,
             ObjectiveTracker = 13 },
-            EditModeActionBarSetting = { HideBarArt = 6 } },
+            EditModeActionBarSetting = { HideBarArt = 6 }, EditModeUnitFrameSystemIndices = { Party = 4, Raid = 5 } },
         MainStatusTrackingBarContainer = {}, BagsBar = {},
         MainActionBar = { EndCaps = {} }, MainMenuBar = { EndCaps = {} },
         MainMenuBarArtFrame = { LeftEndCap = {} }, MainMenuBarLeftEndCap = {},
@@ -3614,7 +3615,7 @@ local LAYOUT_ENUM = {
     EditModeActionBarSetting = { Orientation = 0, NumRows = 1, NumIcons = 2, IconSize = 3, VisibleSetting = 5,
         HideBarArt = 6 },
     ActionBarVisibleSetting = { Always = 0, Hidden = 3 },
-    EditModeUnitFrameSystemIndices = { Player = 1, Target = 2, Focus = 3 },
+    EditModeUnitFrameSystemIndices = { Player = 1, Target = 2, Focus = 3, Party = 4, Raid = 5 },
     EditModeLayoutType = { Preset = 0, Account = 1, Character = 2 },
     EditModeChatFrameSetting = { WidthHundreds = 0, WidthTensAndOnes = 1, HeightHundreds = 2, HeightTensAndOnes = 3 },
 }
@@ -3640,7 +3641,8 @@ local function cornerEnum()
     return e
 end
 
--- A saved layout with eight action bars, three unit frames and the chat frame, all moved by the player.
+-- A saved layout with eight action bars, five unit frames (player, target, focus, party, raid) and the chat frame, all
+-- moved by the player.
 local function editLayout(name, layoutType)
     local systems = {}
     local function at(x)
@@ -3650,7 +3652,7 @@ local function editLayout(name, layoutType)
         systems[#systems + 1] = { system = 0, systemIndex = i, isInDefaultPosition = false, anchorInfo = at(i),
             anchorInfo2 = at(0), settings = { { setting = 1, value = 2 }, { setting = 3, value = 5 } } }
     end
-    for i = 1, 3 do
+    for i = 1, 5 do
         systems[#systems + 1] = { system = 3, systemIndex = i, isInDefaultPosition = true, anchorInfo = at(10 * i),
             settings = {} }
     end
@@ -3665,7 +3667,8 @@ end
 -- index (the two presets first). Frames record alpha, mouse, and every Hide/Show/SetPoint call in state.touched.
 -- opts.db is TandemDB, opts.env adds globals, opts.locale the locale, opts.frames more fake Blizzard frame names,
 -- opts.widgets goes to loadAddon, opts.sizes = { name = { width, height } } gives frames a size, opts.coords the
--- minimapShowPlayerCoords CVar (state.coords; absent when nil). Returns ctx with
+-- minimapShowPlayerCoords CVar (state.coords; absent when nil), opts.name the character's name (on realm "Realm";
+-- unknown when nil). Returns ctx with
 -- addon, printed, fire, state, env, run(msg).
 local function loadLayout(opts)
     opts = opts or {}
@@ -3731,6 +3734,10 @@ local function loadLayout(opts)
         },
         EditModePresetLayoutManager = { GetCopyOfPresetLayouts = function() return copyTable(presetList) end },
     }
+    if opts.name then
+        env.UnitName = function() return opts.name end
+        env.GetRealmName = function() return "Realm" end
+    end
     for _, name in ipairs({ "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight",
         "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "PlayerFrame", "TargetFrame", "ChatFrame1" }) do
         env[name] = frame(name)
@@ -3874,6 +3881,9 @@ do
     check("layout on: target frame in the unit row, right of centre", anchorText(systemOf(t, 3, 2)),
         "BOTTOMLEFT UIParent BOTTOM 120 192")
     check("layout on: focus untouched", systemOf(t, 3, 3).isInDefaultPosition, true)
+    check("layout on: party and raid untouched in dps", tostring(systemOf(t, 3, 4).isInDefaultPosition) .. " "
+        .. tostring(systemOf(t, 3, 5).isInDefaultPosition), "true true")
+    check("layout on: TargetFrame not faded in dps", ctx.state.frames.TargetFrame.alpha, 1)
     check("layout on: chat bottom-left", anchorText(systemOf(t, 9, 1)), "BOTTOMLEFT UIParent BOTTOMLEFT 16 8")
     check("layout on: chat 380x120 by its size settings", settingOf(systemOf(t, 9, 1), 0) .. " "
         .. settingOf(systemOf(t, 9, 1), 1) .. " " .. settingOf(systemOf(t, 9, 1), 2) .. " "
@@ -4008,10 +4018,210 @@ do
     ctx.run("layout on")
     check("layout preset: previous is the preset", dump(ctx.addon.Store.Layout().previous),
         dump({ name = "Classic", type = 0 }))
-    check("layout preset: ToT already on saves nothing", ctx.addon.Store.Layout().tot, nil)
+    check("layout preset: ToT already on is saved as it was", ctx.addon.Store.Layout().tot, "1")
     ctx.run("layout off")
     check("layout preset: off picks the preset index", ctx.state.active, 2)
     check("layout preset: ToT left on", ctx.state.cvar, "1")
+end
+
+-- Healer mode (U1, D2, D3): per character; party and raid frames above the unit row, the target frame faded, the
+-- target of target hidden; dps keeps today's layout.
+local function withoutGroups(t)
+    local out = copyTable(t)
+    for i = #out.systems, 1, -1 do
+        local s = out.systems[i]
+        if s.system == 3 and (s.systemIndex == 4 or s.systemIndex == 5) then
+            table.remove(out.systems, i)
+        end
+    end
+    return dump(out)
+end
+
+do
+    local dps = loadLayout({ name = "Tank", tot = "1" })
+    dps.run("layout on")
+    local dpsLayout = savedTandem(dps.state)
+
+    local ctx = loadLayout({ name = "Healer", tot = "1" })
+    local Layout, Store, state = ctx.addon.Layout, ctx.addon.Store, ctx.state
+    local changes = {}
+    Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
+    check("heal: dps by default", Layout.Mode(), "dps")
+    check("heal: SetMode while off only saves", tostring(Layout.SetMode("heal")) .. " " .. state.saved .. " "
+        .. #state.activated .. " " .. #changes, "true 0 0 0")
+    check("heal: the mode is saved per character", dump(ctx.env.TandemDB.modes), dump({ ["Healer-Realm"] = "heal" }))
+    check("heal: Mode reads it", Layout.Mode(), "heal")
+    check("heal: on", ctx.run("layout on"), "Tandem: layout on")
+    local t = savedTandem(state)
+    check("heal: party frames above the class area", anchorText(systemOf(t, 3, 4)), "BOTTOM UIParent BOTTOM 0 292")
+    check("heal: raid frames share the anchor", anchorText(systemOf(t, 3, 5)), "BOTTOM UIParent BOTTOM 0 292")
+    check("heal: player frame keeps its place", anchorText(systemOf(t, 3, 1)), "BOTTOMRIGHT UIParent BOTTOM -120 192")
+    check("heal: target frame keeps its place", anchorText(systemOf(t, 3, 2)), "BOTTOMLEFT UIParent BOTTOM 120 192")
+    check("heal: every other system as in dps", withoutGroups(t), withoutGroups(dpsLayout))
+    local target = state.frames.TargetFrame
+    check("heal: target frame faded, mouse off", target.alpha .. " " .. tostring(target.mouse), "0 false")
+    check("heal: target of target hidden", state.cvar, "0")
+    check("heal: built heal", Store.Layout().built, "heal")
+    check("heal: the first ToT value saved", Store.Layout().tot, "1")
+
+    check("heal to dps: SetMode while on applies", tostring(Layout.SetMode("dps")), "true")
+    t = savedTandem(state)
+    check("heal to dps: today's layout again", dump(t), dump(dpsLayout))
+    check("heal to dps: target frame back", target.alpha .. " " .. tostring(target.mouse), "1 true")
+    check("heal to dps: target of target shown", state.cvar, "1")
+    check("heal to dps: built cleared, ToT kept", tostring(Store.Layout().built) .. " " .. Store.Layout().tot,
+        "nil 1")
+    check("heal to dps: the mode cleared", ctx.env.TandemDB.modes["Healer-Realm"], nil)
+    check("heal to dps: listeners told", table.concat(changes, ","), "true,true")
+    Layout.SetMode("heal")
+    check("heal again: re-applied", Store.Layout().built .. " " .. state.cvar .. " " .. target.alpha, "heal 0 0")
+    ctx.run("layout off")
+    check("heal first then off: ToT back to its pre-Tandem value", state.cvar, "1")
+    check("heal off: target frame back", target.alpha .. " " .. tostring(target.mouse), "1 true")
+    check("heal off: state cleared", dump(Store.Layout()), "{}")
+
+    ctx = loadLayout({ name = "Healer", tot = "1" })
+    ctx.addon.Layout.SetMode("heal")
+    ctx.run("layout on")
+    ctx.run("layout off")
+    check("heal turned on first: ToT restored on off", ctx.state.cvar, "1")
+
+    ctx = loadLayout()
+    check("heal: unknown character reads dps", ctx.addon.Layout.Mode(), "dps")
+    check("heal: unknown character cannot save", table.concat({ tostring(ctx.addon.Layout.SetMode("heal")),
+        select(2, ctx.addon.Layout.SetMode("heal")) }, " "), "false unknown")
+end
+
+-- Healer mode in combat waits for combat end; a failed apply leaves built as it was.
+do
+    local ctx = loadLayout({ name = "Healer" })
+    local Layout, Store, state = ctx.addon.Layout, ctx.addon.Store, ctx.state
+    ctx.run("layout on")
+    state.combat = true
+    local saved = state.saved
+    check("heal combat: deferred", table.concat({ tostring(Layout.SetMode("heal")),
+        select(2, Layout.SetMode("heal")) }, " "), "false combat")
+    check("heal combat: nothing changed yet", (state.saved - saved) .. " " .. tostring(Store.Layout().built) .. " "
+        .. state.cvar, "0 nil 1")
+    state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("heal combat: applied after combat", Store.Layout().built .. " " .. state.cvar .. " "
+        .. anchorText(systemOf(savedTandem(state), 3, 4)), "heal 0 BOTTOM UIParent BOTTOM 0 292")
+
+    ctx = loadLayout({ name = "Healer" })
+    ctx.run("layout on")
+    ctx.env.C_EditMode.SetActiveLayout = function() error("blocked") end
+    check("heal failed: SetMode reports the error", select(2, ctx.addon.Layout.SetMode("heal")), "error")
+    check("heal failed: built unchanged", ctx.addon.Store.Layout().built, nil)
+end
+
+-- An index enum the client lacks skips that system and never moves the player frame.
+do
+    for _, missing in ipairs({ { "Party" }, { "Raid" }, { "Party", "Raid" } }) do
+        local e = copyTable(LAYOUT_ENUM)
+        for _, name in ipairs(missing) do
+            e.EditModeUnitFrameSystemIndices[name] = nil
+        end
+        local ctx = loadLayout({ name = "Healer", env = { Enum = e } })
+        ctx.addon.Layout.SetMode("heal")
+        ctx.run("layout on")
+        local t = savedTandem(ctx.state)
+        local what = table.concat(missing, "+")
+        check("heal no " .. what .. ": player frame keeps its place", anchorText(systemOf(t, 3, 1)),
+            "BOTTOMRIGHT UIParent BOTTOM -120 192")
+        for i, name in ipairs({ "Party", "Raid" }) do
+            local s = systemOf(t, 3, 3 + i)
+            local want = e.EditModeUnitFrameSystemIndices[name] and "BOTTOM UIParent BOTTOM 0 292"
+                or "CENTER UIParent CENTER " .. 10 * (3 + i) .. " 0"
+            check(("heal no %s: %s"):format(what, name), anchorText(s), want)
+        end
+    end
+end
+
+-- Saved modes: only "heal" under a character key is kept; anything else is dropped and counted.
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 7, weights = {}, trainers = {}, layout = { built = "dps" },
+        modes = { ["A-Realm"] = "heal", ["B-Realm"] = "tank", ["C-Realm"] = "dps", [""] = "heal", [3] = "heal" } })
+    check("heal db: valid modes kept", dump(env.TandemDB.modes), dump({ ["A-Realm"] = "heal" }))
+    check("heal db: an invalid built dropped", env.TandemDB.layout.built, nil)
+    check("heal db: invalid entries counted", printed[2], "Tandem: dropped 5 invalid or unused saved entries")
+    printed, env = select(2, loadWithDB({ schemaVersion = 7, modes = "bad" }))
+    check("heal db: a non-table modes dropped", tostring(env.TandemDB.modes) .. " " .. printed[2],
+        "nil Tandem: dropped 1 invalid or unused saved entries")
+    env = select(3, loadWithDB({ schemaVersion = 7, layout = { built = "heal" } }))
+    check("heal db: built heal kept", env.TandemDB.layout.built, "heal")
+end
+
+-- Two characters on one account with different modes logging in alternately each get their own layout; a login that
+-- finds built matching saves nothing; a failed rebuild at login leaves built as it was.
+do
+    local ctx = loadLayout({ name = "Healer", tot = "1" })
+    ctx.addon.Layout.SetMode("heal")
+    ctx.run("layout on")
+    local function relog(name, prev, opts)
+        opts = opts or {}
+        local next = loadLayout({ name = name, db = prev.env.TandemDB, layouts = prev.state.layouts,
+            active = prev.state.active, tot = prev.state.cvar, env = opts.env })
+        if opts.prepare then
+            opts.prepare(next)
+        end
+        next.fire("PLAYER_LOGIN")
+        return next
+    end
+    local tank = relog("Tank", ctx)
+    local t = savedTandem(tank.state)
+    check("alternate tank: rebuilt for dps", tank.state.saved .. " " .. tostring(tank.addon.Store.Layout().built)
+        .. " " .. tostring(systemOf(t, 3, 4).isInDefaultPosition), "1 nil true")
+    check("alternate tank: ToT shown, target frame kept", tank.state.cvar .. " " .. tank.state.frames.TargetFrame.alpha,
+        "1 1")
+    local healer = relog("Healer", tank)
+    t = savedTandem(healer.state)
+    check("alternate healer: rebuilt for heal", healer.state.saved .. " " .. healer.addon.Store.Layout().built .. " "
+        .. anchorText(systemOf(t, 3, 4)), "1 heal BOTTOM UIParent BOTTOM 0 292")
+    check("alternate healer: ToT hidden, target frame faded", healer.state.cvar .. " "
+        .. healer.state.frames.TargetFrame.alpha, "0 0")
+    check("alternate healer: the pre-Tandem ToT kept", healer.addon.Store.Layout().tot, "1")
+    local again = relog("Healer", healer)
+    check("alternate healer again: built matches, nothing saved", again.state.saved .. " "
+        .. again.state.frames.TargetFrame.alpha, "0 0")
+    local failed = relog("Tank", again, { prepare = function(c)
+        c.env.C_EditMode.SaveLayouts = function() error("blocked") end
+    end })
+    check("alternate failed: built unchanged", failed.addon.Store.Layout().built, "heal")
+    check("alternate failed: still on, attached as built", tostring(failed.addon.Layout.IsOn()) .. " "
+        .. failed.state.frames.TargetFrame.alpha, "true 0")
+    failed.run("layout off")
+    check("alternate failed: off restores the pre-Tandem ToT", failed.state.cvar, "1")
+end
+
+-- A rebuild at login that fails after saving is tried once per mismatch, not on every layout event.
+do
+    local ctx = loadLayout({ name = "Healer", layouts = { editLayout(), editLayout("Tandem") }, active = 4,
+        db = { schemaVersion = 7, modes = { ["Healer-Realm"] = "heal" },
+        layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" } } })
+    local tries = 0
+    ctx.env.C_EditMode.SetActiveLayout = function()
+        tries = tries + 1
+        error("blocked")
+    end
+    ctx.fire("PLAYER_LOGIN")
+    for _ = 1, 3 do
+        ctx.fire("EDIT_MODE_LAYOUTS_UPDATED")
+    end
+    check("heal retry: a failing rebuild is tried once", tries .. " " .. ctx.state.saved, "1 1")
+    check("heal retry: built unchanged, still on", tostring(ctx.addon.Store.Layout().built) .. " "
+        .. tostring(ctx.addon.Layout.IsOn()), "nil true")
+end
+
+-- A layout an older build turned on from ToT "1" saved no value; off after heal still shows the target of target.
+do
+    local ctx = loadLayout({ name = "Healer", layouts = { editLayout(), editLayout("Tandem") }, active = 4, tot = "1",
+        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.addon.Layout.SetMode("heal")
+    check("heal old build: ToT hidden, \"1\" saved", ctx.state.cvar .. " " .. ctx.addon.Store.Layout().tot, "0 1")
+    ctx.run("layout off")
+    check("heal old build: off shows the target of target", ctx.state.cvar, "1")
 end
 
 -- Off after the player deleted or renamed a layout in Edit Mode.
@@ -7109,6 +7319,156 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     check("zhTW check: mute button line", lineFor(run(addon, printed, "check"), "靜音按鈕"):sub(1, #"靜音按鈕：可用"),
         "靜音按鈕：可用")
+end
+
+-- Layout mode button: left of the mute button (or of whatever is left when it is hidden) while the layout is on,
+-- switching this character's layout between damage and healer. Loads loadMute(opts) for a known character;
+-- ctx.role() is TandemRoleButton and ctx.last() the last line printed.
+local function loadRole(opts)
+    local ctx = loadMute(opts)
+    ctx.env.GetRealmName = function() return "Realm" end
+    function ctx.role()
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemRoleButton" then
+                return w
+            end
+        end
+    end
+    function ctx.last()
+        return ctx.printed[#ctx.printed]
+    end
+    return ctx
+end
+
+local SWORD, FLASH = "Interface\\Icons\\INV_Sword_04", "Interface\\Icons\\Spell_Holy_FlashHeal"
+
+local function roleState(r)
+    local p = r.points[#r.points]
+    return table.concat({ tostring(r.shown), tostring(r.icon.texture), tostring(p and p[4]), tostring(p and p[5]) },
+        " | ")
+end
+
+do
+    local ctx = loadRole()
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    local r = ctx.role()
+    check("role: a plain button on UIParent", tostring(r ~= nil) .. " " .. r.kind .. " " .. tostring(r.template)
+        .. " " .. tostring(r.parent == ctx.env.UIParent) .. " " .. r.width .. "x" .. r.height,
+        "true Button nil true 28x28")
+    check("role: hidden while the layout is off", r.shown, false)
+    ctx.run("layout on")
+    local p = r.points[#r.points]
+    check("role: anchored to UIParent", tostring(p[1]) .. " " .. tostring(p[2] == ctx.env.UIParent) .. " "
+        .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
+    check("role: shown with the sword left of the mute button", roleState(r), "true | " .. SWORD .. " | -140 | 8")
+    r.scripts.OnEnter(r)
+    check("role: tooltip in dps", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Layout mode / Damage / Click for the healer layout")
+    check("role: the state line is white, the hint grey", colour(ctx.tip.lines[1]) .. " " .. colour(ctx.tip.lines[2]),
+        "1,1,1 0.5,0.5,0.5")
+
+    r.scripts.OnClick(r, "LeftButton")
+    check("role: a click switches to the healer layout", ctx.last() .. " " .. ctx.addon.Layout.Mode() .. " "
+        .. tostring(ctx.addon.Store.Layout().built), "Tandem: healer layout heal heal")
+    check("role: the heal icon in heal", roleState(r), "true | " .. FLASH .. " | -140 | 8")
+    r.scripts.OnEnter(r)
+    check("role: tooltip in heal", texts(ctx.tip), "Healer / Click for the damage layout")
+    r.scripts.OnClick(r, "LeftButton")
+    check("role: a second click switches back", ctx.last() .. " " .. ctx.addon.Layout.Mode() .. " "
+        .. tostring(ctx.addon.Store.Layout().built) .. " " .. tostring(r.icon.texture),
+        "Tandem: damage layout dps nil " .. SWORD)
+
+    ctx.state.combat = true
+    r.scripts.OnClick(r, "LeftButton")
+    check("role: in combat the click prints the wait line", ctx.last(), "Tandem: the layout will change after combat")
+    check("role: in combat nothing is built yet", tostring(ctx.addon.Store.Layout().built), "nil")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("role: the switch happens at combat end", ctx.addon.Store.Layout().built .. " " .. tostring(r.icon.texture),
+        "heal " .. FLASH)
+
+    ctx.state.combat = true
+    ctx.addon.Layout.SetMode("dps")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("role: a mode applied at combat end refreshes the icon",
+        tostring(ctx.addon.Store.Layout().built) .. " " .. tostring(r.icon.texture), "nil " .. SWORD)
+
+    ctx.content[0] = {}
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("role: follows the mute button when the rod button hides", r.points[#r.points][4], -108)
+    ctx.state.combat = true
+    ctx.known[2870] = true
+    ctx.fire("SPELLS_CHANGED")
+    check("role: its place waits in combat", r.points[#r.points][4], -108)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("role: placed after combat left of the mute button", r.points[#r.points][4], -140)
+
+    ctx.run("layout off")
+    check("role: hidden with the layout off", r.shown, false)
+end
+
+do
+    local ctx = loadRole()
+    ctx.cvars.Sound_EnableAllSound = nil
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("role: takes the mute button's place when it is hidden", roleState(ctx.role()),
+        "true | " .. SWORD .. " | -108 | 8")
+end
+
+do
+    local ctx = loadRole()
+    ctx.env.UnitName = function() end
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local r = ctx.role()
+    r.scripts.OnClick(r, "LeftButton")
+    check("role: an unknown character prints the error line", ctx.last(), "Tandem: the layout could not be changed")
+end
+
+do
+    for _, need in ipairs({ "GetLayouts", "SaveLayouts", "SetActiveLayout" }) do
+        local env = checkAPIs()
+        env.C_EditMode[need] = nil
+        check(("role button: not ready without C_EditMode.%s"):format(need),
+            loadWithDB(nil, "enUS", { env = env }).Check.Ready("Role button"), false)
+    end
+    check("role button: ready with every API",
+        loadWithDB(nil, "enUS", { env = checkAPIs() }).Check.Ready("Role button"), true)
+
+    local ctx = loadRole()
+    local addon = ctx.addon
+    local ready = addon.Check.Ready
+    addon.Check.Ready = function(name)
+        return name ~= "Role button" and ready(name)
+    end
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("role: not ready makes no button", ctx.role(), nil)
+end
+
+do
+    local ctx = loadRole({ locale = "zhTW" })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local r = ctx.role()
+    r.scripts.OnEnter(r)
+    check("zhTW role tooltip dps", ctx.tip.title .. " / " .. texts(ctx.tip), "版面模式 / 輸出 / 點擊切換為治療版面")
+    r.scripts.OnClick(r, "LeftButton")
+    check("zhTW role reply heal", ctx.last(), "Tandem：治療版面")
+    r.scripts.OnEnter(r)
+    check("zhTW role tooltip heal", texts(ctx.tip), "治療 / 點擊切換為輸出版面")
+    r.scripts.OnClick(r, "LeftButton")
+    check("zhTW role reply dps", ctx.last(), "Tandem：輸出版面")
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    check("zhTW check: role button line", lineFor(run(addon, printed, "check"), "切換按鈕"):sub(1, #"切換按鈕：可用"),
+        "切換按鈕：可用")
 end
 
 -- Upgrade judge while fishing (U3): with the rod in the main hand no weapon-slot item is an upgrade, and those items

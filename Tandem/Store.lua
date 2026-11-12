@@ -1,8 +1,8 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights
--- and the class trainer spells seen and the UI layout state; every other key an older schema saved is dropped on
--- load.
+-- and layout mode, the class trainer spells seen and the UI layout state; every other key an older schema saved is
+-- dropped on load.
 local Store = { readOnly = false }
 ns.Store = Store
 
@@ -22,7 +22,7 @@ end
 local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
-local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true }
+local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true, modes = true }
 local MAX_LAYOUT_NAME = 64
 
 local floor = math.floor
@@ -110,7 +110,8 @@ end
 
 -- The check for each layout field: on is a boolean, previous { name, type } the layout active before Tandem's, tot
 -- the showTargetOfTarget CVar value before Tandem set it, coords the minimapShowPlayerCoords value before Tandem
--- cleared it, minimap { angle = degrees|nil, hidden = bool|nil } the minimap button's place and visibility.
+-- cleared it, minimap { angle = degrees|nil, hidden = bool|nil } the minimap button's place and visibility, built the
+-- mode the Tandem Edit Mode layout was last built with ("heal"; nil for dps).
 local LAYOUT_FIELDS = {
     on = function(v)
         return type(v) == "boolean"
@@ -129,7 +130,15 @@ local LAYOUT_FIELDS = {
         return type(v) == "table" and (v.angle == nil or isAngle(v.angle))
             and (v.hidden == nil or type(v.hidden) == "boolean")
     end,
+    built = function(v)
+        return v == "heal"
+    end,
 }
+
+-- A character's saved layout mode: only "heal" is kept; absent means dps.
+local function isMode(v)
+    return v == "heal"
+end
 
 local function copyLayoutField(field, v)
     if field == "previous" then
@@ -178,6 +187,15 @@ local function migrate(raw, report)
                 end
             end
             db.trainers[classFile] = clean
+        else
+            drop()
+        end
+    end
+
+    for name, v in pairs(entries(raw.modes)) do
+        if type(name) == "string" and name ~= "" and isMode(v) then
+            db.modes = db.modes or {}
+            db.modes[name] = v
         else
             drop()
         end
@@ -263,19 +281,35 @@ function Store.TrainerSpells(classFile)
 end
 
 -- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil, coords = string|nil,
--- minimap = { angle, hidden }|nil }; empty (off) when the db is newer (kept raw).
+-- minimap = { angle, hidden }|nil, built = "heal"|nil }; empty (off) when the db is newer (kept raw).
 function Store.Layout()
     return not Store.readOnly and Store.db.layout or {}
 end
 
--- Sets one layout field (on, previous, tot, coords or minimap) to value, or clears it with nil; false when invalid or
--- read-only.
+-- Sets one layout field (on, previous, tot, coords, minimap or built) to value, or clears it with nil; false when
+-- invalid or read-only.
 function Store.SetLayout(field, value)
     local valid = LAYOUT_FIELDS[field]
     if Store.readOnly or not valid or (value ~= nil and not valid(value)) then
         return false
     end
     Store.db.layout[field] = value ~= nil and copyLayoutField(field, value) or nil
+    return true
+end
+
+-- Returns the layout mode saved for the character key ("heal"), or nil (dps, or the db is newer).
+function Store.Mode(key)
+    local modes = not Store.readOnly and Store.db.modes
+    return type(modes) == "table" and modes[key] or nil
+end
+
+-- Saves the character key's layout mode ("heal", or nil for dps); false when invalid or read-only.
+function Store.SetMode(key, mode)
+    if Store.readOnly or type(key) ~= "string" or key == "" or (mode ~= nil and not isMode(mode)) then
+        return false
+    end
+    Store.db.modes = Store.db.modes or {}
+    Store.db.modes[key] = mode
     return true
 end
 

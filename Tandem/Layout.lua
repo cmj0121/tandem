@@ -7,7 +7,8 @@ local _, ns = ...
 -- chat frame bottom-left, the micro menu bottom-right under the bag row and the minimap and buffs
 -- top-right (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move
 -- only through Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with
--- SetAlpha(0) and EnableMouse(false), both undone on off.
+-- SetAlpha(0) and EnableMouse(false), both undone on off. In the healer mode (per character) the party and raid
+-- frames move above the class area, the target frame fades and the target of target is hidden.
 local Layout = {}
 ns.Layout = Layout
 
@@ -28,11 +29,15 @@ local TOT_CVAR = "showTargetOfTarget"
 local COORDS_CVAR = "minimapShowPlayerCoords"
 -- How far above the main bar's bottom edge Edit Mode puts the totem bar.
 local TOTEM_Y = 70
+-- How far above the unit row the healer mode puts the party and raid frames, clear of the class area.
+local HEAL_LIFT = 100
 
 local listeners = {}
 -- concealed: frame names faded while on; faded[name] = { alpha, mouse } as they were before.
 local concealed, faded = {}, {}
 local pending, pendingSync, attached, busy
+-- The mode Sync last tried to rebuild the layout for, so a failing rebuild is not retried on every layout event.
+local tried
 
 local REPLY = {
     [true] = "Tandem: layout on",
@@ -116,6 +121,12 @@ function Layout.MicroRoom()
     return MICRO_Y + measure("MicroMenuContainer", "GetHeight", 40) + CLEAR
 end
 
+-- Returns this character's layout mode: "heal", or "dps" (also when the character is unknown).
+function Layout.Mode()
+    local key = ns.Weights.CharacterKey()
+    return key and ns.Store.Mode(key) == "heal" and "heal" or "dps"
+end
+
 function Layout.IsOn()
     return ns.Store.Layout().on == true
 end
@@ -150,16 +161,20 @@ local function fade()
     end
 end
 
-local function unfade()
-    for name, was in pairs(faded) do
-        local f = frameOf(name)
-        if type(f) == "table" then
-            pcall(f.SetAlpha, f, was.alpha)
-            if was.mouse ~= nil then
-                pcall(f.EnableMouse, f, was.mouse)
-            end
+local function unfadeOne(name)
+    local was, f = faded[name], frameOf(name)
+    if type(f) == "table" then
+        pcall(f.SetAlpha, f, was.alpha)
+        if was.mouse ~= nil then
+            pcall(f.EnableMouse, f, was.mouse)
         end
-        faded[name] = nil
+    end
+    faded[name] = nil
+end
+
+local function unfade()
+    for name in pairs(faded) do
+        unfadeOne(name)
     end
 end
 
@@ -295,8 +310,24 @@ local function corners(info)
     end
 end
 
--- Rewrites info's systems to D12; returns the bar frame names Edit Mode cannot hide here (to fade instead).
-local function override(info)
+-- Moves the party and raid frames above the unit row for the healer mode, skipping a system the client's Edit Mode
+-- lacks the index of (findSystem with a nil index would match the player frame).
+local function healFrames(info, unit, row)
+    local moved = {}
+    for _, name in ipairs({ "Party", "Raid" }) do
+        local index = enum("EditModeUnitFrameSystemIndices", name)
+        local s = unit and index ~= nil and findSystem(info, unit, index)
+        if s then
+            move(s, anchor("BOTTOM", "UIParent", "BOTTOM", 0, row + HEAL_LIFT))
+        end
+        moved[#moved + 1] = name .. (s and " moved" or " missing")
+    end
+    ns.Debug.Log("layout heal: " .. table.concat(moved, ", "))
+end
+
+-- Rewrites info's systems to D12 (and the healer mode when heal); returns the frame names Edit Mode cannot hide here
+-- (to fade instead).
+local function override(info, heal)
     local bar, unit = enum("EditModeSystem", "ActionBar"), enum("EditModeSystem", "UnitFrame")
     local visible = enum("EditModeActionBarSetting", "VisibleSetting")
     local hidden, always = enum("ActionBarVisibleSetting", "Hidden"), enum("ActionBarVisibleSetting", "Always")
@@ -343,6 +374,10 @@ local function override(info)
     if target then
         move(target, anchor("BOTTOMLEFT", "UIParent", "BOTTOM", spread, row))
     end
+    if heal then
+        healFrames(info, unit, row)
+        faders[#faders + 1] = "TargetFrame"
+    end
     -- Blizzard's XP and reputation bars (faded by XPBar for Tandem's own at the top) along the screen's bottom edge.
     local status = enum("EditModeSystem", "StatusTrackingBar")
     for i, index in ipairs({ "StatusTrackingBar1", "StatusTrackingBar2" }) do
@@ -362,6 +397,7 @@ local function maxPerType()
     return type(v) == "number" and v or 5
 end
 
+-- Replaces the layout's own faded frames with list, restoring any of them no longer faded.
 local function setFaders(list)
     for _, row in ipairs(HIDDEN_BARS) do
         concealed[row[2]] = nil
@@ -369,8 +405,14 @@ local function setFaders(list)
     for _, name in ipairs(END_CAPS) do
         concealed[name] = nil
     end
+    concealed.TargetFrame = nil
     for _, name in ipairs(list) do
         concealed[name] = true
+    end
+    for name in pairs(faded) do
+        if not concealed[name] then
+            unfadeOne(name)
+        end
     end
 end
 
@@ -400,6 +442,8 @@ local function attach(faders)
 end
 
 local function apply()
+    local fresh = ns.Store.Layout().on ~= true
+    local heal = Layout.Mode() == "heal"
     local layouts = call(C_EditMode.GetLayouts)
     local active = activeInfo()
     if type(layouts) ~= "table" or type(layouts.layouts) ~= "table" or not active then
@@ -426,7 +470,7 @@ local function apply()
         return false, "error"
     end
     info.layoutName, info.layoutType = NAME, account
-    local faders = override(info)
+    local faders = override(info, heal)
 
     local index = indexNamed(layouts.layouts, NAME, account)
     if index then
@@ -455,17 +499,20 @@ local function apply()
     end
 
     local store = ns.Store
+    store.SetLayout("built", heal and "heal" or nil)
     if previous then
         store.SetLayout("previous", previous)
     end
     if store.Layout().tot == nil then
-        local tot = ns.Store.GetCVar(TOT_CVAR)
-        if type(tot) == "string" and tot ~= "1" then
+        -- An older build turned the layout on saving no value when the CVar was already "1".
+        local tot = fresh and store.GetCVar(TOT_CVAR) or "1"
+        if type(tot) == "string" then
             store.SetLayout("tot", tot)
         end
     end
-    ns.Store.SetCVar(TOT_CVAR, "1")
+    store.SetCVar(TOT_CVAR, heal and "0" or "1")
     store.SetLayout("on", true)
+    tried = nil
     attach(faders)
     return true
 end
@@ -484,7 +531,9 @@ local function detach()
     end
     store.SetLayout("coords", nil)
     store.SetLayout("previous", nil)
+    store.SetLayout("built", nil)
     store.SetLayout("on", false)
+    tried = nil
     unfade()
     attached = false
     notify(false)
@@ -548,6 +597,23 @@ function Layout.Set(on)
     return run(on)
 end
 
+-- Saves this character's layout mode ("dps" or "heal") and, while the layout is on, applies it as Set(true) does,
+-- with its returns; false and "unknown" when the character is unknown. While off it only saves.
+function Layout.SetMode(mode)
+    if ns.Store.readOnly then
+        return false, "readonly"
+    end
+    local key = ns.Weights.CharacterKey()
+    if not key then
+        return false, "unknown"
+    end
+    ns.Store.SetMode(key, mode == "heal" and "heal" or nil)
+    if not Layout.IsOn() then
+        return true
+    end
+    return Layout.Set(true)
+end
+
 local function isTandem(info)
     return info.layoutName == NAME and info.layoutType == (enum("EditModeLayoutType", "Account") or 1)
 end
@@ -560,8 +626,9 @@ end
 
 -- Matches Tandem's frames to the active layout while the layout is on, saving nothing: with "Tandem" active it
 -- attaches them (once) and fades the frames again; with another layout active (switched or deleted in Edit Mode) the
--- layout turns off silently. Unknown active layout (Edit Mode not loaded yet) waits for the next call. Runs at login,
--- on EDIT_MODE_LAYOUTS_UPDATED and when Edit Mode closes.
+-- layout turns off silently; with "Tandem" built for another mode than this character's it is built again. Unknown
+-- active layout (Edit Mode not loaded yet) waits for the next call. Runs at login, on EDIT_MODE_LAYOUTS_UPDATED and
+-- when Edit Mode closes.
 function Layout.Sync()
     if busy or not Layout.IsOn() or not ready() then
         return
@@ -579,9 +646,16 @@ function Layout.Sync()
         detach()
         return
     end
+    local mode = Layout.Mode()
+    if (ns.Store.Layout().built or "dps") ~= mode and tried ~= mode then
+        tried = mode
+        if run(true) then
+            return
+        end
+    end
     if not attached then
         info = deepCopy(info)
-        attach(type(info.systems) == "table" and override(info) or nil)
+        attach(type(info.systems) == "table" and override(info, ns.Store.Layout().built == "heal") or nil)
     else
         fade()
     end
