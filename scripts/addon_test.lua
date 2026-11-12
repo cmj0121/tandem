@@ -1027,6 +1027,7 @@ local function checkAPIs()
         GetNumMacros = fn, GetItemSubClassInfo = fn,
         C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn }, RequestTimePlayed = fn,
         C_UnitAuras = { GetAuraDataByIndex = fn }, UnitExists = fn, UnitName = fn,
+        SecureHandlerWrapScript = fn, SecureHandlerSetFrameRef = fn, SecureHandler_OnClick = fn,
         GetCVar = fn, SetCVar = fn,
     }
 end
@@ -1057,7 +1058,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: twenty features", #addon.Check.FEATURES, 20)
+    check("check: twenty-one features", #addon.Check.FEATURES, 21)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1067,7 +1068,8 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
-        "Fishing rod", "Fishing macro", "Mute button", "Role button", "Map info", "Shaman area" }) do
+        "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Mute button", "Role button", "Map info",
+        "Shaman area" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1129,7 +1131,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on eighteen features", count, 18)
+    check("check: kept code gates on nineteen features", count, 19)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -2752,13 +2754,14 @@ end
 local EVENTS = {
     "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_OPENED", "QUEST_COMPLETE", "QUEST_FINISHED",
     "TRAINER_SHOW", "TRAINER_UPDATE", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED",
-    "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
+    "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED",
+    "ACTIONBAR_PAGE_CHANGED",
     "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
 }
 
 -- Events only the removed loot, source, kill and browse recorders listened to.
 local GONE_EVENTS = {
-    "LOOT_CLOSED", "QUEST_DETAIL", "MERCHANT_SHOW", "MERCHANT_UPDATE", "PLAYER_REGEN_DISABLED", "PLAYER_LOGOUT",
+    "LOOT_CLOSED", "QUEST_DETAIL", "MERCHANT_SHOW", "MERCHANT_UPDATE", "PLAYER_LOGOUT",
     "COMBAT_LOG_EVENT_UNFILTERED",
 }
 
@@ -6973,14 +6976,53 @@ do
     check("zhTW rod macro full line", ctx.tip.lines[#ctx.tip.lines].text, "角色巨集已滿：沒有空間放釣魚巨集")
 end
 
--- Cure buttons: a Shaman's known cures as secure buttons left of the rod button, lit while the player or a party
--- member carries a debuff they remove, dragged out as "Tandem <kind>" macros.
+-- Class macro flyout (U2, D1, D2, D4): one secure button left of the rod button casting the picked class macro, an
+-- arrow opening an upward list of the shown entries, each row casting its entry and making it the pick, lit while
+-- the player or a party member carries a debuff its entry cures, dragged out as its "Tandem <name>" macro.
 
--- Loads withMacros(loadRodButton()) as a Shaman: ctx.known[id] for IsPlayerSpell, ctx.party[unit] = name for
--- UnitExists/UnitName, ctx.auras[unit] = { { name, dispelName }, ... } for C_UnitAuras.GetAuraDataByIndex (counted in
--- ctx.auraCalls); ctx.cure(i) is TandemCureButton<i>.
-local CURE_SPELLS = { [526] = { "Cure Poison", "icon526" }, [2870] = { "Cure Disease", "icon2870" } }
-local function loadCure(opts)
+-- The main button's OnAttributeChanged runs on every attribute set, as on a real frame.
+function WIDGET.SetAttribute(w, key, value)
+    w.attrs = w.attrs or {}
+    w.attrs[key] = value
+    if w.scripts.OnAttributeChanged then
+        w.scripts.OnAttributeChanged(w, key, value)
+    end
+end
+function WIDGET.GetAttribute(w, key) return w.attrs and w.attrs[key] end
+
+-- A restricted frame handle on widget w: the methods a secure snippet may call, frame refs from w.refs.
+local function handle(w)
+    return {
+        Show = function() w:Show() end,
+        Hide = function() w:Hide() end,
+        IsShown = function() return w.shown end,
+        SetAttribute = function(_, k, v) w:SetAttribute(k, v) end,
+        GetAttribute = function(_, k) return w:GetAttribute(k) end,
+        GetFrameRef = function(_, label) return w.refs and w.refs[label] and handle(w.refs[label]) end,
+    }
+end
+
+-- Runs a restricted snippet with self and owner as handles on the given widgets (loadstring + setfenv on Lua 5.1).
+local function runSnippet(code, self, owner)
+    local env = { self = handle(self), owner = handle(owner) }
+    local chunk
+    if setfenv then
+        chunk = assert(loadstring(code))
+        setfenv(chunk, env)
+    else
+        chunk = assert(load(code, "snippet", "t", env))
+    end
+    chunk()
+end
+
+-- Loads withMacros(loadRodButton()) as the Shaman "Me-Realm": ctx.known[id] for IsPlayerSpell, ctx.party[unit] = name
+-- for UnitExists/UnitName, ctx.auras[unit] = { { name, dispelName }, ... } for C_UnitAuras.GetAuraDataByIndex
+-- (counted in ctx.auraCalls), ctx.wraps the SecureHandlerWrapScript calls. opts.insecure leaves out the secure
+-- handler APIs. ctx.main(), ctx.arrow(), ctx.list() and ctx.row(i) are the flyout's frames; ctx.click(b, button)
+-- clicks b as the client would (snippets, PreClick, OnClick, then the macro cast into ctx.cast).
+local FLYOUT_SPELLS = { [526] = { "Cure Poison", "icon526" }, [2870] = { "Cure Disease", "icon2870" },
+    [17364] = { "Stormstrike", "icon17364" } }
+local function loadFlyout(opts)
     opts = opts or {}
     local ctx
     local env = {
@@ -6988,6 +7030,7 @@ local function loadCure(opts)
         IsPlayerSpell = function(id) return ctx.known[id] == true end,
         UnitExists = function(unit) return ctx.party[unit] ~= nil end,
         UnitName = function(unit) return unit == "player" and "Me" or ctx.party[unit] end,
+        GetRealmName = function() return "Realm" end,
         C_UnitAuras = { GetAuraDataByIndex = function(unit, i, filter)
             ctx.auraCalls = ctx.auraCalls + 1
             if ctx.auraRaises then
@@ -6997,21 +7040,57 @@ local function loadCure(opts)
             return a and { name = a[1], dispelName = a[2] } or nil
         end },
     }
+    if not opts.insecure then
+        env.SecureHandler_OnClick = function() end
+        env.SecureHandlerSetFrameRef = function(frame, label, ref)
+            frame.refs = frame.refs or {}
+            frame.refs[label] = ref
+        end
+        env.SecureHandlerWrapScript = function(frame, script, header, pre)
+            ctx.wraps[#ctx.wraps + 1] = { frame = frame, script = script, header = header, pre = pre }
+        end
+    end
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
     ctx = withMacros(loadRodButton({ env = env, locale = opts.locale }))
     local spellInfo = ctx.env.GetSpellInfo
     ctx.env.GetSpellInfo = function(id)
-        local s = CURE_SPELLS[id]
+        local s = FLYOUT_SPELLS[id]
         if s then
             return s[1], nil, s[2]
         end
         return spellInfo(id)
     end
-    ctx.known, ctx.party, ctx.auras, ctx.auraCalls = {}, {}, {}, 0
-    function ctx.cure(i)
+    ctx.known, ctx.party, ctx.auras, ctx.auraCalls, ctx.wraps = {}, {}, {}, 0, {}
+    local function named(name)
         for _, w in ipairs(ctx.ui.widgets) do
-            if w.name == "TandemCureButton" .. i then
+            if w.name == name then
                 return w
             end
+        end
+    end
+    function ctx.main() return named("TandemClassMacroButton") end
+    function ctx.arrow() return named("TandemClassMacroArrow") end
+    function ctx.list() return named("TandemClassMacroList") end
+    function ctx.row(i) return named("TandemClassMacroRow" .. i) end
+    function ctx.click(b, button)
+        if b.attrs and b.attrs._onclick then
+            runSnippet(b.attrs._onclick, b, b)
+        end
+        for _, w in ipairs(ctx.wraps) do
+            if w.frame == b and w.script == "OnClick" then
+                runSnippet(w.pre, b, w.header)
+            end
+        end
+        if b.scripts.PreClick then
+            b.scripts.PreClick(b, button or "LeftButton")
+        end
+        if b.scripts.OnClick then
+            b.scripts.OnClick(b, button or "LeftButton")
+        end
+        if b.attrs and b.attrs.type == "macro" then
+            ctx.cast = b.attrs.macrotext
         end
     end
     -- The character macro named name, and its index.
@@ -7027,118 +7106,375 @@ local function loadCure(opts)
 end
 
 local CURE_POISON = "/cast [@mouseover,help,nodead][@target,help,nodead][@player] Cure Poison"
+local CURE_DISEASE = "/cast [@mouseover,help,nodead][@target,help,nodead][@player] Cure Disease"
+local CURE_COMBINED = "/cast [btn:2,@mouseover,help,nodead][btn:2,@target,help,nodead][btn:2,@player] Cure Disease; "
+    .. "[@mouseover,help,nodead][@target,help,nodead][@player] Cure Poison"
+local STORMSTRIKE_CAST = "/targetenemy [noharm][dead]\n/startattack [harm]\n/cast Stormstrike"
+
+-- The shown rows' entry ids bottom-up, joined by ",".
+local function rowIds(ctx)
+    local ids = {}
+    for i = 1, 4 do
+        local r = ctx.row(i)
+        if r and r.shown then
+            ids[#ids + 1] = tostring(r.attrs.entry)
+        end
+    end
+    return table.concat(ids, ",")
+end
+
+local function lit(b)
+    return tostring(b.glow.shown) .. " '" .. tostring(b.count.text) .. "'"
+end
 
 do
-    local ctx = loadCure()
+    local ctx = loadFlyout()
+    ctx.env.TandemDebug = { on = true, log = {} }
     ctx.known[526] = true
     ctx.content[0] = { 10 }
     ctx.fire("PLAYER_LOGIN")
-    local b1, b2 = ctx.cure(1), ctx.cure(2)
-    check("cure: one secure button per Shaman cure on UIParent", tostring(b1 ~= nil and b2 ~= nil) .. " "
-        .. b1.template .. " " .. tostring(b1.parent == ctx.env.UIParent) .. " " .. b1.width .. "x" .. b1.height,
+    local main, arrow, list = ctx.main(), ctx.arrow(), ctx.list()
+    check("flyout: one secure main button on UIParent", tostring(main ~= nil) .. " " .. main.template .. " "
+        .. tostring(main.parent == ctx.env.UIParent) .. " " .. main.width .. "x" .. main.height,
         "true SecureActionButtonTemplate true 28x28")
-    check("cure: clicks on mouse-up only", table.concat(b1.clicks, " ") .. " " .. tostring(b1.attrs.useOnKeyDown),
-        "AnyUp false")
-    check("cure: aura events registered once the buttons exist",
+    local cureButtons = 0
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.name and w.name:match("^TandemCureButton") then
+            cureButtons = cureButtons + 1
+        end
+    end
+    check("flyout: the old cure buttons are gone", cureButtons, 0)
+    check("flyout: the arrow and the list are secure handlers", arrow.template .. " " .. list.template .. " "
+        .. tostring(arrow.parent == main) .. " " .. tostring(list.parent == main),
+        "SecureHandlerClickTemplate SecureHandlerBaseTemplate true true")
+    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(4) ~= nil) .. " "
+        .. tostring(ctx.row(5) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
+        "true true SecureActionButtonTemplate true")
+    check("flyout: aura events registered once it exists",
         tostring(ctx.frame.registered.UNIT_AURA) .. " " .. tostring(ctx.frame.registered.GROUP_ROSTER_UPDATE),
         "true true")
-    check("cure: hidden while the layout is off", tostring(b1.shown) .. " " .. tostring(b2.shown), "false false")
+    check("flyout: hidden while the layout is off", tostring(main.shown) .. " " .. tostring(list.shown),
+        "false false")
     ctx.run("layout on")
-    check("cure: a known cure shows with its cast line", tostring(b1.shown) .. " | " .. b1.attrs.type .. " | "
-        .. b1.attrs.macrotext .. " | " .. b1.icon.texture, "true | macro | " .. CURE_POISON .. " | icon526")
-    check("cure: an unknown cure stays hidden", b2.shown, false)
-    local p = b1.points[1]
-    check("cure: anchored to UIParent left of the rod button", #b1.points .. " " .. table.concat({ p[1],
+    check("flyout: shows the picked entry", tostring(main.shown) .. " | " .. main.attrs.type .. " | "
+        .. main.attrs.macrotext .. " | " .. main.attrs.entry .. " | " .. main.icon.texture,
+        "true | macro | " .. CURE_POISON .. " | poison | icon526")
+    local p = main.points[1]
+    check("flyout: anchored to UIParent where the cure buttons were", #main.points .. " " .. table.concat({ p[1],
         tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -76 8")
+    local keys = { tostring(main.attrs.useOnKeyDown) .. " " .. table.concat(main.clicks, " ") }
+    for i = 1, 4 do
+        keys[#keys + 1] = tostring(ctx.row(i).attrs.useOnKeyDown) .. " " .. table.concat(ctx.row(i).clicks, " ")
+    end
+    check("flyout: main and every row click on mouse-up only", table.concat(keys, ", "),
+        "false AnyUp, false AnyUp, false AnyUp, false AnyUp, false AnyUp")
+    check("flyout: only the known entry has a row", rowIds(ctx), "poison")
+    check("flyout: Cure.NextX is left of the main button", ctx.addon.Cure.NextX(), -108)
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("cure: takes the rod button's place when it hides", b1.points[1][4], -44)
+    check("flyout: takes the rod button's place when it hides", main.points[1][4], -44)
+    ctx.content[0] = { 10 }
+    ctx.fire("BAG_UPDATE_DELAYED")
 
-    check("cure: not lit with no debuff", tostring(b1.glow.shown) .. " '" .. tostring(b1.count.text) .. "'",
-        "false ''")
+    ctx.known[2870], ctx.known[17364] = true, true
+    ctx.fire("SPELLS_CHANGED")
+    check("flyout: a learned spell adds its rows in order", rowIds(ctx), "poison,disease,cure,stormstrike")
+    local ys = {}
+    for i = 1, 4 do
+        local rp = ctx.row(i).points[1]
+        ys[i] = rp[1] .. ">" .. tostring(rp[2] == list) .. ":" .. rp[5]
+    end
+    check("flyout: rows grow upward from the list's bottom", table.concat(ys, " "),
+        "BOTTOM>true:0 BOTTOM>true:32 BOTTOM>true:64 BOTTOM>true:96")
+    check("flyout: the arrow above the main button, the list above the arrow",
+        arrow.points[1][1] .. " " .. tostring(arrow.points[1][2] == main) .. " " .. arrow.points[1][3] .. " "
+            .. list.points[1][1] .. " " .. tostring(list.points[1][2] == arrow) .. " " .. list.points[1][3],
+        "BOTTOM true TOP BOTTOM true TOP")
+    check("flyout: row bodies", ctx.row(2).attrs.macrotext .. " | " .. ctx.row(3).attrs.macrotext .. " | "
+        .. ctx.row(4).attrs.macrotext, CURE_DISEASE .. " | " .. CURE_COMBINED .. " | " .. STORMSTRIKE_CAST)
+    check("flyout: the secure snippets are wired",
+        tostring(arrow.attrs._onclick == ctx.addon.Flyout.SNIPPETS.arrow) .. " "
+            .. tostring(arrow.refs.list == list) .. " " .. tostring(list.refs.main == main) .. " " .. #ctx.wraps,
+        "true true true 5")
+    local wrapped = {}
+    for _, w in ipairs(ctx.wraps) do
+        wrapped[#wrapped + 1] = (w.frame == main and "main" or tostring(w.frame.name):match("%d$")) .. ":"
+            .. w.script .. ":" .. tostring(w.header == list) .. ":"
+            .. tostring(w.pre == ctx.addon.Flyout.SNIPPETS[w.frame == main and "main" or "row"])
+    end
+    check("flyout: each row and the main button wrapped by the list", table.concat(wrapped, " "),
+        "1:OnClick:true:true 2:OnClick:true:true 3:OnClick:true:true 4:OnClick:true:true main:OnClick:true:true")
+
+    check("flyout: the list starts closed", list.shown, false)
+    ctx.click(arrow)
+    check("flyout: the arrow opens the list", list.shown, true)
+    ctx.click(arrow)
+    check("flyout: and closes it", list.shown, false)
+    ctx.click(arrow)
+    ctx.click(ctx.row(4))
+    check("flyout: a row casts its entry", ctx.cast, STORMSTRIKE_CAST)
+    check("flyout: and becomes the pick, closing the list", main.attrs.macrotext .. " | " .. main.attrs.entry
+        .. " | " .. main.icon.texture .. " | " .. tostring(list.shown),
+        STORMSTRIKE_CAST .. " | stormstrike | icon17364 | false")
+    check("flyout: an out-of-combat pick is saved at once", ctx.env.TandemDB.picks["Me-Realm"], "stormstrike")
+    check("flyout: the pick is logged", debugText(ctx.env):match("flyout pick: stormstrike combat=false") ~= nil,
+        true)
+    ctx.click(arrow)
+    ctx.cast = nil
+    ctx.click(main)
+    check("flyout: a main click casts the pick and closes the list", ctx.cast .. " | " .. tostring(list.shown),
+        STORMSTRIKE_CAST .. " | false")
+    ctx.fire("SPELLS_CHANGED")
+    check("flyout: an update keeps the saved pick", main.attrs.entry, "stormstrike")
+
+    ctx.state.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    ctx.click(arrow)
+    check("flyout: the secure arrow opens the list in combat", list.shown, true)
+    ctx.click(ctx.row(1))
+    check("flyout: a row picks in combat too", ctx.cast .. " | " .. main.attrs.entry .. " | " .. tostring(list.shown),
+        CURE_POISON .. " | poison | false")
+    check("flyout: an in-combat pick waits for combat's end", ctx.env.TandemDB.picks["Me-Realm"], "stormstrike")
+    check("flyout: the in-combat pick is logged", debugText(ctx.env):match("flyout pick: poison combat=true") ~= nil,
+        true)
+    ctx.known[17364] = nil
+    ctx.fire("SPELLS_CHANGED")
+    check("flyout: rows wait in combat", rowIds(ctx), "poison,disease,cure,stormstrike")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("flyout: combat's end saves the pick and applies the rows", ctx.env.TandemDB.picks["Me-Realm"] .. " | "
+        .. rowIds(ctx) .. " | " .. main.attrs.entry, "poison | poison,disease,cure | poison")
+    check("flyout: the hidden row's entry is cleared", tostring(ctx.row(4).attrs.entry), "nil")
+    ctx.known[17364] = true
+    ctx.fire("SPELLS_CHANGED")
+
+    check("flyout: not lit with no debuff", lit(main) .. " " .. lit(ctx.row(1)), "false '' false ''")
     ctx.party.party1 = "Bob"
     ctx.auras.party1 = { { "Weakness", nil }, { "Venom", "Poison" } }
     ctx.fire("UNIT_AURA", "party1")
-    check("cure: lit with the count of poisoned units", tostring(b1.glow.shown) .. " " .. b1.count.text, "true 1")
-    ctx.auras.player = { { "Sting", "Poison" } }
+    check("flyout: rows of the poison kind lit with the count", table.concat({ lit(ctx.row(1)), lit(ctx.row(2)),
+        lit(ctx.row(3)), lit(ctx.row(4)) }, " | "), "true '1' | false '' | true '1' | false ''")
+    check("flyout: the main button lit too", lit(main), "true '1'")
+    ctx.auras.player = { { "Plague", "Disease" } }
     ctx.fire("UNIT_AURA", "player")
-    check("cure: counts the player too", b1.count.text, "2")
-    b1.scripts.OnEnter(b1)
-    check("cure: tooltip names who carries what", ctx.tip.title .. " / " .. texts(ctx.tip),
-        "Cure Poison / Me: Sting / Bob: Venom / Click to cast it on your mouseover, your target or yourself"
-            .. " / Drag to place the cure macro on your action bar")
+    check("flyout: counts every kind", lit(ctx.row(2)) .. " | " .. lit(ctx.row(3)) .. " | " .. lit(main),
+        "true '1' | true '2' | true '2'")
+    ctx.row(1).scripts.OnEnter(ctx.row(1))
+    check("flyout: a row's tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "Cure Poison / Cures poison on your "
+        .. "mouseover friend, your target or yourself / Bob: Venom / Drag to place this macro on your action bar")
+    check("flyout: the description in gold, wrapped",
+        colour(ctx.tip.lines[1]) .. " " .. tostring(ctx.tip.lines[1].wrap), "1,0.82,0 true")
+    ctx.auras.player = nil
+    ctx.fire("UNIT_AURA", "player")
+    ctx.row(3).scripts.OnEnter(ctx.row(3))
+    check("flyout: the combined entry names both kinds", texts(ctx.tip), "Left-click cures poison, right-click "
+        .. "cures disease / Bob: Venom / No one in your party has a Disease effect / Drag to place this macro on "
+        .. "your action bar")
+    ctx.row(4).scripts.OnEnter(ctx.row(4))
+    check("flyout: an entry without cures has no debuff lines", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Stormstrike / Switches to the nearest enemy when your target is missing, dead or friendly (it may be one "
+            .. "not yet fighting), starts attacking and casts Stormstrike / Drag to place this macro on your action "
+            .. "bar")
+    main.scripts.OnEnter(main)
+    check("flyout: the main button's tooltip follows the pick", ctx.tip.title, "Cure Poison")
     local calls = ctx.auraCalls
     ctx.fire("UNIT_AURA", "target")
-    ctx.fire("UNIT_AURA", "nameplate1")
-    check("cure: other units' auras read nothing", ctx.auraCalls, calls)
+    check("flyout: other units' auras read nothing", ctx.auraCalls, calls)
 
     ctx.state.combat = true
-    calls = ctx.auraCalls
     ctx.fire("UNIT_AURA", "player")
-    check("cure: in combat no aura is read and the hint goes dark",
-        tostring(ctx.auraCalls == calls) .. " " .. tostring(b1.glow.shown) .. " '" .. b1.count.text .. "'",
-        "true false ''")
-    ctx.known[2870] = true
-    ctx.fire("SPELLS_CHANGED")
-    check("cure: a cure learned in combat waits", b2.shown, false)
-    b1.scripts.OnDragStart(b1)
-    check("cure: no macro dragged in combat", tostring(ctx.picked) .. " " .. tostring(ctx.macro("Tandem Poison")),
-        "nil nil")
+    check("flyout: in combat no aura is read and the hint goes dark",
+        tostring(ctx.auraCalls == calls) .. " " .. lit(main) .. " " .. lit(ctx.row(1)), "true false '' false ''")
+    ctx.row(1).scripts.OnEnter(ctx.row(1))
+    check("flyout: the combat tooltip", texts(ctx.tip), "Cures poison on your mouseover friend, your target or "
+        .. "yourself / Party debuffs show again after combat / Drag out of combat to place this macro")
+    ctx.row(4).scripts.OnDragStart(ctx.row(4))
+    check("flyout: no macro dragged in combat",
+        tostring(ctx.picked) .. " " .. tostring(ctx.macro("Tandem Stormstrike")), "nil nil")
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("cure: shown after combat, left of the first", tostring(b2.shown) .. " " .. b2.points[1][4], "true -76")
-    check("cure: combat's end reads the debuffs again", tostring(b1.glow.shown) .. " " .. b1.count.text, "true 2")
-    ctx.auras.player, ctx.auras.party1 = nil, nil
-    ctx.fire("UNIT_AURA", "player")
-    check("cure: a cured debuff darkens the hint", b1.glow.shown, false)
+    check("flyout: combat's end reads the debuffs again", lit(ctx.row(1)), "true '1'")
 
-    b1.scripts.OnDragStart(b1)
-    local m, index = ctx.macro("Tandem Poison")
-    check("cure: drag makes and picks up the cure macro", tostring(m ~= nil) .. " " .. tostring(ctx.picked == index)
-        .. " " .. tostring(m and m.perCharacter), "true true true")
-    check("cure: the macro body", m.body, "#showtooltip\n" .. CURE_POISON)
+    ctx.row(4).scripts.OnDragStart(ctx.row(4))
+    local m, index = ctx.macro("Tandem Stormstrike")
+    check("flyout: dragging a row makes and picks up its macro", tostring(m ~= nil) .. " "
+        .. tostring(ctx.picked == index) .. " " .. tostring(m and m.perCharacter), "true true true")
+    check("flyout: the dragged macro's body", m.body, "#showtooltip Stormstrike\n" .. STORMSTRIKE_CAST)
+    main.scripts.OnDragStart(main)
+    local c, ci = ctx.macro("Tandem Poison")
+    check("flyout: dragging the main button places the pick's macro", tostring(c and c.body) .. " "
+        .. tostring(ctx.picked == ci), "#showtooltip\n" .. CURE_POISON .. " true")
     local creates, edits = ctx.creates, ctx.edits
-    b1.scripts.OnDragStart(b1)
-    check("cure: a second drag reuses it", (ctx.creates - creates) .. " " .. (ctx.edits - edits), "0 0")
+    main.scripts.OnDragStart(main)
+    check("flyout: a second drag reuses it", (ctx.creates - creates) .. " " .. (ctx.edits - edits), "0 0")
     m.body = "old"
     ctx.fire("SPELLS_CHANGED")
-    check("cure: an existing macro is refreshed out of combat", m.body .. " " .. (ctx.edits - edits),
-        "#showtooltip\n" .. CURE_POISON .. " 1")
+    check("flyout: an existing macro is refreshed out of combat", m.body .. " " .. (ctx.edits - edits),
+        "#showtooltip Stormstrike\n" .. STORMSTRIKE_CAST .. " 1")
+    check("flyout: no other macro made by an update", tostring(ctx.macro("Tandem Cure")), "nil")
 
-    ctx.auras.player = { { "Sting", "Poison" } }
-    ctx.fire("UNIT_AURA", "player")
+    ctx.auras.party1 = { { "Venom", "Poison" } }
+    ctx.fire("UNIT_AURA", "party1")
     ctx.auraRaises = true
-    ctx.fire("UNIT_AURA", "player")
-    check("cure: aura data the client keeps from addons lights nothing", b1.glow.shown, false)
+    ctx.fire("UNIT_AURA", "party1")
+    check("flyout: aura data the client keeps from addons lights nothing", lit(main), "false ''")
+
+    ctx.run("layout off")
+    check("flyout: hidden with the layout off", main.shown, false)
+end
+
+-- A pick saved earlier shows at login; a full macro list says so in the tooltip.
+do
+    local ctx = loadFlyout()
+    ctx.env.TandemDB.picks = { ["Me-Realm"] = "disease" }
+    ctx.known[526], ctx.known[2870] = true, true
+    ctx.charMacros = 18
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main = ctx.main()
+    check("flyout: the saved pick at login", main.attrs.entry .. " | " .. main.attrs.macrotext, "disease | "
+        .. CURE_DISEASE)
+    main.scripts.OnDragStart(main)
+    main.scripts.OnEnter(main)
+    check("flyout: character macros full, none made, tooltip says so", tostring(ctx.macro("Tandem Disease")) .. " "
+        .. tostring(ctx.picked) .. " /" .. texts(ctx.tip):match("[^/]*$"),
+        "nil nil / Character macros full: no room for this macro")
+end
+
+-- Without the secure handler APIs the flyout works out of combat only.
+do
+    local ctx = loadFlyout({ insecure = true })
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.known[526], ctx.known[2870] = true, true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main, arrow, list = ctx.main(), ctx.arrow(), ctx.list()
+    check("flyout insecure: plain arrow and list, still a secure main button and rows", tostring(arrow.template)
+        .. " " .. tostring(list.template) .. " " .. main.template .. " " .. ctx.row(1).template .. " " .. #ctx.wraps,
+        "nil nil SecureActionButtonTemplate SecureActionButtonTemplate 0")
+    check("flyout insecure: logged at login", debugText(ctx.env):match("flyout login: class=SHAMAN ready=true "
+        .. "secure=false rows=4") ~= nil, true)
+    ctx.click(arrow)
+    check("flyout insecure: the arrow opens the list out of combat", list.shown, true)
+    ctx.click(ctx.row(2))
+    check("flyout insecure: a row casts, picks and closes out of combat", ctx.cast .. " | " .. main.attrs.entry
+        .. " | " .. tostring(list.shown) .. " | " .. ctx.env.TandemDB.picks["Me-Realm"],
+        CURE_DISEASE .. " | disease | false | disease")
+    ctx.click(arrow)
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("flyout insecure: entering combat closes the list", list.shown, false)
+    ctx.state.combat = true
+    ctx.click(arrow)
+    check("flyout insecure: the arrow does nothing in combat", list.shown, false)
+    arrow.scripts.OnEnter(arrow)
+    check("flyout insecure: the arrow's combat tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Class macros / Choosing waits until combat ends")
+    list:Show()
+    ctx.click(ctx.row(1))
+    check("flyout insecure: a row clicked in combat casts but does not pick", ctx.cast .. " | " .. main.attrs.entry,
+        CURE_POISON .. " | disease")
+    check("flyout insecure: the skipped pick is logged",
+        debugText(ctx.env):match("flyout pick: poison combat=true skipped") ~= nil, true)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("flyout insecure: the pick stays after combat", ctx.env.TandemDB.picks["Me-Realm"], "disease")
+end
+
+-- Secure wiring that raises falls back to the out-of-combat flyout.
+do
+    local ctx = loadFlyout({ env = { SecureHandlerWrapScript = function() error("blocked") end } })
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.known[526], ctx.known[2870] = true, true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main, arrow, list = ctx.main(), ctx.arrow(), ctx.list()
+    check("flyout wire failure: logged", debugText(ctx.env):match("flyout wire failed, out of combat only: .*blocked")
+        ~= nil, true)
+    arrow.attrs._onclick = nil
+    ctx.click(arrow)
+    check("flyout wire failure: the arrow still opens the list out of combat", list.shown, true)
+    ctx.click(ctx.row(2))
+    check("flyout wire failure: a row casts, picks and closes out of combat", ctx.cast .. " | " .. main.attrs.entry
+        .. " | " .. tostring(list.shown) .. " | " .. ctx.env.TandemDB.picks["Me-Realm"],
+        CURE_DISEASE .. " | disease | false | disease")
+    ctx.click(arrow)
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("flyout wire failure: entering combat closes the list", list.shown, false)
+end
+
+-- The snippets in the fake restricted env alone.
+do
+    local ctx = loadFlyout()
+    local S = ctx.addon.Flyout.SNIPPETS
+    local main = newWidget(ctx.ui, "Button")
+    local list = newWidget(ctx.ui, "Frame")
+    local row = newWidget(ctx.ui, "Button")
+    list.refs = { main = main }
+    row:SetAttribute("macrotext", "/cast X")
+    row:SetAttribute("entry", "x")
+    runSnippet(S.row, row, list)
+    check("snippets: a row's pre-click copies its macro and entry to the main button and hides the list",
+        main.attrs.macrotext .. " " .. main.attrs.entry .. " " .. tostring(list.shown), "/cast X x false")
+    list:Show()
+    runSnippet(S.main, main, list)
+    check("snippets: the main button's pre-click hides the list", list.shown, false)
+    local arrow = newWidget(ctx.ui, "Button")
+    arrow.refs = { list = list }
+    runSnippet(S.arrow, arrow, arrow)
+    check("snippets: the arrow shows a hidden list", list.shown, true)
+    runSnippet(S.arrow, arrow, arrow)
+    check("snippets: and hides a shown one", list.shown, false)
 end
 
 do
-    local ctx = loadCure()
-    ctx.charMacros = 18
+    local ctx = loadFlyout({ locale = "zhTW" })
+    ctx.known[17364] = true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main = ctx.main()
+    main.scripts.OnEnter(main)
+    check("zhTW flyout: the drag hint", texts(ctx.tip):match("[^/]*$"), " 拖曳即可把這個巨集放到快捷列")
+    ctx.arrow().scripts.OnEnter(ctx.arrow())
+    check("zhTW flyout: the arrow tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "職業巨集 / 點擊選擇按鈕要用的巨集")
+end
+
+do
+    local ctx = loadFlyout({ class = "WARRIOR" })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("flyout: a class without entries gets no flyout and no aura events",
+        tostring(ctx.main() == nil) .. " " .. tostring(ctx.frame.registered.UNIT_AURA), "true nil")
+end
+
+do
+    local ctx = loadFlyout()
+    ctx.env.UnitExists = nil
     ctx.known[526] = true
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
-    local b1 = ctx.cure(1)
-    b1.scripts.OnDragStart(b1)
-    b1.scripts.OnEnter(b1)
-    check("cure: character macros full, none made, tooltip says so", tostring(ctx.macro("Tandem Poison")) .. " "
-        .. tostring(ctx.picked) .. " /" .. texts(ctx.tip):match("[^/]*$"),
-        "nil nil / Character macros full: no room for the cure macro")
+    check("flyout: no flyout while the check is not ready", tostring(ctx.main() == nil) .. " "
+        .. ctx.addon.Cure.NextX(), "true -44")
 end
 
 do
-    local ctx = loadCure({ class = "WARRIOR" })
+    local ctx = loadFlyout()
+    ctx.known[526] = true
+    ctx.state.combat = true
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
-    check("cure: a class without cures gets no buttons and no aura events",
-        tostring(ctx.cure(1) == nil) .. " " .. tostring(ctx.frame.registered.UNIT_AURA), "true nil")
+    local main = ctx.main()
+    check("flyout: a login in combat leaves the button bare", tostring(main.attrs and main.attrs.macrotext), "nil")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("flyout: set up at combat's end", tostring(main.shown) .. " " .. main.attrs.entry .. " " .. #ctx.wraps,
+        "true poison 5")
 end
 
--- Mute button: left of the cure buttons (or the rod button, or the bag row) while the layout is on, flipping
--- Sound_EnableAllSound between 1 and 0. Loads loadCure(opts) with ctx.cvars as the CVars GetCVar/SetCVar read and
+-- Mute button: left of the class macro button (or the rod button, or the bag row) while the layout is on, flipping
+-- Sound_EnableAllSound between 1 and 0. Loads loadFlyout(opts) with ctx.cvars as the CVars GetCVar/SetCVar read and
 -- write (ctx.sets counts the writes); ctx.mute() is TandemMuteButton.
 local function loadMute(opts)
-    local ctx = loadCure(opts)
+    local ctx = loadFlyout(opts)
     ctx.cvars, ctx.sets = { Sound_EnableAllSound = "1" }, 0
     local getCVar, setCVar = ctx.env.GetCVar, ctx.env.SetCVar
     ctx.env.GetCVar = function(name)
@@ -7192,9 +7528,10 @@ do
     check("mute: hidden while the layout is off", m.shown, false)
     ctx.run("layout on")
     local p = m.points[#m.points]
-    check("mute: anchored to UIParent left of the cure button", tostring(p[1]) .. " "
+    check("mute: anchored to UIParent left of the class macro button", tostring(p[1]) .. " "
         .. tostring(p[2] == ctx.env.UIParent) .. " " .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
-    check("mute: shown with the horn in colour left of the cures", muteState(m), "true | " .. HORN_ON .. " | -108 | 8")
+    check("mute: shown with the horn in colour left of the class macro button", muteState(m),
+        "true | " .. HORN_ON .. " | -108 | 8")
 
     m.scripts.OnClick(m, "LeftButton")
     check("mute: a click turns all sound off", ctx.cvars.Sound_EnableAllSound .. " " .. ctx.sets, "0 1")
@@ -7224,17 +7561,19 @@ do
 
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: follows the cure button when the rod button hides", muteState(m), "true | " .. HORN_ON .. " | -76 | 8")
+    check("mute: follows the class macro button when the rod button hides", muteState(m),
+        "true | " .. HORN_ON .. " | -76 | 8")
 
     ctx.state.combat = true
-    ctx.known[2870] = true
-    ctx.fire("SPELLS_CHANGED")
+    ctx.content[0] = { 10 }
+    ctx.fire("BAG_UPDATE_DELAYED")
     m.scripts.OnClick(m, "LeftButton")
     check("mute: a click works in combat", ctx.cvars.Sound_EnableAllSound .. " " .. muteIcon(m), "0 " .. HORN_OFF)
     check("mute: its place waits in combat", m.points[#m.points][4], -76)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("mute: placed after combat left of both cures", muteState(m), "true | " .. HORN_OFF .. " | -108 | 8")
+    check("mute: placed after combat left of the class macro button", muteState(m),
+        "true | " .. HORN_OFF .. " | -108 | 8")
 
     ctx.run("layout off")
     check("mute: hidden with the layout off", m.shown, false)
@@ -7246,13 +7585,13 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     local m = ctx.mute()
-    check("mute: no cures, left of the rod button", muteState(m), "true | " .. HORN_ON .. " | -76 | 8")
+    check("mute: no class macros, left of the rod button", muteState(m), "true | " .. HORN_ON .. " | -76 | 8")
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: no cures, takes the rod button's place when it hides", m.points[#m.points][4], -44)
+    check("mute: no class macros, takes the rod button's place when it hides", m.points[#m.points][4], -44)
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: no cures, moves back when the rod button shows", m.points[#m.points][4], -76)
+    check("mute: no class macros, moves back when the rod button shows", m.points[#m.points][4], -76)
 end
 
 do
@@ -7400,8 +7739,8 @@ do
     ctx.fire("BAG_UPDATE_DELAYED")
     check("role: follows the mute button when the rod button hides", r.points[#r.points][4], -108)
     ctx.state.combat = true
-    ctx.known[2870] = true
-    ctx.fire("SPELLS_CHANGED")
+    ctx.content[0] = { 10 }
+    ctx.fire("BAG_UPDATE_DELAYED")
     check("role: its place waits in combat", r.points[#r.points][4], -108)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
@@ -7553,6 +7892,175 @@ do
     local out = ctx.since(from)
     check("fishing info: after the swap back it prints once", #out, 1)
     check("fishing info: the weapon line", out[1], upgradeLine("Main hand", 62, BLUE, 40, 20))
+end
+
+-- Class macros (U1, D3, D5): a class's macro entries shown while the player knows their spells, and the pick each
+-- character saves.
+
+-- Loads the addon as a Shaman "Me-Realm" with TandemDB set to db: ctx.known[id] for IsPlayerSpell, ctx.spellKnown[id]
+-- for IsSpellKnown, ctx.names[id] for GetSpellInfo (icon "icon<id>"); ctx.list() is ClassMacros.List("SHAMAN").
+local MACRO_NAMES = {
+    enUS = { [526] = "Cure Poison", [2870] = "Cure Disease", [17364] = "Stormstrike" },
+    zhTW = { [526] = "解毒術", [2870] = "祛病術", [17364] = "風暴打擊" },
+}
+local function loadClassMacros(opts)
+    opts = opts or {}
+    local ctx = { known = {}, spellKnown = {}, class = opts.class or "SHAMAN", name = "Me" }
+    ctx.names = MACRO_NAMES[opts.locale or "enUS"]
+    local env = {
+        UnitClass = function() return "Class", ctx.class end,
+        UnitName = function() return ctx.name end,
+        GetRealmName = function() return "Realm" end,
+        IsPlayerSpell = function(id) return ctx.known[id] == true end,
+        IsSpellKnown = function(id) return ctx.spellKnown[id] == true end,
+        GetSpellInfo = function(id)
+            if ctx.names[id] then
+                return ctx.names[id], nil, "icon" .. id
+            end
+        end,
+    }
+    ctx.addon, ctx.printed, ctx.env = loadWithDB(opts.db, opts.locale, { env = env })
+    ctx.CM = ctx.addon.ClassMacros
+    function ctx.list()
+        return ctx.CM.List("SHAMAN")
+    end
+    function ctx.ids()
+        local ids = {}
+        for _, e in ipairs(ctx.list()) do
+            ids[#ids + 1] = e.id
+        end
+        return table.concat(ids, ",")
+    end
+    return ctx
+end
+
+local MACRO_TARGETS = "[@mouseover,help,nodead][@target,help,nodead][@player]"
+local MACRO_RIGHT = "[btn:2,@mouseover,help,nodead][btn:2,@target,help,nodead][btn:2,@player]"
+
+do
+    local ctx = loadClassMacros()
+    check("class macros: nothing shown with no spell known", ctx.ids(), "")
+    check("class macros: a class without entries lists none", #ctx.CM.List("MAGE"), 0)
+    ctx.known[526] = true
+    check("class macros: poison alone", ctx.ids(), "poison")
+    ctx.known[17364] = true
+    check("class macros: poison and stormstrike", ctx.ids(), "poison,stormstrike")
+    ctx.spellKnown[2870] = true
+    check("class macros: all four in order once both cures are known (IsSpellKnown counts)", ctx.ids(),
+        "poison,disease,cure,stormstrike")
+    ctx.known[526] = nil
+    check("class macros: no combined cure without poison", ctx.ids(), "disease,stormstrike")
+    ctx.known[526] = true
+    ctx.names = { [526] = "Cure Poison", [2870] = "Cure Disease" }
+    check("class macros: a spell the client cannot name is not shown", ctx.ids(), "poison,disease,cure")
+end
+
+do
+    local ctx = loadClassMacros()
+    ctx.known[526], ctx.known[2870], ctx.known[17364] = true, true, true
+    local l = ctx.list()
+    local function fields(e)
+        return table.concat({ e.id, e.title, e.icon, e.macro, table.concat(e.kinds, "+") }, " | ")
+    end
+    check("class macros: poison fields", fields(l[1]), "poison | Cure Poison | icon526 | Tandem Poison | Poison")
+    check("class macros: disease fields", fields(l[2]),
+        "disease | Cure Disease | icon2870 | Tandem Disease | Disease")
+    check("class macros: cure fields, icon of 526", fields(l[3]),
+        "cure | Cure Poison / Cure Disease | icon526 | Tandem Cure | Poison+Disease")
+    check("class macros: stormstrike fields", fields(l[4]),
+        "stormstrike | Stormstrike | icon17364 | Tandem Stormstrike | ")
+    l[1].kinds[1] = "Curse"
+    check("class macros: kinds are a copy", ctx.list()[1].kinds[1], "Poison")
+    check("class macros: poison body", l[1].body, "#showtooltip\n/cast " .. MACRO_TARGETS .. " Cure Poison")
+    check("class macros: disease body", l[2].body, "#showtooltip\n/cast " .. MACRO_TARGETS .. " Cure Disease")
+    check("class macros: cure body", l[3].body, "#showtooltip\n/cast " .. MACRO_RIGHT .. " Cure Disease; "
+        .. MACRO_TARGETS .. " Cure Poison")
+    check("class macros: stormstrike body", l[4].body, "#showtooltip Stormstrike\n/targetenemy [noharm][dead]\n"
+        .. "/startattack [harm]\n/cast Stormstrike")
+    check("class macros: cast drops the #showtooltip line", l[1].cast, "/cast " .. MACRO_TARGETS .. " Cure Poison")
+    check("class macros: stormstrike cast", l[4].cast, "/targetenemy [noharm][dead]\n/startattack [harm]\n"
+        .. "/cast Stormstrike")
+    check("class macros: enUS descriptions", l[1].description .. " | " .. l[2].description .. " | "
+        .. l[3].description, "Cures poison on your mouseover friend, your target or yourself | Cures disease on "
+        .. "your mouseover friend, your target or yourself | Left-click cures poison, right-click cures disease")
+    check("class macros: stormstrike description", l[4].description, "Switches to the nearest enemy when your "
+        .. "target is missing, dead or friendly (it may be one not yet fighting), starts attacking and casts "
+        .. "Stormstrike")
+end
+
+do
+    local ctx = loadClassMacros({ locale = "zhTW" })
+    ctx.known[526], ctx.known[2870], ctx.known[17364] = true, true, true
+    local l = ctx.list()
+    check("zhTW class macros: titles", l[1].title .. " | " .. l[3].title .. " | " .. l[4].title,
+        "解毒術 | 解毒術 / 祛病術 | 風暴打擊")
+    check("zhTW class macros: stormstrike body", l[4].body,
+        "#showtooltip 風暴打擊\n/targetenemy [noharm][dead]\n/startattack [harm]\n/cast 風暴打擊")
+    check("zhTW class macros: cure body", l[3].body, "#showtooltip\n/cast " .. MACRO_RIGHT .. " 祛病術; "
+        .. MACRO_TARGETS .. " 解毒術")
+    check("zhTW class macros: descriptions", table.concat({ l[1].description, l[2].description, l[3].description,
+        l[4].description }, " | "), "對滑鼠指向的友方、目標或自己解除中毒 | 對滑鼠指向的友方、目標或自己解除疾病 | "
+        .. "左鍵解除中毒，右鍵解除疾病 | 目標不存在、已死亡或為友方時自動切換到最近的敵人（可能是還沒開打的怪），"
+        .. "開始攻擊並施放風暴打擊")
+end
+
+do
+    local ctx = loadClassMacros()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.list()
+    ctx.known[17364] = true
+    ctx.list()
+    local text = debugText(ctx.env)
+    check("class macros debug: the stormstrike known line", text:match("class macros: stormstrike known=false")
+        ~= nil, true)
+    check("class macros debug: logged once per login", select(2, text:gsub("stormstrike known", "")), 1)
+end
+
+do
+    local ctx = loadClassMacros()
+    local CM, db = ctx.CM, ctx.env.TandemDB
+    check("pick: nil with nothing shown", CM.Pick(), nil)
+    ctx.known[526], ctx.known[2870], ctx.known[17364] = true, true, true
+    check("pick: the first shown entry by default", CM.Pick().id, "poison")
+    check("pick: SetPick saves a class entry", CM.SetPick("stormstrike"), true)
+    check("pick: saved per character key", db.picks["Me-Realm"], "stormstrike")
+    check("pick: Pick returns the saved entry", CM.Pick().id, "stormstrike")
+    check("pick: SetPick rejects an id the class lacks", CM.SetPick("fireball"), false)
+    check("pick: SetPick rejects a non-string", CM.SetPick(7), false)
+    check("pick: a rejected id writes nothing", db.picks["Me-Realm"], "stormstrike")
+    ctx.known[17364] = nil
+    check("pick: a saved entry no longer shown falls back to the first shown", CM.Pick().id, "poison")
+    check("pick: the fallback keeps the saved id", db.picks["Me-Realm"], "stormstrike")
+    ctx.name = "Alt"
+    check("pick: another character has its own pick", CM.Pick().id, "poison")
+    CM.SetPick("disease")
+    check("pick: the other character's pick saved", db.picks["Alt-Realm"], "disease")
+    ctx.name = "Me"
+    ctx.known[17364] = true
+    check("pick: the first character's pick is kept", CM.Pick().id, "stormstrike")
+    ctx.name = nil
+    check("pick: an unknown character cannot save", CM.SetPick("poison"), false)
+    check("pick: an unknown character gets the first shown", CM.Pick().id, "poison")
+end
+
+do
+    local ctx = loadClassMacros({ db = { schemaVersion = 7, picks = { ["Me-Realm"] = "cure" } } })
+    ctx.known[526], ctx.known[2870] = true, true
+    check("pick: a saved pick survives the load", ctx.CM.Pick().id, "cure")
+    check("pick: a valid picks key prints only the load line", #ctx.printed, 1)
+end
+
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 7, picks = { ["Me-Realm"] = "cure", ["Alt-Realm"] = 3,
+        ["Bad-Realm"] = "", [""] = "poison", [5] = "poison", ["Tab-Realm"] = { "poison" } } })
+    check("picks: string ids are kept, the rest dropped", dump(env.TandemDB.picks), dump({ ["Me-Realm"] = "cure" }))
+    check("picks: each invalid pick is counted", printed[2], "Tandem: dropped 5 invalid or unused saved entries")
+    _, printed, env = loadWithDB({ schemaVersion = 7, picks = "bad" })
+    check("picks: a non-table picks is dropped", tostring(env.TandemDB.picks) .. " " .. printed[2],
+        "nil Tandem: dropped 1 invalid or unused saved entries")
+    local newer = loadWithDB({ schemaVersion = 8, picks = { ["Me-Realm"] = "cure" } }).Store
+    check("picks: a newer db reads no pick", newer.Pick("Me-Realm"), nil)
+    check("picks: a newer db blocks SetPick", newer.SetPick("Me-Realm", "cure"), false)
 end
 
 if failures > 0 then
