@@ -28,6 +28,7 @@ BagButton.lua
 Macro.lua
 Rod.lua
 Cure.lua
+ClassMacros.lua
 Mute.lua
 Role.lua
 MapInfo.lua

@@ -59,6 +59,12 @@ L["Click to cast it on your mouseover, your target or yourself"] = "點擊對滑
 L["Drag to place the cure macro on your action bar"] = "拖曳即可把驅散巨集放到快捷列"
 L["Drag to place the cure macro: left-click %s, right-click %s"] = "拖曳即可放置驅散巨集：左鍵%s，右鍵%s"
 L["Character macros full: no room for the cure macro"] = "角色巨集已滿：沒有空間放驅散巨集"
+L["Cures poison on your mouseover friend, your target or yourself"] = "對滑鼠指向的友方、目標或自己解除中毒"
+L["Cures disease on your mouseover friend, your target or yourself"] = "對滑鼠指向的友方、目標或自己解除疾病"
+L["Left-click cures poison, right-click cures disease"] = "左鍵解除中毒，右鍵解除疾病"
+L["Switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet fighting), "
+    .. "starts attacking and casts Stormstrike"] =
+    "目標不存在、已死亡或為友方時自動切換到最近的敵人（可能是還沒開打的怪），開始攻擊並施放風暴打擊"
 L["%dd %dh"] = "%d天 %d時"
 L["%dh %dm"] = "%d時 %d分"
 L["%dm"] = "%d分"

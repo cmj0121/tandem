@@ -60,8 +60,8 @@ local function inCombat()
     return call(InCombatLockdown) == true
 end
 
--- The spell's localized name and icon, or nils.
-local function spellInfo(id)
+-- Cure.SpellInfo(id) -> name, icon: the spell's localized name and icon, or nils.
+function Cure.SpellInfo(id)
     local info = call(C_Spell and C_Spell.GetSpellInfo, id)
     if type(info) == "table" and type(info.name) == "string" then
         return info.name, info.iconID
@@ -72,8 +72,16 @@ local function spellInfo(id)
     end
 end
 
-local function known(id)
+-- Cure.Known(id) -> bool: whether the player knows the spell.
+function Cure.Known(id)
     return call(IsPlayerSpell, id) == true or call(IsSpellKnown, id) == true
+end
+
+local spellInfo, known = Cure.SpellInfo, Cure.Known
+
+-- Cure.Afflicted(kind) -> { "<unit name>: <debuff name>", ... }: the last scan's afflicted units for a debuff type.
+function Cure.Afflicted(kind)
+    return afflicted[kind] or {}
 end
 
 -- Cure.Body(name) -> text: the cast line a button and its macro run for the localized cure name.
