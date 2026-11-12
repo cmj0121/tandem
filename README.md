@@ -99,7 +99,7 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Cure buttons`, `Cure macro`, `Mute button`, `Map info` and `Shaman area`. A feature
+`Cure buttons`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`. A feature
 whose API is missing stays off instead of raising an error.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
@@ -107,8 +107,11 @@ whose API is missing stays off instead of raising an error.
 Then one `Probe: <path> present|missing` line each for `LootButton1`, `LootFrame.ScrollBox`, `LootFrame_Update`,
 `ContainerFrame1Item1.IconBorder`, `ContainerFrame1Item1.NewItemTexture`, `ContainerFrame1Item1.UpgradeIcon`,
 `Enum.EditModeSystem.ChatFrame`, `MainStatusTrackingBarContainer`, `BagsBar`, `Enum.EditModeSystem.MicroMenu`,
-`Enum.EditModeSystem.Minimap` and `Enum.EditModeSystem.AuraFrame`. They
-tell which bag, loot, Edit Mode and aura parts the client has, and turn nothing on or off.
+`Enum.EditModeSystem.Minimap`, `Enum.EditModeSystem.AuraFrame`, `Enum.EditModeActionBarSetting.HideBarArt`,
+`MainActionBar.EndCaps`, `MainMenuBar.EndCaps`, `MainMenuBarArtFrame.LeftEndCap`, `MainMenuBarLeftEndCap`,
+`Enum.EditModeSystem.ObjectiveTracker`, `Enum.EditModeUnitFrameSystemIndices.Party` and
+`Enum.EditModeUnitFrameSystemIndices.Raid`. They tell which bag, loot, Edit Mode, unit frame and aura parts the client
+has, and turn nothing on or off.
 
 ### `/tandem weights`
 
@@ -286,6 +289,8 @@ creates or updates. The layout is off until you turn it on. `/tandem layout off`
 before, printing `Tandem: layout off; your previous layout is back`; if that layout was deleted or renamed, the first
 preset layout is used instead. `/tandem layout` alone prints `Tandem: layout on` or `Tandem: layout off`.
 
+- Each character has a layout mode, damage or healer, switched with the [role button](#bag-row); a new character
+  starts in damage mode. The [healer variant](#what-moves) moves the party and raid frames to the centre.
 - Switching to another layout in Edit Mode turns Tandem's layout off, as `off` would, but keeps the layout you chose.
 - In combat the change waits: chat shows `Tandem: the layout will change after combat`, and it happens when combat
   ends.
@@ -330,6 +335,28 @@ Tandem's entry in the addon compartment menu does the same as a click.
 - The micro menu, minimap and buffs move only when the client's Edit Mode has their system (the buffs also need the
   minimap's); otherwise they stay where they are.
 - The right action bars and action bars 5 to 7 are hidden.
+
+In healer mode the screen is the same except for the unit frames:
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│              [==| XP 62% |(42.31, 67.80) · 1H20m]   [buffs][map] │
+│                       [ party / raid ]                           │
+│      [player]          [class rail]                              │
+│                                                                  │
+│                      [ main action bar  ]                        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- The party frames and the raid frames move to the centre, just above the row of the player frame and the
+  [class area](#shaman-class-area), so the people you heal sit in front of you. A frame whose Edit Mode system the
+  client lacks (the `Enum.EditModeUnitFrameSystemIndices.Party` or `.Raid` probe of
+  [`/tandem check`](#tandem-check) is `missing`) stays where it was.
+- The target frame is faded and does not take clicks, and the target of target is turned off.
+
+The Tandem layout is shared by your characters, but each character's mode is its own: logging in with a character
+whose mode differs from the one the layout was last built for builds it again for that character. Switching the mode
+in combat waits for combat to end, like `/tandem layout on`.
 
 Turning the layout off restores the target of target and minimap coordinates settings and every frame Tandem hid.
 Tandem's own frames are display only and update in combat too.
@@ -391,13 +418,20 @@ current out of combat, and when your character macro slots are full the tooltip 
 appear or hide, so a cure learned or a rod swapped in a fight shows once it ends. They show only while the layout is
 on, and need the `Cure buttons` line of [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
 
-One last icon, left of the cure icons (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
+One more icon, left of the cure icons (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
 a click turns all sound off, the next click turns it back on, in combat too. It flips the client's
 `Sound_EnableAllSound` setting, the same as the sound checkbox in the client's sound settings, so the choice outlasts
 a `/reload` and turning the layout off. Its icon is a horn, in colour, or greyed out while the sound is off, and its
 tooltip says `Sound on` or `Sound off` with `Click to mute` or `Click to unmute`. In combat it cannot move, so it
 follows a cure icon or rod icon that came or went in the fight once it ends. It shows only while the layout is on,
 and needs the `Mute button` line of [`/tandem check`](#tandem-check).
+
+The role button, left of the mute icon (or of whatever icon is leftmost when the mute icon is hidden), switches this
+character's [layout mode](#what-moves). It shows a sword in damage mode and a flash heal in healer mode; its tooltip
+says `Layout mode`, `Damage` or `Healer`, and `Click for the healer layout` or `Click for the damage layout`. A click
+switches to the other mode and prints `Tandem: healer layout` or `Tandem: damage layout`; in combat it prints
+`Tandem: the layout will change after combat` and the switch, with its icon, happens when combat ends. It shows only
+while the layout is on, and needs the `Role button` line of [`/tandem check`](#tandem-check).
 
 ### Map info
 
@@ -472,6 +506,7 @@ Tandem saves one account-wide table, `TandemDB`, as
 | `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec          |
 | `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
 | `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target and `coords`, the `minimap` `angle`, `hidden`  |
+| `modes`    | Per character (`Name-Realm`): the [layout mode](#what-moves), `heal`; absent = damage                          |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
@@ -481,10 +516,13 @@ Tandem saves one account-wide table, `TandemDB`, as
 - On load, an invalid `spec`, override, stat key or value is dropped alone, as is a `trainers` spell ID or entry that
   is not valid; a character's entry that is not a table, or a class key that is not a class token or whose spells are
   not a table, is dropped.
+- `layout.built` is `heal` while the `Tandem` Edit Mode layout is built for the healer mode, absent for damage; at
+  login it is compared with the character's `modes` entry to rebuild the layout when they differ. A `modes` entry
+  other than `heal` is dropped on load.
 
-`TandemDB.schemaVersion` is `7`. Saved data from an older schema is migrated on load: `weights`, `trainers` and
-`layout` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is dropped.
-Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
+`TandemDB.schemaVersion` is `7`. Saved data from an older schema is migrated on load: `weights`, `trainers`,
+`layout` and `modes` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is
+dropped. Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
 `Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
 
@@ -512,11 +550,11 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and nineteen lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Cure buttons`, `Cure macro`, `Mute button`, `Map info` and `Shaman area`, each
-   followed by `ok` or `missing` and its APIs. Fourteen `Probe:` lines follow, each `present` or `missing`.
+   `Cure buttons`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`, each
+   followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
@@ -617,7 +655,7 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    weapons are back. Drag the rod icon onto an action bar: a `Tandem Fishing` macro lands there; click it to equip the
    rod, click it again to cast Fishing. Left of the rod icon (or of the bag row, with no rod; on a Shaman, left of the
    cure icons), a horn icon sits: click it and all game sound goes off and the horn turns grey; click it
-   again and the sound is back.
+   again and the sound is back. Left of the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
    shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
    appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
@@ -628,15 +666,21 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    `This level:` and `This session:`. Hover the bar: the XP tooltip. Enter an instance: the coordinates
    read `(--, --)`. After the login, chat showed Blizzard's `/played` lines once.
 6. Run `/reload`: everything is still in place.
-7. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
+7. Join a party, then click the sword icon: chat shows `Tandem: healer layout`, the icon turns to a flash heal, the
+   party frames sit at the centre just above the player frame, and the target frame and target of target are gone.
+   Run `/reload`: still the same. Log in with another character: its own mode (damage, unless you switched it) is
+   built. Back on the first character, the healer layout is built again. In a fight, click the icon: chat shows
+   `Tandem: the layout will change after combat`, and the damage layout, with the sword icon, comes when the fight
+   ends.
+8. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
    fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
    coordinates as before.
-8. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, mute button, map info
-   line and class area go.
+9. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, mute button, role
+   button, map info line and class area go.
 
-Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Mute button`, `Map info`, `Shaman area`
-and `Probe:` lines of `/tandem check`, any frame that landed in the wrong place or overlaps another, anything not restored
-by `off`, and any Lua error.
+Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Mute button`, `Role button`,
+`Map info`, `Shaman area` and `Probe:` lines of `/tandem check`, any frame that landed in the wrong place or overlaps
+another, anything not restored by `off`, and any Lua error.
 
 ## Interface number
 
