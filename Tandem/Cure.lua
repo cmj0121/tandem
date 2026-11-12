@@ -20,6 +20,11 @@ Cure.CURES = {
         { spell = 2870, kind = "Disease", macro = "Tandem Disease" },
     },
 }
+-- Per class with two cures, the one macro that casts the first cure on a left click and the second on a right click;
+-- dragging any cure button places it once the player knows both.
+Cure.COMBINED = {
+    SHAMAN = "Tandem Cure",
+}
 -- The units whose debuffs light a button.
 local UNITS = { "player", "party1", "party2", "party3", "party4" }
 local WATCHED = {}
@@ -29,11 +34,14 @@ end
 local MAX_AURAS = 40
 local SIZE, GAP = 28, 4
 local TARGETS = "[@mouseover,help,nodead][@target,help,nodead][@player]"
+local RIGHT_TARGETS = "[btn:2,@mouseover,help,nodead][btn:2,@target,help,nodead][btn:2,@player]"
 local MACRO_ICON = "INV_Misc_QuestionMark"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local GLOW = "Interface\\Buttons\\UI-ActionButton-Border"
 
 local cures, buttons = {}, {}
+-- The class's combined macro name, or nil.
+local combined
 local on, pending, macroPending, lastScan
 -- afflicted[kind] = { "<unit name>: <debuff name>", ... } from the last scan.
 local afflicted = {}
@@ -76,6 +84,12 @@ end
 -- Cure.MacroBody(name) -> text: the cure macro's body.
 function Cure.MacroBody(name)
     return "#showtooltip\n" .. Cure.Body(name)
+end
+
+-- Cure.CombinedBody(left, right) -> text: the combined macro's body for the localized cure names, casting left on a
+-- left click and right on a right click, each on the mouseover friend, else the friendly target, else the player.
+function Cure.CombinedBody(left, right)
+    return "#showtooltip\n/cast " .. RIGHT_TARGETS .. " " .. right .. "; " .. TARGETS .. " " .. left
 end
 
 -- Calls fn(debuffName, kind) for each debuff on unit until the client gives no more.
@@ -167,6 +181,18 @@ function Cure.Scan(unit)
     end
 end
 
+-- The localized names of the first two cures when the class has a combined macro and the player knows both, else nil.
+local function bothNames()
+    local first, second = cures[1], cures[2]
+    if not (combined and first and second and known(first.spell) and known(second.spell)) then
+        return nil
+    end
+    local left, right = spellInfo(first.spell), spellInfo(second.spell)
+    if left and right then
+        return left, right
+    end
+end
+
 local function showTooltip(self)
     local tip, c = GameTooltip, cures[self.index]
     if type(tip) ~= "table" or not c then
@@ -187,7 +213,13 @@ local function showTooltip(self)
     if self.full then
         tip:AddLine(L["Character macros full: no room for the cure macro"], 1, 0.1, 0.1)
     elseif ns.Check.Ready("Cure macro") and not inCombat() then
-        tip:AddLine(L["Drag to place the cure macro on your action bar"], 0.5, 0.5, 0.5)
+        local left, right = bothNames()
+        if left then
+            tip:AddLine(L["Drag to place the cure macro: left-click %s, right-click %s"]:format(left, right), 0.5, 0.5,
+                0.5)
+        else
+            tip:AddLine(L["Drag to place the cure macro on your action bar"], 0.5, 0.5, 0.5)
+        end
     end
     tip:Show()
 end
@@ -218,13 +250,45 @@ local function ensureMacro(i, create)
     return index
 end
 
--- OnDragStart: picks the button's cure macro up for an action bar, making it first when it is missing; nothing in
--- combat.
+-- Makes or refreshes the combined macro (made only when create) and returns its index, or nil when the player does
+-- not know both cures. Out of combat only; in combat it marks the change as pending.
+local function ensureCombined(create)
+    if not ns.Check.Ready("Cure macro") then
+        return nil
+    end
+    if inCombat() then
+        macroPending = true
+        return nil
+    end
+    local left, right = bothNames()
+    if not left then
+        return nil
+    end
+    local body = Cure.CombinedBody(left, right)
+    local index, what, used, max = ns.Macro.Ensure(combined, MACRO_ICON, body, create)
+    for _, b in ipairs(buttons) do
+        b.full = what == "full" or nil
+    end
+    if what == "edited" or what == "created" then
+        log(("cure macro combined: %s index=%s body=%s"):format(what, tostring(index), (body:gsub("\n", "|"))))
+    elseif what == "full" then
+        log(("cure macro combined: skipped: character macros full (%d/%d)"):format(used, max))
+    end
+    return index
+end
+
+-- OnDragStart: picks up the combined cure macro once the player knows both cures, else the button's own cure macro,
+-- making it first when it is missing; nothing in combat.
 local function dragStart(self)
     if inCombat() then
         return
     end
-    local index = ensureMacro(self.index, true)
+    local index
+    if bothNames() then
+        index = ensureCombined(true)
+    else
+        index = ensureMacro(self.index, true)
+    end
     if index then
         call(PickupMacro, index)
     end
@@ -284,6 +348,7 @@ function Cure.Update()
     for i in ipairs(buttons) do
         ensureMacro(i, false)
     end
+    ensureCombined(false)
     local line = ("cure update: on=%s shown=%s x=%s"):format(tostring(on == true), table.concat(shown, ","),
         tostring(ns.Rod.NextX()))
     if line ~= lastPlace then
@@ -310,6 +375,7 @@ function Cure.OnLogin()
         log(("cure login: class=%s ready=%s"):format(tostring(classFile), tostring(ns.Check.Ready("Cure buttons"))))
         return #buttons > 0
     end
+    combined = Cure.COMBINED[classFile]
     for i, c in ipairs(list) do
         local ok, b = pcall(CreateFrame, "Button", "TandemCureButton" .. i, UIParent, "SecureActionButtonTemplate")
         if not ok then
