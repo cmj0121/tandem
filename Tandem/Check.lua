@@ -92,7 +92,8 @@ Check.PROBES = {
     "MainStatusTrackingBarContainer", "BagsBar", "Enum.EditModeSystem.MicroMenu", "Enum.EditModeSystem.Minimap",
     "Enum.EditModeSystem.AuraFrame", "Enum.EditModeActionBarSetting.HideBarArt", "MainActionBar.EndCaps",
     "MainMenuBar.EndCaps", "MainMenuBarArtFrame.LeftEndCap", "MainMenuBarLeftEndCap",
-    "Enum.EditModeSystem.ObjectiveTracker",
+    "Enum.EditModeSystem.ObjectiveTracker", "Enum.EditModeUnitFrameSystemIndices.Party",
+    "Enum.EditModeUnitFrameSystemIndices.Raid",
 }
 
 local function walk(path)
