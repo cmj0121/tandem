@@ -11,7 +11,7 @@ border and a green up arrow on its bag or loot button, one line in chat and a gr
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
 screen around the action bars, with an XP bar, a bag row, a mute button, a map info line and, for a Shaman, a class
 area. It never acts for the player: it only advises, and it saves nothing but your own stat weights, what your class
-trainer teaches and whether its layout is on.
+trainer teaches, its layout state and mode, and your class macro pick.
 
 ## Install
 
@@ -99,8 +99,9 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Cure buttons`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`. A feature
-whose API is missing stays off instead of raising an error.
+`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`. A
+feature whose API is missing stays off instead of raising an error. Without `Class macros` the
+[class macro button](#bag-row) still works, but its list opens and picks only out of combat.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
 
@@ -407,23 +408,42 @@ made, and the tooltip says `Character macros full: no room for the fishing macro
 never deletes it. It needs the `Fishing macro` line of `/tandem check`; without it the rod icon still swaps, it just
 cannot be dragged.
 
-A Shaman gets one more icon left of the rod icon (or of the bag row, with no rod) for each cure spell learned: Cure
-Poison, then Cure Disease. A click casts the cure on the friend under your mouse, else on your friendly target, else on
-yourself. When you or a party member carries a poison (or a disease), the icon lights up with the number of you who
-carry one, and its tooltip names who carries which debuff. In combat the client keeps debuffs secret from addons, so
-the icons go dark until the fight ends. Drag the icon to put a `Tandem Poison` (or
-`Tandem Disease`) character macro doing the same on an action bar; Tandem makes it on that first drag and keeps it
-current out of combat, and when your character macro slots are full the tooltip says
-`Character macros full: no room for the cure macro`. Tandem only casts on your click. In combat the icons cannot move,
-appear or hide, so a cure learned or a rod swapped in a fight shows once it ends. They show only while the layout is
-on, and need the `Cure buttons` line of [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
+A Shaman gets one more icon left of the rod icon (or of the bag row, with no rod): the class macro button. Like the
+totem bar's flyouts, a click casts the macro you picked, and the small arrow above it opens an upward list of every
+entry you have learned:
 
-One more icon, left of the cure icons (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
+- `Cure Poison` and `Cure Disease` cast that cure on the friend under your mouse, else on your friendly target, else on
+  yourself.
+- `Cure Poison / Cure Disease`, once you know both, casts Cure Poison on a left click and Cure Disease on a right click,
+  on the same targets.
+- `Stormstrike` switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet
+  fighting), starts attacking and casts Stormstrike.
+
+Click a row: it casts that entry, becomes the button's pick and the list closes. The pick is saved per character, so
+it outlasts a `/reload`; when its spell is no longer known, the first entry is used. This works in combat too when the
+`Class macros` line of [`/tandem check`](#tandem-check) is `ok`. Without it the list opens and picks only out of
+combat and closes when a fight starts. Hover the arrow: `Class macros` and `Click to choose the button's macro`, or
+`Choosing waits until combat ends` when a pick has to wait.
+
+When you or a party member carries a poison or a disease, each cure row lights up with the number of you who carry
+one, and the button with the count over its whole list. In combat the client keeps debuffs secret from addons, so the
+lights go dark until the fight ends. Hover the button or a row: the entry's title, what it does, for a cure who carries
+which debuff (or `No one in your party has a Poison effect`; in combat `Party debuffs show again after combat`), and
+`Drag to place this macro on your action bar` (`Drag out of combat to place this macro` in combat).
+
+Drag the button or a row to put that entry's character macro, `Tandem Poison`, `Tandem Disease`, `Tandem Cure` or
+`Tandem Stormstrike`, on an action bar. Tandem makes it on that first drag and keeps it current out of combat; when your
+character macro slots are full the tooltip says `Character macros full: no room for this macro`. Tandem only casts on
+your click. In combat the button cannot move, appear or hide, so a spell learned or a rod swapped in a fight shows once
+it ends. It shows only while the layout is on, and needs the `Class macro button` line of
+[`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
+
+One more icon, left of the class macro button (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
 a click turns all sound off, the next click turns it back on, in combat too. It flips the client's
 `Sound_EnableAllSound` setting, the same as the sound checkbox in the client's sound settings, so the choice outlasts
 a `/reload` and turning the layout off. Its icon is a horn, in colour, or greyed out while the sound is off, and its
 tooltip says `Sound on` or `Sound off` with `Click to mute` or `Click to unmute`. In combat it cannot move, so it
-follows a cure icon or rod icon that came or went in the fight once it ends. It shows only while the layout is on,
+follows a class macro button or rod icon that came or went in the fight once it ends. It shows only while the layout is on,
 and needs the `Mute button` line of [`/tandem check`](#tandem-check).
 
 The role button, left of the mute icon (or of whatever icon is leftmost when the mute icon is hidden), switches this
@@ -507,6 +527,7 @@ Tandem saves one account-wide table, `TandemDB`, as
 | `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
 | `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target and `coords`, the `minimap` `angle`, `hidden`  |
 | `modes`    | Per character (`Name-Realm`): the [layout mode](#what-moves), `heal`; absent = damage                          |
+| `picks`    | Per character (`Name-Realm`): the [class macro](#bag-row) entry picked, such as `poison` or `stormstrike`      |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
@@ -519,9 +540,10 @@ Tandem saves one account-wide table, `TandemDB`, as
 - `layout.built` is `heal` while the `Tandem` Edit Mode layout is built for the healer mode, absent for damage; at
   login it is compared with the character's `modes` entry to rebuild the layout when they differ. A `modes` entry
   other than `heal` is dropped on load.
+- A `picks` entry that is not a non-empty entry id is dropped on load.
 
 `TandemDB.schemaVersion` is `7`. Saved data from an older schema is migrated on load: `weights`, `trainers`,
-`layout` and `modes` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is
+`layout`, `modes` and `picks` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is
 dropped. Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
 `Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
@@ -550,10 +572,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-one lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Cure buttons`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`, each
+   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`, each
    followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
@@ -654,32 +676,44 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    in your bags, a rod icon sits left of the bag row: click it and the rod is equipped; click it again and your
    weapons are back. Drag the rod icon onto an action bar: a `Tandem Fishing` macro lands there; click it to equip the
    rod, click it again to cast Fishing. Left of the rod icon (or of the bag row, with no rod; on a Shaman, left of the
-   cure icons), a horn icon sits: click it and all game sound goes off and the horn turns grey; click it
+   class macro button), a horn icon sits: click it and all game sound goes off and the horn turns grey; click it
    again and the sound is back. Left of the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
    shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
    appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
    line under it. Hover it: its name. When a totem runs out, its icon goes; when the last goes, the rail and its mana
    line go. Clicking the rail does nothing.
-5. Centred just below the XP bar, one line reads your coordinates and time at this level, such as
+5. On a Shaman who knows Cure Poison, the class macro button sits left of the rod icon (or of the bag row), with a
+   small arrow above it. Click the arrow: a list of your learned entries opens upward. Hover a row: its title, what it
+   does and `Drag to place this macro on your action bar`. Click the `Cure Poison` row: it casts, the list closes and
+   the button shows its icon. Run `/reload`: the button still shows it. Drag the button onto an action bar: a
+   `Tandem Poison` macro lands there. Out of combat, when you or a party member is poisoned, the `Cure Poison` row
+   and the button light up with `1`.
+6. Run `/tandem debug on`. Start a fight and, in combat, click the arrow and another row, such as `Stormstrike`: it
+   casts and the button takes its icon. When the fight ends, run `/reload` and read the `log` of `TandemDebug` in
+   [Saved data](#saved-data): it holds `flyout pick: <id> combat=true`, then `flyout pick saved: <id>`. When the
+   `Class macros` line of `/tandem check` is `missing`, the list closes as the fight starts, the arrow does nothing
+   until it ends, and no such line is logged.
+7. Centred just below the XP bar, one line reads your coordinates and time at this level, such as
    `(42.31, 67.80) · 1H20m`; walk and the coordinates change. Hover it: the zone, the subzone if any, `Played:`,
    `This level:` and `This session:`. Hover the bar: the XP tooltip. Enter an instance: the coordinates
    read `(--, --)`. After the login, chat showed Blizzard's `/played` lines once.
-6. Run `/reload`: everything is still in place.
-7. Join a party, then click the sword icon: chat shows `Tandem: healer layout`, the icon turns to a flash heal, the
+8. Run `/reload`: everything is still in place.
+9. Join a party, then click the sword icon: chat shows `Tandem: healer layout`, the icon turns to a flash heal, the
    party frames sit at the centre just above the player frame, and the target frame and target of target are gone.
    Run `/reload`: still the same. Log in with another character: its own mode (damage, unless you switched it) is
    built. Back on the first character, the healer layout is built again. In a fight, click the icon: chat shows
    `Tandem: the layout will change after combat`, and the damage layout, with the sword icon, comes when the fight
    ends.
-8. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
-   fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
-   coordinates as before.
-9. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, mute button, role
-   button, map info line and class area go.
+10. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
+    fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
+    coordinates as before.
+11. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, class macro button, mute
+    button, role button, map info line and class area go.
 
-Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Mute button`, `Role button`,
-`Map info`, `Shaman area` and `Probe:` lines of `/tandem check`, any frame that landed in the wrong place or overlaps
+Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Class macro button`,
+`Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area` and `Probe:` lines of
+`/tandem check`, the `flyout` lines of `TandemDebug` from step 6, any frame that landed in the wrong place or overlaps
 another, anything not restored by `off`, and any Lua error.
 
 ## Interface number

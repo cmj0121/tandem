@@ -1,9 +1,9 @@
 local _, ns = ...
 
--- The mute button (D1, D2, D4): one plain button left of the cure buttons (or the rod button, or the bag row, when
--- those are hidden) while the layout is on. A click flips the Sound_EnableAllSound CVar between 1 and 0; its icon and
--- tooltip show the current state. It is parented and anchored to UIParent only. A click works in combat, but its place
--- and visibility change only out of combat, like its neighbours' (a change asked for in combat waits for
+-- The mute button (D1, D2, D4): one plain button left of the class macro button (or the rod button, or the bag row,
+-- when those are hidden) while the layout is on. A click flips the Sound_EnableAllSound CVar between 1 and 0; its icon
+-- and tooltip show the current state. It is parented and anchored to UIParent only. A click works in combat, but its
+-- place and visibility change only out of combat, like its neighbours' (a change asked for in combat waits for
 -- Mute.OnCombatEnd). Nothing is saved in TandemDB: the CVar is the state.
 local Mute = {}
 ns.Mute = Mute
@@ -79,8 +79,8 @@ function Mute.Toggle()
 end
 
 -- Refreshes the icon, then the button's place and visibility; in combat only marks the place as pending. Runs after
--- every Rod.Update (after Cure.Update, whose buttons it sits beside), at login and on a layout change. While debugging,
--- logs the button's state when it differs from the last one logged.
+-- every Rod.Update (after Flyout.Update, whose button it sits beside), at login and on a layout change. While
+-- debugging, logs the button's state when it differs from the last one logged.
 function Mute.Update()
     if not button then
         return
@@ -154,7 +154,7 @@ function Mute.OnLogin()
     Mute.Update()
 end
 
--- Listens after the cure buttons' listener (Mute.lua follows Cure.lua in the toc), so Cure.NextX() is already current;
+-- Listens after the flyout's listener (Mute.lua follows Flyout.lua in the toc), so Cure.NextX() is already current;
 -- it places the button itself for a player with no rod button, whose Rod.Update does nothing.
 ns.Layout.OnChange(function(layoutOn)
     on = layoutOn and ns.Check.Ready("Mute button")

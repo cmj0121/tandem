@@ -1,8 +1,8 @@
 local _, ns = ...
 
--- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights
--- and layout mode, the class trainer spells seen and the UI layout state; every other key an older schema saved is
--- dropped on load.
+-- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights,
+-- layout mode and class macro pick, the class trainer spells seen and the UI layout state; every other key an older
+-- schema saved is dropped on load.
 local Store = { readOnly = false }
 ns.Store = Store
 
@@ -22,7 +22,8 @@ end
 local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
-local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true, modes = true }
+local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true, modes = true,
+    picks = true }
 local MAX_LAYOUT_NAME = 64
 
 local floor = math.floor
@@ -140,6 +141,11 @@ local function isMode(v)
     return v == "heal"
 end
 
+-- A character's saved class macro pick is an entry id such as "poison".
+local function isPick(v)
+    return type(v) == "string" and v ~= ""
+end
+
 local function copyLayoutField(field, v)
     if field == "previous" then
         return { name = v.name, type = v.type }
@@ -196,6 +202,15 @@ local function migrate(raw, report)
         if type(name) == "string" and name ~= "" and isMode(v) then
             db.modes = db.modes or {}
             db.modes[name] = v
+        else
+            drop()
+        end
+    end
+
+    for name, v in pairs(entries(raw.picks)) do
+        if type(name) == "string" and name ~= "" and isPick(v) then
+            db.picks = db.picks or {}
+            db.picks[name] = v
         else
             drop()
         end
@@ -310,6 +325,22 @@ function Store.SetMode(key, mode)
     end
     Store.db.modes = Store.db.modes or {}
     Store.db.modes[key] = mode
+    return true
+end
+
+-- Returns the class macro entry id picked by the character key, or nil (none, or the db is newer).
+function Store.Pick(key)
+    local picks = not Store.readOnly and Store.db.picks
+    return type(picks) == "table" and picks[key] or nil
+end
+
+-- Saves the character key's class macro pick (an entry id, or nil to clear it); false when invalid or read-only.
+function Store.SetPick(key, id)
+    if Store.readOnly or type(key) ~= "string" or key == "" or (id ~= nil and not isPick(id)) then
+        return false
+    end
+    Store.db.picks = Store.db.picks or {}
+    Store.db.picks[key] = id
     return true
 end
 
