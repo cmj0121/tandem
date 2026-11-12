@@ -11,7 +11,7 @@ ns.Mute = Mute
 local call = ns.Store.Call
 
 local CVAR = "Sound_EnableAllSound"
-local SIZE = 28
+local SIZE, GAP = 28, 4
 -- One horn, in colour while the sound is on and grey while it is off.
 local ICON = "Interface\\Icons\\INV_Misc_Horn_01"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -106,6 +106,16 @@ function Mute.Update()
         lastUpdate = line
         log(line)
     end
+end
+
+-- Mute.NextX() -> x: the BOTTOMRIGHT x offset for the right edge of a button left of the mute button, or Cure.NextX()
+-- while it is hidden; the y offset is the rod button's.
+function Mute.NextX()
+    local x = ns.Cure.NextX()
+    if button and call(button.IsShown, button) == true then
+        x = x - SIZE - GAP
+    end
+    return x
 end
 
 -- PLAYER_REGEN_ENABLED: applies the change combat held back.

@@ -77,6 +77,9 @@ Check.FEATURES = {
     { name = "Mute button", needs = {
         { "C_CVar.GetCVar", "GetCVar" }, { "C_CVar.SetCVar", "SetCVar" },
     } },
+    { name = "Role button", needs = {
+        { "C_EditMode.GetLayouts" }, { "C_EditMode.SaveLayouts" }, { "C_EditMode.SetActiveLayout" },
+    } },
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },
