@@ -41,6 +41,8 @@ read_globals = {
     "GetSpellTabInfo",
     "IsPlayerSpell",
     "IsSpellKnown",
+    "SecureHandlerSetFrameRef",
+    "SecureHandlerWrapScript",
     "C_Container",
     "C_Map",
     "C_CVar",

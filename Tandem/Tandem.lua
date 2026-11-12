@@ -6,7 +6,7 @@ local frame = CreateFrame("Frame")
 for _, event in ipairs({
     "ADDON_LOADED", "GET_ITEM_INFO_RECEIVED", "LOOT_READY", "LOOT_OPENED", "QUEST_COMPLETE", "QUEST_FINISHED",
     "TRAINER_SHOW", "TRAINER_UPDATE", "PLAYER_LOGIN", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED",
-    "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD",
+    "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ENTERING_WORLD",
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
@@ -89,12 +89,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Launcher.OnLogin()
         ns.Debug.OnLogin()
         ns.BagButton.OnLogin()
-        -- Before the rod button, whose first update places the cure buttons. Aura events only once there are some.
-        if ns.Cure.OnLogin() then
+        -- Before the rod button, whose first update places the class macro button. Aura events only once it exists.
+        if ns.Flyout.OnLogin() then
             ns.Store.RegisterEvent(self, "UNIT_AURA")
             ns.Store.RegisterEvent(self, "GROUP_ROSTER_UPDATE")
         end
-        -- Before the rod button too, whose update places it left of the cure buttons.
+        -- Before the rod button too, whose update places it left of the class macro button.
         ns.Mute.OnLogin()
         -- After the mute button, whose place it follows; before the rod button, whose update places both again.
         ns.Role.OnLogin()
@@ -109,8 +109,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_LEVEL_UP" then
         if event ~= "ACTIONBAR_SLOT_CHANGED" and event ~= "ACTIONBAR_PAGE_CHANGED"
             and event ~= "UPDATE_BONUS_ACTIONBAR" then
-            -- A cure spell learned shows its button, which moves the mute button.
-            ns.Cure.Update()
+            -- A spell learned shows its class macro, which may show the button and move the mute button.
+            ns.Flyout.Update()
             ns.Mute.Update()
             ns.Role.Update()
         end
@@ -130,9 +130,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Layout.OnCombatEnd()
         ns.BagButton.OnCombatEnd()
         ns.Rod.OnCombatEnd()
-        ns.Cure.OnCombatEnd()
+        ns.Flyout.OnCombatEnd()
         ns.Mute.OnCombatEnd()
         ns.Role.OnCombatEnd()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        ns.Flyout.OnCombatStart()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then

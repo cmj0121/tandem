@@ -1,6 +1,6 @@
 local _, ns = ...
 
--- Character macros Tandem keeps for its buttons (the fishing macro, the cure macros): found by name among the
+-- Character macros Tandem keeps for its buttons (the fishing macro, the class macros): found by name among the
 -- character macros only, edited only when their body changed, made only when asked and a character slot is free.
 -- Callers check combat and the macro API first.
 local Macro = {}

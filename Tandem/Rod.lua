@@ -416,11 +416,11 @@ function Rod.Update()
     end
     update()
     ensureMacro()
-    -- The cure buttons sit left of this one, so they follow its place and visibility.
-    if ns.Cure then
-        ns.Cure.Update()
+    -- The class macro button sits left of this one, so it follows its place and visibility.
+    if ns.Flyout then
+        ns.Flyout.Update()
     end
-    -- The mute button sits left of the cure buttons, so it follows their places and visibility.
+    -- The mute button sits left of the class macro button, so it follows their places and visibility.
     if ns.Mute then
         ns.Mute.Update()
     end
