@@ -1019,7 +1019,7 @@ local function checkAPIs()
         ContainerFrame1Item1 = {},
         C_EditMode = { GetLayouts = fn, SaveLayouts = fn, SetActiveLayout = fn }, EditModeManagerFrame = {},
         EditModePresetLayoutManager = { GetCopyOfPresetLayouts = fn },
-        MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, ToggleAllBags = fn,
+        MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, MainMenuBarBackpackButton = {},
         GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn,
         GetInventoryItemID = fn, InCombatLockdown = fn, SecureActionButtonMixin = {},
         SecureCmdList = { EQUIP_TO_SLOT = fn }, EquipItemByName = fn,
@@ -2169,7 +2169,9 @@ do
         .. "MainActionBar ok, MainMenuBar missing)")
     check("check: xp bar line", byName["XP bar"], "XP bar: ok (UnitXP ok, UnitXPMax ok)")
     check("check: bag button line", byName["Bag button"],
-        "Bag button: ok (C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, ToggleAllBags ok)")
+        "Bag button: ok (C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, "
+        .. "MainMenuBarBackpackButton ok, InCombatLockdown ok, SecureActionButton_OnClick missing, "
+        .. "SecureActionButtonMixin ok)")
     check("check: shaman area line", byName["Shaman area"],
         "Shaman area: ok (GetTotemInfo ok, UnitPower ok)")
 
@@ -2185,7 +2187,8 @@ do
     for _, case in ipairs({
         { "Layout", "C_EditMode" }, { "Layout", "EditModeManagerFrame" }, { "Layout", "MainActionBar" },
         { "Layout", "EditModePresetLayoutManager" },
-        { "XP bar", "UnitXPMax" }, { "Bag button", "ToggleAllBags" }, { "Shaman area", "GetTotemInfo" },
+        { "XP bar", "UnitXPMax" }, { "Bag button", "MainMenuBarBackpackButton" },
+        { "Bag button", "SecureActionButtonMixin" }, { "Shaman area", "GetTotemInfo" },
         { "Shaman area", "UnitPower" },
     }) do
         env = checkAPIs()
@@ -5365,7 +5368,8 @@ end
 -- Bag row at the bottom right while the layout is on (stage 12, U4, D5, D12).
 
 -- Loads the layout with fake bags: ctx.bags[bag] = { total, free, family }; bag b sits in inventory slot 30 + b whose
--- texture is "icon<slot>" and is named "Bag<b>". ctx.toggled counts ToggleAllBags calls, ctx.tip is GameTooltip.
+-- texture is "icon<slot>" and is named "Bag<b>". ctx.tip is GameTooltip. Blizzard's bag functions raise: Tandem must
+-- never open the bag windows from its own code (that taints them), only through the default bag buttons' clicks.
 local function loadBags(opts)
     opts = opts or {}
     local ui = { widgets = {} }
@@ -5388,7 +5392,10 @@ local function loadBags(opts)
         GetInventoryItemTexture = function(unit, slot)
             return unit == "player" and ("icon" .. slot) or nil
         end,
-        ToggleAllBags = function() ctx.toggled = ctx.toggled + 1 end,
+        ToggleAllBags = function() error("ToggleAllBags called") end,
+        OpenBag = function() error("OpenBag called") end,
+        CloseBag = function() error("CloseBag called") end,
+        MainMenuBarBackpackButton = {}, SecureActionButtonMixin = {},
         GameTooltip = barTooltip(),
         UIParent = { name = "UIParent" },
     }
@@ -5400,7 +5407,7 @@ local function loadBags(opts)
         widgets = function(kind, name, parent, template)
             return newWidget(ui, kind, name, parent, template)
         end })
-    ctx.ui, ctx.bags, ctx.toggled, ctx.tip = ui, bags, 0, env.GameTooltip
+    ctx.ui, ctx.bags, ctx.tip = ui, bags, env.GameTooltip
     -- Every icon button made so far, in creation order.
     function ctx.icons()
         local out = {}
@@ -5477,9 +5484,11 @@ do
     check("bag row: empty and missing bags skipped; spare icon hidden, icons reused", ctx.text() .. " / "
         .. #ctx.icons() .. " " .. tostring(ctx.icons()[3].shown), GENERAL_ICON .. " 5/26 | icon33 7/20 / 3 false")
     local b = ctx.icons()[2]
-    b.scripts.OnClick(b, "LeftButton")
-    ctx.icons()[1].scripts.OnClick(ctx.icons()[1], "LeftButton")
-    check("bag row: any icon click opens all bags", ctx.toggled, 2)
+    check("bag row: every icon is a secure button clicking the default backpack button on mouse up",
+        b.template .. " " .. b.attrs.type .. " " .. b.attrs.macrotext .. " " .. tostring(b.attrs.useOnKeyDown) .. " "
+        .. b.clicks[1] .. " " .. tostring(b.scripts.OnClick), "SecureActionButtonTemplate macro "
+        .. "/click MainMenuBarBackpackButton false AnyUp nil")
+    check("bag row: the first icon runs the same macro", ctx.icons()[1].attrs.macrotext, b.attrs.macrotext)
     b.scripts.OnEnter(b)
     check("bag row: profession tooltip names its bags", ctx.tip.title .. " / " .. texts(ctx.tip) .. " / "
         .. tostring(ctx.tip.shown), "Profession bag / Bag3 / 7/20 free / Click to open your bags / true")
@@ -5508,7 +5517,7 @@ end
 
 do
     local ctx = loadBags()
-    ctx.env.ToggleAllBags = nil
+    ctx.env.MainMenuBarBackpackButton = nil
     ctx.run("layout on")
     check("bag row: not ready stays dark, BagsBar kept", #ctx.icons() .. " " .. ctx.state.frames.BagsBar.alpha, "0 1")
 
@@ -5544,21 +5553,15 @@ do
         "true " .. GENERAL_ICON .. " 19/38")
 end
 
--- The reagent bag: its own bag row icon, opened and closed with the other bags, and B pointed at the same opener.
+-- The reagent bag: its own bag row icon, opened and closed with the other bags through the default reagent bag slot's
+-- click, and B pointed at the same secure opener.
 do
-    local open, binds, cleared = {}, {}, 0
+    local binds, cleared = {}, 0
     local enum = copyTable(LAYOUT_ENUM)
     enum.BagIndex = { ReagentBag = 5 }
-    local ctx
-    ctx = loadBags({ env = {
+    local ctx = loadBags({ env = {
         Enum = enum,
-        IsBagOpen = function(bag) return open[bag] end,
-        OpenBag = function(bag) open[bag] = true end,
-        CloseBag = function(bag) open[bag] = nil end,
-        ToggleAllBags = function()
-            ctx.toggled = ctx.toggled + 1
-            open[0] = not open[0] or nil
-        end,
+        CharacterReagentBag0Slot = {},
         GetBindingKey = function(action)
             if action == "OPENALLBAGS" then
                 return "SHIFT-B"
@@ -5579,19 +5582,27 @@ do
     r.scripts.OnEnter(r)
     check("reagent bag: tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
         "Reagent bag / Bag5 / 7/20 free / Click to open your bags")
-    r.scripts.OnClick(r, "LeftButton")
-    check("reagent bag: opens with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "true true")
-    r.scripts.OnClick(r, "LeftButton")
-    check("reagent bag: closes with all bags", tostring(open[0]) .. " " .. tostring(open[5]), "nil nil")
+    local BOTH = "/click MainMenuBarBackpackButton\n/click CharacterReagentBag0Slot"
+    check("reagent bag: every icon clicks the backpack button, then the reagent bag slot",
+        r.attrs.macrotext .. " | " .. ctx.icons()[1].attrs.macrotext, BOTH .. " | " .. BOTH)
     ctx.fire("PLAYER_LOGIN")
     check("reagent bag: every open-all-bags and open-backpack key clicks Tandem's opener",
         table.concat(binds, " ") .. " " .. cleared,
         "SHIFT-B>TandemOpenAllBags>TandemOpenAllBags>false B>TandemOpenAllBags>TandemOpenAllBags>false 1")
+    local opener
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.name == "TandemOpenAllBags" then
+            opener = w
+        end
+    end
+    check("reagent bag: the opener is a secure button running the same macro on key up",
+        opener.template .. " " .. opener.attrs.type .. " " .. tostring(opener.attrs.useOnKeyDown) .. " "
+        .. opener.attrs.macrotext, "SecureActionButtonTemplate macro false " .. BOTH)
     ctx.bags[5] = nil
-    open = {}
-    r.scripts.OnClick(r, "LeftButton")
-    check("reagent bag: none equipped opens only the others", tostring(open[0]) .. " " .. tostring(open[5]),
-        "true nil")
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("reagent bag: none equipped clicks only the backpack button",
+        opener.attrs.macrotext .. " | " .. ctx.icons()[1].attrs.macrotext,
+        "/click MainMenuBarBackpackButton | /click MainMenuBarBackpackButton")
 
     binds = {}
     ctx.state.combat = true
@@ -5601,21 +5612,36 @@ do
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("reagent bag: bound when combat ends", #binds, 2)
 
-    -- A client whose bag window state reads the same before and after the toggle: the reagent bag simply toggles.
-    local shut = {}
-    ctx = loadBags({ env = {
-        Enum = enum,
-        IsBagOpen = function(bag) return bag == 5 and shut[5] or nil end,
-        OpenBag = function(bag) shut[bag] = true end,
-        CloseBag = function(bag) shut[bag] = nil end,
-    } })
+    -- No reagent bag slot button on the client: only the backpack button is clicked.
+    ctx = loadBags({ env = { Enum = enum } })
     ctx.bags[5] = { 20, 7, 0 }
     ctx.run("layout on")
-    local icon = ctx.icons()[1]
-    icon.scripts.OnClick(icon, "LeftButton")
-    check("reagent bag: unseen main window still opens it", tostring(shut[5]) .. " " .. ctx.toggled, "true 1")
-    icon.scripts.OnClick(icon, "LeftButton")
-    check("reagent bag: and closes it on the next press", tostring(shut[5]) .. " " .. ctx.toggled, "nil 2")
+    check("reagent bag: no slot button clicks only the backpack button", ctx.icons()[1].attrs.macrotext,
+        "/click MainMenuBarBackpackButton")
+end
+
+-- The bag row in combat: its icons are secure, so only the shown icons' counts change; icons are added, hidden and
+-- given their macro once combat ends.
+do
+    local ctx = loadBags()
+    ctx.run("layout on")
+    ctx.state.combat = true
+    ctx.bags[0][2] = 1
+    ctx.bags[3] = { 20, 7, 8 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row combat: counts change, no icon added", #ctx.icons() .. " " .. ctx.text(), "1 " .. GENERAL_ICON
+        .. " 15/38")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("bag row combat: the new icon shows when combat ends", ctx.text(), GENERAL_ICON .. " 15/38 | icon33 7/20")
+    ctx.state.combat = true
+    ctx.bags[3] = nil
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row combat: an emptied family's icon stays until combat ends", #ctx.icons() .. " "
+        .. tostring(ctx.icons()[2].shown), "2 true")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("bag row combat: and hides then", tostring(ctx.icons()[2].shown) .. " " .. ctx.row().width, "false 28")
 end
 
 -- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).
