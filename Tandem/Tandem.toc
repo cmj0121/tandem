@@ -36,6 +36,7 @@ Mute.lua
 Role.lua
 Eat.lua
 MapInfo.lua
+BookPins.lua
 ClassArea.lua
 Classes\Shaman.lua
 ProcProbe.lua

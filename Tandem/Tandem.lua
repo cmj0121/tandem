@@ -123,6 +123,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
+        ns.BookPins.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(3, ns.Layout.Refade)
@@ -143,6 +144,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_LEVEL_UP" then
             ns.XPBar.Update(...)
             ns.MapInfo.OnLevelUp()
+            ns.BookPins.Refresh(...)
             ns.Eat.Rescan()
             ns.Upgrade.Invalidate()
             ns.ItemBorders.Schedule()

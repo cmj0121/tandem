@@ -36,6 +36,7 @@ L["Bag button"] = "背包按鈕"
 L["Fishing rod"] = "魚竿"
 L["Fishing macro"] = "釣魚巨集"
 L["Map info"] = "地圖資訊"
+L["Book pins"] = "圖書館書籍地圖標記"
 L["Mute button"] = "靜音按鈕"
 L["Sound"] = "聲音"
 L["Sound on"] = "聲音開啟"
@@ -94,6 +95,8 @@ L["Tandem: the layout will change after combat"] = "Tandem：介面配置將在�
 L["Tandem: no free account layout slot; delete one in Edit Mode"] = "Tandem：沒有空的帳號版面欄位；請在編輯模式中刪除一個"
 L["Tandem: the layout could not be changed"] = "Tandem：無法變更介面配置"
 L["  /tandem minimap [on|off] - show or hide the minimap button"] = "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕"
+L["  /tandem books [on|off|near] - show library book pins on the world map, or name the nearest book"] =
+    "  /tandem books [on|off|near] - 在世界地圖上標記圖書館書籍，或列出最近的一本"
 L["Tandem: minimap button shown"] = "Tandem：已顯示小地圖按鈕"
 L["  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them"] =
     "  /tandem debug [on|off|snap] - 為開發者記錄版面追蹤資料；/reload 後寫入存檔"
@@ -236,6 +239,23 @@ L["North of the flight path, before the ruins"] = "飛行點北方，遺跡之�
 L["Lost Rigger Cove, bookshelf amid the three buildings"] = "失落者海灣，三棟建築之間的書架"
 L["Stormwind Mage Tower"] = "暴風城法師塔"
 L["Undercity, Magic Quarter"] = "幽暗城，魔法區"
+
+-- Library book pins and the books switch (library books D3, D4).
+L["Tandem: library book hints on"] = "Tandem：圖書館書籍提示已開啟"
+L["Tandem: library book hints off"] = "Tandem：圖書館書籍提示已關閉"
+L["Tandem: the book hints switch cannot be saved: recording is off"] = "Tandem：無法儲存書籍提示開關：記錄已暫停"
+L["Entrance"] = "入口"
+L["Level %d+"] = "%d 級以上"
+L["Enemy city"] = "敵對主城"
+L["Click to set a waypoint"] = "點擊以設定路徑點"
+L["Takes library books"] = "收取圖書館書籍"
+L["Tandem: waypoint set to %s"] = "Tandem：已設定路徑點到 %s"
+L["Tandem: a waypoint cannot be set here"] = "Tandem：無法在此設定路徑點"
+L["Tandem: your map position is not known here"] = "Tandem：無法取得你在此處的地圖位置"
+L["Tandem: map %d %s at (%.2f, %.2f)"] = "Tandem：地圖 %d %s，位置 (%.2f, %.2f)"
+L["Tandem: nearest book %s (%s), map %d, %d yd"] = "Tandem：最近的書 %s（%s），地圖 %d，%d 碼"
+L["Tandem: nearest book %s (%s), %.1f map percent away"] = "Tandem：最近的書 %s（%s），相距地圖 %.1f%%"
+L["Tandem: no eligible book on this continent"] = "Tandem：這塊大陸上沒有符合等級的書"
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
 -- line comes after it.
