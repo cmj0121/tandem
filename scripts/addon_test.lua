@@ -414,9 +414,11 @@ do
     check("usage lists layout", help[7],
         "  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout")
     check("usage lists minimap", help[8], "  /tandem minimap [on|off] - show or hide the minimap button")
-    check("usage lists debug", help[9],
+    check("usage lists books", help[9],
+        "  /tandem books [on|off|near] - show library book pins on the world map, or name the nearest book")
+    check("usage lists debug", help[10],
         "  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them")
-    check("usage line count", #help, 9)
+    check("usage line count", #help, 10)
     for _, sub in ipairs({ "scan", "count", "gear", "rank", "browse", "export", "map clear", "forget 1 2" }) do
         check(("removed %q prints usage"):format(sub), run(addon, printed, sub)[1], "Tandem commands:")
     end
@@ -1025,10 +1027,12 @@ local function checkAPIs()
         SecureCmdList = { EQUIP_TO_SLOT = fn }, EquipItemByName = fn,
         CreateMacro = fn, EditMacro = fn, GetMacroIndexByName = fn, GetMacroInfo = fn, PickupMacro = fn,
         GetNumMacros = fn, GetItemSubClassInfo = fn,
-        C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn }, RequestTimePlayed = fn,
+        C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn, GetMapInfo = fn }, RequestTimePlayed = fn,
         C_UnitAuras = { GetAuraDataByIndex = fn }, UnitExists = fn, UnitName = fn,
         SecureHandlerWrapScript = fn, SecureHandlerSetFrameRef = fn, SecureHandler_OnClick = fn,
         GetCVar = fn, SetCVar = fn, UnitHealth = fn, UnitHealthMax = fn, UnitPowerType = fn, UnitPowerMax = fn,
+        WorldMapFrame = { GetCanvas = fn, GetMapID = fn, OnMapChanged = fn }, hooksecurefunc = fn,
+        C_Timer = { NewTicker = fn },
     }
 end
 
@@ -1058,7 +1062,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: twenty-three features", #addon.Check.FEATURES, 23)
+    check("check: twenty-five features", #addon.Check.FEATURES, 25)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1069,7 +1073,7 @@ do
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
         "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Mute button", "Role button", "Map info",
-        "Shaman area", "Weapon procs", "Eat button" }) do
+        "Shaman area", "Weapon procs", "Eat button", "Book pins", "Book alert" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1131,7 +1135,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on twenty-one features", count, 21)
+    check("check: kept code gates on twenty-three features", count, 23)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -6355,7 +6359,9 @@ do
     check("zhTW minimap tooltip", texts(ctx.tip), "介面配置：關閉 / 點擊以開啟或關閉介面配置 / 拖曳以移動此按鈕")
     check("zhTW minimap command", ctx.run("minimap"), "Tandem：已隱藏小地圖按鈕")
     local help = run(ctx.addon, ctx.printed, "help")
-    check("zhTW usage lists minimap", help[#help - 1], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW usage lists minimap", help[#help - 2], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW usage lists books", help[#help - 1],
+        "  /tandem books [on|off|near] - 在世界地圖上標記圖書館書籍，或列出最近的一本")
     check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off|snap] - 為開發者記錄版面追蹤資料；/reload 後寫入存檔")
 end
 
@@ -8744,6 +8750,659 @@ do
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     check("zhTW check: eat button line", lineFor(run(addon, printed, "check"), "飲食按鈕"):sub(1, #"飲食按鈕：可用"),
         "飲食按鈕：可用")
+end
+
+-- Library books data and logic (library books U1, D1-D3).
+
+-- Loads the addon with a fake world position API unless opts.noWorld: each map in ctx.worlds = { continent,
+-- left, top, size } places map percent at left + x/100 * size yards; a map not listed has no world position.
+local function loadBooks(opts)
+    opts = opts or {}
+    local ctx = { worlds = {
+        [1413] = { 1, 0, 0, 5000 },
+        [9001] = { 1, 2600, 2700, 100 },
+        [1429] = { 0, 0, 0, 4000 },
+    }, infos = {} }
+    local maps = {
+        GetMapInfo = function(id)
+            return ctx.infos[id]
+        end,
+    }
+    if not opts.noWorld then
+        function maps.GetWorldPosFromMapPos(id, v)
+            local w = ctx.worlds[id]
+            if not w then
+                return nil
+            end
+            return w[1], { GetXY = function() return w[2] + v.x * w[4], w[3] + v.y * w[4] end }
+        end
+    end
+    local env = { C_Map = maps, CreateVector2D = function(x, y) return { x = x, y = y } end }
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
+    local addon, printed, _, loadedEnv = loadAddon(opts.locale or "enUS", { env = env })
+    ctx.addon, ctx.printed, ctx.env = addon, printed, loadedEnv
+    return ctx
+end
+
+local function keysOf(list)
+    local keys = {}
+    for i, book in ipairs(list) do
+        keys[i] = book.key
+    end
+    return table.concat(keys, " ")
+end
+
+do
+    local addon = loadBooks().addon
+    local books = addon.BookData.books
+    check("books: 36 books plus the Rumi duplicate make 37 spots", #books, 37)
+    local titles, keys, dupKeys, badCoord, badLevel, counts = {}, {}, 0, 0, 0, { [1] = 0, [30] = 0, [40] = 0 }
+    local function inRange(v)
+        return type(v) == "number" and v >= 0 and v <= 100
+    end
+    for _, b in ipairs(books) do
+        titles[b.title] = true
+        if keys[b.key] then
+            dupKeys = dupKeys + 1
+        end
+        keys[b.key] = true
+        if not (inRange(b.x) and inRange(b.y)) or (b.entrance and not (inRange(b.entrance[1])
+                and inRange(b.entrance[2]))) then
+            badCoord = badCoord + 1
+        end
+        if counts[b.level] then
+            counts[b.level] = counts[b.level] + 1
+        else
+            badLevel = badLevel + 1
+        end
+    end
+    local distinct = 0
+    for _ in pairs(titles) do
+        distinct = distinct + 1
+    end
+    check("books: 36 distinct titles", distinct, 36)
+    check("books: keys are unique", dupKeys, 0)
+    check("books: every coordinate within 0..100", badCoord, 0)
+    check("books: every level is 1, 30 or 40", badLevel, 0)
+    check("books: 16 level 1, 7 level 30, 14 level 40", counts[1] .. " " .. counts[30] .. " " .. counts[40], "16 7 14")
+    local cities = {}
+    for _, b in ipairs(books) do
+        if b.city then
+            cities[#cities + 1] = b.key .. "=" .. b.city
+        end
+    end
+    check("books: two capital books", table.concat(cities, " "), "antonidas=Alliance lessons-tazo=Horde")
+
+    check("books: the three Barrens books at level 20", keysOf(addon.Books.ForMap(1413, 20)),
+        "arcanic-systems baxtan secrets-dreamers")
+    check("books: a level 30 book hides at level 29", keysOf(addon.Books.ForMap(1434, 29)), "")
+    check("books: and shows at level 30", keysOf(addon.Books.ForMap(1434, 30)), "basilisks")
+    check("books: a continent map has no books", #addon.Books.ForMap(1414, 60), 0)
+    local eligible = addon.Books.Eligible(35)
+    local by = { [1] = 0, [30] = 0, [40] = 0 }
+    for _, b in ipairs(eligible) do
+        by[b.level] = by[b.level] + 1
+    end
+    check("books: Eligible(35) holds every level 1 and 30 book, no level 40",
+        by[1] .. " " .. by[30] .. " " .. by[40], "16 7 0")
+    check("books: Eligible(60) holds all", #addon.Books.Eligible(60), 37)
+    check("books: Eligible(nil) holds none", #addon.Books.Eligible(nil), 0)
+
+    local ironforge, tazo = books[8], books[16]
+    check("books: Ironforge's book is hostile to the Horde", addon.Books.Hostile(ironforge, "Horde"), true)
+    check("books: but not to the Alliance", addon.Books.Hostile(ironforge, "Alliance"), false)
+    check("books: Orgrimmar's book is hostile to the Alliance", addon.Books.Hostile(tazo, "Alliance"), true)
+    check("books: a zone book is never hostile", addon.Books.Hostile(books[1], "Horde"), false)
+
+    local function names(list)
+        local out = {}
+        for i, npc in ipairs(list) do
+            out[i] = npc.name
+        end
+        return table.concat(out, " ")
+    end
+    check("books: the Alliance hand-in", names(addon.Books.HandIns("Alliance")), "Garion Wendell")
+    check("books: the Horde hand-in on Undercity's map", names(addon.Books.HandIns("Horde", 1458)), "Owen Thadd")
+    check("books: no Horde hand-in on Stormwind's map", names(addon.Books.HandIns("Horde", 1453)), "")
+end
+
+do
+    local Books = loadBooks().addon.Books
+    local yards, close = Books.Distance(1413, 52.83, 54.70, 1413, 53.3, 54.70)
+    check("books distance: world yards on one map", ("%.1f %s"):format(yards, tostring(close)), "23.5 true")
+    yards, close = Books.Distance(1413, 50, 50, 1413, 51, 50)
+    check("books distance: 50 yd is not under 40", ("%.1f %s"):format(yards, tostring(close)), "50.0 false")
+    yards, close = Books.Distance(9001, 50, 50, 1413, 53, 55)
+    check("books distance: a sub-map compares in world yards", ("%.1f %s"):format(yards, tostring(close)),
+        "0.0 false")
+    yards, close = Books.Distance(1413, 50, 50, 1429, 50, 50)
+    check("books distance: another continent has no yards", tostring(yards) .. " " .. tostring(close), "nil false")
+    yards, close = Books.Distance(1413, 50, 50, 7777, 50, 50)
+    check("books distance: a map without a world position has no yards", tostring(yards) .. " " .. tostring(close),
+        "nil false")
+
+    Books = loadBooks({ noWorld = true }).addon.Books
+    yards, close = Books.Distance(1413, 52.83, 54.70, 1413, 53.3, 54.2)
+    check("books distance: without the API, close in percent", tostring(yards) .. " " .. tostring(close), "nil true")
+    yards, close = Books.Distance(1413, 50, 50, 1413, 50.5, 50.8)
+    check("books distance: without the API, 0.8 percent is not close", tostring(yards) .. " " .. tostring(close),
+        "nil false")
+    yards, close = Books.Distance(9001, 50, 50, 1413, 50, 50)
+    check("books distance: without the API, another map is never close", tostring(yards) .. " " .. tostring(close),
+        "nil false")
+
+    Books = loadBooks({ env = { CreateVector2D = false } }).addon.Books
+    yards, close = Books.Distance(1413, 50, 50, 1413, 50.2, 50)
+    check("books distance: no CreateVector2D falls back to percent", tostring(yards) .. " " .. tostring(close),
+        "nil true")
+    local ctx = loadBooks()
+    ctx.env.C_Map.GetWorldPosFromMapPos = function() error("no world") end
+    yards, close = ctx.addon.Books.Distance(1413, 50, 50, 1413, 50.2, 50)
+    check("books distance: a raising API falls back to percent", tostring(yards) .. " " .. tostring(close),
+        "nil true")
+end
+
+do
+    local ctx = loadBooks()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.infos[1413] = { name = "The Barrens", mapType = 3 }
+    ctx.worlds[1429] = nil
+    ctx.addon.Debug.OnLogin()
+    local lines = {}
+    for _, line in ipairs(ctx.env.TandemDebug.log) do
+        local what = line:match("^[%d.]+ combat=%a+ (books .*)$")
+        if what then
+            lines[#lines + 1] = what
+        end
+    end
+    check("books debug: one line per distinct map plus the world position", #lines, 32)
+    check("books debug: the first map's info", lines[1], "books mapinfo id=1413 name=The Barrens type=3")
+    check("books debug: a map with no info", lines[2], "books mapinfo id=1416 missing")
+    check("books debug: the world position line", lines[#lines], "books worldpos missing")
+    ctx.worlds[1429] = { 0, 0, 0, 4000 }
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.addon.Books.LogMaps()
+    local last = ctx.env.TandemDebug.log[#ctx.env.TandemDebug.log]
+    check("books debug: the sample world position resolves", last:match("books worldpos %a+$"), "books worldpos ok")
+    ctx.env.TandemDebug = { on = false, log = {} }
+    ctx.addon.Books.LogMaps()
+    check("books debug: nothing while debug is off", #ctx.env.TandemDebug.log, 0)
+end
+
+do
+    local addon = loadBooks({ locale = "zhTW" }).addon
+    local missing = {}
+    for _, list in ipairs({ addon.BookData.books, addon.BookData.handIns }) do
+        for _, entry in ipairs(list) do
+            if addon.L[entry.note] == entry.note then
+                missing[#missing + 1] = entry.note
+            end
+        end
+    end
+    check("zhTW books: every note translated", table.concat(missing, " | "), "")
+    check("zhTW books: a note", addon.L["Everlook"], "永望鎮")
+end
+
+
+-- Library book pins (library books U2, D2-D4): own frames on the world map canvas, the books switch and near probe.
+
+-- Loads the addon with a stub world map showing ctx.mapID on a 1000 x 800 canvas, waypoint and super-track APIs, a
+-- level 20 Horde player at 52.83, 55.70 on 1413 and a tooltip recording its lines; a fresh TandemDB is loaded and
+-- BookPins.OnLogin run. opts.drop names globals to leave out, opts.noWorld leaves out GetWorldPosFromMapPos,
+-- opts.debug turns the Debug log on, opts.locale picks the locale.
+local function loadPins(opts)
+    opts = opts or {}
+    local ui = { widgets = {} }
+    local ctx = { ui = ui, mapID = 1413, level = 20, faction = "Horde", infos = { [1413] = { name = "The Barrens",
+        mapType = 3 }, [1414] = { name = "Kalimdor", mapType = 2 } }, pos = { 0.5283, 0.5570 } }
+    local canvas = newWidget(ui, "Frame", "Canvas")
+    canvas.width, canvas.height = 1000, 800
+    ctx.canvas = canvas
+    local tip = { lines = {} }
+    function tip.SetOwner(self) self.lines = {} end
+    function tip.SetText(self, text, r, g, b) self.lines = { { text = text, r = r, g = g, b = b } } end
+    function tip.AddLine(self, text, r, g, b) self.lines[#self.lines + 1] = { text = text, r = r, g = g, b = b } end
+    function tip.Show(self) self.shown = true end
+    function tip.Hide(self) self.shown = false end
+    ctx.tip = tip
+    local mapFrame = { OnMapChanged = function() end }
+    function mapFrame.GetCanvas() return canvas end
+    function mapFrame.GetMapID() return ctx.mapID end
+    ctx.mapFrame = mapFrame
+    local maps = {
+        GetMapInfo = function(id) return ctx.infos[id] end,
+        CanSetUserWaypointOnMap = function() return true end,
+        SetUserWaypoint = function(point) ctx.waypoint = point end,
+        GetBestMapForUnit = function() return 1413 end,
+        GetPlayerMapPosition = function() return { GetXY = function() return ctx.pos[1], ctx.pos[2] end } end,
+    }
+    if not opts.noWorld then
+        function maps.GetWorldPosFromMapPos(id, v)
+            if id ~= 1413 then
+                return nil
+            end
+            return 1, { GetXY = function() return v.x * 5000, v.y * 5000 end }
+        end
+    end
+    local env = {
+        WorldMapFrame = mapFrame,
+        C_Map = maps,
+        CreateVector2D = function(x, y) return { x = x, y = y } end,
+        UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { map = m, x = x, y = y } end },
+        C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) ctx.tracked = v end },
+        UnitLevel = function() return ctx.level end,
+        UnitFactionGroup = function() return ctx.faction end,
+        GameTooltip = tip,
+        hooksecurefunc = function(t, name, fn)
+            local orig = t[name]
+            t[name] = function(...)
+                orig(...)
+                fn(...)
+            end
+        end,
+    }
+    for _, name in ipairs(opts.drop or {}) do
+        env[name] = nil
+    end
+    local addon, printed, fireLoaded, loadedEnv, fire = loadAddon(opts.locale or "enUS", { env = env,
+        widgets = function(kind, name, parent, template)
+            return newWidget(ui, kind, name, parent, template)
+        end })
+    if opts.debug then
+        loadedEnv.TandemDebug = { on = true, log = {} }
+    end
+    fireLoaded()
+    ctx.addon, ctx.printed, ctx.env, ctx.fire = addon, printed, loadedEnv, fire
+    ctx.ready = addon.BookPins.OnLogin()
+    function ctx.pins()
+        local out = {}
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "Button" and w.parent == canvas and w.shown then
+                out[#out + 1] = w
+            end
+        end
+        return out
+    end
+    function ctx.place(pin)
+        local p = pin.points[1]
+        return ("%s %.1f %.1f"):format(p[3], p[4], p[5])
+    end
+    function ctx.changeMap(id)
+        ctx.mapID = id
+        mapFrame:OnMapChanged()
+    end
+    function ctx.hover(pin)
+        pin.scripts.OnEnter(pin)
+        return texts(tip)
+    end
+    function ctx.run(msg)
+        return run(addon, printed, msg)
+    end
+    return ctx
+end
+
+do
+    local ctx = loadPins()
+    check("book pins: ready with every API", ctx.ready, true)
+    local pins = ctx.pins()
+    check("book pins: three books and one entrance on The Barrens at level 20", #pins, 4)
+    local places = {}
+    for i, pin in ipairs(pins) do
+        places[i] = ctx.place(pin)
+    end
+    check("book pins: canvas offsets", table.concat(places, " | "),
+        "TOPLEFT 563.0 -70.4 | TOPLEFT 627.0 -290.4 | TOPLEFT 528.3 -437.6 | TOPLEFT 460.0 -292.0")
+    check("book pins: book icon", pins[1].icon.texture, "Interface\\Icons\\INV_Misc_Book_09")
+    check("book pins: the entrance pin is dimmer", pins[4].alpha < pins[3].alpha, true)
+    check("book pins: a book tooltip", ctx.hover(pins[3]), "Secrets of the Dreamers / Final room of the Cavern "
+        .. "of Mists (outside the Wailing Caverns dungeon) / Level 1+ / Click to set a waypoint")
+    check("book pins: the title is white", colour(ctx.tip.lines[1]), "1,1,1")
+    check("book pins: the click hint is grey", colour(ctx.tip.lines[#ctx.tip.lines]), "0.5,0.5,0.5")
+    check("book pins: an entrance tooltip says Entrance first", ctx.hover(pins[4]):match("^[^/]+/ [^/]+%a"),
+        "Entrance / Secrets of the Dreamers")
+
+    pins[3].scripts.OnClick(pins[3])
+    check("book pins: a click sets the waypoint at the entrance",
+        ("%d %.3f %.3f"):format(ctx.waypoint.map, ctx.waypoint.x, ctx.waypoint.y), "1413 0.460 0.365")
+    check("book pins: and super-tracks it", ctx.tracked, true)
+    check("book pins: and says so", ctx.printed[#ctx.printed], "Tandem: waypoint set to Secrets of the Dreamers")
+    ctx.waypoint = nil
+    pins[1].scripts.OnClick(pins[1])
+    check("book pins: a book without entrance gets its own spot",
+        ("%.3f %.3f"):format(ctx.waypoint.x, ctx.waypoint.y), "0.563 0.088")
+
+    ctx.changeMap(1414)
+    check("book pins: a continent map shows none", #ctx.pins(), 0)
+    ctx.infos[1413].mapType = 2
+    ctx.changeMap(1413)
+    check("book pins: a map of continent type shows none", #ctx.pins(), 0)
+    ctx.infos[1413].mapType = 3
+    ctx.changeMap(1413)
+    check("book pins: back on the zone map", #ctx.pins(), 4)
+
+    ctx.canvas.width = 500
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.kind == "Frame" and w.parent == ctx.canvas and w.scripts.OnSizeChanged then
+            w.scripts.OnSizeChanged(w)
+        end
+    end
+    check("book pins: a canvas size change moves the pins", ctx.place(ctx.pins()[1]), "TOPLEFT 281.5 -70.4")
+
+    ctx.level = 60
+    ctx.changeMap(1428)
+    pins = ctx.pins()
+    check("book pins: the two Blackrock Mountain books share one pin", #pins, 1)
+    check("book pins: whose tooltip lists both", ctx.hover(pins[1]), "Stonewrought Design / Blackrock Mountain, tomb "
+        .. "by the summoning stone, next to Franclorn Forgewright / Level 40+ / Magma or Lava? / Blackrock Mountain, "
+        .. "just past Lothos Riftwaker / Level 40+ / Click to set a waypoint")
+
+    ctx.faction = "Alliance"
+    ctx.changeMap(1454)
+    pins = ctx.pins()
+    check("book pins: a hostile city's book shows", #pins, 1)
+    check("book pins: with a red Enemy city line", ctx.hover(pins[1]):match("Enemy city"), "Enemy city")
+    check("book pins: Enemy city is red", colour(ctx.tip.lines[4]), "1,0.2,0.2")
+    ctx.faction = "Horde"
+    ctx.changeMap(1454)
+    check("book pins: own city has no Enemy city line", ctx.hover(ctx.pins()[1]):match("Enemy city"), nil)
+
+    ctx.changeMap(1458)
+    pins = ctx.pins()
+    check("book pins: the own faction's hand-in shows", #pins, 1)
+    check("book pins: with the hand-in icon", pins[1].icon.texture, "Interface\\Icons\\INV_Misc_Book_11")
+    check("book pins: hand-in tooltip", ctx.hover(pins[1]),
+        "Owen Thadd / Undercity, Magic Quarter / Takes library books / Click to set a waypoint")
+    ctx.faction = "Alliance"
+    ctx.changeMap(1458)
+    check("book pins: no hand-in of the other faction", #ctx.pins(), 0)
+
+    ctx.faction, ctx.level = "Horde", 20
+    ctx.changeMap(1413)
+    check("books: the switch reads on", ctx.run("books")[1], "Tandem: library book hints on")
+    check("books off: says so", ctx.run("books off")[1], "Tandem: library book hints off")
+    check("books off: hides every pin", #ctx.pins(), 0)
+    check("books off: is saved", ctx.env.TandemDB.layout.books, false)
+    check("books off: BookPins.On reads it", ctx.addon.BookPins.On(), false)
+    ctx.changeMap(1413)
+    check("books off: a map change shows none", #ctx.pins(), 0)
+    check("books on: says so", ctx.run("books on")[1], "Tandem: library book hints on")
+    check("books on: brings the pins back", #ctx.pins(), 4)
+    check("books: bad arguments print usage", ctx.run("books maybe")[1], "Tandem commands:")
+    check("books: extra words print usage", ctx.run("books on now")[1], "Tandem commands:")
+
+    ctx.level = 29
+    ctx.changeMap(1434)
+    check("book pins: a level 30 book hides at 29", #ctx.pins(), 0)
+    ctx.fire("PLAYER_LEVEL_UP", 30)
+    check("book pins: and shows after the level up", #ctx.pins(), 2)
+end
+
+do
+    local layout = { books = false }
+    local addon, printed, env = loadWithDB({ schemaVersion = 7, layout = copyTable(layout) })
+    check("books layout: a saved off is kept", dump(env.TandemDB.layout), dump(layout))
+    check("books layout: prints only the load line", #printed, 1)
+    check("books layout: rejects a non-boolean", addon.Store.SetLayout("books", "off"), false)
+    env = select(3, loadWithDB({ schemaVersion = 7, layout = { books = "no" } }))
+    check("books layout: a bad value is dropped", dump(env.TandemDB.layout), "{}")
+    check("books layout: an absent switch reads on", loadWithDB(nil).BookPins.On(), true)
+    local newer
+    newer, printed = loadWithDB({ schemaVersion = 8, layout = {} })
+    check("books layout: a newer db cannot save", newer.BookPins.Set(false), false)
+    check("books layout: and stays on", newer.BookPins.On(), true)
+    local out = run(newer, printed, "books off")
+    check("books layout: the command says it cannot save", out[1],
+        "Tandem: the book hints switch cannot be saved: recording is off")
+end
+
+do
+    local ctx = loadPins({ debug = true })
+    ctx.changeMap(1413)
+    local log = ctx.env.TandemDebug.log
+    check("book pins debug: a map change logs the map and pin count", log[#log]:match("books map=.*$"),
+        "books map=1413 pins=4")
+end
+
+do
+    for _, drop in ipairs({ "WorldMapFrame", "hooksecurefunc", "C_Map" }) do
+        local ctx = loadPins({ drop = { drop } })
+        check(("book pins: no %s turns the feature off"):format(drop), ctx.ready, false)
+        check(("book pins: no %s draws nothing"):format(drop), #ctx.pins(), 0)
+        check(("book pins: no %s refresh is quiet"):format(drop), ctx.addon.BookPins.Refresh(), 0)
+    end
+    local ctx = loadPins()
+    ctx.mapFrame.GetCanvas = function() error("no canvas") end
+    check("book pins: OnLogin is idempotent once ready", ctx.addon.BookPins.OnLogin(), true)
+    ctx = loadPins({ drop = { "UiMapPoint", "C_SuperTrack" } })
+    local pin = ctx.pins()[1]
+    pin.scripts.OnClick(pin)
+    check("book pins: no waypoint API says so", ctx.printed[#ctx.printed], "Tandem: a waypoint cannot be set here")
+    check("book pins: and sets nothing", ctx.waypoint, nil)
+    ctx = loadPins()
+    ctx.env.C_Map.CanSetUserWaypointOnMap = function() return false end
+    pin = ctx.pins()[1]
+    pin.scripts.OnClick(pin)
+    check("book pins: a map refusing waypoints sets nothing", ctx.waypoint, nil)
+end
+
+do
+    local ctx = loadPins({ debug = true })
+    local out = ctx.run("books near")
+    check("books near: map and position", out[1], "Tandem: map 1413 The Barrens at (52.83, 55.70)")
+    check("books near: the nearest book in yards", out[2], "Tandem: nearest book Secrets of the Dreamers (Final "
+        .. "room of the Cavern of Mists (outside the Wailing Caverns dungeon)), map 1413, 50 yd")
+    local log = ctx.env.TandemDebug.log
+    check("books near: logged too", log[#log]:match("Tandem: nearest book Secrets"), "Tandem: nearest book Secrets")
+    ctx = loadPins({ noWorld = true })
+    out = ctx.run("books near")
+    check("books near: map percent without world positions", out[2], "Tandem: nearest book Secrets of the "
+        .. "Dreamers (Final room of the Cavern of Mists (outside the Wailing Caverns dungeon)), 1.0 map percent away")
+    ctx.env.C_Map.GetBestMapForUnit = function() return 1414 end
+    out = ctx.run("books near")
+    check("books near: none on another map without world positions", out[2],
+        "Tandem: no eligible book on this continent")
+    ctx.env.C_Map.GetPlayerMapPosition = function() return nil end
+    check("books near: an unknown position says so", ctx.run("books near")[1],
+        "Tandem: your map position is not known here")
+end
+
+do
+    local ctx = loadPins({ locale = "zhTW" })
+    check("zhTW books: switch line", ctx.run("books")[1], "Tandem：圖書館書籍提示已開啟")
+    check("zhTW book pins: tooltip", ctx.hover(ctx.pins()[3]), "Secrets of the Dreamers / "
+        .. "迷霧洞穴最深處的房間（在哀嚎洞穴副本外） / 1 級以上 / 點擊以設定路徑點")
+    check("zhTW book pins: feature name", ctx.addon.L["Book pins"], "圖書館書籍地圖標記")
+end
+
+-- Library book alert (library books U3, D2, D4): a 1 s ticker out of combat prints one chat line per nearby book.
+
+-- Loads the addon as a level ctx.level player on ctx.map at ctx.pos (map fractions), with Kalimdor (1414) holding
+-- The Barrens (1413) and its cave 9001, the Eastern Kingdoms (1415) holding Elwynn (1429) and Stranglethorn (1434),
+-- and a bookless continent 5000. World positions as in loadBooks unless opts.noWorld; ctx.tickers lists
+-- C_Timer.NewTicker calls and ctx.tick() runs the live one; ctx.combat is InCombatLockdown; ctx.worldCalls counts
+-- GetWorldPosFromMapPos calls. opts.drop names globals to leave out, opts.combat starts in combat lockdown;
+-- BookAlert.OnLogin has run.
+local function loadAlert(opts)
+    opts = opts or {}
+    local ctx = { map = 1413, pos = { 0.5283, 0.5570 }, level = 20, combat = opts.combat == true, tickers = {},
+        infos = {
+        [1414] = { mapType = 2, parentMapID = 947 }, [947] = { mapType = 1 },
+        [1413] = { mapType = 3, parentMapID = 1414 }, [9001] = { mapType = 4, parentMapID = 1413 },
+        [1415] = { mapType = 2, parentMapID = 947 }, [1429] = { mapType = 3, parentMapID = 1415 },
+        [1434] = { mapType = 3, parentMapID = 1415 }, [5000] = { mapType = 2 },
+    }, worlds = {
+        [1413] = { 1, 0, 0, 5000 }, [9001] = { 1, 2600, 2700, 100 }, [1429] = { 0, 0, 0, 4000 },
+        [1434] = { 0, 0, 5000, 4000 },
+    } }
+    local maps = {
+        GetMapInfo = function(id) return ctx.infos[id] end,
+        GetBestMapForUnit = function(unit) return unit == "player" and ctx.map or nil end,
+        GetPlayerMapPosition = function(map, unit)
+            if map ~= ctx.map or unit ~= "player" or not ctx.pos then
+                return nil
+            end
+            return { GetXY = function() return ctx.pos[1], ctx.pos[2] end }
+        end,
+    }
+    if not opts.noWorld then
+        function maps.GetWorldPosFromMapPos(id, v)
+            ctx.worldCalls = ctx.worldCalls + 1
+            local w = ctx.worlds[id]
+            if not w then
+                return nil
+            end
+            return w[1], { GetXY = function() return w[2] + v.x * w[4], w[3] + v.y * w[4] end }
+        end
+    end
+    ctx.worldCalls = 0
+    local env = {
+        C_Map = maps,
+        CreateVector2D = function(x, y) return { x = x, y = y } end,
+        UnitLevel = function() return ctx.level end,
+        InCombatLockdown = function() return ctx.combat end,
+        C_Timer = { NewTicker = function(interval, fn)
+            local t = { interval = interval, fn = fn }
+            function t.Cancel(self) self.cancelled = true end
+            ctx.tickers[#ctx.tickers + 1] = t
+            return t
+        end },
+    }
+    for _, name in ipairs(opts.drop or {}) do
+        env[name] = nil
+    end
+    local addon, printed, fireLoaded, loadedEnv, fire = loadAddon(opts.locale or "enUS", { env = env })
+    fireLoaded()
+    ctx.addon, ctx.printed, ctx.env, ctx.fire = addon, printed, loadedEnv, fire
+    ctx.ready = addon.BookAlert.OnLogin()
+    function ctx.live()
+        local t = ctx.tickers[#ctx.tickers]
+        return t ~= nil and not t.cancelled and t or nil
+    end
+    -- Runs the live ticker once; returns the lines it printed.
+    function ctx.tick()
+        local from = #printed
+        local t = ctx.live()
+        if t then
+            t.fn()
+        end
+        return linesSince(printed, from)
+    end
+    function ctx.run(msg)
+        return run(addon, printed, msg)
+    end
+    return ctx
+end
+
+local DREAMERS = "Tandem: Library book nearby: Secrets of the Dreamers — Final room of the Cavern of Mists (outside "
+    .. "the Wailing Caverns dungeon)"
+
+do
+    local ctx = loadAlert()
+    check("book alert: ready with every API", ctx.ready, true)
+    check("book alert: a 1 s ticker runs on a continent with books", ctx.live() and ctx.live().interval, 1)
+    check("book alert: 50 yd away prints nothing", #ctx.tick(), 0)
+    ctx.pos = { 0.5283, 0.5530 }
+    check("book alert: 30 yd away prints the line", table.concat(ctx.tick(), " | "), DREAMERS)
+    check("book alert: only once per session", #ctx.tick(), 0)
+    ctx.pos = { 0.5283, 0.5570 }
+    ctx.tick()
+    ctx.pos = { 0.5283, 0.5530 }
+    check("book alert: not again after leaving and coming back", #ctx.tick(), 0)
+    check("book alert: the ticker keeps running for the other books", ctx.live() ~= nil, true)
+    ctx.worldCalls = 0
+    ctx.tick()
+    check("book alert: a later tick places only the player in the world", ctx.worldCalls, 1)
+end
+
+do
+    local ctx = loadAlert()
+    ctx.map, ctx.pos = 9001, { 0.415, 0.35 }
+    check("book alert: a sub-map of the same continent compares in world yards", ctx.tick()[1], DREAMERS)
+    ctx = loadAlert()
+    ctx.pos = { 0.46, 0.367 }
+    check("book alert: near the entrance prints the line", ctx.tick()[1], DREAMERS)
+end
+
+do
+    local ctx = loadAlert()
+    ctx.pos = { 0.5283, 0.5530 }
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("book alert: combat stops the ticker", ctx.live(), nil)
+    check("book alert: in combat prints nothing", #ctx.tick(), 0)
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("book alert: combat end starts it again", ctx.live() ~= nil, true)
+    check("book alert: and the line comes after combat", ctx.tick()[1], DREAMERS)
+
+    ctx = loadAlert()
+    ctx.pos = { 0.5283, 0.5530 }
+    ctx.run("books off")
+    check("book alert: books off stops the ticker", ctx.live(), nil)
+    check("book alert: and prints nothing", #ctx.tick(), 0)
+    ctx.fire("ZONE_CHANGED")
+    check("book alert: a zone change while off starts nothing", ctx.live(), nil)
+    ctx.run("books on")
+    check("book alert: books on starts it again", ctx.live() ~= nil, true)
+    check("book alert: and the line comes", ctx.tick()[1], DREAMERS)
+
+    ctx = loadAlert({ combat = true })
+    check("book alert: a login in combat lockdown starts no ticker", #ctx.tickers, 0)
+end
+
+do
+    local ctx = loadAlert()
+    ctx.map, ctx.pos = 1434, { 0.413, 0.509 }
+    ctx.fire("ZONE_CHANGED_NEW_AREA")
+    check("book alert: the Eastern Kingdoms keep a ticker for level 1 books", ctx.live() ~= nil, true)
+    check("book alert: a level 30 book at level 20 prints nothing", #ctx.tick(), 0)
+    ctx.level = 30
+    ctx.fire("PLAYER_LEVEL_UP", 30)
+    check("book alert: at level 30 it prints", ctx.tick()[1], "Tandem: Library book nearby: Basilisks: Should "
+        .. "Petrification be Feared? — Large table outside the basilisk cave")
+
+    ctx = loadAlert()
+    ctx.map = 5000
+    ctx.fire("ZONE_CHANGED_NEW_AREA")
+    check("book alert: a continent without eligible books stops the ticker", ctx.live(), nil)
+    ctx.map = 1413
+    ctx.fire("ZONE_CHANGED_NEW_AREA")
+    check("book alert: back on a continent with books it runs", ctx.live() ~= nil, true)
+    ctx.level = 0
+    ctx.fire("ZONE_CHANGED")
+    check("book alert: no eligible book at all stops it", ctx.live(), nil)
+    ctx.level, ctx.map = 20, nil
+    ctx.fire("ZONE_CHANGED")
+    check("book alert: no player map stops it", ctx.live(), nil)
+end
+
+do
+    local ctx = loadAlert({ noWorld = true })
+    ctx.pos = { 0.5283, 0.5520 }
+    check("book alert: without world positions, close in map percent prints", ctx.tick()[1], DREAMERS)
+    ctx = loadAlert({ noWorld = true })
+    ctx.map, ctx.pos = 9001, { 0.415, 0.35 }
+    check("book alert: without world positions, another map prints nothing", #ctx.tick(), 0)
+    ctx.map, ctx.pos = 1413, nil
+    check("book alert: an unknown position prints nothing", #ctx.tick(), 0)
+end
+
+do
+    for _, drop in ipairs({ "C_Timer", "C_Map" }) do
+        local ctx = loadAlert({ drop = { drop } })
+        check(("book alert: no %s turns the feature off"):format(drop), ctx.ready, false)
+        check(("book alert: no %s starts no ticker"):format(drop), #ctx.tickers, 0)
+        check(("book alert: no %s zone change is quiet"):format(drop),
+            pcall(ctx.fire, "ZONE_CHANGED_NEW_AREA"), true)
+    end
+end
+
+do
+    local ctx = loadAlert({ locale = "zhTW" })
+    ctx.pos = { 0.5283, 0.5530 }
+    check("zhTW book alert: the line", ctx.tick()[1],
+        "Tandem：附近有圖書館書籍：Secrets of the Dreamers — 迷霧洞穴最深處的房間（在哀嚎洞穴副本外）")
+    check("zhTW book alert: feature name", ctx.addon.L["Book alert"], "圖書館書籍提醒")
 end
 
 if failures > 0 then
