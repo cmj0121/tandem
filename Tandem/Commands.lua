@@ -16,6 +16,7 @@ local function printUsage()
     print(L["  /tandem weights reset - drop your own weights for the active tree"])
     print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
+    print(L["  /tandem books [on|off|near] - show library book pins on the world map, or name the nearest book"])
     print(L["  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them"])
 end
 
@@ -148,6 +149,25 @@ local function minimap(args)
     print(shown and L["Tandem: minimap button shown"] or L["Tandem: minimap button hidden"])
 end
 
+-- books [on|off|near] (library books D3): no argument prints the switch; near prints the nearest eligible book.
+local function books(args)
+    local sub = args[1]
+    if #args > 1 or (sub ~= nil and sub ~= "on" and sub ~= "off" and sub ~= "near") then
+        printUsage()
+        return
+    end
+    if sub == "near" then
+        ns.BookPins.Near()
+        return
+    end
+    if sub and not ns.BookPins.Set(sub == "on") then
+        print(L["Tandem: the book hints switch cannot be saved: recording is off"])
+        return
+    end
+    ns.BookAlert.Update()
+    print(ns.BookPins.On() and L["Tandem: library book hints on"] or L["Tandem: library book hints off"])
+end
+
 -- /tandem debug [on|off]: toggles the recorder (no argument flips it).
 local function debug(args)
     local sub = args[1]
@@ -192,6 +212,8 @@ function Commands.Run(msg)
         layout(args)
     elseif sub == "minimap" then
         minimap(args)
+    elseif sub == "books" then
+        books(args)
     elseif sub == "debug" then
         debug(args)
     else

@@ -114,7 +114,8 @@ end
 -- The check for each layout field: on is a boolean, previous { name, type } the layout active before Tandem's, tot
 -- the showTargetOfTarget CVar value before Tandem set it, coords the minimapShowPlayerCoords value before Tandem
 -- cleared it, minimap { angle = degrees|nil, hidden = bool|nil } the minimap button's place and visibility, built the
--- mode the Tandem Edit Mode layout was last built with ("heal"; nil for dps).
+-- mode the Tandem Edit Mode layout was last built with ("heal"; nil for dps), books the library book hints switch
+-- (false off; absent on).
 local LAYOUT_FIELDS = {
     on = function(v)
         return type(v) == "boolean"
@@ -136,7 +137,13 @@ local LAYOUT_FIELDS = {
     built = function(v)
         return v == "heal"
     end,
+    books = function(v)
+        return type(v) == "boolean"
+    end,
 }
+
+-- The layout fields whose false is saved; for the others, false clears the field like nil.
+local KEEPS_FALSE = { books = true }
 
 -- A character's saved layout mode: only "heal" is kept; absent means dps.
 local function isMode(v)
@@ -323,19 +330,24 @@ function Store.TrainerSpells(classFile)
 end
 
 -- Returns the layout state { on = bool|nil, previous = { name, type }|nil, tot = string|nil, coords = string|nil,
--- minimap = { angle, hidden }|nil, built = "heal"|nil }; empty (off) when the db is newer (kept raw).
+-- minimap = { angle, hidden }|nil, built = "heal"|nil, books = bool|nil }; empty (off) when the db is newer (kept
+-- raw).
 function Store.Layout()
     return not Store.readOnly and Store.db.layout or {}
 end
 
--- Sets one layout field (on, previous, tot, coords, minimap or built) to value, or clears it with nil; false when
--- invalid or read-only.
+-- Sets one layout field (on, previous, tot, coords, minimap, built or books) to value, or clears it with nil (or
+-- false, except for books); false when invalid or read-only.
 function Store.SetLayout(field, value)
     local valid = LAYOUT_FIELDS[field]
     if Store.readOnly or not valid or (value ~= nil and not valid(value)) then
         return false
     end
-    Store.db.layout[field] = value ~= nil and copyLayoutField(field, value) or nil
+    if value == nil or (value == false and not KEEPS_FALSE[field]) then
+        Store.db.layout[field] = nil
+    else
+        Store.db.layout[field] = copyLayoutField(field, value)
+    end
     return true
 end
 

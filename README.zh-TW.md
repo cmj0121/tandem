@@ -8,8 +8,9 @@ Tandem 是一個 World of Warcraft addon，會在物品勝過你身上的裝備�
 視窗與任務獎勵中的每件物品：部位、需求等級、護甲或武器類型、提示框中的需求，以及依你的職業與天賦樹加權的屬性。升級
 物品會在背包或拾取按鈕上出現紅色邊框與綠色向上箭頭，聊天視窗顯示一行訊息，提示框也多一行綠字。Tandem 也會標出最佳的
 任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、靜音
-按鈕、飲食按鈕、地圖資訊，薩滿還有職業區與武器附魔觸發率。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的
-內容、介面配置的狀態與模式、你選的職業巨集，以及武器附魔的觸發計數之外，不儲存任何資料。
+按鈕、飲食按鈕、地圖資訊，薩滿還有職業區與武器附魔觸發率。它會在世界地圖上標出你的等級能拿的 WoW Forever 圖書館書籍，
+經過時在聊天視窗提醒你。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的
+內容、介面配置的狀態與模式、你選的職業巨集、武器附魔的觸發計數，以及書籍提示是否開啟之外，不儲存任何資料。
 
 ## 安裝
 
@@ -77,10 +78,13 @@ make install MODE=copy
 | `/tandem layout`                       | 印出 Tandem 的[介面配置](#介面配置)是否開啟         |
 | `/tandem layout <on\|off>`             | 開啟介面配置，或關閉並還原你先前的版面              |
 | `/tandem minimap [on\|off]`            | 顯示或隱藏[小地圖按鈕](#小地圖按鈕)；不加參數則切換 |
+| `/tandem books`                        | 印出[圖書館書籍](#圖書館書籍)提示是否開啟           |
+| `/tandem books <on\|off>`              | 開啟或關閉書籍地圖標記與附近提醒                    |
+| `/tandem books near`                   | 印出你的地圖 ID、位置與最近一本你能拿的書           |
 | `/tandem debug [on\|off\|snap]`        | 為開發者記錄版面追蹤資料；見[除錯紀錄](#除錯紀錄)   |
 
 戰鬥中執行 `check` 與 `weights` 時，只會印出 `Tandem: not available in combat`，不做任何事。`layout` 則會等到戰鬥
-結束才執行；`minimap` 在戰鬥中也能使用。
+結束才執行；`minimap` 與 `books` 在戰鬥中也能使用。
 
 ### `/tandem check`
 
@@ -97,7 +101,7 @@ Probe: LootFrame.ScrollBox missing
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
 `Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
 `Fishing macro`、`Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
-`Shaman area`、`Weapon procs` 與 `Eat button`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
+`Shaman area`、`Weapon procs`、`Eat button`、`Book pins` 與 `Book alert`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
 只是它的清單只能在戰鬥外開啟與選擇。
 `Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
@@ -251,6 +255,61 @@ Tandem：比身上裝備更好（分數 24.5，高於 18.0）
 - 在戰鬥外，邊框會隨快捷列、頁面、法術、等級與訓練師的變化更新。戰鬥中邊框維持原樣，戰鬥結束後才更新。
 - [`/tandem check`](#tandem-check) 的 `Action bar borders` 這行為 `missing` 時不會畫任何邊框。Tandem 只在按鈕上
   畫框，從不改變按鈕施放的內容。
+
+## 圖書館書籍
+
+Tandem 會在世界地圖上標出 WoW Forever 的圖書館書籍，並在你經過時於聊天視窗提醒。在區域地圖上開啟世界地圖，每本你的
+等級能拿的書都會顯示為一個書本圖示。滑鼠移到圖示上會顯示書的位置；點擊即設定路徑點。靠近一本書時，聊天視窗顯示：
+
+```text
+Tandem：附近有圖書館書籍：Bewitchments and Glamours — 月溪鎮，從東邊進入的第一棟房子
+```
+
+### 書籍地圖標記
+
+- 只顯示你的等級能拿的書：每本書適用等級 1、30 或 40，等級較高的書在你達到該等級後才出現。只有區域地圖會有標記；
+  大陸與世界地圖不顯示。
+- 提示框顯示書名、位置、`<n> 級以上`；書在另一陣營的主城（鐵爐堡或奧格瑪）時，還有一行紅字 `敵對主城`。這種書仍會
+  顯示。
+- 疊在一起的書（例如黑石山的兩本）共用一個標記，提示框列出每一本。
+- 位於洞穴或另有入口的建築內的書，另外在入口處有一個較淡的標記；它的提示框第一行是 `入口`。
+- 你陣營的交書 NPC 以不同的書本圖示顯示，並標示 `收取圖書館書籍`：聯盟是暴風城法師塔的 Garion Wendell，部落是幽暗城
+  魔法區的 Owen Thadd。
+- 點擊標記即設定並追蹤路徑點；書有入口時先設在入口。聊天視窗顯示 `Tandem：已設定路徑點到 <書名>`，用戶端無法在該處
+  設定時則顯示 `Tandem：無法在此設定路徑點`。
+- 不論[介面配置](#介面配置)是否開啟都會顯示標記。[`/tandem check`](#tandem-check) 的 `Book pins` 這行為 `missing`
+  時不會畫任何標記；路徑點 API 則可有可無。
+
+### 書籍提醒
+
+當你站在你的等級能拿的書（或它的入口）40 碼內，聊天視窗會顯示上面那行，每本書每個工作階段一次：只有重新登入或
+`/reload` 後才會再提醒同一本書。戰鬥中不做檢查，戰鬥結束後恢復。距離以世界座標計算，所以站在洞穴或黑石山裡，也會與
+區域地圖上的書比較；用戶端不提供世界座標時，只有同一張地圖上、兩軸都在 0.7 個地圖百分比內的書才算。它需要
+[`/tandem check`](#tandem-check) 的 `Book alert` 這行。
+
+### 書籍開關
+
+`/tandem books off` 立即隱藏所有標記並停止提醒；`/tandem books on` 再把它們帶回來。兩者都會印出
+`Tandem：圖書館書籍提示已開啟` 或 `Tandem：圖書館書籍提示已關閉`，只輸入 `/tandem books` 也一樣。開關以 `books`
+存在[介面配置](#存檔資料)資料中，在你關閉之前都是開啟的。
+
+Tandem 不會記錄你已收集哪些書：已拾取或已交出的書仍保有它的標記與提醒。
+
+### 書籍資料的來源
+
+書籍清單是 `Tandem/Data/Books.lua` 中的固定表，取自 method.gg 2026 年 11 月的圖書館書籍指南。位置與地圖 ID 尚未在
+遊戲中驗證，因此標記可能放錯位置或放錯地圖。要檢查某本書，站在書旁執行 `/tandem books near`：
+
+```text
+Tandem：地圖 1436 西部荒野，位置 (45.40, 70.50)
+Tandem：最近的書 Bewitchments and Glamours（月溪鎮，從東邊進入的第一棟房子），地圖 1436，0 碼
+```
+
+用戶端沒有世界座標時，第二行改以地圖百分比表示距離；附近沒有書時則顯示 `Tandem：這塊大陸上沒有符合等級的書`。要檢查
+每個地圖 ID，請開啟[除錯紀錄](#除錯紀錄)並 `/reload`：登入時會為表中用到的每張地圖記錄
+`books mapinfo id=<id> name=<name> type=<type>`（或 `books mapinfo id=<id> missing`），以及 `books worldpos ok|missing`；
+每次世界地圖切換記錄 `books map=<id> pins=<n>`，每次提醒記錄 `books alert <key> map=<id> at (<x>, <y>)`，
+`/tandem books near` 印出的各行也會一併記錄。
 
 ## 介面配置
 
@@ -500,6 +559,8 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 - `Tandem` 編輯模式版面為治療模式建立時，`layout.built` 為 `heal`，輸出模式時不存在；登入時會與角色的 `modes` 項目
   比較，兩者不同就重新建立版面。不是 `heal` 的 `modes` 項目會在載入時捨棄。
 - 不是非空項目 ID 的 `picks` 項目會在載入時捨棄。
+- `layout.books` 是[圖書館書籍](#書籍開關)的開關：`/tandem books off` 之後為 `false`，`/tandem books on` 之後為
+  `true`，兩者都沒用過時不存在（即開啟）。不是 `true` 或 `false` 的值會在載入時捨棄。
 
 `TandemDB.schemaVersion` 為 `7`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers`、`layout`、`modes` 與 `picks`，
 其他所有鍵（例如舊版的物品快取、掉落紀錄與屬性）都會捨棄。聊天視窗接著顯示
@@ -530,11 +591,11 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十三行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十五行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
    `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、
    `Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、`Shaman area`、
-   `Weapon procs` 與 `Eat button`，
+   `Weapon procs`、`Eat button`、`Book pins` 與 `Book alert`，
    每行後面接著 `ok`
    或 `missing` 以及它的 API。之後是二十行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到

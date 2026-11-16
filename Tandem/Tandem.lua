@@ -123,6 +123,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
+        ns.BookPins.OnLogin()
+        ns.BookAlert.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(3, ns.Layout.Refade)
@@ -139,10 +141,13 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         if event == "PLAYER_ENTERING_WORLD" then
             ns.Layout.Refade()
+            ns.BookAlert.Update()
         end
         if event == "PLAYER_LEVEL_UP" then
             ns.XPBar.Update(...)
             ns.MapInfo.OnLevelUp()
+            ns.BookPins.Refresh(...)
+            ns.BookAlert.Update(...)
             ns.Eat.Rescan()
             ns.Upgrade.Invalidate()
             ns.ItemBorders.Schedule()
@@ -158,8 +163,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Mute.OnCombatEnd()
         ns.Role.OnCombatEnd()
         ns.Eat.OnCombatEnd()
+        ns.BookAlert.OnCombatEnd()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Flyout.OnCombatStart()
+        ns.BookAlert.OnCombatStart()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
@@ -167,6 +174,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MapInfo.Update()
     elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "ZONE_CHANGED_NEW_AREA" then
         ns.MapInfo.Update()
+        ns.BookAlert.Update()
     elseif event == "TIME_PLAYED_MSG" then
         ns.MapInfo.OnTimePlayed(...)
     elseif event == "UNIT_AURA" or event == "GROUP_ROSTER_UPDATE" then

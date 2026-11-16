@@ -101,6 +101,16 @@ Check.FEATURES = {
         { "C_Container.GetContainerItemID", "GetContainerItemID" }, { "C_TooltipInfo.GetItemByID" },
         { "UnitPowerType" },
     } },
+    -- Library book pins on the world map; the waypoint APIs a click uses are optional.
+    { name = "Book pins", needs = {
+        { "C_Map.GetMapInfo" }, { "WorldMapFrame.GetCanvas" }, { "WorldMapFrame.GetMapID" },
+        { "WorldMapFrame.OnMapChanged" }, { "hooksecurefunc" },
+    } },
+    -- The nearby library book chat line; GetWorldPosFromMapPos is optional (map percent on the same map without it).
+    { name = "Book alert", needs = {
+        { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "C_Map.GetMapInfo" },
+        { "C_Timer.NewTicker" },
+    } },
 }
 
 -- Client paths /tandem check reports for in-game diagnosis; they gate nothing.
