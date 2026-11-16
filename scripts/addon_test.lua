@@ -1028,7 +1028,7 @@ local function checkAPIs()
         C_Map = { GetBestMapForUnit = fn, GetPlayerMapPosition = fn }, RequestTimePlayed = fn,
         C_UnitAuras = { GetAuraDataByIndex = fn }, UnitExists = fn, UnitName = fn,
         SecureHandlerWrapScript = fn, SecureHandlerSetFrameRef = fn, SecureHandler_OnClick = fn,
-        GetCVar = fn, SetCVar = fn,
+        GetCVar = fn, SetCVar = fn, UnitHealth = fn, UnitHealthMax = fn, UnitPowerType = fn, UnitPowerMax = fn,
     }
 end
 
@@ -1058,7 +1058,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: twenty-two features", #addon.Check.FEATURES, 22)
+    check("check: twenty-three features", #addon.Check.FEATURES, 23)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1069,7 +1069,7 @@ do
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
         "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Mute button", "Role button", "Map info",
-        "Shaman area", "Weapon procs" }) do
+        "Shaman area", "Weapon procs", "Eat button" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1131,7 +1131,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on twenty features", count, 20)
+    check("check: kept code gates on twenty-one features", count, 21)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -8330,6 +8330,408 @@ do
     local newer = loadWithDB({ schemaVersion = 8, picks = { ["Me-Realm"] = "cure" } }).Store
     check("picks: a newer db reads no pick", newer.Pick("Me-Realm"), nil)
     check("picks: a newer db blocks SetPick", newer.SetPick("Me-Realm", "cure"), false)
+end
+
+-- Food (eat button U1): bag food and drink classified by tooltip, ranked (D2), and the click's macro text (D1).
+
+-- Loads the addon in locale with bags of ctx.bags ({ {id, count}, ... } per bag 0..4) and tooltips of tips
+-- ({[id] = {left texts}}; a text starting with "!" is shown red); returns ctx with addon, env.
+local function loadFood(locale, tips, bags)
+    local ctx = loadStats(locale)
+    ctx.env.C_TooltipInfo = { GetItemByID = function(id)
+        if not tips[id] then
+            return nil
+        end
+        local lines = {}
+        for i, text in ipairs(tips[id]) do
+            local red = text:sub(1, 1) == "!"
+            lines[i] = { leftText = red and text:sub(2) or text,
+                leftColor = red and { r = 1, g = 0.1, b = 0.1 } or { r = 1, g = 1, b = 1 } }
+        end
+        return { lines = lines }
+    end }
+    ctx.env.C_Container = {
+        GetContainerNumSlots = function(bag) return bags[bag + 1] and #bags[bag + 1] or 0 end,
+        GetContainerItemID = function(bag, slot) return bags[bag + 1][slot][1] end,
+        GetContainerItemInfo = function(bag, slot) return { stackCount = bags[bag + 1][slot][2] } end,
+    }
+    return ctx
+end
+
+-- Returns the food and drink Pick chooses from a fresh Scan, as "foodID/drinkID" ("-" for none).
+local function picked(ctx, wellFed)
+    local food, drink = ctx.addon.Food.Pick(ctx.addon.Food.Scan(), wellFed)
+    return (food and food.id or "-") .. "/" .. (drink and drink.id or "-")
+end
+
+do
+    local bread = "Use: Restores 61.2 health over 18 sec. Must remain seated while eating."
+    local water = "Use: Restores 151.2 mana over 18 sec. Must remain seated while drinking."
+    local tips = {
+        [10] = { "Bread", bread },
+        [11] = { "Big Bread", "Use: Restores 243.6 health over 21 sec. Must remain seated while eating." },
+        [12] = { "Fish Soup", "Use: Restores 61.2 health over 18 sec. Must remain seated while eating. If you spend "
+            .. "at least 10 seconds eating you will become well fed and restore 8 mana every 5 seconds for 10 min." },
+        [13] = { "Water", water },
+        [14] = { "Conjured Water", "Conjured Item", water },
+        [15] = { "Biscuit", "Conjured Item",
+            "Use: Restores 2148 health and 4410 mana over 30 sec. Must remain seated while eating." },
+        [16] = { "Feast", "!Requires Level 55",
+            "Use: Restores 2000 health over 30 sec. Must remain seated while eating." },
+        [17] = { "Odd Snack", "Use: Heals you a lot. Must remain seated while eating." },
+        [18] = { "Sword", "Main Hand" },
+        [19] = { "Healthstone", "Use: Instantly restores 500 health." },
+        [20] = { "Bread", bread },
+    }
+    local Food = loadFood("enUS", tips, {}).addon.Food
+    local function scanOf(bags)
+        local ctx = loadFood("enUS", tips, bags)
+        return ctx, ctx.addon.Food.Scan()
+    end
+
+    local _, list = scanOf({ { { 10, 5 }, { 13, 2 }, { 18, 1 } }, { { 15, 3 } } })
+    check("food: scan keeps only food and drink", #list, 3)
+    check("food: decimal health", list[1].health, 61.2)
+    check("food: decimal mana", list[2].mana, 151.2)
+    check("food: a combined line gives health and mana", list[3].health .. "/" .. list[3].mana, "2148/4410")
+    check("food: conjured read", tostring(list[3].conjured) .. tostring(list[1].conjured), "truefalse")
+    check("food: stack count read", list[1].count, 5)
+    check("food: slot kept", list[3].bag .. ":" .. list[3].slot, "1:1")
+    local _, soup = scanOf({ { { 12, 1 } } })
+    check("food: well-fed text in the use line is buff food", soup[1].buff, true)
+    check("food: a well-fed mana bonus is not a drink", soup[1].mana, 0)
+    local _, blocked = scanOf({ { { 16, 1 } } })
+    check("food: a red requirement leaves the item out", #blocked, 0)
+    local _, stone = scanOf({ { { 19, 1 } } })
+    check("food: a healthstone is not food", #stone, 0)
+    local _, unloaded = scanOf({ { { 99, 1 } } })
+    check("food: an unloaded item is left out", #unloaded, 0)
+
+    check("food: buff food beats a bigger restore",
+        picked(loadFood("enUS", tips, { { { 11, 1 }, { 12, 1 } } })), "12/-")
+    check("food: buff ignored when well fed",
+        picked(loadFood("enUS", tips, { { { 11, 1 }, { 12, 1 } } }), true), "11/-")
+    check("food: higher amount first", picked(loadFood("enUS", tips, { { { 10, 1 }, { 11, 1 } } })), "11/-")
+    check("food: conjured first at equal amount", picked(loadFood("enUS", tips, { { { 13, 1 }, { 14, 9 } } })), "-/14")
+    check("food: smaller stack first", picked(loadFood("enUS", tips, { { { 10, 4 } }, { { 20, 2 } } })), "20/-")
+    check("food: lower id breaks a tie", picked(loadFood("enUS", tips, { { { 20, 2 }, { 10, 2 } } })), "10/-")
+    check("food: a both item counts as food and drink",
+        picked(loadFood("enUS", tips, { { { 10, 1 }, { 13, 1 }, { 15, 1 } } })), "15/15")
+
+    local ctx = loadFood("enUS", tips, { { { 17, 1 } } })
+    ctx.env.TandemDebug = { on = true, log = {} }
+    check("food: an unmatched seated item is not a candidate", #ctx.addon.Food.Scan(), 0)
+    check("food: an unmatched seated item is logged with its lines",
+        (ctx.env.TandemDebug.log[1] or ""):match("food unmatched 17: Odd Snack | Use: Heals you a lot") ~= nil, true)
+    ctx.addon.Food.Scan()
+    check("food: an unmatched item is logged once", #ctx.env.TandemDebug.log, 1)
+
+    local f, d = { id = 10 }, { id = 13 }
+    check("macro: health only", Food.Macro(f, d, true, false), "/use item:10")
+    check("macro: mana only", Food.Macro(f, d, false, true), "/use item:13")
+    check("macro: both", Food.Macro(f, d, true, true), "/use item:10\n/use item:13")
+    check("macro: one line for the same item", Food.Macro(f, f, true, true), "/use item:10")
+    check("macro: nothing needed", Food.Macro(f, d, false, false), nil)
+    check("macro: no drink in the bags", Food.Macro(f, nil, true, true), "/use item:10")
+end
+
+do
+    local tips = {
+        [1] = { "麵包", "使用：在18秒內恢復61.2點生命力。進食時必須保持坐姿。" },
+        [2] = { "魔法水", "魔法製造的物品", "使用：在18秒內恢復151.2點法力值。喝水時必須保持坐姿。" },
+        [4] = { "治療藥水", "使用：恢復70到90點生命力。" },
+        [3] = { "湯", "使用：在18秒內恢復61.2點生命力。進食時必須保持坐姿。如果你花費至少10秒鐘進食，你將會充分進食並每5秒恢復8點法力值。" },
+    }
+    local list = loadFood("zhTW", tips, { { { 1, 1 }, { 2, 1 }, { 3, 1 } } }).addon.Food.Scan()
+    check("food zhTW: health", list[1].health, 61.2)
+    check("food zhTW: mana and conjured", list[2].mana .. tostring(list[2].conjured), "151.2true")
+    check("food zhTW: buff food, its mana bonus is not a drink", tostring(list[3].buff) .. list[3].mana, "true0")
+    local potion = loadFood("zhTW", tips, { { { 4, 1 } } }).addon.Food.Scan()
+    check("food zhTW: a potion range is not food", #potion, 0)
+end
+
+do
+    local ctx = loadFood("enUS", {}, {})
+    local auras = {}
+    ctx.env.C_UnitAuras = { GetAuraDataByIndex = function(_, i)
+        return auras[i] and { name = auras[i] } or nil
+    end }
+    local Auras = ctx.addon.Food.Auras
+    auras = { "Food", "Well Fed", "Arcane Intellect" }
+    check("auras: eating and well fed", table.concat({ tostring(Auras()) , tostring(select(2, Auras())),
+        tostring(select(3, Auras())) }, ","), "true,false,true")
+    auras = { "Drink" }
+    check("auras: drinking", tostring(select(2, Auras())), "true")
+    ctx.env.InCombatLockdown = function() return true end
+    check("auras: not read in combat", tostring(select(2, Auras())), "false")
+    ctx.env.InCombatLockdown = function() return false end
+    ctx.env.C_UnitAuras.GetAuraDataByIndex = function() error("secret") end
+    check("auras: a raise reads nothing", tostring(select(2, Auras())), "false")
+    ctx.env.C_UnitAuras.GetAuraDataByIndex = function(_, i)
+        return ({ "Arcane Intellect" })[i] and { name = "Arcane Intellect" } or nil
+    end
+    ctx.env.TandemDebug = { on = true, log = {} }
+    Auras()
+    Auras()
+    check("auras: unmatched buffs logged once while debugging", #ctx.env.TandemDebug.log, 1)
+    check("auras: the log names them",
+        (ctx.env.TandemDebug.log[1] or ""):match("food auras unmatched: Arcane Intellect") ~= nil, true)
+end
+
+-- Eat button (U2, D1, D3, D4): one secure button left of the layout mode button while the layout is on and a food or
+-- drink is in the bags. Loads loadRole(opts) with item 50 bread and 51 water in the locale's text (icons "icon<id>",
+-- names "Item <id>"):
+-- ctx.health and ctx.mana are { cur, max }, ctx.powerType UnitPowerType's answer, ctx.buffs the player's buff names;
+-- ctx.scans counts Food.Scan calls and ctx.eat() is TandemEatButton.
+local EAT_TIPS = {
+    [50] = { "Bread", "Use: Restores 61.2 health over 18 sec. Must remain seated while eating." },
+    [51] = { "Water", "Use: Restores 151.2 mana over 18 sec. Must remain seated while drinking." },
+}
+local EAT_TIPS_ZHTW = {
+    [50] = { "麵包", "使用：在18秒內恢復61.2點生命力。進食時必須保持坐姿。" },
+    [51] = { "水", "使用：在18秒內恢復151.2點法力值。喝水時必須保持坐姿。" },
+}
+local function loadEat(opts)
+    local ctx = loadRole(opts)
+    local tips = opts and opts.locale == "zhTW" and EAT_TIPS_ZHTW or EAT_TIPS
+    ctx.health, ctx.mana, ctx.powerType, ctx.buffs, ctx.scans = { 100, 100 }, { 100, 100 }, 0, {}, 0
+    local env = ctx.env
+    env.UnitHealth = function(unit) return unit == "player" and ctx.health[1] or nil end
+    env.UnitHealthMax = function(unit) return unit == "player" and ctx.health[2] or nil end
+    env.UnitPowerType = function() return ctx.powerType end
+    env.UnitPower = function(_, kind) return kind == 0 and ctx.mana[1] or nil end
+    env.UnitPowerMax = function(_, kind) return kind == 0 and ctx.mana[2] or nil end
+    env.C_TooltipInfo = { GetItemByID = function(id)
+        if not tips[id] then
+            return nil
+        end
+        local lines = {}
+        for i, text in ipairs(tips[id]) do
+            lines[i] = { leftText = text, leftColor = { r = 1, g = 1, b = 1 } }
+        end
+        return { lines = lines }
+    end }
+    env.C_Container.GetContainerItemInfo = function() return { stackCount = 1 } end
+    local aura = env.C_UnitAuras.GetAuraDataByIndex
+    env.C_UnitAuras.GetAuraDataByIndex = function(unit, i, filter)
+        if filter == "HELPFUL" then
+            return unit == "player" and ctx.buffs[i] and { name = ctx.buffs[i] } or nil
+        end
+        return aura(unit, i, filter)
+    end
+    local instant, info = env.C_Item.GetItemInfoInstant, env.C_Item.GetItemInfo
+    env.C_Item.GetItemInfoInstant = function(id)
+        if EAT_TIPS[id] then
+            return id, nil, nil, "", "icon" .. id, 0, 5
+        end
+        return instant(id)
+    end
+    env.C_Item.GetItemInfo = function(id)
+        if EAT_TIPS[id] then
+            return "Item " .. id
+        end
+        return info(id)
+    end
+    local scan = ctx.addon.Food.Scan
+    ctx.addon.Food.Scan = function()
+        ctx.scans = ctx.scans + 1
+        return scan()
+    end
+    function ctx.eat()
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemEatButton" then
+                return w
+            end
+        end
+    end
+    return ctx
+end
+
+local function eatState(b)
+    local p = b.points[#b.points]
+    return table.concat({ tostring(b.shown), tostring(b.attrs and b.attrs.macrotext), tostring(b.icon.texture),
+        tostring(p and p[4]), tostring(p and p[5]) }, " | ")
+end
+
+do
+    local ctx = loadEat()
+    ctx.known[526] = true
+    ctx.content[0] = { 10, 50, 51 }
+    ctx.fire("PLAYER_LOGIN")
+    local b = ctx.eat()
+    check("eat: a secure button on UIParent", tostring(b ~= nil) .. " " .. b.kind .. " " .. tostring(b.template)
+        .. " " .. tostring(b.parent == ctx.env.UIParent) .. " " .. b.width .. "x" .. b.height,
+        "true Button SecureActionButtonTemplate true 28x28")
+    check("eat: clicks on mouse-up", table.concat(b.clicks, " ") .. " " .. tostring(b.attrs.useOnKeyDown),
+        "AnyUp false")
+    check("eat: hidden while the layout is off", b.shown, false)
+    check("eat: no scan while the layout is off", ctx.scans, 0)
+    ctx.run("layout on")
+    local p = b.points[#b.points]
+    check("eat: anchored to UIParent", tostring(p[1]) .. " " .. tostring(p[2] == ctx.env.UIParent) .. " "
+        .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
+    check("eat: shown left of the role button with nothing to use while full", eatState(b),
+        "true | nil | icon50 | -204 | 8")
+    check("eat: a macro button", b.attrs.type, "macro")
+    b.scripts.OnEnter(b)
+    check("eat: tooltip while full", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Eat and drink / Health and mana are full / Click to eat and drink")
+    check("eat: the state line white, the hint grey", colour(ctx.tip.lines[1]) .. " " .. colour(ctx.tip.lines[2]),
+        "1,1,1 0.5,0.5,0.5")
+    local scans = ctx.scans
+
+    ctx.health[1] = 50
+    ctx.fire("UNIT_HEALTH", "player")
+    check("eat: low health eats", b.attrs.macrotext, "/use item:50")
+    b.scripts.OnEnter(b)
+    check("eat: tooltip to eat", texts(ctx.tip), "Eat Item 50 / Click to eat and drink")
+    ctx.mana[1] = 50
+    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
+    check("eat: low mana drinks too", b.attrs.macrotext, "/use item:50\n/use item:51")
+    b.scripts.OnEnter(b)
+    check("eat: tooltip to eat and drink", texts(ctx.tip), "Eat Item 50 / Drink Item 51 / Click to eat and drink")
+    ctx.buffs = { "Food" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat: while eating only drinks", b.attrs.macrotext, "/use item:51")
+    ctx.buffs = { "Food", "Drink" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat: while eating and drinking uses nothing", tostring(b.attrs.macrotext), "nil")
+    ctx.buffs = {}
+    ctx.powerType = 1
+    ctx.fire("UNIT_MAXPOWER", "player")
+    check("eat: no drink without mana", b.attrs.macrotext, "/use item:50")
+    ctx.powerType = 0
+    ctx.health[1] = 100
+    ctx.fire("UNIT_HEALTH", "party1")
+    check("eat: another unit's health changes nothing", b.attrs.macrotext, "/use item:50")
+    ctx.fire("UNIT_HEALTH", "player")
+    check("eat: full health only drinks", b.attrs.macrotext, "/use item:51")
+    check("eat: health, power and aura events read no tooltips", ctx.scans, scans)
+
+    ctx.health[1] = 50
+    ctx.state.combat = true
+    ctx.content[0] = { 10, 51 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    ctx.fire("UNIT_HEALTH", "player")
+    check("eat: in combat the macro waits", b.attrs.macrotext, "/use item:51")
+    check("eat: in combat no tooltips are read", ctx.scans, scans)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("eat: at combat end the bags are read again", ctx.scans > scans, true)
+    check("eat: only the drink left after combat", eatState(b), "true | /use item:51 | icon51 | -204 | 8")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 51, true)
+    check("eat: item info reads the bags again", ctx.scans > scans + 1, true)
+
+    ctx.content[0] = { 10 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("eat: hidden with no food or drink", b.shown, false)
+    ctx.state.combat = true
+    ctx.content[0] = { 10, 50 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("eat: food looted in combat waits", b.shown, false)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("eat: food looted in combat shows at combat end", eatState(b), "true | /use item:50 | icon50 | -204 | 8")
+    ctx.run("layout off")
+    check("eat: hidden with the layout off", b.shown, false)
+end
+
+do
+    local ctx = loadEat()
+    ctx.content[0] = { 51 }
+    ctx.health[1] = 50
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b = ctx.eat()
+    b.scripts.OnEnter(b)
+    check("eat: low health with only a drink and full mana shows no full line",
+        tostring(b.attrs.macrotext) .. " / " .. texts(ctx.tip), "nil / Click to eat and drink")
+end
+
+do
+    local ctx = loadEat()
+    local ready = ctx.addon.Check.Ready
+    ctx.addon.Check.Ready = function(name)
+        return name ~= "Role button" and ready(name)
+    end
+    ctx.known[526] = true
+    ctx.content[0] = { 10, 50 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("eat: takes the role button's place when there is none", ctx.eat().points[#ctx.eat().points][4], -172)
+end
+
+do
+    local timers = {}
+    local ctx = loadEat({ env = { C_Timer = { After = function(_, fn)
+        timers[#timers + 1] = fn
+    end } } })
+    ctx.content[0] = { 50 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b = ctx.eat()
+    while #timers > 0 do
+        table.remove(timers, 1)()
+    end
+    ctx.health[1] = 50
+    ctx.fire("UNIT_HEALTH", "player")
+    ctx.fire("UNIT_HEALTH", "player")
+    ctx.fire("UNIT_AURA", "player")
+    check("eat: health and aura events wait for the next frame", tostring(b.attrs.macrotext) .. " " .. #timers,
+        "nil 1")
+    table.remove(timers, 1)()
+    check("eat: one update on the next frame", b.attrs.macrotext, "/use item:50")
+    ctx.fire("UNIT_HEALTH", "player")
+    check("eat: a later event schedules again", #timers, 1)
+end
+
+do
+    for _, need in ipairs({ "UnitHealth", "UnitHealthMax", "UnitPowerType", "UnitPower", "UnitPowerMax",
+        "InCombatLockdown" }) do
+        local env = checkAPIs()
+        env[need] = nil
+        check(("eat button: not ready without %s"):format(need),
+            loadWithDB(nil, "enUS", { env = env }).Check.Ready("Eat button"), false)
+    end
+    local env = checkAPIs()
+    env.C_TooltipInfo = nil
+    check("eat button: not ready without the tooltip API",
+        loadWithDB(nil, "enUS", { env = env }).Check.Ready("Eat button"), false)
+
+    local ctx = loadEat()
+    local ready = ctx.addon.Check.Ready
+    ctx.addon.Check.Ready = function(name)
+        return name ~= "Eat button" and ready(name)
+    end
+    ctx.content[0] = { 50 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("eat: not ready makes no button", ctx.eat(), nil)
+    check("eat: not ready registers no health event", ctx.frame.registered.UNIT_HEALTH, nil)
+end
+
+do
+    local ctx = loadEat()
+    ctx.content[0] = { 50 }
+    ctx.fire("PLAYER_LOGIN")
+    check("eat: the button's health event registered", ctx.frame.registered.UNIT_HEALTH, true)
+end
+
+do
+    local ctx = loadEat({ locale = "zhTW" })
+    ctx.content[0] = { 50, 51 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b = ctx.eat()
+    b.scripts.OnEnter(b)
+    check("zhTW eat tooltip full", ctx.tip.title .. " / " .. texts(ctx.tip), "吃喝 / 生命力和法力值都是滿的 / 點擊吃喝")
+    ctx.health[1], ctx.mana[1] = 50, 50
+    ctx.fire("UNIT_HEALTH", "player")
+    b.scripts.OnEnter(b)
+    check("zhTW eat tooltip both", texts(ctx.tip), "吃 Item 50 / 喝 Item 51 / 點擊吃喝")
+    local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
+    check("zhTW check: eat button line", lineFor(run(addon, printed, "check"), "飲食按鈕"):sub(1, #"飲食按鈕：可用"),
+        "飲食按鈕：可用")
 end
 
 if failures > 0 then
