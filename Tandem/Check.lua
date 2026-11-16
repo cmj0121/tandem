@@ -99,7 +99,7 @@ Check.FEATURES = {
         { "InCombatLockdown" }, { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
         { "C_Container.GetContainerNumSlots", "GetContainerNumSlots" },
         { "C_Container.GetContainerItemID", "GetContainerItemID" }, { "C_TooltipInfo.GetItemByID" },
-        { "UnitHealth" }, { "UnitHealthMax" }, { "UnitPowerType" }, { "UnitPower" }, { "UnitPowerMax" },
+        { "UnitPowerType" },
     } },
 }
 

@@ -459,16 +459,15 @@ switches to the other mode and prints `Tandem: healer layout` or `Tandem: damage
 `Tandem: the layout will change after combat` and the switch, with its icon, happens when combat ends. It shows only
 while the layout is on, and needs the `Role button` line of [`/tandem check`](#tandem-check).
 
-The eat and drink button sits left of the role button (or of whatever icon is leftmost when the role button is
-hidden). It shows only while the layout is on and you have food or drink in your bags, with the icon of the food it
-will eat, else of the drink. A click eats when your health is not full and drinks when your mana is not full, both at
-once when both are low; it leaves out what you are already eating or drinking. Hover it: `Eat and drink`, then
-`Eat <name>` and `Drink <name>` for what the click will use (or `Health and mana are full`), and
-`Click to eat and drink`. It picks the best food and drink in your bags: buff food (`Well Fed`) first unless you are
-already Well Fed, then the one that restores the most, then a conjured item, then the smaller stack. Food or drink you
-cannot use yet (level too low) is skipped, and potions and healthstones are never used. Tandem only eats and drinks on
-your click. The button changes only out of combat, so food looted in a fight shows once it ends. It needs the
-`Eat button` line of [`/tandem check`](#tandem-check).
+The eat and drink button sits left of the role button (or of whatever icon is leftmost when the role button is hidden).
+It shows only while the layout is on and you have food or drink in your bags, with the icon of the food it will eat,
+else of the drink. A left click eats the food and a right click drinks the drink (only if you use mana); a click does
+nothing while you are already eating or drinking that kind. Hover it: `Eat and drink`, then `Left-click: eat <name>` and
+`Right-click: drink <name>`, with `Eating…` or `Drinking…` instead while you are. It picks the best food and drink in
+your bags: buff food (`Well Fed`) first unless you are already Well Fed, then the one that restores the most, then a
+conjured item, then the smaller stack. Food or drink you cannot use yet (level too low) is skipped, and potions and
+healthstones are never used. Tandem only eats and drinks on your click. The button changes only out of combat, so food
+looted in a fight shows once it ends. It needs the `Eat button` line of [`/tandem check`](#tandem-check).
 
 ### Map info
 

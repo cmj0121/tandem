@@ -64,10 +64,6 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if PLAYER_EVENTS[event] and (...) == "player" then
             ns.Eat.Schedule()
         end
-    elseif event == "UNIT_HEALTH" then
-        if (...) == "player" then
-            ns.Eat.Schedule()
-        end
     elseif event == "ADDON_LOADED" then
         onLoaded(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
@@ -121,9 +117,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Mute.OnLogin()
         -- After the mute button, whose place it follows; before the rod button, whose update places both again.
         ns.Role.OnLogin()
-        -- After the layout mode button, whose place it follows; health and aura events only once it exists.
+        -- After the layout mode button, whose place it follows; its aura event only once it exists.
         if ns.Eat.OnLogin() then
-            ns.Store.RegisterUnitEvent(self, "UNIT_HEALTH", "player")
             ns.Store.RegisterEvent(self, "UNIT_AURA")
         end
         ns.Rod.OnLogin()
