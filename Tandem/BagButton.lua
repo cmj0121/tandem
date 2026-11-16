@@ -1,10 +1,11 @@
 local _, ns = ...
 
--- The bag row (stage 12, D5, D12): one row of icon buttons at the bottom right while the Tandem layout is on, the
--- general bags first, then one icon per profession bag family, each with its free/total on its lower edge. A click
--- on any icon opens all bags, the reagent bag included. The default bag bar is faded through Layout.Conceal, never
+-- The bag row (stage 12, D5, D12): a row of icon buttons at the bottom right while the Tandem layout is on: a
+-- reload icon rightmost, then one bag icon with the free/total of every bag (general, profession and reagent)
+-- summed on its lower edge and each part in its tooltip. A click on the bag icon opens all bags, the reagent bag
+-- included. The default bag bar is faded through Layout.Conceal, never
 -- hidden. At login Tandem turns on combined bags and points the "open all bags" key (B) at the same opener through an
--- override binding (no hook). The opener and the icons are secure action buttons whose macro clicks the default bag
+-- override binding (no hook). The opener and the bag icon are secure action buttons whose macro clicks the default bag
 -- buttons, so Blizzard's code, never Tandem's, opens the bag windows (see BagButton.Macro).
 local BagButton = {}
 ns.BagButton = BagButton
@@ -17,14 +18,14 @@ local BAGS = 4
 local LOW = 10
 local BACKPACK = "Interface\\Icons\\INV_Misc_Bag_08"
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local RELOAD_ICON = "Interface\\Buttons\\UI-RefreshButton"
 local WHITE, YELLOW, RED = { 1, 1, 1 }, { 1, 0.82, 0 }, { 1, 0.1, 0.1 }
 
 -- The key binding actions whose keys open all bags through Tandem's opener.
 local BAG_ACTIONS = { "OPENALLBAGS", "TOGGLEBACKPACK" }
 
-local row, on, opener, pendingBind, pendingLayout
+local row, on, opener, pendingBind, pendingLayout, bagIcon, reloadIcon
 local width = 0
-local icons = {}
 
 local call = ns.Store.Call
 
@@ -112,8 +113,8 @@ local function setMacros()
     if opener then
         opener:SetAttribute("macrotext", text)
     end
-    for _, icon in ipairs(icons) do
-        icon:SetAttribute("macrotext", text)
+    if bagIcon then
+        bagIcon:SetAttribute("macrotext", text)
     end
 end
 
@@ -171,7 +172,7 @@ function BagButton.OnLogin()
     bindKeys()
 end
 
-local function bagIcon(bag)
+local function bagTexture(bag)
     local inv = call(api("ContainerIDToInventoryID"), bag)
     local icon = inv and call(_G.GetInventoryItemTexture, "player", inv)
     return icon or UNKNOWN_ICON
@@ -198,7 +199,7 @@ function BagButton.Count()
             if family ~= 0 then
                 group = byFamily[family]
                 if not group then
-                    group = { family = family, free = 0, total = 0, icon = bagIcon(bag), names = {} }
+                    group = { family = family, free = 0, total = 0, icon = bagTexture(bag), names = {} }
                     byFamily[family] = group
                     families[#families + 1] = group
                 end
@@ -214,9 +215,20 @@ function BagButton.Count()
     local total = reagent and number(call(numSlots, reagent)) or 0
     if total > 0 then
         families[#families + 1] = { family = "reagent", free = number((call(numFree, reagent))), total = total,
-            icon = bagIcon(reagent), names = { bagName(reagent) } }
+            icon = bagTexture(reagent), names = { bagName(reagent) } }
     end
     return general, families
+end
+
+-- Returns the general group and every profession and reagent group merged into the one bag icon's group
+-- { free, total, icon, groups }: free and total summed, the backpack icon, groups listing the parts in order.
+function BagButton.Merge(general, families)
+    local all = { free = general.free, total = general.total, icon = BACKPACK, groups = { general } }
+    for _, group in ipairs(families) do
+        all.free, all.total = all.free + group.free, all.total + group.total
+        all.groups[#all.groups + 1] = group
+    end
+    return all
 end
 
 local function countColor(free)
@@ -226,54 +238,105 @@ local function countColor(free)
     return free < LOW and YELLOW or WHITE
 end
 
+local function groupLabel(group)
+    local L = ns.L
+    return group.family == 0 and L["General bags"] or group.family == "reagent" and L["Reagent bag"]
+        or L["Profession bag"]
+end
+
+-- The bag icon's tooltip: each part's free/total and bag names, then the click hint.
 local function showTooltip(icon)
-    local tip, group = GameTooltip, icon.group
-    if type(tip) ~= "table" or not group then
+    local tip, all = GameTooltip, icon.group
+    if type(tip) ~= "table" or not all then
         return
     end
     local L = ns.L
     tip:SetOwner(icon, "ANCHOR_TOPLEFT")
-    tip:SetText(group.family == 0 and L["General bags"] or group.family == "reagent" and L["Reagent bag"]
-        or L["Profession bag"])
-    if #group.names > 0 then
-        tip:AddLine(table.concat(group.names, ", "), 1, 1, 1)
+    tip:SetText(L["Bags"])
+    for _, group in ipairs(all.groups) do
+        tip:AddLine(L["%s: %d/%d free"]:format(groupLabel(group), group.free, group.total), 1, 1, 1)
+        if #group.names > 0 then
+            tip:AddLine(table.concat(group.names, ", "), 0.7, 0.7, 0.7)
+        end
     end
-    tip:AddLine(L["%d/%d free"]:format(group.free, group.total), 1, 1, 1)
     tip:AddLine(L["Click to open your bags"], 0.5, 0.5, 0.5)
     tip:Show()
 end
 
 local hideTooltip = ns.View.HideTooltip
 
--- Returns icon i, made on first use as a secure action button running the opener's macro; out of combat only.
-local function iconButton(i)
-    local icon = icons[i]
-    if icon then
-        return icon
+-- The client's reload function (C_UI.Reload, else the global ReloadUI), or nil.
+local function reloadFn()
+    local ui = _G.C_UI
+    local fn = type(ui) == "table" and ui.Reload or nil
+    if type(fn) ~= "function" then
+        fn = _G.ReloadUI
     end
-    icon = secureButton(nil, row)
-    if not icon then
-        return nil
-    end
-    icon:SetSize(SIZE, SIZE)
-    icon:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -(i - 1) * (SIZE + SPACING), 0)
-    icon.icon = icon:CreateTexture(nil, "ARTWORK")
-    icon.icon:SetAllPoints(icon)
-    icon.count = icon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-    icon.count:SetPoint("BOTTOM", icon, "BOTTOM", 0, 1)
-    icon:SetAttribute("macrotext", BagButton.Macro())
-    icon:SetScript("OnEnter", showTooltip)
-    icon:SetScript("OnLeave", hideTooltip)
-    icons[i] = icon
-    return icon
+    return type(fn) == "function" and fn or nil
 end
 
--- Shows group on icon: its texture and free/total count, coloured.
-local function paint(icon, group)
-    icon.group = group
-    icon.icon:SetTexture(group.icon)
-    icon.count:SetText(("%d/%d"):format(group.free, group.total))
-    local color = countColor(group.free)
+local function reloadTooltip(button)
+    local tip = GameTooltip
+    if type(tip) ~= "table" then
+        return
+    end
+    tip:SetOwner(button, "ANCHOR_TOPLEFT")
+    tip:SetText(ns.L["Reload UI"])
+    tip:AddLine(ns.L["Click to reload the interface"], 0.5, 0.5, 0.5)
+    tip:Show()
+end
+
+local function reload()
+    local fn = reloadFn()
+    if fn then
+        fn()
+    end
+end
+
+-- Returns the reload icon, made on first use as a plain button (reloading is not protected); nil without a reload
+-- function on the client.
+local function reloadButton()
+    if reloadIcon or not reloadFn() then
+        return reloadIcon
+    end
+    reloadIcon = CreateFrame("Button", nil, row)
+    reloadIcon:SetSize(SIZE, SIZE)
+    reloadIcon:RegisterForClicks("LeftButtonUp")
+    reloadIcon.icon = reloadIcon:CreateTexture(nil, "ARTWORK")
+    reloadIcon.icon:SetAllPoints(reloadIcon)
+    reloadIcon.icon:SetTexture(RELOAD_ICON)
+    reloadIcon:SetScript("OnClick", reload)
+    reloadIcon:SetScript("OnEnter", reloadTooltip)
+    reloadIcon:SetScript("OnLeave", hideTooltip)
+    return reloadIcon
+end
+
+-- Returns the bag icon, made on first use as a secure action button running the opener's macro; out of combat only.
+local function bagButton()
+    if bagIcon then
+        return bagIcon
+    end
+    bagIcon = secureButton(nil, row)
+    if not bagIcon then
+        return nil
+    end
+    bagIcon:SetSize(SIZE, SIZE)
+    bagIcon.icon = bagIcon:CreateTexture(nil, "ARTWORK")
+    bagIcon.icon:SetAllPoints(bagIcon)
+    bagIcon.count = bagIcon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    bagIcon.count:SetPoint("BOTTOM", bagIcon, "BOTTOM", 0, 1)
+    bagIcon:SetAttribute("macrotext", BagButton.Macro())
+    bagIcon:SetScript("OnEnter", showTooltip)
+    bagIcon:SetScript("OnLeave", hideTooltip)
+    return bagIcon
+end
+
+-- Shows the merged group on the bag icon: its texture and summed free/total count, coloured.
+local function paint(icon, all)
+    icon.group = all
+    icon.icon:SetTexture(all.icon)
+    icon.count:SetText(("%d/%d"):format(all.free, all.total))
+    local color = countColor(all.free)
     icon.count:SetTextColor(color[1], color[2], color[3])
 end
 
@@ -283,27 +346,24 @@ local function create()
     row:Hide()
 end
 
--- Refreshes the icons and counts, reusing the icon buttons; hides the row while the layout is off or the client
--- lacks the bag API. The icons are secure buttons, so in combat only the shown icons' textures and counts change;
--- adding, hiding or moving icons waits for the end of combat.
+-- Places button as the row's n-th icon from the right (n from 1).
+local function place(button, n)
+    button:ClearAllPoints()
+    button:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -(n - 1) * (SIZE + SPACING), 0)
+end
+
+-- Refreshes the row: the reload icon rightmost, then the one bag icon with every bag's free/total; hides the row
+-- while the layout is off or the client lacks the bag API. The bag icon is a secure button, so in combat only its
+-- texture and count change; the row is laid out again when combat ends.
 function BagButton.Update()
     if not row then
         return
     end
-    local general, families = BagButton.Count()
-    local groups = { general }
-    for _, group in ipairs(families) do
-        groups[#groups + 1] = group
-    end
+    local all = BagButton.Merge(BagButton.Count())
     if call(InCombatLockdown) then
         pendingLayout = true
-        if on then
-            for i, group in ipairs(groups) do
-                local icon = icons[i]
-                if icon and icon.group then
-                    paint(icon, group)
-                end
-            end
+        if on and bagIcon and bagIcon.group then
+            paint(bagIcon, all)
         end
         return
     end
@@ -313,21 +373,20 @@ function BagButton.Update()
         row:Hide()
         return
     end
-    local shown = 0
-    for i, group in ipairs(groups) do
-        local icon = iconButton(i)
-        if icon then
-            paint(icon, group)
-            icon:Show()
-            shown = i
+    local n = 0
+    for _, make in ipairs({ reloadButton, bagButton }) do
+        local button = make()
+        if button then
+            n = n + 1
+            place(button, n)
+            button:Show()
         end
     end
-    for i = shown + 1, #icons do
-        icons[i].group = nil
-        icons[i]:Hide()
+    if bagIcon then
+        paint(bagIcon, all)
     end
     setMacros()
-    width = shown > 0 and shown * SIZE + (shown - 1) * SPACING or 0
+    width = n > 0 and n * SIZE + (n - 1) * SPACING or 0
     row:SetSize(width, SIZE)
     row:Show()
 end
