@@ -32,6 +32,7 @@ ClassMacros.lua
 Flyout.lua
 Mute.lua
 Role.lua
+Eat.lua
 MapInfo.lua
 ClassArea.lua
 Classes\Shaman.lua

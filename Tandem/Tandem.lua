@@ -61,6 +61,13 @@ frame:SetScript("OnEvent", function(self, event, ...)
     end
     if PLAYER_EVENTS[event] or event == "PLAYER_TOTEM_UPDATE" then
         ns.ClassArea.OnEvent(event, ...)
+        if PLAYER_EVENTS[event] and (...) == "player" then
+            ns.Eat.Schedule()
+        end
+    elseif event == "UNIT_HEALTH" then
+        if (...) == "player" then
+            ns.Eat.Schedule()
+        end
     elseif event == "ADDON_LOADED" then
         onLoaded(self, event, ...)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
@@ -69,6 +76,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.ItemBorders.Schedule()
         end
         ns.Rod.Schedule()
+        ns.Eat.Invalidate()
+        ns.Eat.Schedule()
     elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
         ns.ItemBorders.Schedule()
     elseif event == "QUEST_COMPLETE" then
@@ -93,6 +102,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         -- After the bag row, whose new width places the rod button.
         ns.BagButton.Update()
         ns.Rod.Update()
+        ns.Eat.Rescan()
     elseif event == "PLAYER_LOGIN" then
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
@@ -111,6 +121,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Mute.OnLogin()
         -- After the mute button, whose place it follows; before the rod button, whose update places both again.
         ns.Role.OnLogin()
+        -- After the layout mode button, whose place it follows; health and aura events only once it exists.
+        if ns.Eat.OnLogin() then
+            ns.Store.RegisterUnitEvent(self, "UNIT_HEALTH", "player")
+            ns.Store.RegisterEvent(self, "UNIT_AURA")
+        end
         ns.Rod.OnLogin()
         ns.MapInfo.OnLogin()
         -- A fresh login shows Blizzard's status bars after the layout attached; fade them again once it settles.
@@ -133,6 +148,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_LEVEL_UP" then
             ns.XPBar.Update(...)
             ns.MapInfo.OnLevelUp()
+            ns.Eat.Rescan()
             ns.Upgrade.Invalidate()
             ns.ItemBorders.Schedule()
         end
@@ -146,6 +162,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Flyout.OnCombatEnd()
         ns.Mute.OnCombatEnd()
         ns.Role.OnCombatEnd()
+        ns.Eat.OnCombatEnd()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Flyout.OnCombatStart()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
@@ -159,6 +176,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MapInfo.OnTimePlayed(...)
     elseif event == "UNIT_AURA" or event == "GROUP_ROSTER_UPDATE" then
         ns.Cure.Scan(event == "UNIT_AURA" and (...) or nil)
+        if event == "UNIT_AURA" and (...) == "player" then
+            ns.Eat.Schedule()
+        end
     elseif event == "CVAR_UPDATE" then
         ns.Mute.Refresh()
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
