@@ -49,6 +49,12 @@ function StatSearch.Key(src)
     return type(link) == "string" and link or src.id
 end
 
+-- StatSearch.Forget(src)
+-- Drops the source's kept tooltip lines, so the next StatSearch.Lines reads them again.
+function StatSearch.Forget(src)
+    cache[StatSearch.Key(src)] = nil
+end
+
 local function linesOf(data)
     data = Safe(data)
     local raw = type(data) == "table" and Safe(data.lines)

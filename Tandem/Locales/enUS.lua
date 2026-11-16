@@ -47,6 +47,7 @@ ns.FoodText = english and {
     wellFed = { "well fed" },
     conjured = { "conjured item" },
     seated = { "must remain seated" },
+    use = { "use:" },
     eating = { "Food", "Food & Drink", "Refreshment" },
     drinking = { "Drink", "Food & Drink", "Refreshment" },
     wellFedAura = { "Well Fed" },

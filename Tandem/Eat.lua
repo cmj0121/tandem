@@ -15,10 +15,14 @@ local call = ns.Store.Call
 local SIZE = 28
 local MANA = 0
 local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+-- Seconds before each timed rescan while a scan leaves slots pending; none after the last.
+local BACKOFF = { 1, 2, 4, 8, 16, 32 }
 
 local button, on, lastUpdate, keyUp, scheduled
 -- The cached Food.Scan result, read again on the next update once stale.
 local candidates, stale = {}, true
+-- The timed rescans used since the last complete scan or Eat.Rescan, and whether one waits.
+local step, waiting = 0, false
 -- What the last update set the click to use, for the tooltip.
 local state = {}
 
@@ -77,6 +81,22 @@ local function raw(fn, ...)
     return type(v) .. ":" .. (shown and text or "?")
 end
 
+-- Schedules the next timed rescan unless one waits or the backoff is used up; one fired in combat does nothing, as
+-- Eat.Update does nothing there and Eat.OnCombatEnd updates.
+local function retry()
+    if waiting or step >= #BACKOFF or not (type(C_Timer) == "table" and type(C_Timer.After) == "function") then
+        return
+    end
+    step = step + 1
+    waiting = true
+    if not pcall(C_Timer.After, BACKOFF[step], function()
+        waiting = false
+        Eat.Update()
+    end) then
+        waiting = false
+    end
+end
+
 local function updateLine(x)
     return ("eat update: on=%s cands=%d food=%s drink=%s eating=%s drinking=%s left=%s right=%s shown=%s x=%s"
         .. " hp=%s/%s ptype=%s mp=%s/%s"):format(
@@ -88,10 +108,11 @@ local function updateLine(x)
 end
 
 -- Eat.Update(): picks the food and drink from the cached scan (scanning first when it is stale), sets the left and
--- right click macros, icon,
--- place and visibility. Runs after every Role.Update (whose button it sits beside), at login, on a layout change and
--- from Eat.Schedule; does nothing in combat, as Eat.OnCombatEnd updates anyway. While debugging, logs the button's
--- state when it differs from the last one logged.
+-- right click macros, icon, place and visibility. A scan that leaves slots pending keeps the cache stale and
+-- schedules a timed rescan after 1, 2, 4, 8, 16 then 32 s; once those are used up the cache is kept until Eat.Rescan,
+-- Eat.Invalidate or a layout change. Runs after every Role.Update (whose button it sits beside),
+-- at login, on a layout change and from Eat.Schedule; does nothing in combat, as Eat.OnCombatEnd updates anyway. While
+-- debugging, logs the button's state when it differs from the last one logged.
 function Eat.Update()
     if not button then
         return
@@ -107,7 +128,14 @@ function Eat.Update()
     state = {}
     if on then
         if stale then
-            candidates, stale = ns.Food.Scan(), false
+            local pending
+            candidates, pending = ns.Food.Scan()
+            if pending > 0 then
+                retry()
+            else
+                step = 0
+            end
+            stale = waiting
         end
         local eating, drinking, wellFed = ns.Food.Auras()
         state.food, state.drink = ns.Food.Pick(candidates, wellFed)
@@ -142,7 +170,7 @@ end
 
 -- BAG_UPDATE_DELAYED, PLAYER_LEVEL_UP: reads the bags again, then updates (in combat, at combat end).
 function Eat.Rescan()
-    stale = true
+    stale, step = true, 0
     Eat.Update()
 end
 

@@ -13,7 +13,9 @@ local MAX_AURAS = 40
 
 -- Item ids already logged as unmatched seated consumables this session.
 local logged = {}
-local lastAuras
+-- Item ids already logged as unsure consumables this session.
+local unsure = {}
+local lastAuras, lastScan
 
 local function debugOn()
     return ns.Debug ~= nil and ns.Debug.IsOn()
@@ -87,34 +89,83 @@ local function classify(lines, id, bag, slot)
     end
 end
 
--- Food.Scan() -> candidates
+-- The item's class id (0 for a consumable), or nil when the client does not tell.
+local function classOf(id)
+    local classID = select(6, call(C_Item and C_Item.GetItemInfoInstant, id))
+    return type(classID) == "number" and classID or nil
+end
+
+-- True when a tooltip line holds the locale's "Use:" text; an incomplete tooltip lacks the whole Use line.
+local function hasUse(lines)
+    for _, line in ipairs(lines) do
+        if has(line.text, ns.FoodText.use) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Logs an unsure consumable's tooltip once per item id.
+local function logUnsure(id, lines)
+    if not debugOn() or unsure[id] then
+        return
+    end
+    unsure[id] = true
+    local raw = {}
+    for i, line in ipairs(lines) do
+        raw[i] = line.raw
+    end
+    log(("food unsure %d: %d lines: %s"):format(id, #lines, table.concat(raw, " | ")))
+end
+
+-- Food.Scan() -> candidates, pending
 -- Every bag slot (bags 0..4) whose item restores health or mana and has no unmet requirement, as
 -- { id, bag, slot, health, mana, buff, conjured, count }; an item not loaded yet is left out (the client is asked for
--- it). Empty without the tooltip API or the locale's food text. Reads tooltips: the caller keeps the result.
+-- it). pending counts the slots not read yet (unready) and the unblocked consumables that are not candidates and
+-- show no "Use:" line (unsure: an incomplete tooltip, read again on the next scan). Empty and 0 without the tooltip
+-- API or the locale's food text. Reads tooltips: the caller keeps the result. While debugging, logs the counts when
+-- they change.
 function Food.Scan()
     local found = {}
     if not (ns.FoodText and ns.StatSearch.Ready()) then
-        return found
+        return found, 0
     end
     local c = container()
     local numSlots = c.GetContainerNumSlots or _G.GetContainerNumSlots
     local itemID = c.GetContainerItemID or _G.GetContainerItemID
+    local items, unready, unsureCount = 0, 0, 0
     for bag = 0, BAGS do
         local n = call(numSlots, bag)
         for slot = 1, type(n) == "number" and n or 0 do
             local id = call(itemID, bag, slot)
             if type(id) == "number" then
+                items = items + 1
                 local src = { id = id, bag = bag, slot = slot }
                 local lines = ns.StatSearch.Lines(src)
                 local cand = lines and classify(lines, id, bag, slot)
-                if cand and ns.StatSearch.Blocked(src) == false then
+                local blocked = cand and ns.StatSearch.Blocked(src)
+                if not lines or (cand and blocked == nil) then
+                    unready = unready + 1
+                elseif cand and blocked == false then
                     cand.count = stackCount(bag, slot)
                     found[#found + 1] = cand
+                elseif not cand and classOf(id) == 0 and not hasUse(lines)
+                    and ns.StatSearch.Blocked(src) == false then
+                    unsureCount = unsureCount + 1
+                    ns.StatSearch.Forget(src)
+                    logUnsure(id, lines)
                 end
             end
         end
     end
-    return found
+    if debugOn() then
+        local line = ("food scan: slots=%d unready=%d unsure=%d cands=%d"):format(items, unready, unsureCount, #found)
+        if line ~= lastScan then
+            lastScan = line
+            log(line)
+        end
+    end
+    return found, unready + unsureCount
 end
 
 -- True when a ranks before b for the kind ("health" or "mana"): buff food first (food only, while not well fed),
