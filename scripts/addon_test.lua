@@ -8430,7 +8430,11 @@ do
     check("food: an unmatched seated item is logged with its lines",
         (ctx.env.TandemDebug.log[1] or ""):match("food unmatched 17: Odd Snack | Use: Heals you a lot") ~= nil, true)
     ctx.addon.Food.Scan()
-    check("food: an unmatched item is logged once", #ctx.env.TandemDebug.log, 1)
+    local unmatched = 0
+    for _, line in ipairs(ctx.env.TandemDebug.log) do
+        unmatched = unmatched + (line:find("food unmatched", 1, true) and 1 or 0)
+    end
+    check("food: an unmatched item is logged once", unmatched, 1)
 
     check("macro: uses the item", Food.Macro({ id = 10 }), "/use item:10")
     check("macro: nothing without an item", Food.Macro(nil), nil)
@@ -8504,11 +8508,8 @@ local function loadEat(opts)
     env.UnitPower = function() return {} end
     env.UnitPowerMax = function(_, kind) return kind == 0 and ctx.mana[2] or nil end
     env.C_TooltipInfo = { GetItemByID = function(id)
-        if not tips[id] then
-            return nil
-        end
         local lines = {}
-        for i, text in ipairs(tips[id]) do
+        for i, text in ipairs(tips[id] or { "Item " .. id }) do
             lines[i] = { leftText = text, leftColor = { r = 1, g = 1, b = 1 } }
         end
         return { lines = lines }
@@ -8698,6 +8699,190 @@ do
     check("eat: one update on the next frame", tostring(b.attrs.macrotext1), "nil")
     ctx.fire("UNIT_AURA", "player")
     check("eat: a later event schedules again", #timers, 1)
+end
+
+-- The icon (D3): the food while a left click eats, else the drink while a right click drinks, else the item,
+-- desaturated while neither click uses anything.
+do
+    local ctx = loadEat()
+    ctx.content[0] = { 50, 51 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local b = ctx.eat()
+    local function look()
+        return tostring(b.icon.texture) .. " " .. tostring(b.icon.desaturated)
+    end
+    check("eat icon: the food, in colour", look(), "icon50 false")
+    ctx.buffs = { "Food" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: while eating the drink, in colour", look(), "icon51 false")
+    ctx.buffs = { "Food", "Drink" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: while eating and drinking greyed", look(), "icon50 true")
+    ctx.buffs = { "Drink" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: while drinking the food, in colour", look(), "icon50 false")
+    ctx.buffs = {}
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: restored when the auras end", look(), "icon50 false")
+
+    ctx.content[0] = { 50 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    ctx.buffs = { "Food" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: the only food eating greyed", look(), "icon50 true")
+    ctx.buffs = {}
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: the only food restored", look(), "icon50 false")
+
+    ctx.content[0] = { 51 }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    ctx.buffs = { "Drink" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: the only drink drinking greyed", look(), "icon51 true")
+
+    b.icon.SetDesaturated = false
+    ctx.buffs = {}
+    ctx.fire("UNIT_AURA", "player")
+    check("eat icon: no desaturation API keeps the texture", look(), "icon51 true")
+end
+
+-- Loads loadEat with item 50 in the bags, whose tooltip ctx.tip50 gives ("full", "short" without its Use line,
+-- "none", "potion" with a Use line that is no food, "blocked", the full food under a red requirement, or "redShort",
+-- a red requirement and no Use line), and a
+-- C_Timer.After queueing Eat.lua's calls as { delay, fn } in ctx.timers (other modules' are dropped); ctx.drain() runs
+-- the queue until it is empty and returns the delays of the timed (non-zero) calls it ran, joined by " ";
+-- ctx.timed() counts the timed calls queued.
+local function loadBackoff(tip50)
+    local timers = {}
+    local ctx = loadEat({ env = { C_Timer = { After = function(delay, fn)
+        if debug.traceback():find("Eat.lua", 1, true) then
+            timers[#timers + 1] = { delay, fn }
+        end
+    end } } })
+    ctx.timers, ctx.tip50 = timers, tip50
+    local get = ctx.env.C_TooltipInfo.GetItemByID
+    ctx.env.C_TooltipInfo.GetItemByID = function(id)
+        if id == 50 and ctx.tip50 == "none" then
+            return nil
+        end
+        if id == 50 and ctx.tip50 == "short" then
+            return { lines = { { leftText = "Bread" } } }
+        end
+        if id == 50 and ctx.tip50 == "redShort" then
+            return { lines = { { leftText = "Bread" },
+                { leftText = "Requires Level 55", leftColor = { r = 1, g = 0.1, b = 0.1 } } } }
+        end
+        if id == 50 and ctx.tip50 == "potion" then
+            return { lines = { { leftText = "Potion" }, { leftText = "Use: Instantly restores 500 health." } } }
+        end
+        if id == 50 and ctx.tip50 == "blocked" then
+            local data = get(id)
+            table.insert(data.lines, 2, { leftText = "Requires Level 55", leftColor = { r = 1, g = 0.1, b = 0.1 } })
+            return data
+        end
+        return get(id)
+    end
+    function ctx.drain()
+        local delays = {}
+        while #ctx.timers > 0 do
+            local t = table.remove(ctx.timers, 1)
+            if t[1] > 0 then
+                delays[#delays + 1] = t[1]
+            end
+            t[2]()
+        end
+        return table.concat(delays, " ")
+    end
+    function ctx.timed()
+        local n = 0
+        for _, t in ipairs(ctx.timers) do
+            n = n + (t[1] > 0 and 1 or 0)
+        end
+        return n
+    end
+    ctx.content[0] = { 50 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    return ctx
+end
+
+do
+    local ctx = loadBackoff("short")
+    local b = ctx.eat()
+    check("eat backoff: a food read without its restore line hides the button", b.shown, false)
+    check("eat backoff: one timed rescan waits", ctx.timed() .. " " .. ctx.timers[#ctx.timers][1], "1 1")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 50, true)
+    ctx.fire("UNIT_AURA", "player")
+    for i, t in ipairs(ctx.timers) do
+        if t[1] == 0 then
+            table.remove(ctx.timers, i)[2]()
+            break
+        end
+    end
+    check("eat backoff: no second timer while one waits", ctx.timed(), 1)
+    ctx.tip50 = "full"
+    ctx.drain()
+    check("eat backoff: its tooltip read again on a timed rescan, it shows",
+        tostring(b.shown) .. " " .. tostring(b.attrs.macrotext1), "true /use item:50")
+    local scans = ctx.scans
+    ctx.fire("UNIT_AURA", "player")
+    ctx.drain()
+    check("eat backoff: a complete scan stops the rescans", ctx.scans .. " " .. #ctx.timers, scans .. " 0")
+end
+
+for _, case in ipairs({ { "potion", "a potion with a Use line" }, { "blocked", "a food under a red requirement" },
+    { "redShort", "a red requirement without a Use line" } }) do
+    local ctx = loadBackoff(case[1])
+    check(("eat backoff: %s is not unsure, no timed rescan"):format(case[2]),
+        tostring(ctx.eat().shown) .. " " .. ctx.timed(), "false 0")
+end
+
+do
+    local ctx = loadBackoff("none")
+    check("eat backoff: an unready food hides the button", ctx.eat().shown, false)
+    check("eat backoff: an unready food waits for a timed rescan", ctx.timed(), 1)
+    ctx.tip50 = "full"
+    ctx.drain()
+    check("eat backoff: an unready food shows once read", ctx.eat().shown, true)
+end
+
+do
+    local ctx = loadBackoff("short")
+    check("eat backoff: 1, 2, 4, 8, 16 then 32 s, then stops", ctx.drain(), "1 2 4 8 16 32")
+    local scans = ctx.scans
+    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
+    ctx.drain()
+    check("eat backoff: after the last rescan power updates read no tooltips", ctx.scans, scans)
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("eat backoff: Rescan starts the steps again", ctx.drain(), "1 2 4 8 16 32")
+end
+
+do
+    local ctx = loadBackoff("short")
+    ctx.tip50 = "full"
+    ctx.state.combat = true
+    local scans = ctx.scans
+    ctx.drain()
+    check("eat backoff: a timer fired in combat reads nothing", ctx.scans .. " " .. tostring(ctx.eat().shown),
+        scans .. " false")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("eat backoff: combat end reads the bags again", ctx.eat().shown, true)
+end
+
+do
+    local ctx = loadBackoff("short")
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.fire("BAG_UPDATE_DELAYED")
+    ctx.fire("BAG_UPDATE_DELAYED")
+    local scan, unsure = 0, 0
+    for _, line in ipairs(ctx.env.TandemDebug.log) do
+        scan = scan + (line:find("food scan: slots=1 unready=0 unsure=1 cands=0", 1, true) and 1 or 0)
+        unsure = unsure + (line:find("food unsure 50: 1 lines: Bread", 1, true) and 1 or 0)
+    end
+    check("eat backoff: the scan counts logged once while unchanged", scan, 1)
+    check("eat backoff: an unsure consumable logged once with its lines", unsure, 1)
 end
 
 do
