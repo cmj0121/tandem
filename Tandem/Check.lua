@@ -51,7 +51,8 @@ Check.FEATURES = {
         { "UnitXP" }, { "UnitXPMax" },
     } },
     { name = "Bag button", needs = {
-        { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "ToggleAllBags" },
+        { "C_Container.GetContainerNumFreeSlots", "GetContainerNumFreeSlots" }, { "MainMenuBarBackpackButton" },
+        { "InCombatLockdown" }, { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
     } },
     { name = "Fishing rod", needs = {
         { "GetInventoryItemID" }, { "C_Container.GetContainerItemID", "GetContainerItemID" },

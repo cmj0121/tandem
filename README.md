@@ -390,6 +390,11 @@ Tandem also points every key bound to "Open all bags" or "Open backpack" (`B` is
 which opens and closes the reagent bag together with the others; when the reagent bag has slots, it gets its own icon
 at the left end of the bag row, titled `Reagent bag`, and clicking any icon opens it too.
 
+The opener and the icons never open the bag windows from Tandem's own code: they click the default backpack button
+and reagent bag slot for you, so Blizzard's code opens them. Opening bags from addon code taints them, and a later
+right-click on a bag item then fails with "Interface action failed because of an AddOn". In combat the icons' counts
+still change, but an icon added or removed by a bag change appears or goes once combat ends.
+
 When you own a fishing rod, one more icon sits just left of the bag row. While you fight with your weapons it shows the
 rod: click it to equip the rod. While the rod is worn it shows your main hand: click it to put back the main hand and
 off hand the rod replaced (if you took the off hand off yourself, it is not put back). After a `/reload` while fishing,
