@@ -152,20 +152,10 @@ function Food.Pick(candidates, wellFed)
     return best(candidates, "health", wellFed), best(candidates, "mana", wellFed)
 end
 
--- Food.Macro(food, drink, needHealth, needMana) -> text|nil
--- The click's macro (D1): /use the food when health is needed and the drink when mana is, one line when they are the
--- same item; nil when neither is used.
-function Food.Macro(food, drink, needHealth, needMana)
-    local lines = {}
-    local used
-    if needHealth and food then
-        lines[1] = "/use item:" .. food.id
-        used = food.id
-    end
-    if needMana and drink and drink.id ~= used then
-        lines[#lines + 1] = "/use item:" .. drink.id
-    end
-    return #lines > 0 and table.concat(lines, "\n") or nil
+-- Food.Macro(item) -> text|nil
+-- One click's macro (D1): /use the item; nil without one.
+function Food.Macro(item)
+    return item and "/use item:" .. item.id or nil
 end
 
 local function isAny(name, list)

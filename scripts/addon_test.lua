@@ -8426,13 +8426,8 @@ do
     ctx.addon.Food.Scan()
     check("food: an unmatched item is logged once", #ctx.env.TandemDebug.log, 1)
 
-    local f, d = { id = 10 }, { id = 13 }
-    check("macro: health only", Food.Macro(f, d, true, false), "/use item:10")
-    check("macro: mana only", Food.Macro(f, d, false, true), "/use item:13")
-    check("macro: both", Food.Macro(f, d, true, true), "/use item:10\n/use item:13")
-    check("macro: one line for the same item", Food.Macro(f, f, true, true), "/use item:10")
-    check("macro: nothing needed", Food.Macro(f, d, false, false), nil)
-    check("macro: no drink in the bags", Food.Macro(f, nil, true, true), "/use item:10")
+    check("macro: uses the item", Food.Macro({ id = 10 }), "/use item:10")
+    check("macro: nothing without an item", Food.Macro(nil), nil)
 end
 
 do
@@ -8481,7 +8476,8 @@ end
 -- Eat button (U2, D1, D3, D4): one secure button left of the layout mode button while the layout is on and a food or
 -- drink is in the bags. Loads loadRole(opts) with item 50 bread and 51 water in the locale's text (icons "icon<id>",
 -- names "Item <id>"):
--- ctx.health and ctx.mana are { cur, max }, ctx.powerType UnitPowerType's answer, ctx.buffs the player's buff names;
+-- UnitHealth and UnitPower answer a table, standing in for Forever's secret values; ctx.health and ctx.mana are
+-- { cur, max } (only max is answered), ctx.powerType UnitPowerType's answer, ctx.buffs the player's buff names;
 -- ctx.scans counts Food.Scan calls and ctx.eat() is TandemEatButton.
 local EAT_TIPS = {
     [50] = { "Bread", "Use: Restores 61.2 health over 18 sec. Must remain seated while eating." },
@@ -8496,10 +8492,10 @@ local function loadEat(opts)
     local tips = opts and opts.locale == "zhTW" and EAT_TIPS_ZHTW or EAT_TIPS
     ctx.health, ctx.mana, ctx.powerType, ctx.buffs, ctx.scans = { 100, 100 }, { 100, 100 }, 0, {}, 0
     local env = ctx.env
-    env.UnitHealth = function(unit) return unit == "player" and ctx.health[1] or nil end
+    env.UnitHealth = function() return {} end
     env.UnitHealthMax = function(unit) return unit == "player" and ctx.health[2] or nil end
     env.UnitPowerType = function() return ctx.powerType end
-    env.UnitPower = function(_, kind) return kind == 0 and ctx.mana[1] or nil end
+    env.UnitPower = function() return {} end
     env.UnitPowerMax = function(_, kind) return kind == 0 and ctx.mana[2] or nil end
     env.C_TooltipInfo = { GetItemByID = function(id)
         if not tips[id] then
@@ -8549,7 +8545,8 @@ end
 
 local function eatState(b)
     local p = b.points[#b.points]
-    return table.concat({ tostring(b.shown), tostring(b.attrs and b.attrs.macrotext), tostring(b.icon.texture),
+    return table.concat({ tostring(b.shown), tostring(b.attrs and b.attrs.macrotext1),
+        tostring(b.attrs and b.attrs.macrotext2), tostring(b.icon.texture),
         tostring(p and p[4]), tostring(p and p[5]) }, " | ")
 end
 
@@ -8570,55 +8567,53 @@ do
     local p = b.points[#b.points]
     check("eat: anchored to UIParent", tostring(p[1]) .. " " .. tostring(p[2] == ctx.env.UIParent) .. " "
         .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
-    check("eat: shown left of the role button with nothing to use while full", eatState(b),
-        "true | nil | icon50 | -204 | 8")
-    check("eat: a macro button", b.attrs.type, "macro")
+    check("eat: shown left of the role button, left eats and right drinks", eatState(b),
+        "true | /use item:50 | /use item:51 | icon50 | -204 | 8")
+    check("eat: macro buttons per mouse button", b.attrs.type1 .. " " .. b.attrs.type2 .. " " .. tostring(b.attrs.type),
+        "macro macro nil")
     b.scripts.OnEnter(b)
-    check("eat: tooltip while full", ctx.tip.title .. " / " .. texts(ctx.tip),
-        "Eat and drink / Health and mana are full / Click to eat and drink")
-    check("eat: the state line white, the hint grey", colour(ctx.tip.lines[1]) .. " " .. colour(ctx.tip.lines[2]),
-        "1,1,1 0.5,0.5,0.5")
+    check("eat: tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Eat and drink / Left-click: eat Item 50 / Right-click: drink Item 51")
+    check("eat: the lines white", colour(ctx.tip.lines[1]) .. " " .. colour(ctx.tip.lines[2]), "1,1,1 1,1,1")
     local scans = ctx.scans
 
-    ctx.health[1] = 50
-    ctx.fire("UNIT_HEALTH", "player")
-    check("eat: low health eats", b.attrs.macrotext, "/use item:50")
-    b.scripts.OnEnter(b)
-    check("eat: tooltip to eat", texts(ctx.tip), "Eat Item 50 / Click to eat and drink")
-    ctx.mana[1] = 50
-    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
-    check("eat: low mana drinks too", b.attrs.macrotext, "/use item:50\n/use item:51")
-    b.scripts.OnEnter(b)
-    check("eat: tooltip to eat and drink", texts(ctx.tip), "Eat Item 50 / Drink Item 51 / Click to eat and drink")
     ctx.buffs = { "Food" }
     ctx.fire("UNIT_AURA", "player")
-    check("eat: while eating only drinks", b.attrs.macrotext, "/use item:51")
+    check("eat: while eating only the right click drinks", tostring(b.attrs.macrotext1) .. " " .. b.attrs.macrotext2,
+        "nil /use item:51")
+    b.scripts.OnEnter(b)
+    check("eat: tooltip while eating", texts(ctx.tip), "Eating… / Right-click: drink Item 51")
     ctx.buffs = { "Food", "Drink" }
     ctx.fire("UNIT_AURA", "player")
-    check("eat: while eating and drinking uses nothing", tostring(b.attrs.macrotext), "nil")
+    check("eat: while eating and drinking uses nothing",
+        tostring(b.attrs.macrotext1) .. " " .. tostring(b.attrs.macrotext2), "nil nil")
+    b.scripts.OnEnter(b)
+    check("eat: tooltip while eating and drinking", texts(ctx.tip), "Eating… / Drinking…")
+    ctx.buffs = { "Drink" }
+    ctx.fire("UNIT_AURA", "player")
+    check("eat: while drinking only the left click eats", b.attrs.macrotext1 .. " " .. tostring(b.attrs.macrotext2),
+        "/use item:50 nil")
     ctx.buffs = {}
     ctx.powerType = 1
     ctx.fire("UNIT_MAXPOWER", "player")
-    check("eat: no drink without mana", b.attrs.macrotext, "/use item:50")
+    check("eat: no drink without mana", b.attrs.macrotext1 .. " " .. tostring(b.attrs.macrotext2), "/use item:50 nil")
+    b.scripts.OnEnter(b)
+    check("eat: no right-click line without mana", texts(ctx.tip), "Left-click: eat Item 50")
     ctx.powerType = 0
-    ctx.health[1] = 100
-    ctx.fire("UNIT_HEALTH", "party1")
-    check("eat: another unit's health changes nothing", b.attrs.macrotext, "/use item:50")
-    ctx.fire("UNIT_HEALTH", "player")
-    check("eat: full health only drinks", b.attrs.macrotext, "/use item:51")
+    ctx.fire("UNIT_MAXPOWER", "player")
+    check("eat: a mana user drinks again", b.attrs.macrotext2, "/use item:51")
     check("eat: health, power and aura events read no tooltips", ctx.scans, scans)
 
-    ctx.health[1] = 50
     ctx.state.combat = true
     ctx.content[0] = { 10, 51 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    ctx.fire("UNIT_HEALTH", "player")
-    check("eat: in combat the macro waits", b.attrs.macrotext, "/use item:51")
+    ctx.fire("UNIT_AURA", "player")
+    check("eat: in combat the macro waits", b.attrs.macrotext1, "/use item:50")
     check("eat: in combat no tooltips are read", ctx.scans, scans)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("eat: at combat end the bags are read again", ctx.scans > scans, true)
-    check("eat: only the drink left after combat", eatState(b), "true | /use item:51 | icon51 | -204 | 8")
+    check("eat: only the drink left after combat", eatState(b), "true | nil | /use item:51 | icon51 | -204 | 8")
     ctx.fire("GET_ITEM_INFO_RECEIVED", 51, true)
     check("eat: item info reads the bags again", ctx.scans > scans + 1, true)
 
@@ -8631,21 +8626,35 @@ do
     check("eat: food looted in combat waits", b.shown, false)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("eat: food looted in combat shows at combat end", eatState(b), "true | /use item:50 | icon50 | -204 | 8")
+    check("eat: food looted in combat shows at combat end", eatState(b),
+        "true | /use item:50 | nil | icon50 | -204 | 8")
     ctx.run("layout off")
     check("eat: hidden with the layout off", b.shown, false)
 end
 
 do
     local ctx = loadEat()
-    ctx.content[0] = { 51 }
-    ctx.health[1] = 50
+    ctx.env.C_TooltipInfo.GetItemByID = function(id)
+        if id == 52 then
+            return { lines = { { leftText = "Feast" }, { leftText = "Use: Restores 2148 health and 4410 mana over 30 "
+                .. "sec. Must remain seated while eating." } } }
+        end
+    end
+    ctx.content[0] = { 52 }
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     local b = ctx.eat()
-    b.scripts.OnEnter(b)
-    check("eat: low health with only a drink and full mana shows no full line",
-        tostring(b.attrs.macrotext) .. " / " .. texts(ctx.tip), "nil / Click to eat and drink")
+    check("eat: an item for both is used by either click", b.attrs.macrotext1 .. " " .. b.attrs.macrotext2,
+        "/use item:52 /use item:52")
+end
+
+do
+    local ctx = loadEat()
+    ctx.powerType = 1
+    ctx.content[0] = { 51 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("eat: only a drink without mana hides the button", ctx.eat().shown, false)
 end
 
 do
@@ -8673,21 +8682,20 @@ do
     while #timers > 0 do
         table.remove(timers, 1)()
     end
-    ctx.health[1] = 50
-    ctx.fire("UNIT_HEALTH", "player")
-    ctx.fire("UNIT_HEALTH", "player")
+    ctx.buffs = { "Food" }
+    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
+    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
     ctx.fire("UNIT_AURA", "player")
-    check("eat: health and aura events wait for the next frame", tostring(b.attrs.macrotext) .. " " .. #timers,
-        "nil 1")
+    check("eat: power and aura events wait for the next frame", tostring(b.attrs.macrotext1) .. " " .. #timers,
+        "/use item:50 1")
     table.remove(timers, 1)()
-    check("eat: one update on the next frame", b.attrs.macrotext, "/use item:50")
-    ctx.fire("UNIT_HEALTH", "player")
+    check("eat: one update on the next frame", tostring(b.attrs.macrotext1), "nil")
+    ctx.fire("UNIT_AURA", "player")
     check("eat: a later event schedules again", #timers, 1)
 end
 
 do
-    for _, need in ipairs({ "UnitHealth", "UnitHealthMax", "UnitPowerType", "UnitPower", "UnitPowerMax",
-        "InCombatLockdown" }) do
+    for _, need in ipairs({ "UnitPowerType", "InCombatLockdown" }) do
         local env = checkAPIs()
         env[need] = nil
         check(("eat button: not ready without %s"):format(need),
@@ -8697,6 +8705,10 @@ do
     env.C_TooltipInfo = nil
     check("eat button: not ready without the tooltip API",
         loadWithDB(nil, "enUS", { env = env }).Check.Ready("Eat button"), false)
+    env = checkAPIs()
+    env.UnitHealth, env.UnitHealthMax, env.UnitPower, env.UnitPowerMax = nil, nil, nil, nil
+    check("eat button: ready without health and power values",
+        loadWithDB(nil, "enUS", { env = env }).Check.Ready("Eat button"), true)
 
     local ctx = loadEat()
     local ready = ctx.addon.Check.Ready
@@ -8707,14 +8719,14 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     check("eat: not ready makes no button", ctx.eat(), nil)
-    check("eat: not ready registers no health event", ctx.frame.registered.UNIT_HEALTH, nil)
 end
 
 do
     local ctx = loadEat()
     ctx.content[0] = { 50 }
     ctx.fire("PLAYER_LOGIN")
-    check("eat: the button's health event registered", ctx.frame.registered.UNIT_HEALTH, true)
+    check("eat: the button's aura event registered, no health event",
+        tostring(ctx.frame.registered.UNIT_AURA) .. " " .. tostring(ctx.frame.registered.UNIT_HEALTH), "true nil")
 end
 
 do
@@ -8724,11 +8736,11 @@ do
     ctx.run("layout on")
     local b = ctx.eat()
     b.scripts.OnEnter(b)
-    check("zhTW eat tooltip full", ctx.tip.title .. " / " .. texts(ctx.tip), "吃喝 / 生命力和法力值都是滿的 / 點擊吃喝")
-    ctx.health[1], ctx.mana[1] = 50, 50
-    ctx.fire("UNIT_HEALTH", "player")
+    check("zhTW eat tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "吃喝 / 左鍵：吃 Item 50 / 右鍵：喝 Item 51")
+    ctx.buffs = { "進食", "喝水" }
+    ctx.fire("UNIT_AURA", "player")
     b.scripts.OnEnter(b)
-    check("zhTW eat tooltip both", texts(ctx.tip), "吃 Item 50 / 喝 Item 51 / 點擊吃喝")
+    check("zhTW eat tooltip while eating and drinking", texts(ctx.tip), "進食中… / 喝水中…")
     local addon, printed = loadWithDB(nil, "zhTW", { env = checkAPIs() })
     check("zhTW check: eat button line", lineFor(run(addon, printed, "check"), "飲食按鈕"):sub(1, #"飲食按鈕：可用"),
         "飲食按鈕：可用")
