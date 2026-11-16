@@ -85,9 +85,6 @@ local function updateLine(x)
         tostring(state.left), tostring(state.right), tostring(call(button.IsShown, button) == true), tostring(x),
         raw(UnitHealth, "player"), raw(UnitHealthMax, "player"), raw(UnitPowerType, "player"),
         raw(UnitPower, "player", MANA), raw(UnitPowerMax, "player", MANA))
-        .. (" pct=%s missing=%s ppct=%s pmissing=%s"):format(raw(_G.UnitHealthPercent, "player"),
-            raw(_G.UnitHealthMissing, "player"), raw(_G.UnitPowerPercent, "player", MANA),
-            raw(_G.UnitPowerMissing, "player", MANA))
 end
 
 -- Eat.Update(): picks the food and drink from the cached scan (scanning first when it is stale), sets the left and
