@@ -8,7 +8,7 @@ Tandem 是一個 World of Warcraft addon，會在物品勝過你身上的裝備�
 視窗與任務獎勵中的每件物品：部位、需求等級、護甲或武器類型、提示框中的需求，以及依你的職業與天賦樹加權的屬性。升級
 物品會在背包或拾取按鈕上出現紅色邊框與綠色向上箭頭，聊天視窗顯示一行訊息，提示框也多一行綠字。Tandem 也會標出最佳的
 任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、靜音
-按鈕、地圖資訊，薩滿還有職業區與武器附魔觸發率。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的
+按鈕、飲食按鈕、地圖資訊，薩滿還有職業區與武器附魔觸發率。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的
 內容、介面配置的狀態與模式、你選的職業巨集，以及武器附魔的觸發計數之外，不儲存任何資料。
 
 ## 安裝
@@ -97,7 +97,7 @@ Probe: LootFrame.ScrollBox missing
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
 `Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
 `Fishing macro`、`Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
-`Shaman area` 與 `Weapon procs`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
+`Shaman area`、`Weapon procs` 與 `Eat button`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
 只是它的清單只能在戰鬥外開啟與選擇。
 `Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
@@ -405,6 +405,14 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 `Tandem: the layout will change after combat`，切換與圖示變更都等到戰鬥結束才發生。它只在介面配置開啟時顯示，需要
 [`/tandem check`](#tandem-check) 的 `Role button` 這行。
 
+飲食按鈕在切換按鈕左邊（切換按鈕隱藏時，則在最左邊那個圖示的左邊）。它只在介面配置開啟且背包裡有食物或飲料時顯示，
+圖示是它會吃的食物，沒有食物時則是飲料。生命力未滿時點擊會吃，法力值未滿時會喝，兩者都不滿時一起吃喝；你正在吃或喝的
+那一種會略過。滑過它：`吃喝`，接著是點擊會用的 `吃 <名稱>` 與 `喝 <名稱>`（或 `生命力和法力值都是滿的`），以及
+`點擊吃喝`。它從背包挑出最好的食物與飲料：先挑有增益的食物（`充分進食`），除非你已經是充分進食狀態；再挑回復量最多的；
+再優先挑魔法製造的物品；最後挑堆疊較少的。還不能使用的食物或飲料（等級不足）會略過，藥水與治療石絕不使用。Tandem
+只在你點擊時才吃喝。按鈕只在戰鬥外變更，所以戰鬥中拾取的食物要等戰鬥結束才會出現。它需要
+[`/tandem check`](#tandem-check) 的 `Eat button` 這行。
+
 ### 地圖資訊
 
 [經驗條](#經驗條)正下方置中有一行小字，以百分比顯示你在區域地圖上的座標，以及你在目前等級玩了多久：
@@ -522,11 +530,11 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十一行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十三行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
    `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、
-   `Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、`Shaman area` 與
-   `Weapon procs`，
+   `Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、`Shaman area`、
+   `Weapon procs` 與 `Eat button`，
    每行後面接著 `ok`
    或 `missing` 以及它的 API。之後是二十行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到

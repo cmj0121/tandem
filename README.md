@@ -9,10 +9,10 @@ in the loot window and among quest rewards from what the client says about it ri
 armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
-screen around the action bars, with an XP bar, a bag row, a mute button, a map info line and, for a Shaman, a class
-area and a weapon enchant proc rate. It never acts for the player: it only advises, and it saves nothing but your own
-stat weights, what your class trainer teaches, its layout state and mode, your class macro pick and your weapon
-enchant proc counts.
+screen around the action bars, with an XP bar, a bag row, a mute button, an eat and drink button, a map info line and,
+for a Shaman, a class area and a weapon enchant proc rate. It never acts for the player: it only advises, and it saves
+nothing but your own stat weights, what your class trainer teaches, its layout state and mode, your class macro pick and
+your weapon enchant proc counts.
 
 ## Install
 
@@ -100,8 +100,8 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area` and
-`Weapon procs`. A feature whose API is missing stays off instead of raising an error. Without `Class macros` the
+`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area`,
+`Weapon procs` and `Eat button`. A feature whose API is missing stays off instead of raising an error. Without `Class macros` the
 [class macro button](#bag-row) still works, but its list opens and picks only out of combat.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
@@ -459,6 +459,17 @@ switches to the other mode and prints `Tandem: healer layout` or `Tandem: damage
 `Tandem: the layout will change after combat` and the switch, with its icon, happens when combat ends. It shows only
 while the layout is on, and needs the `Role button` line of [`/tandem check`](#tandem-check).
 
+The eat and drink button sits left of the role button (or of whatever icon is leftmost when the role button is
+hidden). It shows only while the layout is on and you have food or drink in your bags, with the icon of the food it
+will eat, else of the drink. A click eats when your health is not full and drinks when your mana is not full, both at
+once when both are low; it leaves out what you are already eating or drinking. Hover it: `Eat and drink`, then
+`Eat <name>` and `Drink <name>` for what the click will use (or `Health and mana are full`), and
+`Click to eat and drink`. It picks the best food and drink in your bags: buff food (`Well Fed`) first unless you are
+already Well Fed, then the one that restores the most, then a conjured item, then the smaller stack. Food or drink you
+cannot use yet (level too low) is skipped, and potions and healthstones are never used. Tandem only eats and drinks on
+your click. The button changes only out of combat, so food looted in a fight shows once it ends. It needs the
+`Eat button` line of [`/tandem check`](#tandem-check).
+
 ### Map info
 
 One line of small text centred just below the [XP bar](#xp-bar) shows where you are on the zone map, in
@@ -593,11 +604,12 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-one lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-three lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area` and
-   `Weapon procs`, each followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow, each `present` or `missing`.
+   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area`,
+   `Weapon procs` and `Eat button`, each followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow,
+   each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
