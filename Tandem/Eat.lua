@@ -152,7 +152,11 @@ function Eat.Update()
         button:SetAttribute("macrotext1", state.left)
         button:SetAttribute("type2", "macro")
         button:SetAttribute("macrotext2", state.right)
-        button.icon:SetTexture(icon(item.id) or UNKNOWN_ICON)
+        local shown = state.left and state.food or state.right and state.drink or item
+        button.icon:SetTexture(icon(shown.id) or UNKNOWN_ICON)
+        if button.icon.SetDesaturated then
+            button.icon:SetDesaturated(not (state.left or state.right))
+        end
         button:ClearAllPoints()
         button:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", x, ns.BagButton.OFFSET_Y + ns.Layout.MicroRoom())
         button:Show()
