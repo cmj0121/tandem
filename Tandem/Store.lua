@@ -1,8 +1,8 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights,
--- layout mode and class macro pick, the class trainer spells seen and the UI layout state; every other key an older
--- schema saved is dropped on load.
+-- layout mode, class macro pick and weapon enchant proc counts, the class trainer spells seen and the UI layout
+-- state; every other key an older schema saved is dropped on load.
 local Store = { readOnly = false }
 ns.Store = Store
 
@@ -23,7 +23,9 @@ local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
 local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true, modes = true,
-    picks = true }
+    picks = true, procs = true }
+-- The weapon enchant families whose procs are counted.
+local PROC_FAMILIES = { windfury = true, flametongue = true, frostbrand = true }
 local MAX_LAYOUT_NAME = 64
 
 local floor = math.floor
@@ -146,6 +148,13 @@ local function isPick(v)
     return type(v) == "string" and v ~= ""
 end
 
+-- A weapon enchant family's saved counts: { hits = n, procs = n }, whole numbers from 0.
+local function copyProcCount(v)
+    if type(v) == "table" and isInt(v.hits, 0) and isInt(v.procs, 0) then
+        return { hits = v.hits, procs = v.procs }
+    end
+end
+
 local function copyLayoutField(field, v)
     if field == "previous" then
         return { name = v.name, type = v.type }
@@ -211,6 +220,24 @@ local function migrate(raw, report)
         if type(name) == "string" and name ~= "" and isPick(v) then
             db.picks = db.picks or {}
             db.picks[name] = v
+        else
+            drop()
+        end
+    end
+
+    for name, families in pairs(entries(raw.procs)) do
+        if type(name) == "string" and name ~= "" and type(families) == "table" then
+            local clean = {}
+            for family, v in pairs(families) do
+                local count = PROC_FAMILIES[family] and copyProcCount(v)
+                if count then
+                    clean[family] = count
+                else
+                    drop()
+                end
+            end
+            db.procs = db.procs or {}
+            db.procs[name] = clean
         else
             drop()
         end
@@ -341,6 +368,28 @@ function Store.SetPick(key, id)
     end
     Store.db.picks = Store.db.picks or {}
     Store.db.picks[key] = id
+    return true
+end
+
+-- Returns the character key's counts for a weapon enchant family { hits, procs } (a copy), or nil (none, an unknown
+-- family, or the db is newer).
+function Store.Procs(key, family)
+    local procs = not Store.readOnly and Store.db.procs
+    local mine = type(procs) == "table" and procs[key]
+    local count = type(mine) == "table" and PROC_FAMILIES[family] and mine[family]
+    return count and copyProcCount(count) or nil
+end
+
+-- Saves the character key's counts for a weapon enchant family ({ hits, procs }, or nil to clear them); false when
+-- invalid or read-only.
+function Store.SetProcs(key, family, count)
+    if Store.readOnly or type(key) ~= "string" or key == "" or not PROC_FAMILIES[family]
+        or (count ~= nil and not copyProcCount(count)) then
+        return false
+    end
+    Store.db.procs = Store.db.procs or {}
+    Store.db.procs[key] = Store.db.procs[key] or {}
+    Store.db.procs[key][family] = count and copyProcCount(count) or nil
     return true
 end
 

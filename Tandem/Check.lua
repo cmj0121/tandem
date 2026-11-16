@@ -92,6 +92,9 @@ Check.FEATURES = {
     { name = "Shaman area", needs = {
         { "GetTotemInfo" }, { "UnitPower" },
     } },
+    { name = "Weapon procs", needs = {
+        { "GetWeaponEnchantInfo" }, { "PlayerFrame" }, { "GetTime" },
+    } },
 }
 
 -- Client paths /tandem check reports for in-game diagnosis; they gate nothing.

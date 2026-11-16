@@ -1020,7 +1020,7 @@ local function checkAPIs()
         C_EditMode = { GetLayouts = fn, SaveLayouts = fn, SetActiveLayout = fn }, EditModeManagerFrame = {},
         EditModePresetLayoutManager = { GetCopyOfPresetLayouts = fn },
         MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, MainMenuBarBackpackButton = {},
-        GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn,
+        GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn, PlayerFrame = {}, GetTime = fn,
         GetInventoryItemID = fn, InCombatLockdown = fn, SecureActionButtonMixin = {},
         SecureCmdList = { EQUIP_TO_SLOT = fn }, EquipItemByName = fn,
         CreateMacro = fn, EditMacro = fn, GetMacroIndexByName = fn, GetMacroInfo = fn, PickupMacro = fn,
@@ -1058,7 +1058,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: twenty-one features", #addon.Check.FEATURES, 21)
+    check("check: twenty-two features", #addon.Check.FEATURES, 22)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1069,7 +1069,7 @@ do
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
         "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Mute button", "Role button", "Map info",
-        "Shaman area" }) do
+        "Shaman area", "Weapon procs" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1131,7 +1131,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on nineteen features", count, 19)
+    check("check: kept code gates on twenty features", count, 20)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -5368,8 +5368,9 @@ end
 -- Bag row at the bottom right while the layout is on (stage 12, U4, D5, D12).
 
 -- Loads the layout with fake bags: ctx.bags[bag] = { total, free, family }; bag b sits in inventory slot 30 + b whose
--- texture is "icon<slot>" and is named "Bag<b>". ctx.tip is GameTooltip. Blizzard's bag functions raise: Tandem must
--- never open the bag windows from its own code (that taints them), only through the default bag buttons' clicks.
+-- texture is "icon<slot>" and is named "Bag<b>". ctx.tip is GameTooltip, ctx.reloads counts C_UI.Reload calls.
+-- Blizzard's bag functions raise: Tandem must never open the bag windows from its own code (that taints them), only
+-- through the default bag buttons' clicks.
 local function loadBags(opts)
     opts = opts or {}
     local ui = { widgets = {} }
@@ -5396,6 +5397,7 @@ local function loadBags(opts)
         OpenBag = function() error("OpenBag called") end,
         CloseBag = function() error("CloseBag called") end,
         MainMenuBarBackpackButton = {}, SecureActionButtonMixin = {},
+        C_UI = { Reload = function() ctx.reloads = ctx.reloads + 1 end },
         GameTooltip = barTooltip(),
         UIParent = { name = "UIParent" },
     }
@@ -5407,7 +5409,15 @@ local function loadBags(opts)
         widgets = function(kind, name, parent, template)
             return newWidget(ui, kind, name, parent, template)
         end })
-    ctx.ui, ctx.bags, ctx.tip = ui, bags, env.GameTooltip
+    ctx.ui, ctx.bags, ctx.tip, ctx.reloads = ui, bags, env.GameTooltip, 0
+    -- The reload icon, or nil.
+    function ctx.reload()
+        for _, w in ipairs(ui.widgets) do
+            if w.kind == "Button" and w.icon and w.icon.texture == "Interface\\Buttons\\UI-RefreshButton" then
+                return w
+            end
+        end
+    end
     -- Every icon button made so far, in creation order.
     function ctx.icons()
         local out = {}
@@ -5453,50 +5463,45 @@ do
     micro.run("layout off")
     micro.run("layout on")
     check("bag row: placed again, one anchor", #micro.row().points, 1)
-    check("bag row: general bags first, backpack icon, free/total across bags", ctx.text(), GENERAL_ICON .. " 19/38")
-    local general = ctx.icons()[1]
-    check("bag row: 28px icon, rightmost", general.width .. "x" .. general.height .. " " .. general.points[1][1] .. " "
-        .. general.points[1][4], "28x28 BOTTOMRIGHT 0")
-    check("bag row: count on the icon's lower edge", general.count.points[1][1] .. " " .. general.count.points[1][3],
+    check("bag row: one bag icon, backpack icon, free/total across bags", ctx.text(), GENERAL_ICON .. " 19/38")
+    local reload, bag = ctx.reload(), ctx.icons()[1]
+    check("bag row: the reload icon is rightmost, 28px", reload.width .. "x" .. reload.height .. " "
+        .. reload.points[1][1] .. " " .. reload.points[1][4] .. " " .. tostring(reload.shown),
+        "28x28 BOTTOMRIGHT 0 true")
+    check("bag row: the bag icon sits left of it", bag.width .. "x" .. bag.height .. " " .. bag.points[1][1] .. " "
+        .. bag.points[1][4] .. " " .. #bag.points, "28x28 BOTTOMRIGHT -32 1")
+    check("bag row: row sized to its two icons", ctx.row().width .. "x" .. ctx.row().height, "60x28")
+    check("bag row: count on the icon's lower edge", bag.count.points[1][1] .. " " .. bag.count.points[1][3],
         "BOTTOM BOTTOM")
-    check("bag row: white with 10 or more free", rgb(general.count.textColor), "1.00,1.00,1.00")
+    check("bag row: white with 10 or more free", rgb(bag.count.textColor), "1.00,1.00,1.00")
     ctx.bags[3] = { 20, 7, 8 }
     ctx.bags[1][2] = 0
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("bag row: BAG_UPDATE_DELAYED updates; a profession bag gets its own icon", ctx.text(),
-        GENERAL_ICON .. " 17/38 | icon33 7/20")
-    local icons = ctx.icons()
-    check("bag row: the next icon grows leftwards", icons[2].points[1][1] .. " " .. icons[2].points[1][4],
-        "BOTTOMRIGHT -32")
-    check("bag row: yellow under 10 free", rgb(icons[2].count.textColor), "1.00,0.82,0.00")
-    ctx.bags[4] = { 14, 4, 8 }
-    ctx.bags[2] = { 18, 1, 1024 }
-    ctx.fire("BAG_UPDATE_DELAYED")
-    check("bag row: one icon per family, in family order; same family summed", ctx.text(),
-        GENERAL_ICON .. " 5/26 | icon33 11/34 | icon32 1/18")
-    check("bag row: row sized to its icons", ctx.row().width .. "x" .. ctx.row().height, "92x28")
-    ctx.bags[0][2] = 0
-    ctx.fire("BAG_UPDATE_DELAYED")
-    check("bag row: red at 0 free", rgb(ctx.icons()[1].count.textColor), "1.00,0.10,0.10")
-    ctx.bags[0][2] = 5
-    ctx.bags[2], ctx.bags[4] = nil, { 0, 0, 0 }
-    ctx.fire("BAG_UPDATE_DELAYED")
-    check("bag row: empty and missing bags skipped; spare icon hidden, icons reused", ctx.text() .. " / "
-        .. #ctx.icons() .. " " .. tostring(ctx.icons()[3].shown), GENERAL_ICON .. " 5/26 | icon33 7/20 / 3 false")
-    local b = ctx.icons()[2]
-    check("bag row: every icon is a secure button clicking the default backpack button on mouse up",
-        b.template .. " " .. b.attrs.type .. " " .. b.attrs.macrotext .. " " .. tostring(b.attrs.useOnKeyDown) .. " "
-        .. b.clicks[1] .. " " .. tostring(b.scripts.OnClick), "SecureActionButtonTemplate macro "
-        .. "/click MainMenuBarBackpackButton false AnyUp nil")
-    check("bag row: the first icon runs the same macro", ctx.icons()[1].attrs.macrotext, b.attrs.macrotext)
-    b.scripts.OnEnter(b)
-    check("bag row: profession tooltip names its bags", ctx.tip.title .. " / " .. texts(ctx.tip) .. " / "
-        .. tostring(ctx.tip.shown), "Profession bag / Bag3 / 7/20 free / Click to open your bags / true")
-    b.scripts.OnLeave(b)
+    check("bag row: a profession bag joins the one icon's sum", #ctx.icons() .. " " .. ctx.text(),
+        "1 " .. GENERAL_ICON .. " 24/58")
+    bag.scripts.OnEnter(bag)
+    check("bag row: tooltip lists each part with its bags", ctx.tip.title .. " / " .. texts(ctx.tip) .. " / "
+        .. tostring(ctx.tip.shown), "Bags / General bags: 17/38 free / Bag0, Bag1, Bag2 / Profession bag: 7/20 free / "
+        .. "Bag3 / Click to open your bags / true")
+    bag.scripts.OnLeave(bag)
     check("bag row: tooltip hidden on leave", ctx.tip.shown, false)
-    ctx.icons()[1].scripts.OnEnter(ctx.icons()[1])
-    check("bag row: general tooltip names its bags", ctx.tip.title .. " / " .. texts(ctx.tip),
-        "General bags / Bag0, Bag1 / 5/26 free / Click to open your bags")
+    ctx.bags[0][2], ctx.bags[2][2], ctx.bags[3][2] = 1, 2, 3
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: yellow under 10 free in all", rgb(bag.count.textColor), "1.00,0.82,0.00")
+    ctx.bags[0][2], ctx.bags[2][2], ctx.bags[3][2] = 0, 0, 0
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("bag row: red when every bag is full", rgb(bag.count.textColor), "1.00,0.10,0.10")
+    check("bag row: the bag icon is a secure button clicking the default backpack button on mouse up",
+        bag.template .. " " .. bag.attrs.type .. " " .. bag.attrs.macrotext .. " " .. tostring(bag.attrs.useOnKeyDown)
+        .. " " .. bag.clicks[1] .. " " .. tostring(bag.scripts.OnClick), "SecureActionButtonTemplate macro "
+        .. "/click MainMenuBarBackpackButton false AnyUp nil")
+    check("bag row: the reload icon is a plain button", tostring(reload.template), "nil")
+    reload.scripts.OnClick(reload, "LeftButton")
+    check("bag row: clicking the reload icon reloads", ctx.reloads, 1)
+    reload.scripts.OnEnter(reload)
+    check("bag row: reload tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Reload UI / Click to reload the interface")
+    reload.scripts.OnLeave(reload)
     check("bag row: BagsBar faded", ctx.state.frames.BagsBar.alpha .. " "
         .. tostring(ctx.state.frames.BagsBar.mouse), "0 false")
     ctx.run("layout off")
@@ -5512,7 +5517,7 @@ do
     ctx.run("layout on")
     check("bag row: shown again and updated, same frames", tostring(ctx.row().shown) .. " "
         .. tostring(ctx.row() == rowBefore) .. " " .. #ctx.icons() .. " " .. ctx.text(),
-        "true true 3 " .. GENERAL_ICON .. " 1/26 | icon33 7/20")
+        "true true 1 " .. GENERAL_ICON .. " 1/58")
 end
 
 do
@@ -5525,26 +5530,38 @@ do
     ctx.run("layout on")
     check("bag row: no BagsBar still shows", ctx.row().shown, true)
 
+    local reloads = 0
+    ctx = loadBags({ env = { C_UI = {}, ReloadUI = function() reloads = reloads + 1 end } })
+    ctx.run("layout on")
+    ctx.reload().scripts.OnClick(ctx.reload(), "LeftButton")
+    check("bag row: the global ReloadUI without C_UI.Reload", reloads, 1)
+
+    ctx = loadBags({ env = { C_UI = false } })
+    ctx.run("layout on")
+    check("bag row: no reload function, no reload icon; the bag icon is rightmost", tostring((ctx.reload())) .. " "
+        .. ctx.icons()[1].points[1][4] .. " " .. ctx.row().width, "nil 0 28")
+
     ctx = loadBags({ env = { GetInventoryItemTexture = false } })
     ctx.bags[1] = { 20, 3, 8 }
     ctx.run("layout on")
-    check("bag row: no icon API falls back to a question mark", ctx.text(),
-        GENERAL_ICON .. " 17/28 | Interface\\Icons\\INV_Misc_QuestionMark 3/20")
+    check("bag row: the bag icon keeps the backpack icon without the icon API", ctx.text(), GENERAL_ICON .. " 20/48")
     local b = ctx.icons()[1]
     ctx.env.GameTooltip = nil
     b.scripts.OnEnter(b)
     b.scripts.OnLeave(b)
+    ctx.reload().scripts.OnEnter(ctx.reload())
     check("bag row: no GameTooltip is harmless", b.shown, true)
 
     ctx = loadBags({ locale = "zhTW" })
     ctx.bags[1] = { 20, 3, 8 }
     ctx.env.C_Container.GetBagName = nil
     ctx.run("layout on")
-    local zb = ctx.icons()[2]
+    local zb = ctx.icons()[1]
     zb.scripts.OnEnter(zb)
-    check("zhTW bag row tooltip, no bag names", ctx.tip.title .. " / " .. texts(ctx.tip), "專業背包 / 剩餘 3/20 / 點擊開啟背包")
-    ctx.icons()[1].scripts.OnEnter(ctx.icons()[1])
-    check("zhTW bag row general tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "一般背包 / 剩餘 17/28 / 點擊開啟背包")
+    check("zhTW bag row tooltip, no bag names", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "背包 / 一般背包：剩餘 17/28 / 專業背包：剩餘 3/20 / 點擊開啟背包")
+    ctx.reload().scripts.OnEnter(ctx.reload())
+    check("zhTW reload tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "重新載入介面 / 點擊重新載入介面")
 
     ctx = loadBags({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
         db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
@@ -5553,8 +5570,8 @@ do
         "true " .. GENERAL_ICON .. " 19/38")
 end
 
--- The reagent bag: its own bag row icon, opened and closed with the other bags through the default reagent bag slot's
--- click, and B pointed at the same secure opener.
+-- The reagent bag: summed into the bag icon, opened and closed with the other bags through the default reagent bag
+-- slot's click, and B pointed at the same secure opener.
 do
     local binds, cleared = {}, 0
     local enum = copyTable(LAYOUT_ENUM)
@@ -5576,15 +5593,13 @@ do
     } })
     ctx.bags[5] = { 20, 7, 0 }
     ctx.run("layout on")
-    check("reagent bag: its own icon after the profession bags", ctx.text(),
-        GENERAL_ICON .. " 19/38 | icon35 7/20")
-    local r = ctx.icons()[2]
+    check("reagent bag: summed into the bag icon", ctx.text(), GENERAL_ICON .. " 26/58")
+    local r = ctx.icons()[1]
     r.scripts.OnEnter(r)
-    check("reagent bag: tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
-        "Reagent bag / Bag5 / 7/20 free / Click to open your bags")
+    check("reagent bag: its own tooltip line, last", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Bags / General bags: 19/38 free / Bag0, Bag1, Bag2 / Reagent bag: 7/20 free / Bag5 / Click to open your bags")
     local BOTH = "/click MainMenuBarBackpackButton\n/click CharacterReagentBag0Slot"
-    check("reagent bag: every icon clicks the backpack button, then the reagent bag slot",
-        r.attrs.macrotext .. " | " .. ctx.icons()[1].attrs.macrotext, BOTH .. " | " .. BOTH)
+    check("reagent bag: the bag icon clicks the backpack button, then the reagent bag slot", r.attrs.macrotext, BOTH)
     ctx.fire("PLAYER_LOGIN")
     check("reagent bag: every open-all-bags and open-backpack key clicks Tandem's opener",
         table.concat(binds, " ") .. " " .. cleared,
@@ -5620,28 +5635,25 @@ do
         "/click MainMenuBarBackpackButton")
 end
 
--- The bag row in combat: its icons are secure, so only the shown icons' counts change; icons are added, hidden and
--- given their macro once combat ends.
+-- The bag row in combat: the bag icon is secure, so only its count changes; the row is laid out again and the
+-- macro set once combat ends.
 do
-    local ctx = loadBags()
+    local enum = copyTable(LAYOUT_ENUM)
+    enum.BagIndex = { ReagentBag = 5 }
+    local ctx = loadBags({ env = { Enum = enum, CharacterReagentBag0Slot = {} } })
     ctx.run("layout on")
+    local bag = ctx.icons()[1]
+    local points = #bag.points
     ctx.state.combat = true
     ctx.bags[0][2] = 1
-    ctx.bags[3] = { 20, 7, 8 }
+    ctx.bags[5] = { 20, 7, 0 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("bag row combat: counts change, no icon added", #ctx.icons() .. " " .. ctx.text(), "1 " .. GENERAL_ICON
-        .. " 15/38")
+    check("bag row combat: the count changes, nothing moves, the macro waits", ctx.text() .. " " .. #bag.points
+        .. " " .. bag.attrs.macrotext, GENERAL_ICON .. " 22/58 " .. points .. " /click MainMenuBarBackpackButton")
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("bag row combat: the new icon shows when combat ends", ctx.text(), GENERAL_ICON .. " 15/38 | icon33 7/20")
-    ctx.state.combat = true
-    ctx.bags[3] = nil
-    ctx.fire("BAG_UPDATE_DELAYED")
-    check("bag row combat: an emptied family's icon stays until combat ends", #ctx.icons() .. " "
-        .. tostring(ctx.icons()[2].shown), "2 true")
-    ctx.state.combat = false
-    ctx.fire("PLAYER_REGEN_ENABLED")
-    check("bag row combat: and hides then", tostring(ctx.icons()[2].shown) .. " " .. ctx.row().width, "false 28")
+    check("bag row combat: the macro is set when combat ends", bag.attrs.macrotext,
+        "/click MainMenuBarBackpackButton\n/click CharacterReagentBag0Slot")
 end
 
 -- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).
@@ -5910,9 +5922,240 @@ do
     ctx.fire("PLAYER_LOGIN")
     check("class rail: relogin with the layout on shows it", ctx.area().shown, true)
     local reg = ctx.frame.registered
-    check("class rail: unit events registered (falling back to every unit); no UNIT_AURA",
-        tostring(reg.UNIT_AURA) .. " " .. tostring(reg.UNIT_POWER_UPDATE) .. " " .. tostring(reg.UNIT_MAXPOWER) .. " "
-        .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " " .. tostring(reg.UNIT_INVENTORY_CHANGED), "nil true true true nil")
+    check("class rail: unit events registered (falling back to every unit); no UNIT_AURA; the proc icon's "
+        .. "UNIT_INVENTORY_CHANGED", tostring(reg.UNIT_AURA) .. " " .. tostring(reg.UNIT_POWER_UPDATE) .. " "
+        .. tostring(reg.UNIT_MAXPOWER) .. " " .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " "
+        .. tostring(reg.UNIT_INVENTORY_CHANGED), "nil true true true true")
+end
+
+-- The weapon enchant proc probe: for a Shaman with the recorder on, logs which candidate events register and each
+-- firing for the player or target; other classes register none.
+do
+    local ctx = loadShaman({ class = "WARRIOR" })
+    ctx.run("debug on")
+    ctx.fire("PLAYER_LOGIN")
+    check("proc probe: another class registers nothing", tostring(ctx.frame.registered.UNIT_COMBAT) .. " "
+        .. tostring(ctx.frame.registered.PLAYER_ENTER_COMBAT), "nil nil")
+
+    ctx = loadShaman({ env = { issecretvalue = function(v) return v == "S" end } })
+    ctx.run("debug on")
+    ctx.fire("PLAYER_LOGIN")
+    local function probed()
+        local out = {}
+        for _, line in ipairs(ctx.env.TandemDebug.log) do
+            local what = line:match("proc probe: (.*)$")
+            if what then
+                out[#out + 1] = what
+            end
+        end
+        return out
+    end
+    local lines = probed()
+    check("proc probe: every candidate is registered and logged", #lines .. " " .. lines[1] .. " / " .. lines[9],
+        "9 UNIT_COMBAT registered=true / PLAYER_REGEN_ENABLED registered=true")
+    check("proc probe: registered on Tandem's frame", tostring(ctx.frame.registered.UNIT_COMBAT) .. " "
+        .. tostring(ctx.frame.registered.CHAT_MSG_COMBAT_SELF_HITS), "true true")
+    ctx.fire("UNIT_COMBAT", "target", "WOUND", "", 25, 1)
+    ctx.fire("UNIT_COMBAT", "party1", "WOUND", "", 25, 1)
+    ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 25504)
+    ctx.fire("CHAT_MSG_COMBAT_SELF_HITS", "S")
+    ctx.weapon = { true, 1800000, 0, 283, false, 0, 0, 0, n = 8 }
+    ctx.fire("PLAYER_ENTER_COMBAT")
+    lines = probed()
+    check("proc probe: player and target firings with their arguments, secrets masked, enchants on auto attack",
+        table.concat(lines, " / ", 10), "UNIT_COMBAT target | WOUND |  | 25 | 1 / UNIT_SPELLCAST_SUCCEEDED player | "
+        .. "Cast-1 | 25504 / CHAT_MSG_COMBAT_SELF_HITS secret / PLAYER_ENTER_COMBAT  / enchants true 1800000 0 283 "
+        .. "false 0 0 0")
+    ctx.run("debug off")
+    ctx.fire("UNIT_COMBAT", "target", "WOUND", "", 25, 1)
+    check("proc probe: nothing logged while the recorder is off", #probed(), 14)
+    ctx.run("debug on")
+    for _ = 1, 250 do
+        ctx.fire("UNIT_COMBAT", "player", "MISS", "", 0, 1)
+    end
+    check("proc probe: at most 200 lines a session", #probed(), 186)
+
+    -- After combat, the built-in damage meter: none on this client, then a fake one.
+    ctx = loadShaman()
+    ctx.run("debug on")
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    lines = probed()
+    check("proc probe: no damage meter says so", lines[#lines], "meter: no C_DamageMeter")
+    local asked
+    ctx.env.UnitGUID = function() return "Player-1" end
+    ctx.env.Enum.DamageMeterSessionType = { Current = 1 }
+    ctx.env.Enum.DamageMeterType = { DamageDone = 0 }
+    ctx.env.C_DamageMeter = { GetCombatSessionSourceFromType = function(session, kind, guid)
+        asked = session .. " " .. kind .. " " .. guid
+        return { totalAmount = 900, combatSpells = { { spellID = 324, totalAmount = 600, count = 12 } } }
+    end }
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    lines = probed()
+    check("proc probe: the damage meter's functions, the player's source and each spell's fields",
+        asked .. " / " .. table.concat(lines, " / ", #lines - 3), "1 0 Player-1 / meter: functions "
+        .. "GetCombatSessionSourceFromType / meter: session types Current=1 | meter types DamageDone=0 / "
+        .. "meter: player source combatSpells={1} totalAmount=900 / meter: spell 1 Lightning Shield count=12 "
+        .. "spellID=324 totalAmount=600")
+    ctx.env.C_DamageMeter.GetCombatSessionSourceFromType = function() error("secret") end
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    lines = probed()
+    check("proc probe: a failing damage meter call is logged, not raised",
+        lines[#lines]:match("^meter: player source false"), "meter: player source false")
+end
+
+-- Weapon enchant procs: an icon under the player frame with the main-hand enchant's procs per hit, counted from
+-- UNIT_COMBAT on the target while auto attack is on, saved per character, reset by a right-click.
+local function loadProcs(opts)
+    opts = opts or {}
+    local ctx = loadShaman({ class = opts.class, locale = opts.locale, env = {
+        PlayerFrame = { name = "PlayerFrame" },
+        UnitName = function() return "Thrall" end,
+        GetRealmName = function() return "Realm" end,
+        C_Spell = { GetSpellName = function(id)
+            return ({ [8024] = "Flametongue Weapon", [8232] = "Windfury Weapon", [8050] = "Flame Shock",
+                [17364] = "Stormstrike" })[id]
+        end },
+    } })
+    ctx.weapon = { true, 1800000, 0, 3, false, 0, 0, 0, n = 8 }
+    function ctx.icon()
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.kind == "Button" and w.rate then
+                return w
+            end
+        end
+    end
+    function ctx.hit(unit, action, school)
+        ctx.fire("UNIT_COMBAT", unit or "target", action or "WOUND", "", 25, school or 1)
+    end
+    function ctx.saved()
+        local procs = ctx.env.TandemDB.procs
+        local c = procs and procs["Thrall-Realm"]
+        local out = {}
+        for _, f in ipairs({ "windfury", "flametongue", "frostbrand" }) do
+            if c and c[f] then
+                out[#out + 1] = f .. "=" .. c[f].procs .. "/" .. c[f].hits
+            end
+        end
+        return table.concat(out, " ")
+    end
+    return ctx
+end
+
+do
+    local ctx = loadProcs({ class = "WARRIOR" })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    check("procs: another class gets no icon", tostring((ctx.icon())), "nil")
+
+    ctx = loadProcs()
+    ctx.fire("PLAYER_LOGIN")
+    local icon = ctx.icon()
+    check("procs: hidden while the layout is off", icon.shown, false)
+    ctx.run("layout on")
+    local p = icon.points[#icon.points]
+    check("procs: shown centred under the player frame, below its totem icons, with the enchant's icon, no rate yet",
+        tostring(icon.shown) .. " " .. p[1] .. " " .. tostring(p[2] == ctx.env.PlayerFrame) .. " " .. p[3] .. " "
+        .. p[4] .. " " .. p[5] .. " " .. icon.icon.texture .. " " .. icon.rate.text .. " " .. icon.width,
+        "true TOP true BOTTOM 0 -40 Interface\\Icons\\Spell_Fire_FlameTounge - 28")
+    ctx.hit()
+    ctx.hit(nil, "WOUND", 4)
+    check("procs: nothing counted before auto attack starts", ctx.saved(), "")
+    ctx.fire("PLAYER_ENTER_COMBAT")
+    ctx.hit()
+    ctx.t = 101
+    ctx.hit(nil, "WOUND", 4)
+    ctx.hit("party1")
+    ctx.hit("player")
+    ctx.t = 103
+    ctx.hit(nil, "MISS")
+    ctx.hit(nil, "WOUND", 16)
+    check("procs: a physical hit and a fire hit on the target; misses, frost and other units not counted",
+        ctx.saved() .. " " .. icon.rate.text, "flametongue=1/1 100%")
+    ctx.t = 105
+    ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 17364)
+    ctx.hit()
+    ctx.hit(nil, "WOUND", 4)
+    check("procs: a cast's own damage is not counted", ctx.saved(), "flametongue=1/1")
+    ctx.t = 106
+    ctx.hit()
+    ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-2", 8050)
+    ctx.t = 109
+    ctx.hit(nil, "WOUND", 4)
+    check("procs: Flame Shock's damage over time is not counted", ctx.saved() .. " " .. icon.rate.text,
+        "flametongue=1/2 50%")
+    ctx.t = 119
+    ctx.hit(nil, "WOUND", 4)
+    check("procs: fire after Flame Shock ends counts again", ctx.saved(), "flametongue=2/2")
+    icon.scripts.OnEnter(icon)
+    check("procs: tooltip names the enchant and its counts", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Flametongue Weapon / Procs 2 / hits 2 (100%) / Counted from your melee hits on your target; exact when solo"
+        .. " / Right-click to start counting again")
+    icon.scripts.OnLeave(icon)
+    ctx.fire("PLAYER_LEAVE_COMBAT")
+    ctx.hit()
+    check("procs: nothing counted after auto attack stops", ctx.saved(), "flametongue=2/2")
+
+    -- Saved across a reload: a fresh load reads the counts back.
+    local db = ctx.env.TandemDB
+    local again = loadShaman({ db = db, env = { PlayerFrame = {}, UnitName = function() return "Thrall" end,
+        GetRealmName = function() return "Realm" end } })
+    check("procs: saved per character and enchant", again.addon.Procs.Count("flametongue").procs .. "/"
+        .. again.addon.Procs.Count("flametongue").hits, "2/2")
+
+    icon.scripts.OnClick(icon, "LeftButton")
+    check("procs: a left-click keeps the counts", ctx.saved(), "flametongue=2/2")
+    icon.scripts.OnClick(icon, "RightButton")
+    check("procs: a right-click starts counting again", ctx.saved() .. "|" .. icon.rate.text, "|-")
+
+    -- Windfury: a physical swing right after another is its extra attack, a proc and not a hit.
+    ctx.weapon = { true, 1800000, 0, 283, false, 0, 0, 0, n = 8 }
+    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
+    check("procs: the icon follows the main hand's enchant", icon.icon.texture,
+        "Interface\\Icons\\Spell_Nature_Cyclone")
+    ctx.fire("PLAYER_ENTER_COMBAT")
+    ctx.t = 200
+    ctx.hit()
+    ctx.t = 200.1
+    ctx.hit()
+    ctx.t = 203
+    ctx.hit(nil, "DODGE")
+    ctx.t = 206
+    ctx.hit()
+    check("procs: windfury counts the extra attack", ctx.saved() .. " " .. icon.rate.text, "windfury=1/2 50%")
+
+    ctx.weapon = { false, 0, 0, 0, false, 0, 0, 0, n = 8 }
+    ctx.fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
+    check("procs: hidden without a proc enchant", icon.shown, false)
+    ctx.run("layout off")
+    ctx.weapon = { true, 1800000, 0, 3, false, 0, 0, 0, n = 8 }
+    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
+    check("procs: hidden while the layout is off, even with an enchant", icon.shown, false)
+
+    ctx = loadProcs({ locale = "zhTW" })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    ctx.icon().scripts.OnEnter(ctx.icon())
+    check("zhTW procs tooltip", texts(ctx.tip), "觸發 0 / 命中 0（-） / 依你對目標的近戰命中計算；單人時才準確 / 右鍵重新計算")
+end
+
+-- Store.Procs / SetProcs and the procs table on load: whole counts for the three families only.
+do
+    local addon = loadWithDB({ schemaVersion = 7, weights = {}, trainers = {}, layout = {}, procs = {
+        ["A-R"] = { windfury = { hits = 10, procs = 2 }, rockbiter = { hits = 1, procs = 0 },
+            flametongue = { hits = -1, procs = 0 } },
+        [""] = {}, ["B-R"] = "x",
+    } })
+    check("store procs: valid counts kept", addon.Store.Procs("A-R", "windfury").procs, 2)
+    check("store procs: unknown families, bad counts and bad keys dropped", tostring(addon.Store.Procs("A-R",
+        "flametongue")) .. " " .. tostring(addon.Store.Procs("A-R", "rockbiter")) .. " "
+        .. tostring(addon.Store.Procs("B-R", "windfury")), "nil nil nil")
+    check("store procs: SetProcs refuses bad input", tostring(addon.Store.SetProcs("A-R", "rockbiter",
+        { hits = 1, procs = 0 })) .. " " .. tostring(addon.Store.SetProcs("A-R", "windfury", { hits = 1.5, procs = 0 }))
+        .. " " .. tostring(addon.Store.SetProcs("", "windfury", nil)), "false false false")
+    local c = addon.Store.Procs("A-R", "windfury")
+    c.hits = 99
+    check("store procs: Procs returns a copy", addon.Store.Procs("A-R", "windfury").hits, 10)
 end
 
 -- Store.RegisterUnitEvent: the player only where the client has RegisterUnitEvent, else every unit (U5 review).
@@ -6454,7 +6697,7 @@ do
     check("rod button: fires on mouse-up whatever ActionButtonUseKeyDown says", b.attrs.useOnKeyDown, false)
     local p = b.points[1]
     check("rod button: anchored to UIParent left of the bag row", #b.points .. " " .. table.concat({ p[1],
-        tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -44 8")
+        tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -76 8")
     check("rod button: never parented or anchored to the bag row",
         tostring(b.parent == ctx.row()) .. " " .. tostring(p[2] == ctx.row()), "false false")
     ctx.bags[3] = { 20, 7, 8 }
@@ -6678,7 +6921,7 @@ do
         last = line:match("rod update: .*$") or last
     end
     check("rod debug: the update line", last,
-        "rod update: combat=false on=true rod=10 worn=false macro=/equipslot 16 item:10 shown=true point=-44,8")
+        "rod update: combat=false on=true rod=10 worn=false macro=/equipslot 16 item:10 shown=true point=-76,8")
     local n = #log
     ctx.fire("BAG_UPDATE_DELAYED")
     check("rod debug: an unchanged update is not logged again", #log, n)
@@ -7187,7 +7430,7 @@ do
         "true | macro | " .. CURE_POISON .. " | poison | icon526")
     local p = main.points[1]
     check("flyout: anchored to UIParent where the cure buttons were", #main.points .. " " .. table.concat({ p[1],
-        tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -76 8")
+        tostring(p[2] == ctx.env.UIParent), p[3], p[4], p[5] }, " "), "1 BOTTOMRIGHT true BOTTOMRIGHT -108 8")
     local keys = { tostring(main.attrs.useOnKeyDown) .. " " .. table.concat(main.clicks, " ") }
     for i = 1, 4 do
         keys[#keys + 1] = tostring(ctx.row(i).attrs.useOnKeyDown) .. " " .. table.concat(ctx.row(i).clicks, " ")
@@ -7195,10 +7438,10 @@ do
     check("flyout: main and every row click on mouse-up only", table.concat(keys, ", "),
         "false AnyUp, false AnyUp, false AnyUp, false AnyUp, false AnyUp")
     check("flyout: only the known entry has a row", rowIds(ctx), "poison")
-    check("flyout: Cure.NextX is left of the main button", ctx.addon.Cure.NextX(), -108)
+    check("flyout: Cure.NextX is left of the main button", ctx.addon.Cure.NextX(), -140)
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("flyout: takes the rod button's place when it hides", main.points[1][4], -44)
+    check("flyout: takes the rod button's place when it hides", main.points[1][4], -76)
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
 
@@ -7479,7 +7722,7 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     check("flyout: no flyout while the check is not ready", tostring(ctx.main() == nil) .. " "
-        .. ctx.addon.Cure.NextX(), "true -44")
+        .. ctx.addon.Cure.NextX(), "true -76")
 end
 
 do
@@ -7557,7 +7800,7 @@ do
     check("mute: anchored to UIParent left of the class macro button", tostring(p[1]) .. " "
         .. tostring(p[2] == ctx.env.UIParent) .. " " .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
     check("mute: shown with the horn in colour left of the class macro button", muteState(m),
-        "true | " .. HORN_ON .. " | -108 | 8")
+        "true | " .. HORN_ON .. " | -140 | 8")
 
     m.scripts.OnClick(m, "LeftButton")
     check("mute: a click turns all sound off", ctx.cvars.Sound_EnableAllSound .. " " .. ctx.sets, "0 1")
@@ -7588,18 +7831,18 @@ do
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
     check("mute: follows the class macro button when the rod button hides", muteState(m),
-        "true | " .. HORN_ON .. " | -76 | 8")
+        "true | " .. HORN_ON .. " | -108 | 8")
 
     ctx.state.combat = true
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
     m.scripts.OnClick(m, "LeftButton")
     check("mute: a click works in combat", ctx.cvars.Sound_EnableAllSound .. " " .. muteIcon(m), "0 " .. HORN_OFF)
-    check("mute: its place waits in combat", m.points[#m.points][4], -76)
+    check("mute: its place waits in combat", m.points[#m.points][4], -108)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("mute: placed after combat left of the class macro button", muteState(m),
-        "true | " .. HORN_OFF .. " | -108 | 8")
+        "true | " .. HORN_OFF .. " | -140 | 8")
 
     ctx.run("layout off")
     check("mute: hidden with the layout off", m.shown, false)
@@ -7611,13 +7854,13 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     local m = ctx.mute()
-    check("mute: no class macros, left of the rod button", muteState(m), "true | " .. HORN_ON .. " | -76 | 8")
+    check("mute: no class macros, left of the rod button", muteState(m), "true | " .. HORN_ON .. " | -108 | 8")
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: no class macros, takes the rod button's place when it hides", m.points[#m.points][4], -44)
+    check("mute: no class macros, takes the rod button's place when it hides", m.points[#m.points][4], -76)
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: no class macros, moves back when the rod button shows", m.points[#m.points][4], -76)
+    check("mute: no class macros, moves back when the rod button shows", m.points[#m.points][4], -108)
 end
 
 do
@@ -7627,7 +7870,7 @@ do
     ctx.run("layout on")
     local m = ctx.mute()
     check("mute: no rod button, still placed left of the bag row",
-        tostring(ctx.button() == nil) .. " " .. muteState(m), "true true | " .. HORN_ON .. " | -44 | 8")
+        tostring(ctx.button() == nil) .. " " .. muteState(m), "true true | " .. HORN_ON .. " | -76 | 8")
 end
 
 do
@@ -7727,7 +7970,7 @@ do
     local p = r.points[#r.points]
     check("role: anchored to UIParent", tostring(p[1]) .. " " .. tostring(p[2] == ctx.env.UIParent) .. " "
         .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
-    check("role: shown with the sword left of the mute button", roleState(r), "true | " .. SWORD .. " | -140 | 8")
+    check("role: shown with the sword left of the mute button", roleState(r), "true | " .. SWORD .. " | -172 | 8")
     r.scripts.OnEnter(r)
     check("role: tooltip in dps", ctx.tip.title .. " / " .. texts(ctx.tip),
         "Layout mode / Damage / Click for the healer layout")
@@ -7737,7 +7980,7 @@ do
     r.scripts.OnClick(r, "LeftButton")
     check("role: a click switches to the healer layout", ctx.last() .. " " .. ctx.addon.Layout.Mode() .. " "
         .. tostring(ctx.addon.Store.Layout().built), "Tandem: healer layout heal heal")
-    check("role: the heal icon in heal", roleState(r), "true | " .. FLASH .. " | -140 | 8")
+    check("role: the heal icon in heal", roleState(r), "true | " .. FLASH .. " | -172 | 8")
     r.scripts.OnEnter(r)
     check("role: tooltip in heal", texts(ctx.tip), "Healer / Click for the damage layout")
     r.scripts.OnClick(r, "LeftButton")
@@ -7763,14 +8006,14 @@ do
 
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("role: follows the mute button when the rod button hides", r.points[#r.points][4], -108)
+    check("role: follows the mute button when the rod button hides", r.points[#r.points][4], -140)
     ctx.state.combat = true
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("role: its place waits in combat", r.points[#r.points][4], -108)
+    check("role: its place waits in combat", r.points[#r.points][4], -140)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("role: placed after combat left of the mute button", r.points[#r.points][4], -140)
+    check("role: placed after combat left of the mute button", r.points[#r.points][4], -172)
 
     ctx.run("layout off")
     check("role: hidden with the layout off", r.shown, false)
@@ -7784,7 +8027,7 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     check("role: takes the mute button's place when it is hidden", roleState(ctx.role()),
-        "true | " .. SWORD .. " | -108 | 8")
+        "true | " .. SWORD .. " | -140 | 8")
 end
 
 do

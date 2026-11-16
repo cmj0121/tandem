@@ -8,8 +8,8 @@ Tandem 是一個 World of Warcraft addon，會在物品勝過你身上的裝備�
 視窗與任務獎勵中的每件物品：部位、需求等級、護甲或武器類型、提示框中的需求，以及依你的職業與天賦樹加權的屬性。升級
 物品會在背包或拾取按鈕上出現紅色邊框與綠色向上箭頭，聊天視窗顯示一行訊息，提示框也多一行綠字。Tandem 也會標出最佳的
 任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、靜音
-按鈕、地圖資訊，薩滿還有職業區。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的內容、介面配置的狀態與
-模式，以及你選的職業巨集之外，不儲存任何資料。
+按鈕、地圖資訊，薩滿還有職業區與武器附魔觸發率。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的
+內容、介面配置的狀態與模式、你選的職業巨集，以及武器附魔的觸發計數之外，不儲存任何資料。
 
 ## 安裝
 
@@ -96,8 +96,8 @@ Probe: LootFrame.ScrollBox missing
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
 `Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
-`Fishing macro`、`Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info` 與
-`Shaman area`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
+`Fishing macro`、`Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
+`Shaman area` 與 `Weapon procs`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
 只是它的清單只能在戰鬥外開啟與選擇。
 `Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
@@ -345,19 +345,18 @@ Tandem: layout on
 
 ### 背包圖示列
 
-右下角有一排圖示，每個圖示下緣顯示剩餘 / 總格數：最右邊是一般背包，左邊每種專業背包類型各一個圖示，使用該背包的
-圖示，例如草藥袋或靈魂碎片袋。剩餘少於 10 格時數字變黃，滿了變紅。滑鼠移到圖示上會列出那些背包的名稱與剩餘 /
-總格數；點擊任一圖示會開啟所有背包。介面配置開啟時它取代預設的背包列，需要 [`/tandem check`](#tandem-check) 的
-`Bag button` 這行。
+右下角有兩個圖示。最右邊的圖示點擊後會重新載入介面（`/reload`）。它左邊是一個背包圖示，下緣顯示所有背包合計的剩餘 /
+總格數：一般背包、專業背包（例如草藥袋或靈魂碎片袋）與材料包。剩餘少於 10 格時數字變黃，滿了變紅。滑鼠移到圖示上會分列
+各類背包的剩餘 / 總格數與背包名稱；點擊它會開啟所有背包。介面配置開啟時這排取代預設的背包列，需要
+[`/tandem check`](#tandem-check) 的 `Bag button` 這行；用戶端沒有重新載入的函式時，不會顯示重新載入圖示。
 
 每次登入時，不論介面配置是否開啟，Tandem 都會開啟用戶端的整合背包（`combinedBags` 設定），讓 `B` 以單一視窗開啟所有
 背包。你可以在選項中關閉它；下次登入時會再度開啟。Tandem 也會把所有綁定「開啟所有背包」或「開啟背包」的按鍵（`B` 是其中之一）
-指向自己的開啟按鈕，讓材料包與其他背包一起開關；材料包有格子時，背包圖示列最左側會多一個標題為 `材料包` 的圖示，
-點擊任一圖示也會一併開啟它。
+指向自己的開啟按鈕，和背包圖示一樣，讓材料包與其他背包一起開關。
 
-開啟按鈕與圖示從不以 Tandem 自己的程式碼開啟背包視窗，而是替你點擊預設的背包按鈕與材料包欄位，由 Blizzard 的程式碼開啟。
-以 addon 程式碼開啟背包會汙染（taint）背包視窗，之後右鍵點擊背包物品就會出現「介面功能因插件失效」。戰鬥中圖示的數量
-仍會更新，但背包變動新增或移除的圖示要等戰鬥結束才出現或消失。
+開啟按鈕與背包圖示從不以 Tandem 自己的程式碼開啟背包視窗，而是替你點擊預設的背包按鈕與材料包欄位，由 Blizzard 的程式碼開啟。
+以 addon 程式碼開啟背包會汙染（taint）背包視窗，之後右鍵點擊背包物品就會出現「介面功能因插件失效」。戰鬥中背包圖示的數量
+仍會更新。
 
 身上有魚竿時，背包圖示列左邊會多一個圖示。拿著武器時它顯示魚竿：點擊即裝備魚竿。裝備魚竿時它顯示你的主手：點擊即
 換回魚竿取代的主手與副手（若副手是你自己卸下的，則不會換回）。釣魚時執行 `/reload` 後，點擊它會換上背包中最好的已綁定主手；
@@ -445,6 +444,17 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 它只顯示狀態與計時：裡面沒有任何可點擊的東西，也絕不建議你該施放什麼。其他職業沒有這排圖示。它需要
 [`/tandem check`](#tandem-check) 的 `Shaman area` 這行。
 
+### 武器附魔觸發
+
+薩滿的主手有風怒、火舌或冰封武器時，玩家頭像下方（圖騰圖示之下）會有一個圖示，顯示該附魔的圖示與觸發率：每次命中的近戰攻擊中觸發的比例，
+以百分比表示（第一次命中前顯示 `-`）。滑鼠移到圖示上會顯示附魔名稱與觸發數 / 命中數；右鍵點擊即重新計算。計數依角色與
+附魔分開保存，重新載入或重新登入後仍在，所以換附魔時各自的數字都會保留。
+
+用戶端不提供插件戰鬥紀錄，所以計數來自目標受到的傷害，且只在自動攻擊開啟時計算：物理命中算一次命中，火焰傷害（火舌）
+或冰霜傷害（冰封）算一次觸發；風怒則把緊接在前一下之後的第二下物理攻擊算作它的額外攻擊。你自己法術的傷害，例如風暴打擊
+或震擊，以及烈焰震擊的持續傷害都不計入。其他玩家打同一個目標也會被算進去，所以只有單人戰鬥時觸發率才準確。它只在介面配置
+開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Weapon procs` 這行。
+
 介面配置、經驗條、背包圖示列、地圖資訊與薩滿職業區各自在 `/tandem check` 那一行為 `missing` 時保持關閉，其他部分照常運作。
 
 ### 除錯紀錄
@@ -515,7 +525,8 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十一行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
    `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、
-   `Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info` 與 `Shaman area`，
+   `Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、`Shaman area` 與
+   `Weapon procs`，
    每行後面接著 `ok`
    或 `missing` 以及它的 API。之後是二十行 `Probe:`，各為 `present` 或 `missing`。
 2. 交一個可以選擇獎勵的任務，在獎勵視窗開著時再執行一次 `/tandem check`。記下 `Quest reward pick` 這行現在是否找到

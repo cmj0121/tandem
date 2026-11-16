@@ -10,8 +10,9 @@ armor or weapon type, tooltip requirements and stats, weighted for your class an
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
 screen around the action bars, with an XP bar, a bag row, a mute button, a map info line and, for a Shaman, a class
-area. It never acts for the player: it only advises, and it saves nothing but your own stat weights, what your class
-trainer teaches, its layout state and mode, and your class macro pick.
+area and a weapon enchant proc rate. It never acts for the player: it only advises, and it saves nothing but your own
+stat weights, what your class trainer teaches, its layout state and mode, your class macro pick and your weapon
+enchant proc counts.
 
 ## Install
 
@@ -99,8 +100,8 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`. A
-feature whose API is missing stays off instead of raising an error. Without `Class macros` the
+`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area` and
+`Weapon procs`. A feature whose API is missing stays off instead of raising an error. Without `Class macros` the
 [class macro button](#bag-row) still works, but its list opens and picks only out of combat.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
@@ -378,22 +379,22 @@ replaces the default status bars, so a watched reputation bar is hidden too whil
 
 ### Bag row
 
-A row of icons at the bottom right shows free / total slots on each icon: your general bags first (rightmost), then
-one icon per profession bag type to its left, with that bag's icon, such as a herb or soul bag. A count turns yellow
-under 10 free slots and red when full. Hover an icon for its bags' names and free / total; click any icon to open all
-bags. It replaces the default bag bar while the layout is on, and needs the `Bag button` line of
-[`/tandem check`](#tandem-check).
+Two icons sit at the bottom right. The rightmost reloads the interface when clicked (`/reload`). Left of it, one bag
+icon shows the free / total slots of all your bags summed on its lower edge: general, profession (such as a herb or
+soul bag) and reagent bags. A count turns yellow under 10 free slots and red when full. Hover it for each kind's free
+/ total and bag names; click it to open all bags. The row replaces the default bag bar while the layout is on, and
+needs the `Bag button` line of [`/tandem check`](#tandem-check); without a reload function on the client the reload
+icon is left out.
 
 At every login, layout on or off, Tandem turns on the client's combined bags (the `combinedBags` setting), so `B`
 opens one window with all your bags. You can switch it off in the options; it comes back on at the next login.
 Tandem also points every key bound to "Open all bags" or "Open backpack" (`B` is one of them) at its own opener,
-which opens and closes the reagent bag together with the others; when the reagent bag has slots, it gets its own icon
-at the left end of the bag row, titled `Reagent bag`, and clicking any icon opens it too.
+which opens and closes the reagent bag together with the others, as the bag icon does.
 
-The opener and the icons never open the bag windows from Tandem's own code: they click the default backpack button
+The opener and the bag icon never open the bag windows from Tandem's own code: they click the default backpack button
 and reagent bag slot for you, so Blizzard's code opens them. Opening bags from addon code taints them, and a later
-right-click on a bag item then fails with "Interface action failed because of an AddOn". In combat the icons' counts
-still change, but an icon added or removed by a bag change appears or goes once combat ends.
+right-click on a bag item then fails with "Interface action failed because of an AddOn". In combat the bag icon's
+count still changes.
 
 When you own a fishing rod, one more icon sits just left of the bag row. While you fight with your weapons it shows the
 rod: click it to equip the rod. While the rod is worn it shows your main hand: click it to put back the main hand and
@@ -501,6 +502,21 @@ rail's bottom; with no icon, the whole rail hides.
 It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
 rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
 
+### Weapon enchant procs
+
+For a Shaman whose main hand carries Windfury, Flametongue or Frostbrand, an icon under the player frame, below its
+totem icons, shows that enchant's icon and how often it procs: procs per melee hit that lands, as a percentage (`-`
+before the first hit). Hover it for the enchant's name and its procs / hits; right-click it to start counting again.
+The counts are kept per character and per enchant, across reloads and logins, so switching enchants keeps each one's
+numbers.
+
+The client gives addons no combat log, so the counts come from the damage your target takes, seen only while your
+auto attack is on: a physical hit is a hit, a fire hit (Flametongue) or frost hit (Frostbrand) is a proc, and for
+Windfury a second physical swing right after the first is its extra attack. Your own spells' hits, such as
+Stormstrike or a shock, and Flame Shock's damage over time are left out. Another player's hits on the same target
+also count, so the rate is exact only when you fight alone. It shows only while the layout is on and needs the
+`Weapon procs` line of [`/tandem check`](#tandem-check).
+
 Each part, the layout, XP bar, bag row, map info and Shaman area, stays dark when its `/tandem check` line is `missing`,
 and the rest still works.
 
@@ -580,8 +596,8 @@ verified on Forever. One pass of `/tandem check` tells which of them the client 
 1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-one lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Shaman area`, each
-   followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow, each `present` or `missing`.
+   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area` and
+   `Weapon procs`, each followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
