@@ -164,6 +164,7 @@ local function books(args)
         print(L["Tandem: the book hints switch cannot be saved: recording is off"])
         return
     end
+    ns.BookAlert.Update()
     print(ns.BookPins.On() and L["Tandem: library book hints on"] or L["Tandem: library book hints off"])
 end
 

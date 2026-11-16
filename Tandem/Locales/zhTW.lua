@@ -37,6 +37,7 @@ L["Fishing rod"] = "魚竿"
 L["Fishing macro"] = "釣魚巨集"
 L["Map info"] = "地圖資訊"
 L["Book pins"] = "圖書館書籍地圖標記"
+L["Book alert"] = "圖書館書籍提醒"
 L["Mute button"] = "靜音按鈕"
 L["Sound"] = "聲音"
 L["Sound on"] = "聲音開啟"
@@ -256,6 +257,7 @@ L["Tandem: map %d %s at (%.2f, %.2f)"] = "Tandem：地圖 %d %s，位置 (%.2f, 
 L["Tandem: nearest book %s (%s), map %d, %d yd"] = "Tandem：最近的書 %s（%s），地圖 %d，%d 碼"
 L["Tandem: nearest book %s (%s), %.1f map percent away"] = "Tandem：最近的書 %s（%s），相距地圖 %.1f%%"
 L["Tandem: no eligible book on this continent"] = "Tandem：這塊大陸上沒有符合等級的書"
+L["Tandem: Library book nearby: %s — %s"] = "Tandem：附近有圖書館書籍：%s — %s"
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
 -- line comes after it.

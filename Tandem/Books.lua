@@ -7,6 +7,7 @@ ns.Books = Books
 
 -- Without world positions, two points on the same map are close within this many map percent on both axes.
 local NEAR_PERCENT = 0.7
+Books.NEAR_PERCENT = NEAR_PERCENT
 
 local call = ns.Store.Call
 
@@ -66,6 +67,8 @@ local function world(mapID, x, y)
     end
     return continent, wx, wy
 end
+
+Books.World = world
 
 -- The distance in yards between two points given as uiMapID and map percent, when the client places both on the
 -- same continent (nil otherwise), and whether both lie on the same map within NEAR_PERCENT on both axes.
