@@ -504,10 +504,11 @@ rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
 
 ### Weapon enchant procs
 
-For a Shaman whose main hand carries Windfury, Flametongue or Frostbrand, an icon under the player frame shows that
-enchant's icon and how often it procs: procs per melee hit that lands, as a percentage (`-` before the first hit).
-Hover it for the enchant's name and its procs / hits; right-click it to start counting again. The counts are kept per
-character and per enchant, across reloads and logins, so switching enchants keeps each one's numbers.
+For a Shaman whose main hand carries Windfury, Flametongue or Frostbrand, an icon under the player frame, below its
+totem icons, shows that enchant's icon and how often it procs: procs per melee hit that lands, as a percentage (`-`
+before the first hit). Hover it for the enchant's name and its procs / hits; right-click it to start counting again.
+The counts are kept per character and per enchant, across reloads and logins, so switching enchants keeps each one's
+numbers.
 
 The client gives addons no combat log, so the counts come from the damage your target takes, seen only while your
 auto attack is on: a physical hit is a hit, a fire hit (Flametongue) or frost hit (Frostbrand) is a proc, and for

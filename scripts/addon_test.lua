@@ -6054,10 +6054,10 @@ do
     check("procs: hidden while the layout is off", icon.shown, false)
     ctx.run("layout on")
     local p = icon.points[#icon.points]
-    check("procs: shown centred under the player frame with the enchant's icon, no rate yet",
+    check("procs: shown centred under the player frame, below its totem icons, with the enchant's icon, no rate yet",
         tostring(icon.shown) .. " " .. p[1] .. " " .. tostring(p[2] == ctx.env.PlayerFrame) .. " " .. p[3] .. " "
         .. p[4] .. " " .. p[5] .. " " .. icon.icon.texture .. " " .. icon.rate.text .. " " .. icon.width,
-        "true TOP true BOTTOM 0 -2 Interface\\Icons\\Spell_Fire_FlameTounge - 28")
+        "true TOP true BOTTOM 0 -40 Interface\\Icons\\Spell_Fire_FlameTounge - 28")
     ctx.hit()
     ctx.hit(nil, "WOUND", 4)
     check("procs: nothing counted before auto attack starts", ctx.saved(), "")

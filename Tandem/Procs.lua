@@ -17,6 +17,8 @@ local Procs = {}
 ns.Procs = Procs
 
 local SIZE = 28
+-- How far below the player frame's bottom edge the icon's top sits: under the totem icons Blizzard shows there.
+local BELOW = 40
 -- UNIT_COMBAT schools.
 local PHYSICAL, FIRE, FROST = 1, 4, 16
 -- Seconds: a target event this close after one of the player's casts is that cast's; a physical swing this close
@@ -146,14 +148,14 @@ local function create()
     button:Hide()
 end
 
--- Places the icon centred under the player frame; false without one.
+-- Places the icon centred under the player frame, below its totem icons; false without one.
 function place()
     local player = _G.PlayerFrame
     if not button or type(player) ~= "table" then
         return false
     end
     button:ClearAllPoints()
-    button:SetPoint("TOP", player, "BOTTOM", 0, -2)
+    button:SetPoint("TOP", player, "BOTTOM", 0, -BELOW)
     return true
 end
 
