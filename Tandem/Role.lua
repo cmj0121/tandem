@@ -11,7 +11,7 @@ ns.Role = Role
 
 local call = ns.Store.Call
 
-local SIZE = 28
+local SIZE, GAP = 28, 4
 local ICONS = {
     dps = "Interface\\Icons\\INV_Sword_04",
     heal = "Interface\\Icons\\Spell_Holy_FlashHeal",
@@ -98,6 +98,20 @@ function Role.Update()
         lastUpdate = line
         log(line)
     end
+    -- The eat and drink button sits left of this one, so it follows its place and visibility.
+    if ns.Eat then
+        ns.Eat.Update()
+    end
+end
+
+-- Role.NextX() -> x: the BOTTOMRIGHT x offset for the right edge of a button left of the layout mode button, or
+-- Mute.NextX() while it is hidden; the y offset is the rod button's.
+function Role.NextX()
+    local x = ns.Mute.NextX()
+    if button and call(button.IsShown, button) == true then
+        x = x - SIZE - GAP
+    end
+    return x
 end
 
 -- PLAYER_REGEN_ENABLED: applies the change combat held back.

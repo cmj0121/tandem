@@ -35,3 +35,19 @@ ns.StatPatterns = english and {
     { "^Equip: Increases your chance to block attacks with a shield by (%d+%.?%d*)%%%.?$", "block" },
     { "^Equip: Increases the block value of your shield by (%d+)%.?$", "blockvalue" },
 } or nil
+
+-- Food and drink tooltip text and aura names (eat button D2), matched on the lower-cased tooltip line. health and mana
+-- capture the amount (decimals allowed) and are tried, in order, on the line's first sentence only (up to stop), so
+-- a well-fed bonus such as "restore 8 mana every 5 seconds" later in the line is not read as a drink. The other texts
+-- are plain substrings of the whole line; aura names are exact. Only English clients get these; zhTW sets its own.
+ns.FoodText = english and {
+    stop = ". ",
+    health = { "restores (%d+%.?%d*) health" },
+    mana = { "restores (%d+%.?%d*) mana", "restores %d+%.?%d* health and (%d+%.?%d*) mana" },
+    wellFed = { "well fed" },
+    conjured = { "conjured item" },
+    seated = { "must remain seated" },
+    eating = { "Food", "Food & Drink", "Refreshment" },
+    drinking = { "Drink", "Food & Drink", "Refreshment" },
+    wellFedAura = { "Well Fed" },
+} or nil

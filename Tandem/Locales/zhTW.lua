@@ -50,6 +50,12 @@ L["Click for the healer layout"] = "點擊切換為治療版面"
 L["Click for the damage layout"] = "點擊切換為輸出版面"
 L["Tandem: healer layout"] = "Tandem：治療版面"
 L["Tandem: damage layout"] = "Tandem：輸出版面"
+L["Eat button"] = "飲食按鈕"
+L["Eat and drink"] = "吃喝"
+L["Eat %s"] = "吃 %s"
+L["Drink %s"] = "喝 %s"
+L["Health and mana are full"] = "生命力和法力值都是滿的"
+L["Click to eat and drink"] = "點擊吃喝"
 L["Class macro button"] = "職業巨集按鈕"
 L["Class macros"] = "職業巨集"
 L["Cure macro"] = "驅散巨集"
@@ -214,4 +220,17 @@ ns.StatPatterns = {
     { "^裝備：使你招架.-機率提高(%d+%.?%d*)%%", "parry" },
     { "^裝備：.-盾牌格擋值提高(%d+)點", "blockvalue" },
     { "^裝備：使你.-格擋.-機率提高(%d+%.?%d*)%%", "block" },
+}
+
+-- Food and drink tooltip text and aura names as the zhTW client shows them (see enUS.lua).
+ns.FoodText = {
+    stop = "。",
+    health = { "(%d+%.?%d*) ?點生命" },
+    mana = { "(%d+%.?%d*) ?點法力" },
+    wellFed = { "充分進食", "進食充分" },
+    conjured = { "魔法製造的物品", "魔法製造物品" },
+    seated = { "保持坐姿", "保持坐著" },
+    eating = { "進食", "食物", "食物和飲料", "茶點" },
+    drinking = { "喝水", "飲料", "食物和飲料", "茶點" },
+    wellFedAura = { "充分進食", "進食充分" },
 }

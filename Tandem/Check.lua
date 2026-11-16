@@ -95,6 +95,12 @@ Check.FEATURES = {
     { name = "Weapon procs", needs = {
         { "GetWeaponEnchantInfo" }, { "PlayerFrame" }, { "GetTime" },
     } },
+    { name = "Eat button", needs = {
+        { "InCombatLockdown" }, { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
+        { "C_Container.GetContainerNumSlots", "GetContainerNumSlots" },
+        { "C_Container.GetContainerItemID", "GetContainerItemID" }, { "C_TooltipInfo.GetItemByID" },
+        { "UnitHealth" }, { "UnitHealthMax" }, { "UnitPowerType" }, { "UnitPower" }, { "UnitPowerMax" },
+    } },
 }
 
 -- Client paths /tandem check reports for in-game diagnosis; they gate nothing.
