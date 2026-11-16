@@ -215,3 +215,16 @@ ns.StatPatterns = {
     { "^裝備：.-盾牌格擋值提高(%d+)點", "blockvalue" },
     { "^裝備：使你.-格擋.-機率提高(%d+%.?%d*)%%", "block" },
 }
+
+-- Food and drink tooltip text and aura names as the zhTW client shows them (see enUS.lua).
+ns.FoodText = {
+    stop = "。",
+    health = { "(%d+%.?%d*) ?點生命" },
+    mana = { "(%d+%.?%d*) ?點法力" },
+    wellFed = { "充分進食", "進食充分" },
+    conjured = { "魔法製造的物品", "魔法製造物品" },
+    seated = { "保持坐姿", "保持坐著" },
+    eating = { "進食", "食物", "食物和飲料", "茶點" },
+    drinking = { "喝水", "飲料", "食物和飲料", "茶點" },
+    wellFedAura = { "充分進食", "進食充分" },
+}
