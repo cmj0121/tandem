@@ -21,6 +21,12 @@ for event in pairs(PLAYER_EVENTS) do
     ns.Store.RegisterUnitEvent(frame, event, "player")
 end
 
+-- The events the weapon enchant proc icon counts from, forwarded to Procs.OnEvent.
+local PROC_EVENTS = { PLAYER_EQUIPMENT_CHANGED = true }
+for _, event in ipairs(ns.Procs.EVENTS) do
+    PROC_EVENTS[event] = true
+end
+
 local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
         return
@@ -48,6 +54,11 @@ local function onLoaded(self, event, loadedName)
 end
 
 frame:SetScript("OnEvent", function(self, event, ...)
+    -- The proc probe's candidates, some also handled below (PLAYER_LEAVE_COMBAT is not, nor are the chat lines).
+    ns.ProcProbe.OnEvent(event, ...)
+    if PROC_EVENTS[event] then
+        ns.Procs.OnEvent(event, ...)
+    end
     if PLAYER_EVENTS[event] or event == "PLAYER_TOTEM_UPDATE" then
         ns.ClassArea.OnEvent(event, ...)
     elseif event == "ADDON_LOADED" then
@@ -88,6 +99,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Layout.Sync()
         ns.Launcher.OnLogin()
         ns.Debug.OnLogin()
+        ns.ProcProbe.OnLogin(self)
+        ns.Procs.OnLogin(self)
         ns.BagButton.OnLogin()
         -- Before the rod button, whose first update places the class macro button. Aura events only once it exists.
         if ns.Flyout.OnLogin() then

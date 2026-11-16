@@ -35,6 +35,8 @@ Role.lua
 MapInfo.lua
 ClassArea.lua
 Classes\Shaman.lua
+ProcProbe.lua
+Procs.lua
 Launcher.lua
 QuestPick.lua
 Upgrade.lua
