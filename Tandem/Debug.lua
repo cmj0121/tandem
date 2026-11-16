@@ -290,7 +290,8 @@ function Debug.OnBlocked(event, addon, func)
     end
 end
 
--- At login: keeps recording across /reload while it is on, with a snapshot once the UI has settled.
+-- At login: keeps recording across /reload while it is on, logs the library books' map ids, with a snapshot once
+-- the UI has settled.
 function Debug.OnLogin()
     if Debug.IsOn() then
         ns.Store.SetCVar(TAINT_CVAR, "1")
@@ -298,6 +299,7 @@ function Debug.OnLogin()
         hookErrors()
         Debug.Log(("taint log: %s=%s"):format(TAINT_CVAR, tostring(ns.Store.GetCVar(TAINT_CVAR))))
         Debug.Check()
+        pcall(ns.Books.LogMaps)
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(2, function()
                 Debug.Snapshot("login")
