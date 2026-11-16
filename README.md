@@ -10,9 +10,10 @@ armor or weapon type, tooltip requirements and stats, weighted for your class an
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
 screen around the action bars, with an XP bar, a bag row, a mute button, an eat and drink button, a map info line and,
-for a Shaman, a class area and a weapon enchant proc rate. It never acts for the player: it only advises, and it saves
-nothing but your own stat weights, what your class trainer teaches, its layout state and mode, your class macro pick and
-your weapon enchant proc counts.
+for a Shaman, a class area and a weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches on
+the world map and tells you in chat when you pass one. It never acts for the player: it only advises, and it saves
+nothing but your own stat weights, what your class trainer teaches, its layout state and mode, your class macro pick,
+your weapon enchant proc counts and whether book hints are on.
 
 ## Install
 
@@ -80,10 +81,13 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
 | `/tandem layout`                       | Prints whether Tandem's [layout](#layout) is on or off                  |
 | `/tandem layout <on\|off>`             | Turns the layout on, or off to bring your previous layout back          |
 | `/tandem minimap [on\|off]`            | Shows or hides the [minimap button](#minimap-button); alone, toggles it |
+| `/tandem books`                        | Prints whether [library book](#library-books) hints are on or off       |
+| `/tandem books <on\|off>`              | Turns the book pins and the nearby alert on or off                      |
+| `/tandem books near`                   | Prints your map id and position and the nearest book you can reach      |
 | `/tandem debug [on\|off\|snap]`        | Records layout traces for the developer; see [Debug log](#debug-log)    |
 
 `check` and `weights` print `Tandem: not available in combat` and do nothing while you are in combat. `layout` waits
-for combat to end instead; `minimap` works in combat too.
+for combat to end instead; `minimap` and `books` work in combat too.
 
 ### `/tandem check`
 
@@ -101,8 +105,9 @@ either of two APIs will do, both are listed and one found is enough. The feature
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
 `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area`,
-`Weapon procs` and `Eat button`. A feature whose API is missing stays off instead of raising an error. Without `Class macros` the
-[class macro button](#bag-row) still works, but its list opens and picks only out of combat.
+`Weapon procs`, `Eat button`, `Book pins` and `Book alert`. A feature whose API is missing stays off instead of
+raising an error. Without `Class macros` the [class macro button](#bag-row) still works, but its list opens and picks
+only out of combat.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
 
@@ -278,6 +283,66 @@ Red wins when both apply. Macros, items, empty slots and spells without ranks ge
   brought up to date when combat ends.
 - Nothing is drawn when the `Action bar borders` line of [`/tandem check`](#tandem-check) is `missing`. Tandem only
   draws over the buttons and never changes what they cast.
+
+## Library books
+
+Tandem pins WoW Forever's Library Books on the world map and tells you in chat when you walk past one. Open the world
+map on a zone: each book your level reaches shows as a book icon. Hover it for where the book lies; click it to set a
+waypoint. Near a book, chat shows:
+
+```text
+Tandem: Library book nearby: Bewitchments and Glamours — Moonbrook, first house entering from the east
+```
+
+### Book pins
+
+- Only books your level reaches show: each book is meant for level 1, 30 or 40, and a higher-level book appears once
+  you reach its level. Zone maps get pins; continent and world maps show none.
+- The tooltip gives the book's title, where it lies, `Level <n>+` and, for a book inside the other faction's capital
+  (Ironforge or Orgrimmar), a red `Enemy city` line. Such a book still shows.
+- Books that lie on top of each other, as the two in Blackrock Mountain do, share one pin whose tooltip lists each.
+- A book inside a cave or a building with a separate way in also gets a dimmer pin at the entrance; its tooltip starts
+  with `Entrance`.
+- Your faction's hand-in NPC shows with a different book icon and `Takes library books`: Garion Wendell in the
+  Stormwind Mage Tower for the Alliance, Owen Thadd in the Undercity Magic Quarter for the Horde.
+- Click a pin to set a waypoint and track it, at the entrance first when the book has one. Chat shows
+  `Tandem: waypoint set to <title>`, or `Tandem: a waypoint cannot be set here` when the client cannot set one there.
+- Pins show whether the [layout](#layout) is on or not. Nothing is drawn when the `Book pins` line of
+  [`/tandem check`](#tandem-check) is `missing`; the waypoint APIs are optional.
+
+### Book alert
+
+When you stand within 40 yards of a book your level reaches, or of its entrance, chat shows the line above, once per
+book per session: a book is named again only after you log in again or `/reload`. Nothing is checked in combat; the
+check resumes when combat ends. Distances are taken in world coordinates, so standing in a cave or Blackrock Mountain
+still counts against the book on the zone map; when the client gives no world position, only a book on the same map
+within 0.7 map percent on both axes counts. It needs the `Book alert` line of [`/tandem check`](#tandem-check).
+
+### The books switch
+
+`/tandem books off` hides every pin and stops the alert at once; `/tandem books on` brings them back. Each prints
+`Tandem: library book hints on` or `Tandem: library book hints off`, as does `/tandem books` alone. The switch is
+saved as `books` in the [layout](#saved-data) data and is on until you turn it off.
+
+Tandem does not track which books you have collected: a book you have already looted or handed in keeps its pin and
+its alert.
+
+### Where the book data comes from
+
+The book list is a fixed table in `Tandem/Data/Books.lua`, taken from the Library Books guide on method.gg in
+November 2026. Its positions and map ids have not been checked in game, so a pin can sit in the wrong place or on the
+wrong map. To check one, stand at the book and run `/tandem books near`:
+
+```text
+Tandem: map 1436 Westfall at (45.40, 70.50)
+Tandem: nearest book Bewitchments and Glamours (Moonbrook, first house entering from the east), map 1436, 0 yd
+```
+
+The second line gives the distance in map percent instead when the client has no world positions, or reads
+`Tandem: no eligible book on this continent`. To check every map id, turn on the [debug log](#debug-log) and
+`/reload`: at login it logs `books mapinfo id=<id> name=<name> type=<type>` (or `books mapinfo id=<id> missing`) for
+each map the table uses and `books worldpos ok|missing`, each world map change logs `books map=<id> pins=<n>`, each
+alert logs `books alert <key> map=<id> at (<x>, <y>)`, and the `/tandem books near` lines are logged too.
 
 ## Layout
 
@@ -572,6 +637,8 @@ Tandem saves one account-wide table, `TandemDB`, as
   login it is compared with the character's `modes` entry to rebuild the layout when they differ. A `modes` entry
   other than `heal` is dropped on load.
 - A `picks` entry that is not a non-empty entry id is dropped on load.
+- `layout.books` is the [library books](#the-books-switch) switch: `false` after `/tandem books off`, `true` after
+  `/tandem books on`, absent (on) until you use either. A value that is not `true` or `false` is dropped on load.
 
 `TandemDB.schemaVersion` is `7`. Saved data from an older schema is migrated on load: `weights`, `trainers`,
 `layout`, `modes` and `picks` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is
@@ -603,12 +670,12 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-three lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-five lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
    `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area`,
-   `Weapon procs` and `Eat button`, each followed by `ok` or `missing` and its APIs. Twenty `Probe:` lines follow,
-   each `present` or `missing`.
+   `Weapon procs`, `Eat button`, `Book pins` and `Book alert`, each followed by `ok` or `missing` and its APIs.
+   Twenty `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
    whether the `Quest reward pick` line now finds `QuestInfoRewardsFrame.RewardButtons`,
    `QuestInfoRewardsFrameQuestInfoItem1` or `QuestRewardItem1`: the reward buttons may only exist once the window has
