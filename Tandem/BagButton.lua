@@ -4,7 +4,8 @@ local _, ns = ...
 -- general bags first, then one icon per profession bag family, each with its free/total on its lower edge. A click
 -- on any icon opens all bags, the reagent bag included. The default bag bar is faded through Layout.Conceal, never
 -- hidden. At login Tandem turns on combined bags and points the "open all bags" key (B) at the same opener through an
--- override binding (no hook).
+-- override binding (no hook). The opener and the icons are secure action buttons whose macro clicks the default bag
+-- buttons, so Blizzard's code, never Tandem's, opens the bag windows (see BagButton.Macro).
 local BagButton = {}
 ns.BagButton = BagButton
 
@@ -21,7 +22,7 @@ local WHITE, YELLOW, RED = { 1, 1, 1 }, { 1, 0.82, 0 }, { 1, 0.1, 0.1 }
 -- The key binding actions whose keys open all bags through Tandem's opener.
 local BAG_ACTIONS = { "OPENALLBAGS", "TOGGLEBACKPACK" }
 
-local row, on, opener, pendingBind
+local row, on, opener, pendingBind, pendingLayout
 local width = 0
 local icons = {}
 
@@ -55,46 +56,72 @@ local function mainOpen()
     return bagOpen(0)
 end
 
--- Toggles all bags with Blizzard's ToggleAllBags, then opens or closes the reagent bag (when it has slots) with
--- the main window, which ToggleAllBags leaves out. Whether the main window opened is read before and after the
--- toggle; when that reads the same both times (a client whose bag window state Tandem cannot see), the reagent bag
--- simply toggles. Each press is logged to the debug recorder.
-function BagButton.OpenAll()
-    local before = mainOpen()
-    pcall(_G.ToggleAllBags)
+-- The default bag buttons the opener clicks: the backpack button (with combined bags on it opens the one window with
+-- every bag) and the reagent bag slot.
+local BACKPACK_BUTTON, REAGENT_SLOT = "MainMenuBarBackpackButton", "CharacterReagentBag0Slot"
+
+-- Returns the opener's macro: a /click on the default backpack button, then one on the reagent bag slot when the
+-- reagent bag has slots and the client has that button. Blizzard's own click handlers open the bags, so the bag
+-- windows are never built by Tandem's code: opening them from addon code (ToggleAllBags, OpenBag) taints them, and
+-- a later right-click on a bag item is then blocked ("Interface action failed because of an AddOn").
+function BagButton.Macro()
+    local lines = { "/click " .. BACKPACK_BUTTON }
     local reagent = reagentBag()
-    local slots = reagent and number(call(api("GetContainerNumSlots"), reagent)) or 0
-    local after = mainOpen()
-    local was = reagent and bagOpen(reagent)
-    local open
-    if after ~= before then
-        open = after
-    else
-        open = not was
+    if reagent and number(call(api("GetContainerNumSlots"), reagent)) > 0 and type(_G[REAGENT_SLOT]) == "table" then
+        lines[2] = "/click " .. REAGENT_SLOT
     end
-    local function apply(when)
-        if slots > 0 then
-            pcall(open and _G.OpenBag or _G.CloseBag, reagent)
-        end
-        if ns.Debug.IsOn() then
-            ns.Debug.Log(("bags %s: main %s->%s reagent %s slots %d was %s -> %s now %s"):format(when,
-                tostring(before), tostring(after), tostring(reagent), slots, tostring(was), tostring(open),
-                tostring(reagent and bagOpen(reagent))))
-        end
+    return table.concat(lines, "\n")
+end
+
+-- After a click, logs the bag windows' state on the next frame to the debug recorder; reads only.
+local function logClick()
+    if not ns.Debug.IsOn() then
+        return
     end
-    apply("now")
-    -- Again on the next frame, after Blizzard's bag windows have finished showing (one may close the others).
+    local function log(when)
+        local reagent = reagentBag()
+        ns.Debug.Log(("bags %s: main %s reagent %s"):format(when, tostring(mainOpen()),
+            tostring(reagent and bagOpen(reagent))))
+    end
     if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
         C_Timer.After(0, function()
-            apply("next frame")
+            log("next frame")
         end)
+    else
+        log("now")
     end
 end
 
--- Points every key bound to "open all bags" or "open backpack" (B is either, by client) at Tandem's opener with an
--- override binding; waits for the end of combat, when bindings cannot change.
+-- Makes a secure action button that runs the opener's macro on mouse or key up; nil when the client refuses it.
+local function secureButton(name, parent)
+    local ok, b = pcall(CreateFrame, "Button", name, parent, "SecureActionButtonTemplate")
+    if not ok or type(b) ~= "table" then
+        ns.Debug.Log("bags: CreateFrame failed: " .. tostring(b))
+        return nil
+    end
+    b:RegisterForClicks("AnyUp")
+    b:SetAttribute("useOnKeyDown", false)
+    b:SetAttribute("type", "macro")
+    b:SetScript("PostClick", logClick)
+    return b
+end
+
+-- Gives the opener and every icon the current macro; out of combat only (the caller checks).
+local function setMacros()
+    local text = BagButton.Macro()
+    if opener then
+        opener:SetAttribute("macrotext", text)
+    end
+    for _, icon in ipairs(icons) do
+        icon:SetAttribute("macrotext", text)
+    end
+end
+
+-- Points every key bound to "open all bags" or "open backpack" (B is either, by client) at Tandem's secure opener
+-- with an override binding; waits for the end of combat, when bindings and secure buttons cannot change.
 local function bindKeys()
-    if type(CreateFrame) ~= "function" or type(_G.SetOverrideBindingClick) ~= "function" then
+    if type(CreateFrame) ~= "function" or type(_G.SetOverrideBindingClick) ~= "function"
+        or not ns.Check.Ready("Bag button") then
         return
     end
     if call(InCombatLockdown) then
@@ -103,9 +130,12 @@ local function bindKeys()
     end
     pendingBind = nil
     if not opener then
-        opener = CreateFrame("Button", "TandemOpenAllBags", UIParent)
-        opener:SetScript("OnClick", BagButton.OpenAll)
+        opener = secureButton("TandemOpenAllBags", UIParent)
+        if not opener then
+            return
+        end
     end
+    setMacros()
     pcall(_G.ClearOverrideBindings, opener)
     local bound = {}
     for _, action in ipairs(BAG_ACTIONS) do
@@ -120,10 +150,13 @@ local function bindKeys()
     ns.Debug.Log("bags: open-all keys bound: " .. (#bound > 0 and table.concat(bound, " ") or "none"))
 end
 
--- Binds the keys deferred by combat.
+-- Binds the keys and lays out the row as deferred by combat.
 function BagButton.OnCombatEnd()
     if pendingBind then
         bindKeys()
+    end
+    if pendingLayout then
+        BagButton.Update()
     end
 end
 
@@ -212,24 +245,36 @@ end
 
 local hideTooltip = ns.View.HideTooltip
 
+-- Returns icon i, made on first use as a secure action button running the opener's macro; out of combat only.
 local function iconButton(i)
     local icon = icons[i]
     if icon then
         return icon
     end
-    icon = CreateFrame("Button", nil, row)
+    icon = secureButton(nil, row)
+    if not icon then
+        return nil
+    end
     icon:SetSize(SIZE, SIZE)
     icon:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -(i - 1) * (SIZE + SPACING), 0)
-    icon:RegisterForClicks("LeftButtonUp")
     icon.icon = icon:CreateTexture(nil, "ARTWORK")
     icon.icon:SetAllPoints(icon)
     icon.count = icon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     icon.count:SetPoint("BOTTOM", icon, "BOTTOM", 0, 1)
-    icon:SetScript("OnClick", BagButton.OpenAll)
+    icon:SetAttribute("macrotext", BagButton.Macro())
     icon:SetScript("OnEnter", showTooltip)
     icon:SetScript("OnLeave", hideTooltip)
     icons[i] = icon
     return icon
+end
+
+-- Shows group on icon: its texture and free/total count, coloured.
+local function paint(icon, group)
+    icon.group = group
+    icon.icon:SetTexture(group.icon)
+    icon.count:SetText(("%d/%d"):format(group.free, group.total))
+    local color = countColor(group.free)
+    icon.count:SetTextColor(color[1], color[2], color[3])
 end
 
 local function create()
@@ -239,14 +284,10 @@ local function create()
 end
 
 -- Refreshes the icons and counts, reusing the icon buttons; hides the row while the layout is off or the client
--- lacks the bag API.
+-- lacks the bag API. The icons are secure buttons, so in combat only the shown icons' textures and counts change;
+-- adding, hiding or moving icons waits for the end of combat.
 function BagButton.Update()
     if not row then
-        return
-    end
-    if not on then
-        width = 0
-        row:Hide()
         return
     end
     local general, families = BagButton.Count()
@@ -254,20 +295,39 @@ function BagButton.Update()
     for _, group in ipairs(families) do
         groups[#groups + 1] = group
     end
+    if call(InCombatLockdown) then
+        pendingLayout = true
+        if on then
+            for i, group in ipairs(groups) do
+                local icon = icons[i]
+                if icon and icon.group then
+                    paint(icon, group)
+                end
+            end
+        end
+        return
+    end
+    pendingLayout = nil
+    if not on then
+        width = 0
+        row:Hide()
+        return
+    end
+    local shown = 0
     for i, group in ipairs(groups) do
         local icon = iconButton(i)
-        icon.group = group
-        icon.icon:SetTexture(group.icon)
-        icon.count:SetText(("%d/%d"):format(group.free, group.total))
-        local color = countColor(group.free)
-        icon.count:SetTextColor(color[1], color[2], color[3])
-        icon:Show()
+        if icon then
+            paint(icon, group)
+            icon:Show()
+            shown = i
+        end
     end
-    for i = #groups + 1, #icons do
+    for i = shown + 1, #icons do
         icons[i].group = nil
         icons[i]:Hide()
     end
-    width = #groups * SIZE + (#groups - 1) * SPACING
+    setMacros()
+    width = shown > 0 and shown * SIZE + (shown - 1) * SPACING or 0
     row:SetSize(width, SIZE)
     row:Show()
 end
