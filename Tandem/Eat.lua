@@ -23,6 +23,8 @@ local button, on, lastUpdate, keyUp, scheduled
 local candidates, stale = {}, true
 -- The timed rescans used since the last complete scan or Eat.Rescan, and whether one waits.
 local step, waiting = 0, false
+-- True from the last timed rescan's firing until the scan it causes: only that scan settles what is still unsure.
+local final = false
 -- What the last update set the click to use, for the tooltip.
 local state = {}
 
@@ -91,6 +93,7 @@ local function retry()
     waiting = true
     if not pcall(C_Timer.After, BACKOFF[step], function()
         waiting = false
+        final = step >= #BACKOFF
         Eat.Update()
     end) then
         waiting = false
@@ -109,10 +112,11 @@ end
 
 -- Eat.Update(): picks the food and drink from the cached scan (scanning first when it is stale), sets the left and
 -- right click macros, icon, place and visibility. A scan that leaves slots pending keeps the cache stale and
--- schedules a timed rescan after 1, 2, 4, 8, 16 then 32 s; once those are used up the cache is kept until Eat.Rescan,
--- Eat.Invalidate or a layout change. Runs after every Role.Update (whose button it sits beside),
--- at login, on a layout change and from Eat.Schedule; does nothing in combat, as Eat.OnCombatEnd updates anyway. While
--- debugging, logs the button's state when it differs from the last one logged.
+-- schedules a timed rescan after 1, 2, 4, 8, 16 then 32 s; the scan the last of them causes settles the items still
+-- unsure (Food.Settle), and the cache is then kept until Eat.Rescan, Eat.Invalidate or a layout change. Runs after
+-- every Role.Update (whose button it sits beside), at login, on a layout change and from Eat.Schedule; does nothing in
+-- combat, as Eat.OnCombatEnd updates anyway. While debugging, logs the button's state when it differs from the last
+-- one logged.
 function Eat.Update()
     if not button then
         return
@@ -130,12 +134,15 @@ function Eat.Update()
         if stale then
             local pending
             candidates, pending = ns.Food.Scan()
-            if pending > 0 then
+            if pending > 0 and final then
+                -- The last timed rescan still leaves items unsure: they are not food.
+                ns.Food.Settle()
+            elseif pending > 0 then
                 retry()
             else
                 step = 0
             end
-            stale = waiting
+            stale, final = waiting, false
         end
         local eating, drinking, wellFed = ns.Food.Auras()
         state.food, state.drink = ns.Food.Pick(candidates, wellFed)
@@ -174,7 +181,7 @@ end
 
 -- BAG_UPDATE_DELAYED, PLAYER_LEVEL_UP: reads the bags again, then updates (in combat, at combat end).
 function Eat.Rescan()
-    stale, step = true, 0
+    stale, step, final = true, 0, false
     Eat.Update()
 end
 

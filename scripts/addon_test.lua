@@ -8855,7 +8855,23 @@ do
     ctx.drain()
     check("eat backoff: after the last rescan power updates read no tooltips", ctx.scans, scans)
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("eat backoff: Rescan starts the steps again", ctx.drain(), "1 2 4 8 16 32")
+    check("eat backoff: an item still unsure after the last rescan is settled, no more rescans", ctx.drain(), "")
+    ctx.tip50 = "full"
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("eat backoff: a settled item that reads as food later still shows", ctx.eat().shown, true)
+end
+
+do
+    local ctx = loadBackoff("none")
+    check("eat backoff: an unready item rescans 1 to 32 s", ctx.drain(), "1 2 4 8 16 32")
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("eat backoff: Rescan starts the steps again for an unready item", ctx.drain(), "1 2 4 8 16 32")
+    ctx.tip50 = "short"
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 50, true)
+    ctx.drain()
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("eat backoff: an item unsure only after the burst is not settled by an item info scan", ctx.drain(),
+        "1 2 4 8 16 32")
 end
 
 do
