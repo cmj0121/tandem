@@ -18,7 +18,8 @@ local UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local GLOW = "Interface\\Buttons\\UI-ActionButton-Border"
 
 -- The restricted snippets: the arrow's _onclick toggles the list; a row's OnClick pre-wrap copies its macro and entry
--- to the main button and closes the list, then lets the click cast; the main button's pre-wrap closes the list.
+-- to the main button (not a noPick row's) and closes the list, then lets the click cast; the main button's pre-wrap
+-- closes the list.
 Flyout.SNIPPETS = {
     arrow = [[
 local list = self:GetFrameRef("list")
@@ -29,9 +30,11 @@ else
 end
 ]],
     row = [[
-local main = owner:GetFrameRef("main")
-main:SetAttribute("macrotext", self:GetAttribute("macrotext"))
-main:SetAttribute("entry", self:GetAttribute("entry"))
+if not self:GetAttribute("nopick") then
+    local main = owner:GetFrameRef("main")
+    main:SetAttribute("macrotext", self:GetAttribute("macrotext"))
+    main:SetAttribute("entry", self:GetAttribute("entry"))
+end
 owner:Hide()
 ]],
     main = [[
@@ -46,6 +49,8 @@ local classFile, secure, wired, on, pending, macroPending, lastUpdate
 local entries, byId = {}, {}
 -- The entry id picked in combat, saved at combat end; whether Update itself is setting the main button's entry.
 local combatPick, applying
+-- The recall state (ClassMacros.RecallState) the last Update that ran applied.
+local recallApplied
 -- full[macro name] = true while its macro could not be made for lack of a character slot.
 local full = {}
 
@@ -147,6 +152,9 @@ local function showTooltip(self)
     tip:SetOwner(self, "ANCHOR_TOPLEFT")
     tip:SetText(e.title)
     tip:AddLine(e.description, 1, 0.82, 0, true)
+    if e.note then
+        tip:AddLine(e.note, 1, 0.1, 0.1)
+    end
     if #e.kinds > 0 then
         if fighting then
             tip:AddLine(L["Party debuffs show again after combat"], 0.5, 0.5, 0.5)
@@ -223,6 +231,10 @@ local function insecurePick(self)
     local id = call(self.GetAttribute, self, "entry")
     if inCombat() then
         log(("flyout pick: %s combat=true skipped"):format(tostring(id)))
+        return
+    end
+    if self:GetAttribute("nopick") then
+        list:Hide()
         return
     end
     main:SetAttribute("macrotext", self:GetAttribute("macrotext"))
@@ -318,9 +330,14 @@ function Flyout.NextX()
     return x
 end
 
--- Refreshes the rows, the main button's pick, place and visibility, the existing entry macros and the lights; in
--- combat only marks the change as pending. Runs after every Rod.Update, whose button it sits beside. A pick made in
--- combat is saved first.
+-- Flyout.RecallApplied() -> state|nil: the recall state the last Update that ran out of combat applied.
+function Flyout.RecallApplied()
+    return recallApplied
+end
+
+-- Refreshes the rows, the main button's pick, place and visibility, the existing entry macros and the lights, every
+-- body for one read of the recall state; in combat only marks the change as pending. Runs after every Rod.Update,
+-- whose button it sits beside. A pick made in combat is saved first.
 function Flyout.Update()
     if not main then
         return
@@ -336,7 +353,9 @@ function Flyout.Update()
         log(("flyout pick saved: %s"):format(combatPick))
         combatPick = nil
     end
-    entries, byId = ns.ClassMacros.List(classFile), {}
+    local recall = ns.ClassMacros.RecallState()
+    recallApplied = recall
+    entries, byId = ns.ClassMacros.List(classFile, recall), {}
     for _, e in ipairs(entries) do
         byId[e.id] = e
     end
@@ -347,6 +366,7 @@ function Flyout.Update()
             row:SetAttribute("type", "macro")
             row:SetAttribute("macrotext", e.cast)
             row:SetAttribute("entry", e.id)
+            row:SetAttribute("nopick", e.noPick or nil)
             row.icon:SetTexture(e.icon or UNKNOWN_ICON)
             row:Show()
         else
@@ -355,7 +375,7 @@ function Flyout.Update()
         end
     end
     list:SetSize(SIZE, math.max(1, #entries) * (SIZE + GAP) - GAP)
-    local pick = ns.ClassMacros.Pick()
+    local pick = ns.ClassMacros.Pick(recall)
     local x = ns.Rod.NextX()
     main:SetAttribute("useOnKeyDown", false)
     if on and pick then
