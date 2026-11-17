@@ -8878,10 +8878,10 @@ do
     ctx.fire("BAG_UPDATE_DELAYED")
     local scan, unsure = 0, 0
     for _, line in ipairs(ctx.env.TandemDebug.log) do
-        scan = scan + (line:find("food scan: slots=1 unready=0 unsure=1 cands=0", 1, true) and 1 or 0)
+        scan = scan + (line:find("food scan: slots=1 unready=0 unsure=1 cands=0 unsure_ids=50", 1, true) and 1 or 0)
         unsure = unsure + (line:find("food unsure 50: 1 lines: Bread", 1, true) and 1 or 0)
     end
-    check("eat backoff: the scan counts logged once while unchanged", scan, 1)
+    check("eat backoff: the scan counts and unsure ids logged once while unchanged", scan, 1)
     check("eat backoff: an unsure consumable logged once with its lines", unsure, 1)
 end
 
