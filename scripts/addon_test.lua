@@ -7746,6 +7746,32 @@ do
     check("recall flyout: the timer switches back", (ctx.updates - before) .. " | " .. row.attrs.macrotext,
         "2 | /use [btn:2] item:6948; Astral Recall")
 
+    -- Right after the teleport the client reads Astral Recall ready for a moment, then on cooldown again.
+    ctx.cd, ctx.now = { 1000, 900 }, 1000
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    before = ctx.updates
+    ctx.cd, ctx.now = { 0, 0 }, 1004
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    check("recall flyout: an early ready read waits for a second look", (ctx.updates - before) .. " | "
+        .. row.attrs.macrotext, "0 | /use item:6948")
+    ctx.cd, ctx.now = { 1000, 900 }, 1004.05
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    ctx.now = 1004.5
+    ctx.drain(0.5)
+    check("recall flyout: the teleport's blip never reaches the body", (ctx.updates - before) .. " | "
+        .. row.attrs.macrotext, "0 | /use item:6948")
+    ctx.cd, ctx.now = { 0, 0 }, 1010
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    ctx.now = 1010.5
+    ctx.drain(0.5)
+    check("recall flyout: a ready read that holds is a real reset", (ctx.updates - before) .. " | "
+        .. row.attrs.macrotext, "1 | /use [btn:2] item:6948; Astral Recall")
+    ctx.drain()
+
     row.scripts.OnDragStart(row)
     local m = ctx.macro("Tandem Recall")
     check("recall flyout: dragging makes the character macro", m and m.body, RECALL_SPELL)

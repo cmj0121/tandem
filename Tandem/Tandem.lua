@@ -31,7 +31,11 @@ end
 -- state differs from the one it last applied (SPELL_UPDATE_COOLDOWN fires on every global cooldown); while Astral
 -- Recall is on cooldown a timer checks again when it ends. One that runs in combat leaves the change to Flyout's
 -- combat end, and PLAYER_REGEN_ENABLED checks again.
-local recallQueued, recallTimerAt
+-- Right after the teleport's loading screen the client reads Astral Recall ready for a moment, then on cooldown again
+-- (seen in game 2026-11-17). So a ready read well before the known end is trusted only when it still reads ready
+-- RECALL_CONFIRM seconds later; a real reset (RECALL_EARLY seconds or more before the end) is applied then.
+local RECALL_EARLY, RECALL_CONFIRM = 1, 0.5
+local recallQueued, recallTimerAt, recallReadyAt, recallDoubtAt
 
 local function timerAfter(delay, fn)
     return type(C_Timer) == "table" and type(C_Timer.After) == "function" and pcall(C_Timer.After, delay, fn)
@@ -40,11 +44,27 @@ end
 local function checkRecall()
     recallQueued = false
     local state, readyAt = ns.ClassMacros.RecallState()
+    local now = ns.Store.Call(GetTime)
+    if type(now) ~= "number" then
+        now = nil
+    end
+    if state == "spell" and recallReadyAt and now and now < recallReadyAt - RECALL_EARLY then
+        recallDoubtAt = recallDoubtAt or now
+        -- The timer fires about RECALL_CONFIRM later; a tenth's slack so its own check is not doubted again.
+        if now < recallDoubtAt + RECALL_CONFIRM * 0.9 and timerAfter(RECALL_CONFIRM, checkRecall) then
+            return
+        end
+    end
+    recallDoubtAt = nil
+    if state == "item" then
+        recallReadyAt = readyAt
+    elseif state == "spell" then
+        recallReadyAt = nil
+    end
     if state ~= ns.Flyout.RecallApplied() then
         ns.Flyout.Update()
     end
-    local now = ns.Store.Call(GetTime)
-    if state == "item" and readyAt ~= recallTimerAt and type(now) == "number" then
+    if state == "item" and readyAt ~= recallTimerAt and now then
         recallTimerAt = readyAt
         if not timerAfter(math.max(0, readyAt - now), function()
             recallTimerAt = nil
