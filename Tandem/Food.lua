@@ -15,6 +15,10 @@ local MAX_AURAS = 40
 local logged = {}
 -- Item ids already logged as unsure consumables this session.
 local unsure = {}
+-- Item ids still unsure after the whole backoff (Food.Settle): not food, never pending again this session.
+local settled = {}
+-- The unsure item ids of the last scan, for Food.Settle.
+local lastUnsure = {}
 local lastAuras, lastScan
 
 local function debugOn()
@@ -122,9 +126,9 @@ end
 -- Every bag slot (bags 0..4) whose item restores health or mana and has no unmet requirement, as
 -- { id, bag, slot, health, mana, buff, conjured, count }; an item not loaded yet is left out (the client is asked for
 -- it). pending counts the slots not read yet (unready) and the unblocked consumables that are not candidates and
--- show no "Use:" line (unsure: an incomplete tooltip, read again on the next scan). Empty and 0 without the tooltip
--- API or the locale's food text. Reads tooltips: the caller keeps the result. While debugging, logs the counts (and the
--- unsure item ids) when they change.
+-- show no "Use:" line (unsure: an incomplete tooltip, read again on the next scan), bar those Food.Settle settled.
+-- Empty and 0 without the tooltip API or the locale's food text. Reads tooltips: the caller keeps the result. While
+-- debugging, logs the counts (and the unsure item ids) when they change.
 function Food.Scan()
     local found = {}
     if not (ns.FoodText and ns.StatSearch.Ready()) then
@@ -152,10 +156,13 @@ function Food.Scan()
                     found[#found + 1] = cand
                 elseif not cand and classOf(id) == 0 and not hasUse(lines)
                     and ns.StatSearch.Blocked(src) == false then
-                    unsureCount = unsureCount + 1
-                    unsureIds[#unsureIds + 1] = id
+                    -- Read again on the next scan either way; a settled item no longer counts as pending.
                     ns.StatSearch.Forget(src)
-                    logUnsure(id, lines)
+                    if not settled[id] then
+                        unsureCount = unsureCount + 1
+                        unsureIds[#unsureIds + 1] = id
+                        logUnsure(id, lines)
+                    end
                 end
             end
         end
@@ -168,7 +175,17 @@ function Food.Scan()
             log(line)
         end
     end
+    lastUnsure = unsureIds
     return found, unready + unsureCount
+end
+
+-- Food.Settle(): the last scan's unsure items are taken as not food (a crafting order, a quest item with no "Use:"
+-- line): later scans this session still read them (one that turns out to be food is offered) but no longer count them
+-- as pending, so they start no more timed rescans. Called once the eat button's backoff is used up.
+function Food.Settle()
+    for _, id in ipairs(lastUnsure) do
+        settled[id] = true
+    end
 end
 
 -- True when a ranks before b for the kind ("health" or "mana"): buff food first (food only, while not well fed),
