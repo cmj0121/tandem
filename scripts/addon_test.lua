@@ -7296,7 +7296,7 @@ end
 -- handler APIs. ctx.main(), ctx.arrow(), ctx.list() and ctx.row(i) are the flyout's frames; ctx.click(b, button)
 -- clicks b as the client would (snippets, PreClick, OnClick, then the macro cast into ctx.cast).
 local FLYOUT_SPELLS = { [526] = { "Cure Poison", "icon526" }, [2870] = { "Cure Disease", "icon2870" },
-    [17364] = { "Stormstrike", "icon17364" } }
+    [17364] = { "Stormstrike", "icon17364" }, [556] = { "Astral Recall", "icon556" } }
 local function loadFlyout(opts)
     opts = opts or {}
     local ctx
@@ -7389,7 +7389,7 @@ local STORMSTRIKE_CAST = "/targetenemy [noharm][dead]\n/startattack [harm]\n/cas
 -- The shown rows' entry ids bottom-up, joined by ",".
 local function rowIds(ctx)
     local ids = {}
-    for i = 1, 4 do
+    for i = 1, 5 do
         local r = ctx.row(i)
         if r and r.shown then
             ids[#ids + 1] = tostring(r.attrs.entry)
@@ -7422,8 +7422,8 @@ do
     check("flyout: the arrow and the list are secure handlers", arrow.template .. " " .. list.template .. " "
         .. tostring(arrow.parent == main) .. " " .. tostring(list.parent == main),
         "SecureHandlerClickTemplate SecureHandlerBaseTemplate true true")
-    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(4) ~= nil) .. " "
-        .. tostring(ctx.row(5) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
+    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(5) ~= nil) .. " "
+        .. tostring(ctx.row(6) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
         "true true SecureActionButtonTemplate true")
     check("flyout: aura events registered once it exists",
         tostring(ctx.frame.registered.UNIT_AURA) .. " " .. tostring(ctx.frame.registered.GROUP_ROSTER_UPDATE),
@@ -7470,7 +7470,7 @@ do
     check("flyout: the secure snippets are wired",
         tostring(arrow.attrs._onclick == ctx.addon.Flyout.SNIPPETS.arrow) .. " "
             .. tostring(arrow.refs.list == list) .. " " .. tostring(list.refs.main == main) .. " " .. #ctx.wraps,
-        "true true true 5")
+        "true true true 6")
     local wrapped = {}
     for _, w in ipairs(ctx.wraps) do
         wrapped[#wrapped + 1] = (w.frame == main and "main" or tostring(w.frame.name):match("%d$")) .. ":"
@@ -7478,7 +7478,8 @@ do
             .. tostring(w.pre == ctx.addon.Flyout.SNIPPETS[w.frame == main and "main" or "row"])
     end
     check("flyout: each row and the main button wrapped by the list", table.concat(wrapped, " "),
-        "1:OnClick:true:true 2:OnClick:true:true 3:OnClick:true:true 4:OnClick:true:true main:OnClick:true:true")
+        "1:OnClick:true:true 2:OnClick:true:true 3:OnClick:true:true 4:OnClick:true:true 5:OnClick:true:true "
+            .. "main:OnClick:true:true")
 
     check("flyout: the list starts closed", list.shown, false)
     ctx.click(arrow)
@@ -7628,7 +7629,7 @@ do
         .. " " .. tostring(list.template) .. " " .. main.template .. " " .. ctx.row(1).template .. " " .. #ctx.wraps,
         "nil nil SecureActionButtonTemplate SecureActionButtonTemplate 0")
     check("flyout insecure: logged at login", debugText(ctx.env):match("flyout login: class=SHAMAN ready=true "
-        .. "secure=false rows=4") ~= nil, true)
+        .. "secure=false rows=5") ~= nil, true)
     ctx.click(arrow)
     check("flyout insecure: the arrow opens the list out of combat", list.shown, true)
     ctx.click(ctx.row(2))
@@ -7653,6 +7654,135 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("flyout insecure: the pick stays after combat", ctx.env.TandemDB.picks["Me-Realm"], "disease")
+end
+
+-- The recall row (D2, D3): casts but never picks; its body follows Astral Recall's cooldown, switched by
+-- Flyout.Update only when the state changes, only out of combat, and back when the cooldown ends.
+local RECALL_SPELL = "#showtooltip Astral Recall\n/use [btn:2] item:6948; Astral Recall"
+local RECALL_ITEM = "#showtooltip item:6948\n/use item:6948"
+local RECALL_UNKNOWN = "#showtooltip Astral Recall\n/use [btn:2] item:6948\n/cast [nobtn:2] Astral Recall\n"
+    .. "/use [nobtn:2] item:6948"
+local function loadRecallFlyout(opts)
+    opts = opts or {}
+    local ctx
+    local env = {
+        GetTime = function() return ctx.now end,
+        GetSpellCooldown = function(id)
+            if id == 556 then
+                return ctx.cd[1], ctx.cd[2], 1
+            end
+        end,
+        GetItemCount = function(id) return id == 6948 and 1 or 0 end,
+        issecretvalue = function(v) return v == "S" end,
+        C_Timer = { After = function(delay, fn)
+            ctx.timers[#ctx.timers + 1] = { delay, fn }
+        end },
+    }
+    ctx = loadFlyout({ env = env, insecure = opts.insecure })
+    ctx.now, ctx.cd, ctx.timers, ctx.updates = 100, { 0, 0 }, {}, 0
+    local update = ctx.addon.Flyout.Update
+    ctx.addon.Flyout.Update = function(...)
+        ctx.updates = ctx.updates + 1
+        return update(...)
+    end
+    -- Runs the timers queued so far with a delay up to max (every one when nil); later ones wait.
+    function ctx.drain(max)
+        local now, later = ctx.timers, {}
+        ctx.timers = later
+        for _, t in ipairs(now) do
+            if max == nil or t[1] <= max then
+                t[2]()
+            else
+                later[#later + 1] = t
+            end
+        end
+    end
+    return ctx
+end
+
+do
+    local ctx = loadRecallFlyout()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.known[526], ctx.known[556] = true, true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    ctx.drain()
+    local main, arrow, list, row = ctx.main(), ctx.arrow(), ctx.list(), ctx.row(2)
+    check("recall flyout: the cooldown event is registered", ctx.frame.registered.SPELL_UPDATE_COOLDOWN, true)
+    check("recall flyout: a recall row, not the pick", rowIds(ctx) .. " | " .. main.attrs.entry .. " | "
+        .. tostring(row.attrs.nopick) .. " | " .. tostring(ctx.row(1).attrs.nopick),
+        "poison,recall | poison | true | nil")
+    check("recall flyout: ready, left casts Astral Recall, right uses the Hearthstone", row.attrs.type .. " | "
+        .. row.attrs.macrotext, "macro | /use [btn:2] item:6948; Astral Recall")
+    ctx.click(arrow)
+    ctx.click(row, "RightButton")
+    check("recall flyout: a row click casts and closes, the pick stays", ctx.cast .. " | " .. tostring(list.shown)
+        .. " | " .. main.attrs.entry .. " | " .. main.attrs.macrotext .. " | " .. tostring(ctx.env.TandemDB.picks
+        and ctx.env.TandemDB.picks["Me-Realm"]), "/use [btn:2] item:6948; Astral Recall | false | poison | "
+        .. CURE_POISON .. " | nil")
+
+    local before = ctx.updates
+    ctx.cd = { 100, 1.5 }
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain()
+    check("recall flyout: a global cooldown updates nothing", ctx.updates - before, 0)
+    ctx.cd = { 100, 900 }
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    check("recall flyout: coalesced to one check per frame", #ctx.timers, 1)
+    ctx.drain(0)
+    check("recall flyout: on cooldown, one update and the Hearthstone body", (ctx.updates - before) .. " | "
+        .. row.attrs.macrotext, "1 | /use item:6948")
+    check("recall flyout: a timer waits for the cooldown's end", #ctx.timers .. " " .. tostring(ctx.timers[1]
+        and ctx.timers[1][1]), "1 900")
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    check("recall flyout: the same state updates nothing and adds no timer", (ctx.updates - before) .. " "
+        .. #ctx.timers, "1 1")
+    ctx.cd, ctx.now = { 0, 0 }, 1000
+    ctx.drain()
+    check("recall flyout: the timer switches back", (ctx.updates - before) .. " | " .. row.attrs.macrotext,
+        "2 | /use [btn:2] item:6948; Astral Recall")
+
+    row.scripts.OnDragStart(row)
+    local m = ctx.macro("Tandem Recall")
+    check("recall flyout: dragging makes the character macro", m and m.body, RECALL_SPELL)
+    ctx.state.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    ctx.cd = { 1000, 900 }
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    check("recall flyout: nothing changes in combat", row.attrs.macrotext .. " | " .. m.body,
+        "/use [btn:2] item:6948; Astral Recall | " .. RECALL_SPELL)
+    ctx.cd, ctx.now = { 0, 0 }, 2000
+    ctx.drain()
+    ctx.cd = { 1900, 900 }
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    ctx.drain(0)
+    check("recall flyout: combat's end applies the state", row.attrs.macrotext .. " | " .. m.body,
+        "/use item:6948 | " .. RECALL_ITEM)
+    ctx.cd = { "S", "S" }
+    ctx.fire("SPELL_UPDATE_COOLDOWN")
+    ctx.drain(0)
+    check("recall flyout: unreadable, cast then use", row.attrs.macrotext, "/use [btn:2] item:6948\n"
+        .. "/cast [nobtn:2] Astral Recall\n/use [nobtn:2] item:6948")
+    check("recall flyout: the raw types logged", debugText(ctx.env):match("recall state=unknown start=secret "
+        .. "duration=secret") ~= nil, true)
+end
+
+do
+    local ctx = loadRecallFlyout({ insecure = true })
+    ctx.known[526], ctx.known[556] = true, true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main, list = ctx.main(), ctx.list()
+    ctx.click(ctx.arrow())
+    ctx.click(ctx.row(2))
+    check("recall flyout insecure: the row casts and closes, the pick stays", ctx.cast .. " | "
+        .. tostring(list.shown) .. " | " .. main.attrs.entry, "/use [btn:2] item:6948; Astral Recall | false | poison")
 end
 
 -- Secure wiring that raises falls back to the out-of-combat flyout.
@@ -7693,6 +7823,14 @@ do
     list:Show()
     runSnippet(S.main, main, list)
     check("snippets: the main button's pre-click hides the list", list.shown, false)
+    local recall = newWidget(ctx.ui, "Button")
+    recall:SetAttribute("macrotext", "/use item:6948")
+    recall:SetAttribute("entry", "recall")
+    recall:SetAttribute("nopick", true)
+    list:Show()
+    runSnippet(S.row, recall, list)
+    check("snippets: a nopick row leaves the main button and hides the list",
+        main.attrs.macrotext .. " " .. main.attrs.entry .. " " .. tostring(list.shown), "/cast X x false")
     local arrow = newWidget(ctx.ui, "Button")
     arrow.refs = { list = list }
     runSnippet(S.arrow, arrow, arrow)
@@ -7742,7 +7880,7 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("flyout: set up at combat's end", tostring(main.shown) .. " " .. main.attrs.entry .. " " .. #ctx.wraps,
-        "true poison 5")
+        "true poison 6")
 end
 
 -- Mute button: left of the class macro button (or the rod button, or the bag row) while the layout is on, flipping
@@ -8173,21 +8311,30 @@ end
 -- character saves.
 
 -- Loads the addon as a Shaman "Me-Realm" with TandemDB set to db: ctx.known[id] for IsPlayerSpell, ctx.spellKnown[id]
--- for IsSpellKnown, ctx.names[id] for GetSpellInfo (icon "icon<id>"); ctx.list() is ClassMacros.List("SHAMAN").
+-- for IsSpellKnown, ctx.names[id] for GetSpellInfo (icon "icon<id>"), ctx.cd = { start, duration } for
+-- GetSpellCooldown(556), ctx.hearths for GetItemCount(6948); ctx.list() is ClassMacros.List("SHAMAN").
 local MACRO_NAMES = {
-    enUS = { [526] = "Cure Poison", [2870] = "Cure Disease", [17364] = "Stormstrike" },
-    zhTW = { [526] = "解毒術", [2870] = "祛病術", [17364] = "風暴打擊" },
+    enUS = { [526] = "Cure Poison", [2870] = "Cure Disease", [17364] = "Stormstrike", [556] = "Astral Recall" },
+    zhTW = { [526] = "解毒術", [2870] = "祛病術", [17364] = "風暴打擊", [556] = "星界傳送" },
 }
 local function loadClassMacros(opts)
     opts = opts or {}
-    local ctx = { known = {}, spellKnown = {}, class = opts.class or "SHAMAN", name = "Me" }
+    local ctx = { known = {}, spellKnown = {}, class = opts.class or "SHAMAN", name = "Me", cd = { 0, 0 },
+        hearths = 1 }
     ctx.names = MACRO_NAMES[opts.locale or "enUS"]
     local env = {
+        issecretvalue = function(v) return v == "S" end,
         UnitClass = function() return "Class", ctx.class end,
         UnitName = function() return ctx.name end,
         GetRealmName = function() return "Realm" end,
         IsPlayerSpell = function(id) return ctx.known[id] == true end,
         IsSpellKnown = function(id) return ctx.spellKnown[id] == true end,
+        GetSpellCooldown = function(id)
+            if id == 556 then
+                return ctx.cd[1], ctx.cd[2], 1
+            end
+        end,
+        GetItemCount = function(id) return id == 6948 and ctx.hearths or 0 end,
         GetSpellInfo = function(id)
             if ctx.names[id] then
                 return ctx.names[id], nil, "icon" .. id
@@ -8316,6 +8463,86 @@ do
     ctx.name = nil
     check("pick: an unknown character cannot save", CM.SetPick("poison"), false)
     check("pick: an unknown character gets the first shown", CM.Pick().id, "poison")
+end
+
+-- The recall entry (D1, D2): Astral Recall while its cooldown reads 0, the Hearthstone while it reads more, both
+-- when it cannot be read; right click always the Hearthstone; never the pick.
+do
+    local ctx = loadClassMacros()
+    local CM = ctx.CM
+    ctx.known[526], ctx.known[556] = true, true
+    check("recall: last after the cures", ctx.ids(), "poison,recall")
+    local l = ctx.list()
+    check("recall: fields", table.concat({ l[2].title, l[2].icon, l[2].macro, tostring(l[2].noPick),
+        tostring(l[2].note), #l[2].kinds }, " | "), "Astral Recall | icon556 | Tandem Recall | true | nil | 0")
+    check("recall: description", l[2].description, "Left-click casts Astral Recall, or uses your Hearthstone while "
+        .. "it is on cooldown; right-click uses your Hearthstone")
+    check("recall: ready state", table.concat({ CM.RecallState() }, ","), "spell")
+    check("recall: ready body", l[2].body, RECALL_SPELL)
+    check("recall: ready cast", l[2].cast, "/use [btn:2] item:6948; Astral Recall")
+    ctx.cd = { 100, 1.5 }
+    check("recall: the global cooldown counts as ready", CM.RecallState(), "spell")
+    ctx.cd = { 100, 900 }
+    check("recall: on cooldown, ready at its end", table.concat({ CM.RecallState() }, ","), "item,1000")
+    check("recall: on cooldown body", ctx.list()[2].body, RECALL_ITEM)
+    ctx.hearths = 0
+    l = ctx.list()
+    check("recall: no Hearthstone keeps the spell body and notes it", l[2].body .. " | " .. l[2].note,
+        RECALL_SPELL .. " | No Hearthstone in your bags")
+    ctx.hearths = 1
+    ctx.cd = { "S", 900 }
+    check("recall: a secret start is unknown", table.concat({ CM.RecallState() }, ","), "unknown")
+    check("recall: unknown body", ctx.list()[2].body, RECALL_UNKNOWN)
+    ctx.cd = { 100, nil }
+    check("recall: a missing duration is unknown", CM.RecallState(), "unknown")
+    ctx.cd = { 100, 900 }
+    check("recall: List takes the state given", ctx.CM.List("SHAMAN", "spell")[2].body, RECALL_SPELL)
+    check("recall: Pick takes it too", ctx.CM.Pick("unknown").id, "poison")
+    ctx.env.C_Spell = { GetSpellCooldown = function(id)
+        return id == 556 and { startTime = 0, duration = 0, isEnabled = true } or nil
+    end }
+    check("recall: C_Spell.GetSpellCooldown's table is read first", CM.RecallState(), "spell")
+    ctx.env.C_Spell = { GetSpellCooldown = function() return { startTime = "S", duration = "S" } end }
+    check("recall: secret table fields are unknown", CM.RecallState(), "unknown")
+end
+
+do
+    local ctx = loadClassMacros()
+    local CM, db = ctx.CM, ctx.env.TandemDB
+    ctx.known[556] = true
+    check("recall pick: never the pick, even alone", tostring(CM.Pick()), "nil")
+    check("recall pick: SetPick refuses it", CM.SetPick("recall"), false)
+    ctx.known[17364] = true
+    CM.SetPick("stormstrike")
+    check("recall pick: the saved pick stays", tostring(CM.SetPick("recall")) .. " " .. db.picks["Me-Realm"] .. " "
+        .. CM.Pick().id, "false stormstrike stormstrike")
+end
+
+do
+    local ctx = loadClassMacros()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.CM.RecallState()
+    ctx.CM.RecallState()
+    ctx.cd = { 100, 900 }
+    ctx.CM.RecallState()
+    ctx.cd = { "S", 900 }
+    ctx.CM.RecallState()
+    local text = debugText(ctx.env)
+    check("recall debug: the raw types per state", table.concat({
+        tostring(text:match("recall state=spell start=number duration=number") ~= nil),
+        tostring(text:match("recall state=item start=number duration=number") ~= nil),
+        tostring(text:match("recall state=unknown start=secret duration=number") ~= nil) }, " "), "true true true")
+    check("recall debug: once per state change", select(2, text:gsub("recall state=", "")), 3)
+end
+
+do
+    local ctx = loadClassMacros({ locale = "zhTW" })
+    ctx.known[556] = true
+    ctx.hearths = 0
+    local e = ctx.list()[1]
+    check("zhTW recall: body, description and note", e.body .. " | " .. e.description .. " | " .. e.note,
+        "#showtooltip 星界傳送\n/use [btn:2] item:6948; 星界傳送 | 左鍵施放星界傳送，冷卻中則使用爐石；右鍵使用爐石 | "
+            .. "背包裡沒有爐石")
 end
 
 do

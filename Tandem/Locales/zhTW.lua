@@ -76,6 +76,9 @@ L["Left-click cures poison, right-click cures disease"] = "左鍵解除中毒，
 L["Switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet fighting), "
     .. "starts attacking and casts Stormstrike"] =
     "目標不存在、已死亡或為友方時自動切換到最近的敵人（可能是還沒開打的怪），開始攻擊並施放風暴打擊"
+L["Left-click casts Astral Recall, or uses your Hearthstone while it is on cooldown; right-click uses your "
+    .. "Hearthstone"] = "左鍵施放星界傳送，冷卻中則使用爐石；右鍵使用爐石"
+L["No Hearthstone in your bags"] = "背包裡沒有爐石"
 L["%dd %dh"] = "%d天 %d時"
 L["%dh %dm"] = "%d時 %d分"
 L["%dm"] = "%d分"

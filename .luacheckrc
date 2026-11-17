@@ -28,6 +28,8 @@ read_globals = {
     "GetInventoryItemTexture",
     "ItemLocation",
     "GetSpellInfo",
+    "GetSpellCooldown",
+    "GetItemCount",
     "GetItemSubClassInfo",
     "CreateMacro",
     "EditMacro",

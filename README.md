@@ -489,8 +489,13 @@ entry you have learned:
   on the same targets.
 - `Stormstrike` switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet
   fighting), starts attacking and casts Stormstrike.
+- `Astral Recall` casts Astral Recall on a left click, or uses your Hearthstone while Astral Recall is on cooldown; a
+  right click always uses your Hearthstone. When the client hides the cooldown, a left click tries Astral Recall and
+  falls back to the Hearthstone. The switch happens out of combat, so a cooldown that starts or ends in a fight takes
+  effect once it ends. With no Hearthstone in your bags the tooltip says `No Hearthstone in your bags`.
 
-Click a row: it casts that entry, becomes the button's pick and the list closes. The pick is saved per character, so
+Click a row: it casts that entry, becomes the button's pick and the list closes. `Astral Recall` is the exception: it
+casts and closes the list but never becomes the pick. The pick is saved per character, so
 it outlasts a `/reload`; when its spell is no longer known, the first entry is used. This works in combat too when the
 `Class macros` line of [`/tandem check`](#tandem-check) is `ok`. Without it the list opens and picks only out of
 combat and closes when a fight starts. Hover the arrow: `Class macros` and `Click to choose the button's macro`, or
@@ -502,11 +507,11 @@ lights go dark until the fight ends. Hover the button or a row: the entry's titl
 which debuff (or `No one in your party has a Poison effect`; in combat `Party debuffs show again after combat`), and
 `Drag to place this macro on your action bar` (`Drag out of combat to place this macro` in combat).
 
-Drag the button or a row to put that entry's character macro, `Tandem Poison`, `Tandem Disease`, `Tandem Cure` or
-`Tandem Stormstrike`, on an action bar. Tandem makes it on that first drag and keeps it current out of combat; when your
-character macro slots are full the tooltip says `Character macros full: no room for this macro`. Tandem only casts on
-your click. In combat the button cannot move, appear or hide, so a spell learned or a rod swapped in a fight shows once
-it ends. It shows only while the layout is on, and needs the `Class macro button` line of
+Drag the button or a row to put that entry's character macro, `Tandem Poison`, `Tandem Disease`, `Tandem Cure`,
+`Tandem Stormstrike` or `Tandem Recall`, on an action bar. Tandem makes it on that first drag and keeps it current out
+of combat; when your character macro slots are full the tooltip says `Character macros full: no room for this macro`.
+Tandem only casts on your click. In combat the button cannot move, appear or hide, so a spell learned or a rod swapped
+in a fight shows once it ends. It shows only while the layout is on, and needs the `Class macro button` line of
 [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
 
 One more icon, left of the class macro button (or of the rod icon, or of the bag row, when those are hidden), mutes the game:

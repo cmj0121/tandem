@@ -27,6 +27,44 @@ for _, event in ipairs(ns.Procs.EVENTS) do
     PROC_EVENTS[event] = true
 end
 
+-- The recall check (D3): once per frame however many cooldown events arrive, Flyout.Update only when the recall
+-- state differs from the one it last applied (SPELL_UPDATE_COOLDOWN fires on every global cooldown); while Astral
+-- Recall is on cooldown a timer checks again when it ends. One that runs in combat leaves the change to Flyout's
+-- combat end, and PLAYER_REGEN_ENABLED checks again.
+local recallQueued, recallTimerAt
+
+local function timerAfter(delay, fn)
+    return type(C_Timer) == "table" and type(C_Timer.After) == "function" and pcall(C_Timer.After, delay, fn)
+end
+
+local function checkRecall()
+    recallQueued = false
+    local state, readyAt = ns.ClassMacros.RecallState()
+    if state ~= ns.Flyout.RecallApplied() then
+        ns.Flyout.Update()
+    end
+    local now = ns.Store.Call(GetTime)
+    if state == "item" and readyAt ~= recallTimerAt and type(now) == "number" then
+        recallTimerAt = readyAt
+        if not timerAfter(math.max(0, readyAt - now), function()
+            recallTimerAt = nil
+            checkRecall()
+        end) then
+            recallTimerAt = nil
+        end
+    end
+end
+
+local function scheduleRecall()
+    if recallQueued then
+        return
+    end
+    recallQueued = true
+    if not timerAfter(0, checkRecall) then
+        checkRecall()
+    end
+end
+
 local function onLoaded(self, event, loadedName)
     if loadedName ~= addonName then
         return
@@ -112,6 +150,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if ns.Flyout.OnLogin() then
             ns.Store.RegisterEvent(self, "UNIT_AURA")
             ns.Store.RegisterEvent(self, "GROUP_ROSTER_UPDATE")
+            ns.Store.RegisterEvent(self, "SPELL_UPDATE_COOLDOWN")
+            scheduleRecall()
         end
         -- Before the rod button too, whose update places it left of the class macro button.
         ns.Mute.OnLogin()
@@ -138,6 +178,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.Flyout.Update()
             ns.Mute.Update()
             ns.Role.Update()
+            if event == "SPELLS_CHANGED" and ns.Flyout.Made() then
+                scheduleRecall()
+            end
         end
         if event == "PLAYER_ENTERING_WORLD" then
             ns.Layout.Refade()
@@ -160,6 +203,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.BagButton.OnCombatEnd()
         ns.Rod.OnCombatEnd()
         ns.Flyout.OnCombatEnd()
+        if ns.Flyout.Made() then
+            scheduleRecall()
+        end
         ns.Mute.OnCombatEnd()
         ns.Role.OnCombatEnd()
         ns.Eat.OnCombatEnd()
@@ -167,6 +213,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Flyout.OnCombatStart()
         ns.BookAlert.OnCombatStart()
+    elseif event == "SPELL_UPDATE_COOLDOWN" then
+        scheduleRecall()
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ns.Layout.Sync()
     elseif event == "PLAYER_XP_UPDATE" or event == "UPDATE_EXHAUSTION" then
