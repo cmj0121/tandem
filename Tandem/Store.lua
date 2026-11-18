@@ -1,8 +1,8 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights,
--- layout mode, class macro pick and weapon enchant proc counts, the class trainer spells seen and the UI layout
--- state; every other key an older schema saved is dropped on load.
+-- layout mode, class macro pick, weapon enchant proc counts and the enemy players who killed them, the class trainer
+-- spells seen and the UI layout state; every other key an older schema saved is dropped on load.
 local Store = { readOnly = false }
 ns.Store = Store
 
@@ -23,10 +23,11 @@ local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
 local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true, modes = true,
-    picks = true, procs = true }
+    picks = true, procs = true, killers = true }
 -- The weapon enchant families whose procs are counted.
 local PROC_FAMILIES = { windfury = true, flametongue = true, frostbrand = true }
 local MAX_LAYOUT_NAME = 64
+Store.MAX_KILLERS = 50
 
 local floor = math.floor
 
@@ -162,6 +163,25 @@ local function copyProcCount(v)
     end
 end
 
+local function isOptional(v, check, arg)
+    return v == nil or check(v, arg)
+end
+
+local function isText(v)
+    return type(v) == "string" and v ~= ""
+end
+
+-- Returns a clean copy of a killer entry { name, realm, class|nil, level|nil, count, last, zone|nil } saved under
+-- fullName, or nil.
+local function copyKiller(fullName, v)
+    if type(v) == "table" and isText(v.name) and isText(v.realm) and fullName == v.name .. "-" .. v.realm
+        and isOptional(v.class, isClass) and isOptional(v.level, isInt, 1) and isInt(v.count, 1)
+        and isInt(v.last, 0) and isOptional(v.zone, isText) then
+        return { name = v.name, realm = v.realm, class = v.class, level = v.level, count = v.count, last = v.last,
+            zone = v.zone }
+    end
+end
+
 local function copyLayoutField(field, v)
     if field == "previous" then
         return { name = v.name, type = v.type }
@@ -245,6 +265,24 @@ local function migrate(raw, report)
             end
             db.procs = db.procs or {}
             db.procs[name] = clean
+        else
+            drop()
+        end
+    end
+
+    for name, killers in pairs(entries(raw.killers)) do
+        if isText(name) and type(killers) == "table" then
+            local clean = {}
+            for fullName, v in pairs(killers) do
+                local entry = copyKiller(fullName, v)
+                if entry then
+                    clean[fullName] = entry
+                else
+                    drop()
+                end
+            end
+            db.killers = db.killers or {}
+            db.killers[name] = clean
         else
             drop()
         end
@@ -402,6 +440,96 @@ function Store.SetProcs(key, family, count)
     Store.db.procs = Store.db.procs or {}
     Store.db.procs[key] = Store.db.procs[key] or {}
     Store.db.procs[key][family] = count and copyProcCount(count) or nil
+    return true
+end
+
+-- Returns the character key's killers as copies, each with its fullName, most recently seen first; empty when none or
+-- the db is newer.
+function Store.Killers(key)
+    local killers = not Store.readOnly and Store.db.killers
+    local mine = type(killers) == "table" and killers[key]
+    local list = {}
+    if type(mine) == "table" then
+        for fullName, v in pairs(mine) do
+            local entry = copyKiller(fullName, v)
+            entry.fullName = fullName
+            list[#list + 1] = entry
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.last ~= b.last then
+            return a.last > b.last
+        end
+        return a.fullName < b.fullName
+    end)
+    return list
+end
+
+-- Records a kill of the character key by an enemy player { name, realm|nil, class|nil, level|nil, zone|nil, when }:
+-- a new one counts 1, a known one counts up; last becomes when and class, level and zone are updated when given. A
+-- new one past MAX_KILLERS drops the least recently seen. A nil or empty realm is the player's own. False when
+-- invalid or read-only.
+function Store.AddKiller(key, k)
+    if Store.readOnly or not isText(key) or type(k) ~= "table" or not isText(k.name) or not isInt(k.when, 0)
+        or not isOptional(k.class, isClass) or not isOptional(k.level, isInt, 1) or not isOptional(k.zone, isText)
+        or (k.realm ~= nil and type(k.realm) ~= "string") then
+        return false
+    end
+    local realm = k.realm
+    if realm == nil or realm == "" then
+        realm = Store.Call(GetNormalizedRealmName) or Store.Call(GetRealmName)
+        if not isText(realm) then
+            return false
+        end
+    end
+    local fullName = k.name .. "-" .. realm
+    Store.db.killers = Store.db.killers or {}
+    local mine = Store.db.killers[key] or {}
+    Store.db.killers[key] = mine
+    local entry = mine[fullName]
+    if entry then
+        entry.count = entry.count + 1
+    else
+        local n, oldest = 0, nil
+        for name, v in pairs(mine) do
+            n = n + 1
+            local o = mine[oldest]
+            if not o or v.last < o.last or (v.last == o.last and name < oldest) then
+                oldest = name
+            end
+        end
+        if n >= Store.MAX_KILLERS then
+            mine[oldest] = nil
+        end
+        entry = { name = k.name, realm = realm, count = 1 }
+        mine[fullName] = entry
+    end
+    entry.last = k.when
+    entry.class = k.class or entry.class
+    entry.level = k.level or entry.level
+    entry.zone = k.zone or entry.zone
+    return true
+end
+
+-- Removes one of the character key's killers by fullName; false when not recorded or read-only.
+function Store.ForgetKiller(key, fullName)
+    local killers = not Store.readOnly and Store.db.killers
+    local mine = type(killers) == "table" and killers[key]
+    if type(mine) ~= "table" or type(fullName) ~= "string" or not mine[fullName] then
+        return false
+    end
+    mine[fullName] = nil
+    return true
+end
+
+-- Empties the character key's killers; false when invalid or read-only.
+function Store.ClearKillers(key)
+    if Store.readOnly or not isText(key) then
+        return false
+    end
+    if type(Store.db.killers) == "table" then
+        Store.db.killers[key] = nil
+    end
     return true
 end
 

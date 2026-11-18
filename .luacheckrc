@@ -77,6 +77,7 @@ read_globals = {
     "GetNumSkillLines",
     "GetNumTrainerServices",
     "GetNumQuestChoices",
+    "GetNormalizedRealmName",
     "GetNumTalentTabs",
     "GetQuestItemLink",
     "GetRealmName",
