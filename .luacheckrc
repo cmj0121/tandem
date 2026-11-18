@@ -105,6 +105,8 @@ read_globals = {
     "UnitLevel",
     "GetXPExhaustion",
     "UIParent",
+    "PlaySound",
+    "SOUNDKIT",
     "UnitXP",
     "UnitXPMax",
     "UnitName",

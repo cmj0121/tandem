@@ -261,6 +261,7 @@ L["Tandem: nearest book %s (%s), map %d, %d yd"] = "Tandem：最近的書 %s（%
 L["Tandem: nearest book %s (%s), %.1f map percent away"] = "Tandem：最近的書 %s（%s），相距地圖 %.1f%%"
 L["Tandem: no eligible book on this continent"] = "Tandem：這塊大陸上沒有符合等級的書"
 L["Tandem: Library book nearby: %s — %s"] = "Tandem：附近有圖書館書籍：%s — %s"
+L["%s is nearby (seen at your death %d times)"] = "%s 就在附近（你死亡時見過 %d 次）"
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
 -- line comes after it.
