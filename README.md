@@ -84,10 +84,14 @@ A copy does not follow your edits; run `make install MODE=copy` again after each
 | `/tandem books`                        | Prints whether [library book](#library-books) hints are on or off       |
 | `/tandem books <on\|off>`              | Turns the book pins and the nearby alert on or off                      |
 | `/tandem books near`                   | Prints your map id and position and the nearest book you can reach      |
+| `/tandem killers`                      | Lists the [enemy players](#killers) seen targeting you at your death    |
+| `/tandem killers forget <name>`        | Drops one name from that list                                           |
+| `/tandem killers clear`                | Empties that list                                                       |
 | `/tandem debug [on\|off\|snap]`        | Records layout traces for the developer; see [Debug log](#debug-log)    |
 
 `check` and `weights` print `Tandem: not available in combat` and do nothing while you are in combat. `layout` waits
-for combat to end instead; `minimap` and `books` work in combat too.
+for combat to end instead; `minimap`, `books` and `killers` work in combat
+too.
 
 ### `/tandem check`
 
@@ -344,6 +348,43 @@ The second line gives the distance in map percent instead when the client has no
 each map the table uses and `books worldpos ok|missing`, each world map change logs `books map=<id> pins=<n>`, each
 alert logs `books alert <key> map=<id> at (<x>, <y>)`, and the `/tandem books near` lines are logged too.
 
+## Killers
+
+Forever has no combat log, so Tandem cannot tell who killed you. Instead, when you die it records each enemy player
+who was targeting you in the last 10 seconds: their name and realm, class, level, how many of your deaths they were
+seen at, and the time and zone of the last one. It is a best guess: a killer in stealth or out of range is missed, and
+a bystander who only had you targeted is listed too. Each character keeps its own list of up to 50 names.
+
+When one of them shows up later on a nameplate, as your target or focus, or under the mouse, Tandem warns you with
+large red text at the top of the screen, a chat line and the raid warning sound, in combat too:
+
+```text
+Gank-Far is nearby (seen at your death 2 times)
+```
+
+The same player is announced at most once every 60 seconds. Turn on enemy nameplates to have them seen from further
+away.
+
+`/tandem killers` prints the list, newest first:
+
+```text
+Seen targeting you at your death:
+Gank-Far  Rogue 60  x2  2026-11-18 21:04  Duskwood
+```
+
+Fields the client did not give are left out, and an empty list prints `No one recorded yet.`.
+`/tandem killers forget <name>` drops one: `Name-Realm` names it exactly; a bare name means the one on your realm, else
+the only one with that name. It prints `<name> removed from the list.`, `<name> is not on the list.`, or
+`<name> matches several; use Name-Realm.`. `/tandem killers clear` empties the list and prints `Killer list cleared.`.
+When your character is not known yet or the saved data is read-only, each prints `Killer list unavailable.`.
+
+Right-click the [minimap button](#minimap-button) or Tandem's addon compartment entry to open the same list in a
+window you can drag, closed with its close button, Escape or another right-click. Each row shows the class-coloured
+name, class and level, the count, the date and the zone; scroll with the mouse wheel when there are more than 12. The
+cross at the end of a row forgets that name, and `Clear` empties the list after a second click within 3 seconds, its
+label reading `Click again to clear` meanwhile. The window follows every new death, `forget` and `clear`, shows
+`No one recorded yet.` when the list is empty and `Killer list unavailable.` when it cannot be read.
+
 ## Layout
 
 ```text
@@ -371,7 +412,8 @@ The Tandem icon on the minimap edge turns the layout on or off with a click and 
 `/tandem layout on` or `off`; in combat the change waits as above. Its tooltip shows whether the layout is on. Drag it
 around the minimap to move it; the place is saved. `/tandem minimap off` hides it, `/tandem minimap on` shows it again
 and `/tandem minimap` alone toggles it, printing `Tandem: minimap button hidden` or `Tandem: minimap button shown`.
-Tandem's entry in the addon compartment menu does the same as a click.
+Tandem's entry in the addon compartment menu does the same as a click. A right-click on either opens the
+[killers window](#killers).
 
 ### What moves
 
