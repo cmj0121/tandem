@@ -273,6 +273,10 @@ L["%s matches several; use Name-Realm."] = "%s 符合多筆；請用 名字-伺�
 L["%s removed from the list."] = "已從名單刪除 %s。"
 L["Killer list cleared."] = "已清空擊殺者名單。"
 L["Killer list unavailable."] = "無法使用擊殺者名單。"
+L["Killers"] = "擊殺者"
+L["Clear"] = "清空"
+L["Click again to clear"] = "再點一次以清空"
+L["Right-click to show the killer list"] = "右鍵點擊以顯示擊殺者名單"
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
 -- line comes after it.

@@ -172,15 +172,8 @@ end
 
 -- One killer as "<fullName>  <class> <level>  x<count>  <date>  <zone>", missing fields left out (killers D5).
 local function killerLine(k)
-    local names = LOCALIZED_CLASS_NAMES_MALE
-    local who = {}
-    who[#who + 1] = k.class and (type(names) == "table" and names[k.class] or k.class) or nil
-    who[#who + 1] = k.level and tostring(k.level) or nil
-    local parts = { k.fullName }
-    parts[#parts + 1] = #who > 0 and table.concat(who, " ") or nil
-    parts[#parts + 1] = "x" .. k.count
-    parts[#parts + 1] = ns.Store.Call(date, "%Y-%m-%d %H:%M", k.last)
-    parts[#parts + 1] = k.zone
+    local parts = ns.KillersView.Details(k)
+    table.insert(parts, 1, k.fullName)
     return table.concat(parts, "  ")
 end
 
@@ -228,6 +221,7 @@ local function killers(args, raw)
     end
     if sub == "clear" then
         print(ns.Store.ClearKillers(key) and L["Killer list cleared."] or L["Killer list unavailable."])
+        ns.KillersView.Refresh()
         return
     end
     local list = ns.Store.Killers(key)
@@ -235,6 +229,7 @@ local function killers(args, raw)
         local fullName, why = findKiller(list, raw[2])
         if fullName and ns.Store.ForgetKiller(key, fullName) then
             print(L["%s removed from the list."]:format(fullName))
+            ns.KillersView.Refresh()
         else
             print((why or L["%s is not on the list."]):format(raw[2]))
         end

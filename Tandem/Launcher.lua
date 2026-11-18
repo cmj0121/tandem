@@ -1,7 +1,8 @@
 local _, ns = ...
 
 -- Turns the Tandem layout on or off without a command (stage 12, U6): the addon compartment entry from the .toc, and
--- a minimap button that is shown unless the player hides it with /tandem minimap off.
+-- a minimap button that is shown unless the player hides it with /tandem minimap off. A right-click on either toggles
+-- the killers window (killers D7).
 local Launcher = {}
 ns.Launcher = Launcher
 
@@ -19,6 +20,7 @@ local function showTooltip(owner)
     GameTooltip:SetText("Tandem")
     GameTooltip:AddLine(ns.Layout.IsOn() and L["Layout: on"] or L["Layout: off"], 1, 1, 1)
     GameTooltip:AddLine(L["Click to turn the layout on/off"], 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(L["Right-click to show the killer list"], 0.5, 0.5, 0.5)
     if owner == Launcher.button then
         GameTooltip:AddLine(L["Drag to move this button"], 0.5, 0.5, 0.5)
     end
@@ -34,8 +36,15 @@ local function click()
     print(ns.Layout.Reply(on, ok, reason))
 end
 
--- The .toc's AddonCompartmentFunc entries.
-Tandem_OnCompartmentClick = click
+-- The .toc's AddonCompartmentFunc entries. The client passes (addonName, mouseButton); a right-click, as either
+-- argument, toggles the killers window.
+function Tandem_OnCompartmentClick(first, second)
+    if first == "RightButton" or second == "RightButton" then
+        ns.KillersView.Toggle()
+    else
+        click()
+    end
+end
 
 function Tandem_OnCompartmentEnter(_, menuButton)
     showTooltip(menuButton)
@@ -99,7 +108,7 @@ local function buildButton()
     b:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
-    b:RegisterForClicks("LeftButtonUp")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     b:RegisterForDrag("LeftButton")
     b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     local icon = b:CreateTexture(nil, "BACKGROUND")
@@ -114,6 +123,8 @@ local function buildButton()
     b:SetScript("OnClick", function(_, mouse)
         if mouse == "LeftButton" then
             click()
+        elseif mouse == "RightButton" then
+            ns.KillersView.Toggle()
         end
     end)
     b:SetScript("OnEnter", showTooltip)

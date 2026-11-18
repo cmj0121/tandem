@@ -156,6 +156,9 @@ local function record()
         end
     end
     seen = {}
+    if ns.KillersView then
+        ns.KillersView.Refresh()
+    end
 end
 
 local function handle(event, unit)

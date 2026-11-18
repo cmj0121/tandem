@@ -82,6 +82,8 @@ read_globals = {
     "GetQuestItemLink",
     "GetRealmName",
     "LOCALIZED_CLASS_NAMES_MALE",
+    "RAID_CLASS_COLORS",
+    "UISpecialFrames",
     "date",
     "GetSpecialization",
     "GetTalentTabInfo",
