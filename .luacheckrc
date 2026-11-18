@@ -120,4 +120,9 @@ read_globals = {
     "RequestTimePlayed",
     "GetZoneText",
     "GetSubZoneText",
+    "GetRealZoneText",
+    "UnitCanAttack",
+    "UnitFullName",
+    "UnitIsPlayer",
+    "UnitIsUnit",
 }

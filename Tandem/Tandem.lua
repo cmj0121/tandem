@@ -115,6 +115,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
     -- The proc probe's candidates, some also handled below (PLAYER_LEAVE_COMBAT is not, nor are the chat lines).
     ns.ProcProbe.OnEvent(event, ...)
     ns.KillerProbe.OnEvent(event, ...)
+    ns.Killers.OnEvent(event, ...)
     if PROC_EVENTS[event] then
         ns.Procs.OnEvent(event, ...)
     end
@@ -166,6 +167,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Debug.OnLogin()
         ns.ProcProbe.OnLogin(self)
         ns.KillerProbe.OnLogin(self)
+        ns.Killers.OnLogin(self)
         ns.Procs.OnLogin(self)
         ns.BagButton.OnLogin()
         -- Before the rod button, whose first update places the class macro button. Aura events only once it exists.

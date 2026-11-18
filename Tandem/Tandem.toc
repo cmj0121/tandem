@@ -42,6 +42,7 @@ ClassArea.lua
 Classes\Shaman.lua
 ProcProbe.lua
 KillerProbe.lua
+Killers.lua
 Procs.lua
 Launcher.lua
 QuestPick.lua
