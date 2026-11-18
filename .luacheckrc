@@ -81,6 +81,8 @@ read_globals = {
     "GetNumTalentTabs",
     "GetQuestItemLink",
     "GetRealmName",
+    "LOCALIZED_CLASS_NAMES_MALE",
+    "date",
     "GetSpecialization",
     "GetTalentTabInfo",
     "hooksecurefunc",

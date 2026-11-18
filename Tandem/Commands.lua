@@ -17,6 +17,8 @@ local function printUsage()
     print(L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"])
     print(L["  /tandem minimap [on|off] - show or hide the minimap button"])
     print(L["  /tandem books [on|off|near] - show library book pins on the world map, or name the nearest book"])
+    print(L["  /tandem killers - list the enemy players seen targeting you at your death"])
+    print(L["  /tandem killers forget <name> | clear - drop one name from that list, or all of them"])
     print(L["  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them"])
 end
 
@@ -168,6 +170,86 @@ local function books(args)
     print(ns.BookPins.On() and L["Tandem: library book hints on"] or L["Tandem: library book hints off"])
 end
 
+-- One killer as "<fullName>  <class> <level>  x<count>  <date>  <zone>", missing fields left out (killers D5).
+local function killerLine(k)
+    local names = LOCALIZED_CLASS_NAMES_MALE
+    local who = {}
+    who[#who + 1] = k.class and (type(names) == "table" and names[k.class] or k.class) or nil
+    who[#who + 1] = k.level and tostring(k.level) or nil
+    local parts = { k.fullName }
+    parts[#parts + 1] = #who > 0 and table.concat(who, " ") or nil
+    parts[#parts + 1] = "x" .. k.count
+    parts[#parts + 1] = ns.Store.Call(date, "%Y-%m-%d %H:%M", k.last)
+    parts[#parts + 1] = k.zone
+    return table.concat(parts, "  ")
+end
+
+-- The recorded fullName that name means: a "Name-Realm" as is; a bare name on the player's realm, else the one entry
+-- with that name. Case is ignored on purpose, so "gank" finds Gank. Returns it, or nil and the reason to print.
+local function findKiller(list, name)
+    local function byFullName(fullName)
+        for _, k in ipairs(list) do
+            if k.fullName:lower() == fullName:lower() then
+                return k.fullName
+            end
+        end
+    end
+    if name:find("-", 1, true) then
+        return byFullName(name) or nil, L["%s is not on the list."]
+    end
+    local realm = ns.Store.Call(GetNormalizedRealmName) or ns.Store.Call(GetRealmName)
+    local own = type(realm) == "string" and byFullName(name .. "-" .. realm)
+    if own then
+        return own
+    end
+    local found = {}
+    for _, k in ipairs(list) do
+        if k.name:lower() == name:lower() then
+            found[#found + 1] = k.fullName
+        end
+    end
+    if #found == 1 then
+        return found[1]
+    end
+    return nil, #found == 0 and L["%s is not on the list."] or L["%s matches several; use Name-Realm."]
+end
+
+-- killers [forget <name> | clear] (killers D5): raw holds the arguments as typed, for the name's case.
+local function killers(args, raw)
+    local sub = args[1]
+    if not (#args == 0 or (sub == "forget" and #args == 2) or (sub == "clear" and #args == 1)) then
+        printUsage()
+        return
+    end
+    local key = ns.Weights.CharacterKey()
+    if not key or ns.Store.readOnly then
+        print(L["Killer list unavailable."])
+        return
+    end
+    if sub == "clear" then
+        print(ns.Store.ClearKillers(key) and L["Killer list cleared."] or L["Killer list unavailable."])
+        return
+    end
+    local list = ns.Store.Killers(key)
+    if sub == "forget" then
+        local fullName, why = findKiller(list, raw[2])
+        if fullName and ns.Store.ForgetKiller(key, fullName) then
+            print(L["%s removed from the list."]:format(fullName))
+        else
+            print((why or L["%s is not on the list."]):format(raw[2]))
+        end
+        return
+    end
+    if #list == 0 then
+        print(L["No one recorded yet."])
+        return
+    end
+    print(L["Seen targeting you at your death:"])
+    for _, k in ipairs(list) do
+        print(killerLine(k))
+    end
+end
+
 -- /tandem debug [on|off]: toggles the recorder (no argument flips it).
 local function debug(args)
     local sub = args[1]
@@ -196,11 +278,13 @@ end
 local NOT_IN_COMBAT = { check = true, weights = true }
 
 function Commands.Run(msg)
-    local args = {}
-    for token in (msg or ""):lower():gmatch("%S+") do
-        args[#args + 1] = token
+    local args, raw = {}, {}
+    for token in (msg or ""):gmatch("%S+") do
+        args[#args + 1] = token:lower()
+        raw[#raw + 1] = token
     end
     local sub = table.remove(args, 1)
+    table.remove(raw, 1)
     if NOT_IN_COMBAT[sub] and View.InCombat() then
         return
     end
@@ -214,6 +298,8 @@ function Commands.Run(msg)
         minimap(args)
     elseif sub == "books" then
         books(args)
+    elseif sub == "killers" then
+        killers(args, raw)
     elseif sub == "debug" then
         debug(args)
     else
