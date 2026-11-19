@@ -377,6 +377,107 @@ do
     check("Safe passes a plain value", addon.Store.Safe("plain"), "plain")
 end
 
+-- Store: enemy players who killed each character (D3).
+do
+    local function killer(name, realm, extra)
+        local v = { name = name, realm = realm, count = 1, last = 100 }
+        for k, x in pairs(extra or {}) do
+            v[k] = x
+        end
+        return v
+    end
+    local addon, printed, env = loadWithDB({
+        schemaVersion = 7,
+        killers = {
+            ["Thrall-Realm"] = {
+                ["Gank-Realm"] = killer("Gank", "Realm", { class = "ROGUE", level = 60, count = 3, last = 500,
+                    zone = "Duskwood", extra = true }),
+                ["Old-Other"] = killer("Old", "Other"),
+                ["Bad-Realm"] = killer("Bad", "Realm", { class = "rogue" }),
+                ["Lvl-Realm"] = killer("Lvl", "Realm", { level = 0 }),
+                ["Cnt-Realm"] = killer("Cnt", "Realm", { count = 0 }),
+                ["Last-Realm"] = killer("Last", "Realm", { last = 1.5 }),
+                ["Zone-Realm"] = killer("Zone", "Realm", { zone = 7 }),
+                ["Mismatch-Realm"] = killer("Other", "Realm"),
+                ["NoRealm-"] = killer("NoRealm", ""),
+                ["Str-Realm"] = "bad",
+            },
+            [""] = {},
+            ["Jaina-Realm"] = "bad",
+        },
+    })
+    local Store = addon.Store
+    local mine = env.TandemDB.killers["Thrall-Realm"]
+    check("killers: a valid entry is kept, extra fields stripped", dump(mine["Gank-Realm"]), dump({ name = "Gank",
+        realm = "Realm", class = "ROGUE", level = 60, count = 3, last = 500, zone = "Duskwood" }))
+    check("killers: a minimal entry is kept", mine["Old-Other"] ~= nil, true)
+    -- Bad, Lvl, Cnt, Last, Zone, Mismatch, NoRealm, Str; "", Jaina
+    check("killers: invalid entries are dropped and counted", printed[2],
+        "Tandem: dropped 10 invalid or unused saved entries")
+    check("killers: bad character keys are dropped", tostring(env.TandemDB.killers[""])
+        .. tostring(env.TandemDB.killers["Jaina-Realm"]), "nilnil")
+
+    local list = Store.Killers("Thrall-Realm")
+    check("Killers lists copies, latest first, with fullName", #list .. " " .. list[1].fullName .. " "
+        .. list[2].fullName .. " " .. tostring(list[1] ~= mine["Gank-Realm"]), "2 Gank-Realm Old-Other true")
+    check("Killers is empty for an unknown character", #Store.Killers("Nobody-Realm"), 0)
+
+    check("AddKiller counts a known killer up", Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Realm",
+        level = 61, when = 600 }), true)
+    check("AddKiller updates last and level, keeps class and zone", dump(mine["Gank-Realm"]), dump({ name = "Gank",
+        realm = "Realm", class = "ROGUE", level = 61, count = 4, last = 600, zone = "Duskwood" }))
+    env.GetNormalizedRealmName = function() return "MyRealm" end
+    check("AddKiller records a new killer", Store.AddKiller("Thrall-Realm", { name = "Near", class = "MAGE",
+        zone = "Elwynn", when = 700 }), true)
+    check("AddKiller uses the player's realm when none given", dump(mine["Near-MyRealm"]), dump({ name = "Near",
+        realm = "MyRealm", class = "MAGE", count = 1, last = 700, zone = "Elwynn" }))
+    env.GetNormalizedRealmName = nil
+    env.GetRealmName = function() return "Plain" end
+    check("AddKiller falls back to GetRealmName for an empty realm",
+        Store.AddKiller("Thrall-Realm", { name = "Far", realm = "", when = 50 }) and mine["Far-Plain"].realm, "Plain")
+    env.GetRealmName = nil
+    check("AddKiller fails without a realm", Store.AddKiller("Thrall-Realm", { name = "Lost", when = 1 }), false)
+    for what, k in pairs({
+        ["no name"] = { realm = "R", when = 1 }, ["an empty name"] = { name = "", realm = "R", when = 1 },
+        ["no time"] = { name = "A", realm = "R" }, ["a fractional time"] = { name = "A", realm = "R", when = 1.5 },
+        ["a lowercase class"] = { name = "A", realm = "R", class = "mage", when = 1 },
+        ["level 0"] = { name = "A", realm = "R", level = 0, when = 1 },
+        ["an empty zone"] = { name = "A", realm = "R", zone = "", when = 1 },
+        ["a number realm"] = { name = "A", realm = 5, when = 1 },
+    }) do
+        check("AddKiller rejects " .. what, Store.AddKiller("Thrall-Realm", k), false)
+    end
+    check("AddKiller rejects an empty character", Store.AddKiller("", { name = "A", realm = "R", when = 1 }), false)
+    check("AddKiller rejections write nothing", mine["A-R"], nil)
+
+    check("ForgetKiller removes one", Store.ForgetKiller("Thrall-Realm", "Far-Plain"), true)
+    check("ForgetKiller removed it", mine["Far-Plain"], nil)
+    check("ForgetKiller fails for an unknown one", Store.ForgetKiller("Thrall-Realm", "Far-Plain"), false)
+    check("ClearKillers empties the character", Store.ClearKillers("Thrall-Realm")
+        and #Store.Killers("Thrall-Realm"), 0)
+
+    for i = 1, Store.MAX_KILLERS do
+        Store.AddKiller("Uther-Realm", { name = "K" .. i, realm = "R", when = 1000 - i })
+    end
+    check("MAX_KILLERS is 50", Store.MAX_KILLERS, 50)
+    check("AddKiller re-counting at the cap drops none", Store.AddKiller("Uther-Realm", { name = "K50", realm = "R",
+        when = 2000 }) and #Store.Killers("Uther-Realm"), 50)
+    Store.AddKiller("Uther-Realm", { name = "New", realm = "R", when = 3000 })
+    local capped = Store.Killers("Uther-Realm")
+    check("AddKiller's 51st drops the least recently seen", #capped .. " " .. capped[1].fullName .. " "
+        .. tostring(env.TandemDB.killers["Uther-Realm"]["K49-R"]) .. " " .. capped[#capped].fullName,
+        "50 New-R nil K48-R")
+
+    local _, again = loadWithDB(env.TandemDB)
+    check("killers: a saved db reloads without drops", #again, 1)
+
+    local newer = loadWithDB({ schemaVersion = 8, killers = { ["Thrall-Realm"] = {} } }).Store
+    check("newer db lists no killers", #newer.Killers("Thrall-Realm"), 0)
+    check("newer db blocks AddKiller", newer.AddKiller("Thrall-Realm", { name = "A", realm = "R", when = 1 }), false)
+    check("newer db blocks ForgetKiller", newer.ForgetKiller("Thrall-Realm", "A-R"), false)
+    check("newer db blocks ClearKillers", newer.ClearKillers("Thrall-Realm"), false)
+end
+
 -- Commands: /tandem parsing and output.
 
 -- Returns the lines printed after the first from.
@@ -416,12 +517,83 @@ do
     check("usage lists minimap", help[8], "  /tandem minimap [on|off] - show or hide the minimap button")
     check("usage lists books", help[9],
         "  /tandem books [on|off|near] - show library book pins on the world map, or name the nearest book")
-    check("usage lists debug", help[10],
+    check("usage lists killers", help[10],
+        "  /tandem killers - list the enemy players seen targeting you at your death")
+    check("usage lists killers forget and clear", help[11],
+        "  /tandem killers forget <name> | clear - drop one name from that list, or all of them")
+    check("usage lists debug", help[12],
         "  /tandem debug [on|off|snap] - record layout traces for the developer; /reload saves them")
-    check("usage line count", #help, 10)
+    check("usage line count", #help, 12)
     for _, sub in ipairs({ "scan", "count", "gear", "rank", "browse", "export", "map clear", "forget 1 2" }) do
         check(("removed %q prints usage"):format(sub), run(addon, printed, sub)[1], "Tandem commands:")
     end
+end
+
+-- Commands: /tandem killers lists, forgets and clears the character's killers (killers D5).
+do
+    local env = {
+        UnitName = function() return "Thrall" end,
+        GetRealmName = function() return "Realm" end,
+        LOCALIZED_CLASS_NAMES_MALE = { ROGUE = "Rogue" },
+        date = function(fmt, t) return fmt == "%Y-%m-%d %H:%M" and "D" .. t or nil end,
+    }
+    local function fresh(locale)
+        local addon, printed = loadWithDB(nil, locale, { env = env })
+        local Store = addon.Store
+        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", class = "ROGUE", level = 60, zone = "Duskwood",
+            when = 100 })
+        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 300 })
+        Store.AddKiller("Thrall-Realm", { name = "Stab", realm = "Realm", class = "MAGE", when = 200 })
+        Store.AddKiller("Thrall-Realm", { name = "Stab", realm = "Far", when = 150 })
+        Store.AddKiller("Thrall-Realm", { name = "Twin", realm = "A", when = 50 })
+        Store.AddKiller("Thrall-Realm", { name = "Twin", realm = "B", when = 40 })
+        return addon, printed
+    end
+    local addon, printed = fresh()
+    check("killers: lists each newest first, missing fields left out", table.concat(run(addon, printed, "killers"),
+        " / "), "Seen targeting you at your death: / Gank-Far  Rogue 60  x2  D300  Duskwood"
+        .. " / Stab-Realm  MAGE  x1  D200 / Stab-Far  x1  D150 / Twin-A  x1  D50 / Twin-B  x1  D40")
+    check("killers forget: a bare name on your realm wins", run(addon, printed, "killers forget Stab")[1],
+        "Stab-Realm removed from the list.")
+    check("killers forget: then the unique entry with that name", run(addon, printed, "killers forget stab")[1],
+        "Stab-Far removed from the list.")
+    check("killers forget: a bare name on several realms is ambiguous", run(addon, printed, "killers forget Twin")[1],
+        "Twin matches several; use Name-Realm.")
+    check("killers forget: a Name-Realm, ignoring case", run(addon, printed, "killers forget twin-b")[1],
+        "Twin-B removed from the list.")
+    check("killers forget: an unknown name", run(addon, printed, "killers forget Nobody")[1],
+        "Nobody is not on the list.")
+    check("killers forget: an unknown Name-Realm", run(addon, printed, "killers forget Gank-Realm")[1],
+        "Gank-Realm is not on the list.")
+    check("killers forget: removed ones are gone", #addon.Store.Killers("Thrall-Realm"), 2)
+    check("killers clear empties the list", run(addon, printed, "killers clear")[1] .. " "
+        .. #addon.Store.Killers("Thrall-Realm"), "Killer list cleared. 0")
+    check("killers: an empty list", table.concat(run(addon, printed, "killers"), " / "), "No one recorded yet.")
+    for _, bad in ipairs({ "killers forget", "killers forget a b", "killers clear all", "killers list" }) do
+        check(("%q prints usage"):format(bad), run(addon, printed, bad)[1], "Tandem commands:")
+    end
+
+    for _, msg in ipairs({ "killers", "killers forget Gank", "killers clear" }) do
+        local newer, newerPrinted = loadWithDB({ schemaVersion = 8 }, nil, { env = env })
+        check(("killers: read-only saved data, %q"):format(msg), table.concat(run(newer, newerPrinted, msg), " / "),
+            "Killer list unavailable.")
+        local unknown, unknownPrinted = loadWithDB(nil, nil, { env = { UnitName = function() return nil end } })
+        check(("killers: an unknown character, %q"):format(msg),
+            table.concat(run(unknown, unknownPrinted, msg), " / "), "Killer list unavailable.")
+    end
+    addon, printed = fresh()
+    addon.Store.ClearKillers = function() return false end
+    check("killers clear: a failed clear says so", run(addon, printed, "killers clear")[1], "Killer list unavailable.")
+
+    addon, printed = fresh("zhTW")
+    check("zhTW killers unavailable", addon.L["Killer list unavailable."], "無法使用擊殺者名單。")
+    check("zhTW killers: header", run(addon, printed, "killers")[1], "你死亡時以你為目標的玩家：")
+    check("zhTW killers forget", run(addon, printed, "killers forget Gank")[1], "已從名單刪除 Gank-Far。")
+    check("zhTW killers forget ambiguous", run(addon, printed, "killers forget Twin")[1],
+        "Twin 符合多筆；請用 名字-伺服器。")
+    check("zhTW killers forget unknown", run(addon, printed, "killers forget Nobody")[1], "Nobody 不在名單上。")
+    check("zhTW killers clear", run(addon, printed, "killers clear")[1], "已清空擊殺者名單。")
+    check("zhTW killers empty", run(addon, printed, "killers")[1], "尚無任何紀錄。")
 end
 
 do
@@ -5938,7 +6110,7 @@ do
     local ctx = loadShaman({ class = "WARRIOR" })
     ctx.run("debug on")
     ctx.fire("PLAYER_LOGIN")
-    check("proc probe: another class registers nothing", tostring(ctx.frame.registered.UNIT_COMBAT) .. " "
+    check("proc probe: another class registers nothing", tostring(ctx.frame.registered.UNIT_SPELLCAST_SUCCEEDED) .. " "
         .. tostring(ctx.frame.registered.PLAYER_ENTER_COMBAT), "nil nil")
 
     ctx = loadShaman({ env = { issecretvalue = function(v) return v == "S" end } })
@@ -6006,6 +6178,425 @@ do
     lines = probed()
     check("proc probe: a failing damage meter call is logged, not raised",
         lines[#lines]:match("^meter: player source false"), "meter: player source false")
+end
+
+-- The killers probe: with the recorder on, logs into TandemDebug.killers which probed events register and first fire,
+-- and per unit whether each identity API returns plain, secret or nil values (a player's identity in plain, a mob's
+-- not), throttled, and every unit at PLAYER_DEAD; nothing with the recorder off, and it never raises.
+do
+    local units = {
+        target = { name = "Gank", realm = "Far", player = true, attack = true, class = "ROGUE", level = 60 },
+        nameplate3 = { name = "Boar", player = false, attack = true, class = "WARRIOR", level = 12 },
+    }
+    local env = {
+        UnitExists = function(u) return units[u] ~= nil end,
+        UnitName = function(u) return units[u] and units[u].name, units[u] and units[u].realm end,
+        UnitFullName = function(u) return units[u] and units[u].name, units[u] and (units[u].realm or "Home") end,
+        UnitIsPlayer = function(u) return units[u] and units[u].player end,
+        UnitCanAttack = function(_, u) return units[u] and units[u].attack end,
+        UnitIsUnit = function(a, b) return a == "targettarget" and b == "player" end,
+        UnitGUID = function(u) return units[u] and "GUID-" .. u end,
+        UnitClass = function(u)
+            if u == "player" then return "Warrior", "WARRIOR" end
+            return units[u] and "Class", units[u] and units[u].class
+        end,
+        UnitLevel = function(u) return units[u] and units[u].level end,
+        InCombatLockdown = function() return false end,
+    }
+    local ctx = loadShaman({ class = "WARRIOR", env = env })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ctx.fire("PLAYER_DEAD")
+    check("killer probe: events registered on Tandem's frame, nothing logged with the recorder off",
+        tostring(ctx.frame.registered.NAME_PLATE_UNIT_ADDED) .. " " .. tostring(ctx.frame.registered.UNIT_TARGET)
+        .. " " .. tostring(ctx.env.TandemDebug and ctx.env.TandemDebug.killers), "true true nil")
+
+    ctx = loadShaman({ class = "WARRIOR", env = env })
+    ctx.run("debug on")
+    local register = ctx.frame.RegisterEvent
+    ctx.frame.RegisterEvent = function(self, ev)
+        if ev == "UPDATE_MOUSEOVER_UNIT" then
+            error("unknown event")
+        end
+        return register(self, ev)
+    end
+    ctx.fire("PLAYER_LOGIN")
+    local function lines(from)
+        local out = {}
+        for i, line in ipairs(ctx.env.TandemDebug.killers or {}) do
+            if i >= (from or 1) then
+                out[#out + 1] = line:match("^[%d.]+ (.*)$")
+            end
+        end
+        return out
+    end
+    check("killer probe: each event's registration logged once", table.concat(lines(), " / "),
+        "combat=false NAME_PLATE_UNIT_ADDED registered=true / combat=false PLAYER_TARGET_CHANGED registered=true / "
+        .. "combat=false UPDATE_MOUSEOVER_UNIT registered=false / combat=false PLAYER_FOCUS_CHANGED registered=true / "
+        .. "combat=false UNIT_TARGET registered=true / "
+        .. "combat=false PLAYER_DEAD registered=true")
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    ctx.fire("UNIT_TARGET", "party1")
+    ctx.fire("UPDATE_MOUSEOVER_UNIT")
+    check("killer probe: first firings and throttled snapshots, a player's identity in plain, a mob's flags only",
+        table.concat(lines(7), " / "), "combat=false first PLAYER_TARGET_CHANGED  / combat=false snap "
+        .. "PLAYER_TARGET_CHANGED target exists=true name=plain,plain full=plain,plain player=true attack=true "
+        .. "targetsMe=true guid=plain class=plain,plain level=plain | Gank-Far ROGUE 60 / combat=false first "
+        .. "NAME_PLATE_UNIT_ADDED nameplate3 / combat=false snap NAME_PLATE_UNIT_ADDED nameplate3 exists=true "
+        .. "name=plain,nil full=plain,plain player=false attack=true targetsMe=false guid=plain class=plain,plain "
+        .. "level=plain / combat=false first UNIT_TARGET party1")
+    ctx.fire("PLAYER_DEAD")
+    check("killer probe: PLAYER_DEAD snapshots every existing unit, unthrottled",
+        table.concat(lines(12), " / "):gsub(" exists.-ROGUE 60", ""):gsub(" exists.*$", ""),
+        "combat=false first PLAYER_DEAD  / combat=false snap dead target / combat=false snap dead nameplate3")
+    units.focus = { name = "Healer", player = true, attack = true, class = "PRIEST", level = 58 }
+    units.nameplate4 = { name = "Wolf", player = false, attack = true, class = "WARRIOR", level = 11 }
+    ctx.t = ctx.t + 10
+    local from = #lines() + 1
+    ctx.fire("PLAYER_FOCUS_CHANGED")
+    ctx.fire("PLAYER_FOCUS_CHANGED")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate4")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate4")
+    check("killer probe: focus snapshots on PLAYER_FOCUS_CHANGED; each nameplate throttled on its own",
+        table.concat(lines(from), " / "):gsub(" exists.-PRIEST 58", ""):gsub(" exists[^/]-level=plain", ""),
+        "combat=false first PLAYER_FOCUS_CHANGED  / combat=false snap PLAYER_FOCUS_CHANGED focus / combat=false snap "
+        .. "NAME_PLATE_UNIT_ADDED nameplate3 / combat=false snap NAME_PLATE_UNIT_ADDED nameplate4")
+
+    -- Secret values, raising and missing APIs, in combat.
+    local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
+        __index = function() error("secret") end })
+    ctx = loadShaman({ class = "WARRIOR", env = {
+        issecretvalue = function(v) return v == SECRET end,
+        UnitExists = function() return SECRET end,
+        UnitName = function() return SECRET, nil end,
+        UnitIsPlayer = function() return SECRET end,
+        UnitCanAttack = function() error("blocked") end,
+        UnitIsUnit = function() return SECRET end,
+        UnitClass = function(u)
+            if u == "player" then return "Warrior", "WARRIOR" end
+            return SECRET, SECRET
+        end,
+        UnitLevel = function() return SECRET end,
+        InCombatLockdown = function() return true end,
+    } })
+    ctx.run("debug on")
+    ctx.fire("PLAYER_LOGIN")
+    local ok = pcall(function()
+        ctx.fire("UNIT_TARGET", SECRET)
+        ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+        ctx.fire("PLAYER_DEAD")
+    end)
+    local got = lines()
+    check("killer probe: secret, raising and missing APIs are logged as such, never raised", tostring(ok) .. " "
+        .. got[8] .. " / " .. got[9], "true combat=true first NAME_PLATE_UNIT_ADDED nameplate1 / combat=true snap "
+        .. "NAME_PLATE_UNIT_ADDED nameplate1 exists=secret name=secret,nil full=err player=secret attack=err "
+        .. "targetsMe=secret guid=err class=secret,secret level=secret")
+    check("killer probe: a secret unit argument logs only the first firing", got[7],
+        "combat=true first UNIT_TARGET secret")
+
+    for _ = 1, 30 do
+        ctx.fire("PLAYER_DEAD")
+    end
+    check("killer probe: at most 200 lines kept", #lines(), 200)
+end
+
+-- Killers (D1, D2): at PLAYER_DEAD each hostile player seen targeting the player within the last 10 s is saved once
+-- with time and zone; mobs, friendly players and older sightings are not; secrets and unknown events never raise.
+do
+    local units, targets
+    local env = {
+        UnitExists = function(u) return units[u] ~= nil end,
+        UnitName = function(u)
+            if u == "player" then return "Thrall" end
+            return units[u] and units[u].name, units[u] and units[u].realm
+        end,
+        UnitFullName = function(u) return units[u] and units[u].name, units[u] and units[u].full end,
+        GetRealmName = function() return "Realm" end,
+        UnitIsPlayer = function(u) return units[u] and units[u].player end,
+        UnitCanAttack = function(_, u) return units[u] and units[u].attack end,
+        UnitIsUnit = function(a, b) return b == "player" and targets[a] == true end,
+        UnitClass = function(u)
+            if u == "player" then return "Warrior", "WARRIOR" end
+            return units[u] and "Class", units[u] and units[u].class
+        end,
+        UnitLevel = function(u) return units[u] and units[u].level end,
+        InCombatLockdown = function() return true end,
+        GetRealZoneText = function() return "Hillsbrad Foothills" end,
+        time = function() return 5000 end,
+    }
+    local function fresh()
+        units, targets = {}, {}
+        local ctx = loadShaman({ class = "WARRIOR", env = env })
+        ctx.run("debug on")
+        ctx.fire("PLAYER_LOGIN")
+        return ctx
+    end
+    local function saved(ctx)
+        local all = ctx.env.TandemDB.killers
+        local mine = all and all["Thrall-Realm"] or {}
+        local out = {}
+        for fullName, k in pairs(mine) do
+            out[#out + 1] = ("%s %s %s %s %d %s"):format(fullName, tostring(k.class), tostring(k.level),
+                tostring(k.zone), k.count, tostring(k.last))
+        end
+        table.sort(out)
+        return table.concat(out, " | ")
+    end
+    local function logged(ctx)
+        local out = {}
+        for _, line in ipairs(ctx.env.TandemDebug.log or {}) do
+            out[#out + 1] = line:match("(killers: .*)$")
+        end
+        table.sort(out)
+        return table.concat(out, " / ")
+    end
+
+    local ctx = fresh()
+    ctx.fire("PLAYER_DEAD")
+    check("killers: a first death with nobody seen records nothing", tostring(ctx.env.TandemDB.killers
+        and ctx.env.TandemDB.killers["Thrall-Realm"]) .. " " .. logged(ctx), "nil ")
+    units.target = { name = "Gank", realm = "Far", player = true, attack = true, class = "ROGUE", level = 60 }
+    units.nameplate2 = { name = "Stab", full = "Near", player = true, attack = true, class = "MAGE", level = -1 }
+    units.nameplate5 = { name = "Boar", player = false, attack = true, class = "WARRIOR", level = 12 }
+    units.focus = { name = "Pal", player = true, attack = false, class = "PALADIN", level = 50 }
+    units.mouseover = { name = "Home", player = true, attack = true, class = "HUNTER", level = 40 }
+    targets = { targettarget = true, nameplate2target = true, nameplate5target = true, focustarget = true,
+        mouseovertarget = true }
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate5")
+    ctx.fire("PLAYER_FOCUS_CHANGED")
+    ctx.fire("UPDATE_MOUSEOVER_UNIT")
+    check("killers: nothing saved before death", saved(ctx), "")
+    ctx.t = ctx.t + 9
+    ctx.fire("PLAYER_DEAD")
+    check("killers: hostile players seen targeting you at death saved once, with time and zone; not a mob nor a "
+        .. "friendly player", saved(ctx), "Gank-Far ROGUE 60 Hillsbrad Foothills 1 5000 | "
+        .. "Home-Realm HUNTER 40 Hillsbrad Foothills 1 5000 | Stab-Near MAGE nil Hillsbrad Foothills 1 5000")
+    check("killers: each recorded name logged", logged(ctx), "killers: recorded Gank-Far / killers: recorded "
+        .. "Home-Realm / killers: recorded Stab-Near")
+    units = {}
+    ctx.fire("PLAYER_DEAD")
+    check("killers: seen is emptied at death; a death with nobody seen records nothing",
+        saved(ctx):match("1 5000 | Home") ~= nil and not saved(ctx):match(" 2 "), true)
+
+    ctx = fresh()
+    units.target = { name = "Gank", realm = "Far", player = true, attack = true, class = "ROGUE", level = 60 }
+    targets.targettarget = true
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    units.target, targets.targettarget = nil, nil
+    ctx.t = ctx.t + 11
+    ctx.fire("PLAYER_DEAD")
+    check("killers: an attacker seen over 10 s before death is not saved", saved(ctx), "")
+
+    ctx = fresh()
+    units.nameplate7 = { name = "Lurk", realm = "Far", player = true, attack = true, class = "ROGUE", level = 30 }
+    units.target = { name = "Idle", realm = "Far", player = true, attack = true, class = "MAGE", level = 30 }
+    targets.nameplate7target = true
+    ctx.fire("UNIT_COMBAT", "target", "WOUND", "", 1, 1)
+    units.nameplate8 = units.nameplate7
+    units.nameplate7, targets.nameplate8target = nil, true
+    ctx.fire("UNIT_COMBAT", "player", "WOUND", "", 1, 1)
+    units.nameplate8 = nil
+    ctx.t = ctx.t + 5
+    ctx.fire("UNIT_TARGET", "party1")
+    ctx.fire("PLAYER_DEAD")
+    check("killers: UNIT_COMBAT on the player scans every unit; one not targeting you is not saved", saved(ctx),
+        "Lurk-Far ROGUE 30 Hillsbrad Foothills 1 5000")
+
+    ctx = fresh()
+    units.nameplate1 = { name = "Late", realm = "Far", player = true, attack = true, class = "ROGUE", level = 30 }
+    targets.nameplate1target = true
+    ctx.fire("PLAYER_DEAD")
+    check("killers: the last scan at death finds an attacker no event showed", saved(ctx),
+        "Late-Far ROGUE 30 Hillsbrad Foothills 1 5000")
+
+    local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
+        __index = function() error("secret") end, __lt = function() error("secret") end,
+        __le = function() error("secret") end })
+    units, targets = {}, {}
+    local reads = {}
+    ctx = loadShaman({ class = "WARRIOR", env = {
+        issecretvalue = function(v) return v == SECRET end,
+        UnitExists = function(u) return u == "nameplate9" and SECRET or true end,
+        UnitName = function(u)
+            if u == "player" then return "Thrall" end
+            reads[u] = true
+            return SECRET, nil
+        end,
+        GetRealmName = function() return "Realm" end,
+        UnitFullName = function() error("blocked") end,
+        UnitIsPlayer = function() return true end,
+        UnitCanAttack = function() return true end,
+        UnitIsUnit = function() return SECRET end,
+        UnitClass = function(u)
+            if u == "player" then return "Warrior", "WARRIOR" end
+            return SECRET, SECRET
+        end,
+        UnitLevel = function() return SECRET end,
+        GetRealZoneText = function() return SECRET end,
+        time = function() return 5000 end,
+    } })
+    ctx.fire("PLAYER_LOGIN")
+    local ok, err = pcall(function()
+        ctx.fire("UNIT_TARGET", SECRET)
+        ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+        ctx.fire("UNIT_COMBAT", SECRET, "WOUND")
+        ctx.fire("UNIT_COMBAT", "player", SECRET)
+        ctx.fire("PLAYER_DEAD")
+    end)
+    check("killers: secret and raising unit reads never raise and record nothing", tostring(ok) .. tostring(err)
+        .. saved(ctx), "truenil")
+    check("killers: the secret test reaches the unit reads; a secret UnitExists skips the unit",
+        tostring(reads.nameplate1) .. " " .. tostring(reads.nameplate9), "true nil")
+
+    units, targets = {}, {}
+    ctx = loadShaman({ class = "WARRIOR", env = env })
+    ctx.frame.RegisterEvent = function() error("unknown event") end
+    units.target = { name = "Gank", realm = "Far", player = true, attack = true, class = "ROGUE", level = 60 }
+    targets.targettarget = true
+    ok = pcall(function()
+        ctx.fire("PLAYER_LOGIN")
+        ctx.fire("PLAYER_TARGET_CHANGED")
+        ctx.fire("PLAYER_DEAD")
+    end)
+    check("killers: unknown events are skipped without raising", tostring(ok) .. saved(ctx), "true")
+end
+
+-- Killers nearby alert (D4): a saved killer seen on a nameplate, target, mouseover or focus is announced on Tandem's
+-- own frame, in chat and with the raid warning sound, in combat too, at most once a minute per name; unknown players,
+-- mobs and friendly players never are, and Blizzard's raid warning is never used.
+do
+    local units, sounds, raid
+    local env = {
+        UnitExists = function(u) return units[u] ~= nil end,
+        UnitName = function(u)
+            if u == "player" then return "Thrall" end
+            return units[u] and units[u].name, units[u] and units[u].realm
+        end,
+        GetRealmName = function() return "Realm" end,
+        UnitIsPlayer = function(u) return units[u] and units[u].player end,
+        UnitCanAttack = function(_, u) return units[u] and units[u].attack end,
+        UnitIsUnit = function() return false end,
+        UnitClass = function(u)
+            if u == "player" then return "Warrior", "WARRIOR" end
+            return "Class", "ROGUE"
+        end,
+        UnitLevel = function() return 60 end,
+        InCombatLockdown = function() return true end,
+        PlaySound = function(id) sounds[#sounds + 1] = id end,
+        SOUNDKIT = { RAID_WARNING = 8959 },
+        RaidNotice_AddMessage = function() raid = true end,
+        RaidWarningFrame = { AddMessage = function() raid = true end },
+        time = function() return 5000 end,
+    }
+    local function fresh(extra)
+        units, sounds, raid = {}, {}, false
+        local e = {}
+        for k, v in pairs(env) do e[k] = v end
+        for k, v in pairs(extra or {}) do e[k] = v end
+        local ctx = loadShaman({ class = "WARRIOR", env = e })
+        ctx.fire("PLAYER_LOGIN")
+        local Store = ctx.addon.Store
+        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 1 })
+        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 2 })
+        Store.AddKiller("Thrall-Realm", { name = "Boar", realm = "Far", when = 3 })
+        Store.AddKiller("Thrall-Realm", { name = "Pal", realm = "Far", when = 4 })
+        function ctx.banner()
+            for _, w in ipairs(ctx.ui.widgets) do
+                if w.name == "TandemKillerAlert" then return w end
+            end
+        end
+        return ctx
+    end
+    local GANK = { name = "Gank", realm = "Far", player = true, attack = true }
+    local LINE = "Gank-Far is nearby (seen at your death 2 times)"
+
+    local ctx = fresh()
+    units.nameplate3 = GANK
+    local from = #ctx.printed
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    local b = ctx.banner()
+    local p = b and b.points[1] or {}
+    check("killer alert: a saved killer on a nameplate shows Tandem's frame at the top centre, in combat",
+        tostring(b and b.shown) .. " " .. tostring(p[1]) .. " " .. tostring(b and b.parent == ctx.env.UIParent)
+        .. " " .. tostring(b and b.text.text), "true TOP true " .. LINE)
+    check("killer alert: red text", table.concat(b and b.text.textColor or {}, ","), "1,0.1,0.1")
+    check("killer alert: one chat line and the raid warning sound, never Blizzard's raid warning",
+        table.concat(linesSince(ctx.printed, from), " / ") .. " " .. table.concat(sounds, ",") .. " " .. tostring(raid),
+        LINE .. " 8959 false")
+    ctx.t = ctx.t + 4.9
+    b.scripts.OnUpdate(b)
+    local still = b.shown
+    ctx.t = ctx.t + 0.1
+    b.scripts.OnUpdate(b)
+    check("killer alert: the frame hides after 5 s", tostring(still) .. " " .. tostring(b.shown), "true false")
+
+    units.target, units.mouseover, units.focus = GANK, GANK, GANK
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ctx.fire("UPDATE_MOUSEOVER_UNIT")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate3")
+    ctx.t = ctx.t + 54.9
+    ctx.fire("PLAYER_FOCUS_CHANGED")
+    check("killer alert: at most once per 60 s per name", #sounds .. " " .. tostring(b.shown), "1 false")
+    ctx.t = ctx.t + 0.1
+    ctx.fire("UPDATE_MOUSEOVER_UNIT")
+    check("killer alert: again after the cooldown", #sounds .. " " .. tostring(b.shown), "2 true")
+
+    for _, event in ipairs({ "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "PLAYER_FOCUS_CHANGED" }) do
+        ctx = fresh()
+        units.target, units.mouseover, units.focus = GANK, GANK, GANK
+        ctx.fire(event)
+        check("killer alert: " .. event .. " alerts", #sounds, 1)
+    end
+
+    ctx = fresh()
+    units.target = GANK
+    ctx.fire("UNIT_TARGET", "target")
+    ctx.fire("NAME_PLATE_UNIT_ADDED", "target")
+    units.nameplate1 = { name = "Who", realm = "Far", player = true, attack = true }
+    units.nameplate2 = { name = "Boar", realm = "Far", player = false, attack = true }
+    units.nameplate4 = { name = "Pal", realm = "Far", player = true, attack = false }
+    units.nameplate5 = { name = "Gank", realm = "Near", player = true, attack = true }
+    from = #ctx.printed
+    for i = 1, 5 do
+        ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate" .. i)
+    end
+    check("killer alert: unknown players, mobs, friendly players and other events never alert",
+        #sounds .. " " .. #linesSince(ctx.printed, from) .. " " .. tostring((ctx.banner())), "0 0 nil")
+
+    local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
+        __index = function() error("secret") end, __lt = function() error("secret") end,
+        __le = function() error("secret") end })
+    ctx = fresh({
+        issecretvalue = function(v) return v == SECRET end,
+        UnitFullName = function() error("blocked") end,
+        UnitIsUnit = function() return SECRET end,
+        UnitClass = function(u)
+            if u == "player" then return "Warrior", "WARRIOR" end
+            return SECRET, SECRET
+        end,
+        UnitLevel = function() return SECRET end,
+    })
+    units.target = { name = "Gank", player = true, attack = true }
+    units.nameplate6 = GANK
+    local ok, err = pcall(function()
+        ctx.fire("PLAYER_TARGET_CHANGED")
+        ctx.fire("NAME_PLATE_UNIT_ADDED", "nameplate6")
+    end)
+    check("killer alert: secret reads never raise; the readable name still alerts", tostring(ok) .. tostring(err)
+        .. " " .. #sounds, "truenil 1")
+    ctx = fresh({ UnitName = function(u)
+        if u == "player" then return "Thrall" end
+        return SECRET, "Far"
+    end, issecretvalue = function(v) return v == SECRET end })
+    units.nameplate6 = GANK
+    ok, err = pcall(ctx.fire, "NAME_PLATE_UNIT_ADDED", "nameplate6")
+    check("killer alert: a secret name never raises nor alerts", tostring(ok) .. tostring(err) .. " " .. #sounds,
+        "truenil 0")
 end
 
 -- Weapon enchant procs: an icon under the player frame with the main-hand enchant's procs per hit, counted from
@@ -6205,10 +6796,14 @@ local function loadMinimap(opts)
     function tip.Hide(self) self.shown = false end
     local ctx
     local env = { GameTooltip = tip, GetCursorPosition = function() return ctx.cursor[1], ctx.cursor[2] end }
+    for k, v in pairs(opts.env or {}) do
+        env[k] = v
+    end
     if not opts.noMinimap then
         env.Minimap = fakeMinimap(ui)
     end
     ctx = loadLayout({ env = env, locale = opts.locale, db = opts.db, layouts = opts.layouts, active = opts.active,
+        name = opts.name,
         widgets = function(kind, name, parent, template)
             return newWidget(ui, kind, name, parent, template)
         end })
@@ -6262,16 +6857,18 @@ do
     end
     check("minimap button: built once", n, 1)
 
+    check("minimap button: takes left and right clicks", table.concat(b.clicks, " "), "LeftButtonUp RightButtonUp")
     local from = #ctx.printed
     b.scripts.OnClick(b, "RightButton")
-    check("minimap button: a right click does nothing", #ctx.printed .. " " .. tostring(ctx.addon.Layout.IsOn()),
-        from .. " false")
+    check("minimap button: a right click leaves the layout alone", #ctx.printed .. " "
+        .. tostring(ctx.addon.Layout.IsOn()), from .. " false")
     check("minimap button: click turns the layout on", ctx.click(b) .. " " .. tostring(ctx.addon.Layout.IsOn()),
         "Tandem: layout on true")
     b.scripts.OnEnter(b)
     check("minimap button: tooltip with the state and hints", ctx.tip.title .. " / " .. texts(ctx.tip) .. " / "
         .. tostring(ctx.tip.owner == b) .. " " .. tostring(ctx.tip.shown),
-        "Tandem / Layout: on / Click to turn the layout on/off / Drag to move this button / true true")
+        "Tandem / Layout: on / Click to turn the layout on/off / Right-click to show the killer list"
+        .. " / Drag to move this button / true true")
     b.scripts.OnLeave(b)
     check("minimap button: tooltip hidden", ctx.tip.shown, false)
     check("minimap button: click turns the layout off", ctx.click(b) .. " " .. tostring(ctx.addon.Layout.IsOn()),
@@ -6290,7 +6887,7 @@ do
     local menuButton = {}
     ctx.env.Tandem_OnCompartmentEnter("Tandem", menuButton)
     check("compartment tooltip: no drag hint", tostring(ctx.tip.owner == menuButton) .. " " .. texts(ctx.tip),
-        "true Layout: off / Click to turn the layout on/off")
+        "true Layout: off / Click to turn the layout on/off / Right-click to show the killer list")
     ctx.env.Tandem_OnCompartmentLeave("Tandem", menuButton)
     check("compartment tooltip hidden", ctx.tip.shown, false)
 
@@ -6356,13 +6953,162 @@ do
     ctx.fire("PLAYER_LOGIN")
     local b = ctx.button()
     b.scripts.OnEnter(b)
-    check("zhTW minimap tooltip", texts(ctx.tip), "介面配置：關閉 / 點擊以開啟或關閉介面配置 / 拖曳以移動此按鈕")
+    check("zhTW minimap tooltip", texts(ctx.tip),
+        "介面配置：關閉 / 點擊以開啟或關閉介面配置 / 右鍵點擊以顯示擊殺者名單 / 拖曳以移動此按鈕")
     check("zhTW minimap command", ctx.run("minimap"), "Tandem：已隱藏小地圖按鈕")
     local help = run(ctx.addon, ctx.printed, "help")
-    check("zhTW usage lists minimap", help[#help - 2], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
-    check("zhTW usage lists books", help[#help - 1],
+    check("zhTW usage lists minimap", help[#help - 4], "  /tandem minimap [on|off] - 顯示或隱藏小地圖按鈕")
+    check("zhTW usage lists books", help[#help - 3],
         "  /tandem books [on|off|near] - 在世界地圖上標記圖書館書籍，或列出最近的一本")
+    check("zhTW usage lists killers", help[#help - 2], "  /tandem killers - 列出你死亡時以你為目標的敵方玩家")
+    check("zhTW usage lists killers forget and clear", help[#help - 1],
+        "  /tandem killers forget <name> | clear - 從名單刪除一個名字，或全部清空")
     check("zhTW usage lists debug", help[#help], "  /tandem debug [on|off|snap] - 為開發者記錄版面追蹤資料；/reload 後寫入存檔")
+end
+
+-- The killers window (killers D7): a right-click on the minimap button or the compartment entry toggles it.
+local function loadKillersView(opts)
+    opts = opts or {}
+    local ctx
+    ctx = loadMinimap({ locale = opts.locale, db = opts.db, name = opts.name == nil and "Thrall" or opts.name or nil,
+        env = {
+            LOCALIZED_CLASS_NAMES_MALE = { ROGUE = "Rogue" },
+            RAID_CLASS_COLORS = { ROGUE = { r = 1, g = 0.96, b = 0.41 } },
+            UISpecialFrames = {},
+            date = function(fmt, t) return fmt == "%Y-%m-%d %H:%M" and "D" .. t or nil end,
+            GetTime = function() return ctx.t end,
+        } })
+    ctx.t = 100
+    ctx.fire("PLAYER_LOGIN")
+    function ctx.window()
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemKillersFrame" then
+                return w
+            end
+        end
+    end
+    function ctx.rows()
+        local out = {}
+        for _, row in ipairs(ctx.window().rows) do
+            if row.shown then
+                out[#out + 1] = row.name.text .. " " .. row.details.text
+            end
+        end
+        return table.concat(out, " / ")
+    end
+    return ctx
+end
+
+do
+    local ctx = loadKillersView()
+    local Store, b = ctx.addon.Store, ctx.button()
+    Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", class = "ROGUE", level = 60, zone = "Duskwood",
+        when = 300 })
+    Store.AddKiller("Thrall-Realm", { name = "Stab", realm = "Realm", class = "MAGE", when = 200 })
+    check("killers window: built on first use", ctx.window(), nil)
+    ctx.addon.KillersView.Refresh()
+    check("killers window: Refresh before the window does nothing", ctx.window(), nil)
+    b.scripts.OnClick(b, "RightButton")
+    local w = ctx.window()
+    check("killers window: a right-click shows it", tostring(w.shown) .. " " .. w.title.text .. " "
+        .. tostring(ctx.addon.Layout.IsOn()), "true Killers false")
+    check("killers window: ESC closes it", ctx.env.UISpecialFrames[1], "TandemKillersFrame")
+    check("killers window: lists newest first", ctx.rows(), "Gank-Far Rogue 60  x1  D300  Duskwood"
+        .. " / Stab-Realm MAGE  x1  D200")
+    check("killers window: class colour", table.concat(w.rows[1].name.textColor, ","), "1,0.96,0.41")
+    check("killers window: no class colour is white", table.concat(w.rows[2].name.textColor, ","), "1,1,1")
+    check("killers window: no status with a list", w.status.text .. "|" .. w.range.text .. "|"
+        .. tostring(w.clear.shown), "||true")
+    b.scripts.OnClick(b, "RightButton")
+    check("killers window: a second right-click hides it", w.shown, false)
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "RightButton")
+    check("killers window: the compartment's right-click shows it", tostring(w.shown) .. " "
+        .. tostring(ctx.addon.Layout.IsOn()), "true false")
+    ctx.env.Tandem_OnCompartmentClick("RightButton")
+    check("killers window: a right-click as the first argument hides it", w.shown, false)
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "RightButton")
+    w.close.scripts.OnClick(w.close)
+    check("killers window: the close button hides it", w.shown, false)
+    b.scripts.OnClick(b, "RightButton")
+    check("killers window: movable by dragging", table.concat(w.drag, " ") .. " "
+        .. tostring(w.scripts.OnDragStart ~= nil and w.scripts.OnDragStop ~= nil), "LeftButton true")
+
+    Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 400 })
+    ctx.run("killers forget Stab")
+    check("killers window: refreshes after a forget command", ctx.rows(), "Gank-Far Rogue 60  x2  D400  Duskwood")
+    w.rows[1].forget.scripts.OnClick(w.rows[1].forget)
+    check("killers window: a row's forget button drops it", #Store.Killers("Thrall-Realm") .. " " .. ctx.rows()
+        .. "|" .. w.status.text .. "|" .. tostring(w.clear.shown), "0 |No one recorded yet.|false")
+
+    local refreshed = 0
+    local real = ctx.addon.KillersView.Refresh
+    ctx.addon.KillersView.Refresh = function() refreshed = refreshed + 1 end
+    ctx.fire("PLAYER_DEAD")
+    check("killers window: refreshed when a death is recorded", refreshed, 1)
+    ctx.addon.KillersView.Refresh = real
+
+    for i = 1, 30 do
+        Store.AddKiller("Thrall-Realm", { name = "K" .. i, realm = "R", when = 1000 + i })
+    end
+    ctx.run("killers clear")
+    check("killers window: refreshes after a clear command", w.status.text, "No one recorded yet.")
+    for i = 1, 30 do
+        Store.AddKiller("Thrall-Realm", { name = "K" .. i, realm = "R", when = 1000 + i })
+    end
+    ctx.addon.KillersView.Refresh()
+    check("killers window: shows twelve rows and the range", select(2, ctx.rows():gsub(" / ", "")) + 1 .. " "
+        .. w.rows[1].name.text .. " " .. w.range.text, "12 K30-R 1-12 / 30")
+    w.scripts.OnMouseWheel(w, -1)
+    check("killers window: the wheel scrolls down", w.rows[1].name.text .. " " .. w.range.text, "K29-R 2-13 / 30")
+    for _ = 1, 40 do
+        w.scripts.OnMouseWheel(w, -1)
+    end
+    check("killers window: scrolling stops at the last row", w.rows[12].name.text .. " " .. w.range.text,
+        "K1-R 19-30 / 30")
+    for _ = 1, 40 do
+        w.scripts.OnMouseWheel(w, 1)
+    end
+    check("killers window: scrolling stops at the first row", w.rows[1].name.text, "K30-R")
+
+    w.clear.scripts.OnClick(w.clear)
+    check("killers window: Clear asks to confirm", w.clear.label.text .. " " .. #Store.Killers("Thrall-Realm"),
+        "Click again to clear 30")
+    ctx.t = 104
+    w.clear.scripts.OnUpdate(w.clear)
+    check("killers window: the confirm lapses after 3 s", w.clear.label.text .. " "
+        .. tostring(w.clear.scripts.OnUpdate), "Clear nil")
+    w.clear.scripts.OnClick(w.clear)
+    ctx.t = 107.5
+    w.clear.scripts.OnClick(w.clear)
+    check("killers window: a late second click only asks again", w.clear.label.text .. " "
+        .. #Store.Killers("Thrall-Realm"), "Click again to clear 30")
+    ctx.t = 109
+    ctx.state.combat = true
+    w.clear.scripts.OnClick(w.clear)
+    check("killers window: a second click within 3 s clears, in combat too", #Store.Killers("Thrall-Realm") .. " "
+        .. w.status.text .. " " .. tostring(w.clear.shown) .. " " .. w.clear.label.text,
+        "0 No one recorded yet. false Clear")
+    b.scripts.OnClick(b, "RightButton")
+    b.scripts.OnClick(b, "RightButton")
+    check("killers window: toggles in combat", w.shown, true)
+end
+
+do
+    local ctx = loadKillersView({ name = false })
+    ctx.button().scripts.OnClick(ctx.button(), "RightButton")
+    check("killers window: no character", ctx.window().status.text .. " " .. tostring(ctx.window().clear.shown),
+        "Killer list unavailable. false")
+    ctx = loadKillersView({ db = { schemaVersion = 8 } })
+    ctx.button().scripts.OnClick(ctx.button(), "RightButton")
+    check("killers window: read-only saved data", ctx.window().status.text, "Killer list unavailable.")
+    ctx = loadKillersView({ locale = "zhTW" })
+    ctx.addon.Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 300 })
+    ctx.env.Tandem_OnCompartmentClick("Tandem", "RightButton")
+    local w = ctx.window()
+    w.clear.scripts.OnClick(w.clear)
+    check("zhTW killers window", w.title.text .. " " .. w.clear.label.text, "擊殺者 再點一次以清空")
+    w.rows[1].forget.scripts.OnClick(w.rows[1].forget)
+    check("zhTW killers window empty", w.status.text .. " " .. w.clear.label.text, "尚無任何紀錄。 清空")
 end
 
 do

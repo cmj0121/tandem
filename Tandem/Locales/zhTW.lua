@@ -261,6 +261,22 @@ L["Tandem: nearest book %s (%s), map %d, %d yd"] = "Tandem：最近的書 %s（%
 L["Tandem: nearest book %s (%s), %.1f map percent away"] = "Tandem：最近的書 %s（%s），相距地圖 %.1f%%"
 L["Tandem: no eligible book on this continent"] = "Tandem：這塊大陸上沒有符合等級的書"
 L["Tandem: Library book nearby: %s — %s"] = "Tandem：附近有圖書館書籍：%s — %s"
+L["%s is nearby (seen at your death %d times)"] = "%s 就在附近（你死亡時見過 %d 次）"
+L["  /tandem killers - list the enemy players seen targeting you at your death"] =
+    "  /tandem killers - 列出你死亡時以你為目標的敵方玩家"
+L["  /tandem killers forget <name> | clear - drop one name from that list, or all of them"] =
+    "  /tandem killers forget <name> | clear - 從名單刪除一個名字，或全部清空"
+L["Seen targeting you at your death:"] = "你死亡時以你為目標的玩家："
+L["No one recorded yet."] = "尚無任何紀錄。"
+L["%s is not on the list."] = "%s 不在名單上。"
+L["%s matches several; use Name-Realm."] = "%s 符合多筆；請用 名字-伺服器。"
+L["%s removed from the list."] = "已從名單刪除 %s。"
+L["Killer list cleared."] = "已清空擊殺者名單。"
+L["Killer list unavailable."] = "無法使用擊殺者名單。"
+L["Killers"] = "擊殺者"
+L["Clear"] = "清空"
+L["Click again to clear"] = "再點一次以清空"
+L["Right-click to show the killer list"] = "右鍵點擊以顯示擊殺者名單"
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific
 -- line comes after it.

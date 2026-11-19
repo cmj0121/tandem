@@ -41,6 +41,9 @@ BookAlert.lua
 ClassArea.lua
 Classes\Shaman.lua
 ProcProbe.lua
+KillerProbe.lua
+Killers.lua
+KillersView.lua
 Procs.lua
 Launcher.lua
 QuestPick.lua

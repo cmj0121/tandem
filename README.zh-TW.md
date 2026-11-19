@@ -81,10 +81,14 @@ make install MODE=copy
 | `/tandem books`                        | 印出[圖書館書籍](#圖書館書籍)提示是否開啟           |
 | `/tandem books <on\|off>`              | 開啟或關閉書籍地圖標記與附近提醒                    |
 | `/tandem books near`                   | 印出你的地圖 ID、位置與最近一本你能拿的書           |
+| `/tandem killers`                      | 列出你死亡時以你為目標的[敵方玩家](#擊殺者)         |
+| `/tandem killers forget <name>`        | 從名單刪除一個名字                                  |
+| `/tandem killers clear`                | 清空名單                                            |
 | `/tandem debug [on\|off\|snap]`        | 為開發者記錄版面追蹤資料；見[除錯紀錄](#除錯紀錄)   |
 
 戰鬥中執行 `check` 與 `weights` 時，只會印出 `Tandem: not available in combat`，不做任何事。`layout` 則會等到戰鬥
-結束才執行；`minimap` 與 `books` 在戰鬥中也能使用。
+結束才執行；`minimap`、`books` 與 `killers` 在戰鬥中也能
+使用。
 
 ### `/tandem check`
 
@@ -311,6 +315,39 @@ Tandem：最近的書 Bewitchments and Glamours（月溪鎮，從東邊進入的
 每次世界地圖切換記錄 `books map=<id> pins=<n>`，每次提醒記錄 `books alert <key> map=<id> at (<x>, <y>)`，
 `/tandem books near` 印出的各行也會一併記錄。
 
+## 擊殺者
+
+Forever 沒有戰鬥紀錄，所以 Tandem 無法得知是誰殺了你。改為在你死亡時，記下過去 10 秒內以你為目標的每個敵方玩家：
+名字與伺服器、職業、等級、在你幾次死亡時出現過，以及最近一次的時間與區域。這只是推測：潛行中或距離太遠的兇手會漏掉，
+只是把你選為目標的旁觀者也會被列入。每個角色各自保存最多 50 個名字。
+
+之後其中一人出現在名條上、成為你的目標或專注目標，或在滑鼠游標下時，Tandem 會在畫面上方顯示大紅字、在聊天視窗印一行，
+並播放團隊警告音效，戰鬥中也一樣：
+
+```text
+Gank-Far 就在附近（你死亡時見過 2 次）
+```
+
+同一名玩家每 60 秒最多提醒一次。開啟敵方名條，能在更遠處就看到他們。
+
+`/tandem killers` 印出名單，最新的在前：
+
+```text
+你死亡時以你為目標的玩家：
+Gank-Far  盜賊 60  x2  2026-11-18 21:04  暮色森林
+```
+
+用戶端沒給的欄位會省略；名單是空的時印出 `尚無任何紀錄。`。`/tandem killers forget <name>` 刪除一個名字：
+`名字-伺服器` 指定確切的一筆；只寫名字時，指你所在伺服器的那一筆，否則是唯一同名的那一筆。它會印出
+`已從名單刪除 <name>。`、`<name> 不在名單上。` 或 `<name> 符合多筆；請用 名字-伺服器。`。`/tandem killers clear`
+清空名單並印出 `已清空擊殺者名單。`。角色尚未辨識或存檔資料為唯讀時，
+這些指令都會印出 `無法使用擊殺者名單。`。
+
+在[小地圖按鈕](#小地圖按鈕)或插件收納選單的 Tandem 項目上按右鍵，會以可拖曳的視窗開啟同一份名單；用關閉按鈕、Esc
+或再按一次右鍵關閉。每一列顯示依職業著色的名字、職業與等級、次數、日期與區域；超過 12 筆時用滑鼠滾輪捲動。列尾的叉號
+刪除該名字；`清空` 要在 3 秒內再點一次才會清空名單，期間標籤顯示 `再點一次以清空`。每次新的死亡、`forget` 與 `clear`
+後視窗都會更新；名單是空的時顯示 `尚無任何紀錄。`，無法讀取時顯示 `無法使用擊殺者名單。`。
+
 ## 介面配置
 
 ```text
@@ -336,7 +373,7 @@ Tandem: layout on
 小地圖邊緣的 Tandem 圖示，點擊即可開啟或關閉介面配置，並印出與 `/tandem layout on` 或 `off` 相同的訊息；戰鬥中的
 變更同樣會等待。滑鼠提示會顯示介面配置是否開啟。沿著小地圖拖曳即可移動它，位置會被儲存。`/tandem minimap off`
 隱藏它，`/tandem minimap on` 再次顯示，只輸入 `/tandem minimap` 則切換，並印出 `Tandem: minimap button hidden` 或
-`Tandem: minimap button shown`。插件收納選單中的 Tandem 項目與點擊按鈕的作用相同。
+`Tandem: minimap button shown`。插件收納選單中的 Tandem 項目與點擊按鈕的作用相同。在兩者上按右鍵會開啟[擊殺者視窗](#擊殺者)。
 
 在繁體中文（`zhTW`）用戶端上，這些訊息會以中文顯示。
 
