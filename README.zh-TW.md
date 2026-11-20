@@ -278,7 +278,7 @@ Tandem：附近有圖書館書籍：Bewitchments and Glamours — 月溪鎮，�
 - 疊在一起的書（例如黑石山的兩本）共用一個標記，提示框列出每一本。
 - 位於洞穴或另有入口的建築內的書，另外在入口處有一個較淡的標記；它的提示框第一行是 `入口`。
 - 你陣營的交書 NPC 以不同的書本圖示顯示，並標示 `收取圖書館書籍`：聯盟是暴風城法師塔的 Garion Wendell，部落是幽暗城
-  魔法區的 Owen Thadd。
+  魔法區的 Owen Thadd。旁邊的標籤顯示你[已繳交](#已繳交的書)的書數與總數，例如 `12/36`。
 - 點擊標記即設定並追蹤路徑點；書有入口時先設在入口。聊天視窗顯示 `Tandem：已設定路徑點到 <書名>`，用戶端無法在該處
   設定時則顯示 `Tandem：無法在此設定路徑點`。
 - 不論[介面配置](#介面配置)是否開啟都會顯示標記。[`/tandem check`](#tandem-check) 的 `Book pins` 這行為 `missing`
@@ -286,7 +286,7 @@ Tandem：附近有圖書館書籍：Bewitchments and Glamours — 月溪鎮，�
 
 ### 書籍提醒
 
-當你站在你的等級能拿的書（或它的入口）40 碼內，聊天視窗會顯示上面那行，每本書每個工作階段一次：只有重新登入或
+當你站在你的等級能拿、尚未繳交的書（或它的入口）40 碼內，聊天視窗會顯示上面那行，每本書每個工作階段一次：只有重新登入或
 `/reload` 後才會再提醒同一本書。戰鬥中不做檢查，戰鬥結束後恢復。距離以世界座標計算，所以站在洞穴或黑石山裡，也會與
 區域地圖上的書比較；用戶端不提供世界座標時，只有同一張地圖上、兩軸都在 0.7 個地圖百分比內的書才算。它需要
 [`/tandem check`](#tandem-check) 的 `Book alert` 這行。
@@ -297,7 +297,12 @@ Tandem：附近有圖書館書籍：Bewitchments and Glamours — 月溪鎮，�
 `Tandem：圖書館書籍提示已開啟` 或 `Tandem：圖書館書籍提示已關閉`，只輸入 `/tandem books` 也一樣。開關以 `books`
 存在[介面配置](#存檔資料)資料中，在你關閉之前都是開啟的。
 
-Tandem 不會記錄你已收集哪些書：已拾取或已交出的書仍保有它的標記與提醒。
+### 已繳交的書
+
+已交給你陣營圖書館員的書，在地圖上會變淡顯示，提示框多一行綠字 `已繳交`，入口標記會消失，提醒也不再提到它。圖書館員的
+提示框會加上 `已繳交書籍：<n>/<總數>`，在你拿到所有獎勵之前還有 `下一個獎勵：<n> 本`（10、20、25 或 35）。Tandem
+從遊戲的任務旗標讀取這些資訊，所以安裝前就繳交的書也算在內，現在繳交的書則會立即變淡。已拾取但尚未繳交的書仍保有完整的
+標記與提醒。
 
 ### 書籍資料的來源
 
@@ -313,7 +318,9 @@ Tandem：最近的書 Bewitchments and Glamours（月溪鎮，從東邊進入的
 每個地圖 ID，請開啟[除錯紀錄](#除錯紀錄)並 `/reload`：登入時會為表中用到的每張地圖記錄
 `books mapinfo id=<id> name=<name> type=<type>`（或 `books mapinfo id=<id> missing`），以及 `books worldpos ok|missing`；
 每次世界地圖切換記錄 `books map=<id> pins=<n>`，每次提醒記錄 `books alert <key> map=<id> at (<x>, <y>)`，
-`/tandem books near` 印出的各行也會一併記錄。
+`/tandem books near` 印出的各行也會一併記錄。至於繳交旗標，登入時還會記錄 `books turnedin <n>/<total> next=<n>|none`
+與每本書一行 `books flag key=<key> quest=<id> flagged=true|false`，每次交書記錄
+`books turnin quest=<id> title=<title> book=<key>|none`。
 
 ## 擊殺者
 

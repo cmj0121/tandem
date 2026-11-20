@@ -11,7 +11,7 @@ for _, event in ipairs({
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
     "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
-    "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "CVAR_UPDATE",
+    "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "CVAR_UPDATE", "QUEST_TURNED_IN",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
@@ -143,6 +143,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.QuestPick.OnQuestComplete()
     elseif event == "QUEST_FINISHED" then
         ns.QuestPick.OnQuestFinished()
+    elseif event == "QUEST_TURNED_IN" then
+        -- A library book turned in (library books D5) dims its pins and leaves the alert.
+        if ns.Books.OnQuestTurnedIn((...)) then
+            ns.BookPins.Refresh()
+            ns.BookAlert.Update()
+        end
     elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
         ns.Trainer.OnTrainer()
         ns.ActionBorders.Schedule()

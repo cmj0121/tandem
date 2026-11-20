@@ -10810,8 +10810,8 @@ local function loadBooks(opts)
     for k, v in pairs(opts.env or {}) do
         env[k] = v
     end
-    local addon, printed, _, loadedEnv = loadAddon(opts.locale or "enUS", { env = env })
-    ctx.addon, ctx.printed, ctx.env = addon, printed, loadedEnv
+    local addon, printed, _, loadedEnv, fire = loadAddon(opts.locale or "enUS", { env = env })
+    ctx.addon, ctx.printed, ctx.env, ctx.fire = addon, printed, loadedEnv, fire
     return ctx
 end
 
@@ -10942,7 +10942,7 @@ do
     local lines = {}
     for _, line in ipairs(ctx.env.TandemDebug.log) do
         local what = line:match("^[%d.]+ combat=%a+ (books .*)$")
-        if what then
+        if what and (what:find("^books mapinfo ") or what:find("^books worldpos ")) then
             lines[#lines + 1] = what
         end
     end
@@ -10974,18 +10974,213 @@ do
     check("zhTW books: a note", addon.L["Everlook"], "永望鎮")
 end
 
+-- Library books turned in (library books U1 here, D5 in comments).
+
+-- The "books ..." debug lines logged since the log was last reset.
+local function bookLines(env)
+    local lines = {}
+    for _, line in ipairs(env.TandemDebug.log) do
+        lines[#lines + 1] = line:match("^[%d.]+ combat=%a+ (books .*)$")
+    end
+    return lines
+end
+
+local function hasLine(lines, want)
+    for _, line in ipairs(lines) do
+        if line == want then
+            return true
+        end
+    end
+    return false
+end
+
+-- Loads the books with a fake quest log: ctx.done[quest] = true reads completed, ctx.titles[quest] is its title.
+-- opts.api = "global" offers only the global IsQuestFlaggedCompleted, "none" neither.
+local function loadTurnIns(opts)
+    opts = opts or {}
+    local done, titles = {}, {}
+    local env = {}
+    local function isDone(quest)
+        return done[quest] == true
+    end
+    if opts.api == "global" then
+        env.IsQuestFlaggedCompleted = isDone
+        env.C_QuestLog = { GetTitleForQuestID = function(q) return titles[q] end }
+    elseif opts.api == "none" then
+        env.C_QuestLog = { GetTitleForQuestID = function(q) return titles[q] end }
+    else
+        env.C_QuestLog = { IsQuestFlaggedCompleted = isDone, GetTitleForQuestID = function(q) return titles[q] end }
+    end
+    local ctx = loadBooks({ env = env })
+    ctx.done, ctx.titles = done, titles
+    ctx.env.TandemDebug = { on = true, log = {} }
+    return ctx
+end
+
+do
+    local addon = loadBooks().addon
+    local missing, rumi = {}, {}
+    for _, b in ipairs(addon.BookData.books) do
+        if type(b.quest) ~= "number" then
+            missing[#missing + 1] = b.key
+        end
+        if b.key:find("^rumi%-") then
+            rumi[#rumi + 1] = b.quest
+        end
+    end
+    check("books quests: every row has a numeric quest", table.concat(missing, " "), "")
+    check("books quests: both Rumi rows share one quest", rumi[1] == rumi[2] and rumi[1], 79093)
+    local ms = {}
+    for i, m in ipairs(addon.BookData.milestones) do
+        ms[i] = m.books .. "=" .. m.quest
+    end
+    check("books quests: the milestones", table.concat(ms, " "), "10=78150 20=79536 25=82208 35=84394")
+end
+
+do
+    local ctx = loadTurnIns()
+    local Books = ctx.addon.Books
+    local done, total, nextAt = Books.Progress()
+    check("books progress: nothing turned in", ("%d %d %s"):format(done, total, tostring(nextAt)), "0 36 10")
+    check("books turnedin: an unflagged book", Books.TurnedIn("baxtan"), false)
+    ctx.done[79097] = true
+    check("books turnedin: a flagged quest", Books.TurnedIn("baxtan"), true)
+    check("books turnedin: an unknown key", Books.TurnedIn("nope"), false)
+    ctx.done[79093] = true
+    check("books turnedin: Rumi in Westfall", Books.TurnedIn("rumi-westfall"), true)
+    check("books turnedin: and in Loch Modan", Books.TurnedIn("rumi-loch-modan"), true)
+    done = Books.Progress()
+    check("books progress: Rumi counts once", done, 2)
+
+    local twelve = 0
+    for _, b in ipairs(ctx.addon.BookData.books) do
+        if twelve < 12 and not ctx.done[b.quest] then
+            ctx.done[b.quest] = true
+            twelve = twelve + 1
+        end
+    end
+    ctx.done[79097], ctx.done[79093] = nil, nil
+    local count = 0
+    for _ in pairs(ctx.done) do
+        count = count + 1
+    end
+    ctx.done[78150] = true
+    done, total, nextAt = Books.Progress()
+    check("books progress: 12 quests and the 10 book reward", ("%d/%d %s %d"):format(done, total, tostring(nextAt),
+        count), "12/36 20 12")
+    ctx.done[79536], ctx.done[82208], ctx.done[84394] = true, true, true
+    nextAt = select(3, Books.Progress())
+    check("books progress: every reward taken", tostring(nextAt), "nil")
+
+    ctx.env.C_QuestLog.IsQuestFlaggedCompleted = function() error("no quest log") end
+    check("books turnedin: a raising API reads false", Books.TurnedIn("crimes-anatomy"), false)
+    ctx.env.C_QuestLog.IsQuestFlaggedCompleted = function() return 1 end
+    check("books turnedin: a non-true answer reads false", Books.TurnedIn("crimes-anatomy"), false)
+end
+
+do
+    local ctx = loadTurnIns()
+    local Books = ctx.addon.Books
+    ctx.done[78142], ctx.done[78150] = true, true
+    Books.LogTurnedIn()
+    local lines = bookLines(ctx.env)
+    check("books turnin debug: the quest api", lines[1], "books questapi C_QuestLog")
+    check("books turnin debug: the count and next reward", lines[2], "books turnedin 1/36 next=20")
+    check("books turnin debug: a taken reward", lines[3], "books milestone 10=true")
+    check("books turnin debug: an open reward", lines[4], "books milestone 20=false")
+    check("books turnin debug: one flag line per row", #lines, 2 + 4 + 37)
+    check("books turnin debug: a flagged row", hasLine(lines, "books flag key=bewitchments quest=78142 flagged=true"),
+        true)
+    check("books turnin debug: an open row", lines[7], "books flag key=theocritus-journal quest=79092 flagged=false")
+    ctx.env.TandemDebug = { on = false, log = {} }
+    Books.LogTurnedIn()
+    check("books turnin debug: nothing while debug is off", #ctx.env.TandemDebug.log, 0)
+
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.addon.Debug.OnLogin()
+    check("books turnin debug: logged at login", hasLine(bookLines(ctx.env), "books turnedin 1/36 next=20"), true)
+end
+
+do
+    local ctx = loadTurnIns({ api = "global" })
+    ctx.done[79092] = true
+    ctx.addon.Books.LogTurnedIn()
+    local lines = bookLines(ctx.env)
+    check("books global api: named", lines[1], "books questapi global")
+    check("books global api: books still count", lines[2], "books turnedin 1/36 next=10")
+    check("books global api: TurnedIn", ctx.addon.Books.TurnedIn("theocritus-journal"), true)
+
+    ctx = loadTurnIns({ api = "none" })
+    ctx.addon.Books.LogTurnedIn()
+    lines = bookLines(ctx.env)
+    check("books no api: named", lines[1], "books questapi none")
+    check("books no api: nothing turned in", lines[2], "books turnedin 0/36 next=10")
+    check("books no api: TurnedIn", ctx.addon.Books.TurnedIn("theocritus-journal"), false)
+end
+
+do
+    local ctx = loadTurnIns()
+    local Books = ctx.addon.Books
+    ctx.titles[78145] = "Arcanic Systems Manual"
+    check("books turnin: by quest id", Books.OnQuestTurnedIn(78145), "arcanic-systems")
+    check("books turnin: marks the book", Books.TurnedIn("arcanic-systems"), true)
+    local lines = bookLines(ctx.env)
+    check("books turnin: logs the match", lines[1],
+        "books turnin quest=78145 title=Arcanic Systems Manual book=arcanic-systems")
+    check("books turnin: no mismatch by id", #lines, 1)
+
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.titles[90001] = "Archmage Theocritus\226\128\153 Research Journal"
+    check("books turnin: by title, curly apostrophe and no s", Books.OnQuestTurnedIn(90001), "theocritus-journal")
+    check("books turnin: the title match marks the book", Books.TurnedIn("theocritus-journal"), true)
+    lines = bookLines(ctx.env)
+    check("books turnin: the mismatch line", lines[2],
+        "books questid mismatch key=theocritus-journal table=79092 game=90001")
+
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.titles[90002] = "Rumi of Gnomeregan: The Collected Works"
+    check("books turnin: Rumi by title", Books.OnQuestTurnedIn(90002), "rumi-westfall")
+    check("books turnin: marks both Rumi spots", Books.TurnedIn("rumi-loch-modan"), true)
+    check("books turnin: Rumi counts once", (Books.Progress()), 3)
+
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.titles[90003] = "Some Other Quest"
+    check("books turnin: an unrelated quest", Books.OnQuestTurnedIn(90003), nil)
+    check("books turnin: logs no book", bookLines(ctx.env)[1],
+        "books turnin quest=90003 title=Some Other Quest book=none")
+    check("books turnin: no mismatch line", #bookLines(ctx.env), 1)
+end
+
+do
+    local ctx = loadTurnIns()
+    local addon = ctx.addon
+    check("books event: QUEST_TURNED_IN is registered", ctx.env.CreateFrame("Frame").registered.QUEST_TURNED_IN, true)
+    local refreshed, updated = 0, 0
+    addon.BookPins.Refresh = function() refreshed = refreshed + 1 end
+    addon.BookAlert.Update = function() updated = updated + 1 end
+    ctx.titles[90004] = "Ka-Boom!"
+    ctx.fire("QUEST_TURNED_IN", 90004, 100, 0)
+    check("books event: a book by title is marked", addon.Books.TurnedIn("ka-boom"), true)
+    check("books event: and logs the mismatch", hasLine(bookLines(ctx.env),
+        "books questid mismatch key=ka-boom table=84399 game=90004"), true)
+    check("books event: pins and alert refresh", refreshed .. " " .. updated, "1 1")
+    ctx.fire("QUEST_TURNED_IN", 12345, 0, 0)
+    check("books event: another quest refreshes nothing", refreshed .. " " .. updated, "1 1")
+end
+
 
 -- Library book pins (library books U2, D2-D4): own frames on the world map canvas, the books switch and near probe.
 
 -- Loads the addon with a stub world map showing ctx.mapID on a 1000 x 800 canvas, waypoint and super-track APIs, a
 -- level 20 Horde player at 52.83, 55.70 on 1413 and a tooltip recording its lines; a fresh TandemDB is loaded and
 -- BookPins.OnLogin run. opts.drop names globals to leave out, opts.noWorld leaves out GetWorldPosFromMapPos,
--- opts.debug turns the Debug log on, opts.locale picks the locale.
+-- opts.debug turns the Debug log on, opts.locale picks the locale. Quests set true in ctx.done read completed.
 local function loadPins(opts)
     opts = opts or {}
     local ui = { widgets = {} }
-    local ctx = { ui = ui, mapID = 1413, level = 20, faction = "Horde", infos = { [1413] = { name = "The Barrens",
-        mapType = 3 }, [1414] = { name = "Kalimdor", mapType = 2 } }, pos = { 0.5283, 0.5570 } }
+    local ctx = { ui = ui, mapID = 1413, level = 20, faction = "Horde", done = {}, infos = {
+        [1413] = { name = "The Barrens", mapType = 3 }, [1414] = { name = "Kalimdor", mapType = 2 } },
+        pos = { 0.5283, 0.5570 } }
     local canvas = newWidget(ui, "Frame", "Canvas")
     canvas.width, canvas.height = 1000, 800
     ctx.canvas = canvas
@@ -11023,6 +11218,7 @@ local function loadPins(opts)
         C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) ctx.tracked = v end },
         UnitLevel = function() return ctx.level end,
         UnitFactionGroup = function() return ctx.faction end,
+        C_QuestLog = { IsQuestFlaggedCompleted = function(q) return ctx.done[q] == true end },
         GameTooltip = tip,
         hooksecurefunc = function(t, name, fn)
             local orig = t[name]
@@ -11142,7 +11338,8 @@ do
     check("book pins: the own faction's hand-in shows", #pins, 1)
     check("book pins: with the hand-in icon", pins[1].icon.texture, "Interface\\Icons\\INV_Misc_Book_11")
     check("book pins: hand-in tooltip", ctx.hover(pins[1]),
-        "Owen Thadd / Undercity, Magic Quarter / Takes library books / Click to set a waypoint")
+        "Owen Thadd / Undercity, Magic Quarter / Takes library books / Books turned in: 0/36 / Next reward at 10 "
+        .. "books / Click to set a waypoint")
     ctx.faction = "Alliance"
     ctx.changeMap(1458)
     check("book pins: no hand-in of the other faction", #ctx.pins(), 0)
@@ -11245,6 +11442,86 @@ do
     check("zhTW book pins: feature name", ctx.addon.L["Book pins"], "圖書館書籍地圖標記")
 end
 
+-- Turned-in books on the map (library books U2, D6).
+
+-- Marks the quests of the first n distinct books in table order completed, The Barrens' books left out.
+local function turnIn(ctx, n)
+    for _, b in ipairs(ctx.addon.BookData.books) do
+        if n > 0 and b.map ~= 1413 and not ctx.done[b.quest] then
+            ctx.done[b.quest], n = true, n - 1
+        end
+    end
+end
+
+do
+    local ctx = loadPins()
+    local BookPins = ctx.addon.BookPins
+    ctx.done[78143] = true
+    local spots = BookPins.Spots(1413, 20, "Horde")
+    check("book spots: a turned-in book is done and brings no entrance", #spots .. " " .. tostring(spots[3].done)
+        .. " " .. spots[3].books[1].key, "3 true secrets-dreamers")
+    check("book spots: an open book is not done", spots[1].done, false)
+    ctx.done[81953] = true
+    spots = BookPins.Spots(1428, 60, "Horde")
+    check("book spots: a merged spot with one open book is not done", #spots .. " " .. tostring(spots[1].done),
+        "1 false")
+    ctx.done[84396] = true
+    check("book spots: done once every merged book is", BookPins.Spots(1428, 60, "Horde")[1].done, true)
+    ctx.done[78150] = true
+    local h = BookPins.Spots(1453, 60, "Alliance")[1]
+    check("book spots: the hand-in carries the progress", ("%s %d/%d %d"):format(h.kind, h.done, h.total,
+        h.nextMilestone), "handin 3/36 20")
+end
+
+do
+    local ctx = loadPins()
+    turnIn(ctx, 12)
+    ctx.done[78150] = true
+    ctx.faction = "Alliance"
+    ctx.changeMap(1453)
+    local pins = ctx.pins()
+    check("book pins turned in: one pin at Garion Wendell", #pins .. " " .. ctx.hover(pins[1]):match("^[^/]+"),
+        "1 Garion Wendell ")
+    check("book pins turned in: the hand-in label", pins[1].label.shown and pins[1].label.text, "12/36")
+    check("book pins turned in: the label is white", table.concat(pins[1].label.textColor, ","), "1,1,1")
+    check("book pins turned in: the hand-in tooltip", ctx.hover(pins[1]), "Garion Wendell / Stormwind Mage Tower / "
+        .. "Takes library books / Books turned in: 12/36 / Next reward at 20 books / Click to set a waypoint")
+    ctx.done[79536], ctx.done[82208], ctx.done[84394] = true, true, true
+    ctx.changeMap(1453)
+    check("book pins turned in: no next reward once all are taken", ctx.hover(ctx.pins()[1]):match("Next reward"),
+        nil)
+
+    ctx.faction = "Horde"
+    ctx.changeMap(1458)
+    check("book pins turned in: Owen Thadd's label for the Horde", ctx.pins()[1].label.text, "12/36")
+
+    ctx.changeMap(1413)
+    pins = ctx.pins()
+    check("book pins turned in: no label on book pins", pins[1].label.shown, false)
+    ctx.done[78143] = true
+    ctx.changeMap(1413)
+    pins = ctx.pins()
+    check("book pins turned in: the entrance pin goes", #pins, 3)
+    check("book pins turned in: the book pin is dimmed", pins[3].alpha, 0.35)
+    check("book pins turned in: an open book keeps full alpha", pins[1].alpha, 1)
+    check("book pins turned in: the tooltip says so", ctx.hover(pins[3]), "Secrets of the Dreamers / Turned in / "
+        .. "Final room of the Cavern of Mists (outside the Wailing Caverns dungeon) / Level 1+ / Click to set a "
+        .. "waypoint")
+    check("book pins turned in: in green", colour(ctx.tip.lines[2]), "0.2,1,0.2")
+    check("book pins turned in: an open book's tooltip does not", ctx.hover(pins[1]):match("Turned in"), nil)
+end
+
+do
+    local ctx = loadPins({ locale = "zhTW" })
+    turnIn(ctx, 12)
+    ctx.done[78143] = true
+    ctx.changeMap(1413)
+    check("zhTW book pins: turned in", ctx.hover(ctx.pins()[3]):match("^[^/]+/ ([^/]+)"), "已繳交 ")
+    ctx.changeMap(1458)
+    check("zhTW book pins: hand-in progress", ctx.hover(ctx.pins()[1]), "Owen Thadd / 幽暗城，魔法區 / 收取圖書館書籍 / "
+        .. "已繳交書籍：13/36 / 下一個獎勵：10 本 / 點擊以設定路徑點")
+end
+
 -- Library book alert (library books U3, D2, D4): a 1 s ticker out of combat prints one chat line per nearby book.
 
 -- Loads the addon as a level ctx.level player on ctx.map at ctx.pos (map fractions), with Kalimdor (1414) holding
@@ -11256,7 +11533,7 @@ end
 local function loadAlert(opts)
     opts = opts or {}
     local ctx = { map = 1413, pos = { 0.5283, 0.5570 }, level = 20, combat = opts.combat == true, tickers = {},
-        infos = {
+        done = {}, infos = {
         [1414] = { mapType = 2, parentMapID = 947 }, [947] = { mapType = 1 },
         [1413] = { mapType = 3, parentMapID = 1414 }, [9001] = { mapType = 4, parentMapID = 1413 },
         [1415] = { mapType = 2, parentMapID = 947 }, [1429] = { mapType = 3, parentMapID = 1415 },
@@ -11291,6 +11568,7 @@ local function loadAlert(opts)
         CreateVector2D = function(x, y) return { x = x, y = y } end,
         UnitLevel = function() return ctx.level end,
         InCombatLockdown = function() return ctx.combat end,
+        C_QuestLog = { IsQuestFlaggedCompleted = function(q) return ctx.done[q] == true end },
         C_Timer = { NewTicker = function(interval, fn)
             local t = { interval = interval, fn = fn }
             function t.Cancel(self) self.cancelled = true end
@@ -11403,6 +11681,14 @@ do
     ctx.level, ctx.map = 20, nil
     ctx.fire("ZONE_CHANGED")
     check("book alert: no player map stops it", ctx.live(), nil)
+end
+
+do
+    local ctx = loadAlert()
+    ctx.done[78143] = true
+    ctx.fire("ZONE_CHANGED")
+    ctx.pos = { 0.5283, 0.5530 }
+    check("book alert: a turned-in book prints nothing", #ctx.tick(), 0)
 end
 
 do
