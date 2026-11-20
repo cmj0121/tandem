@@ -14,11 +14,16 @@ local ASTRAL_RECALL, HEARTHSTONE = 556, 6948
 -- A cooldown this short or shorter is the global cooldown, so the spell counts as ready.
 local GCD = 1.5
 -- The recall bodies per RecallState: Astral Recall ready, on cooldown, or unreadable (the cast line fails while it
--- is on cooldown and the use line runs). Right click always uses the Hearthstone.
+-- is on cooldown and the use line runs), and none for no Hearthstone in the bags. Right click always uses the
+-- Hearthstone; in combat, where the macro cannot change, both clicks show and use it, casting Astral Recall only
+-- when the Hearthstone cannot be used.
 local RECALL = {
-    spell = "#showtooltip %s\n/use [btn:2] item:6948; %s",
+    spell = "#showtooltip [combat] item:6948; %s\n/use [combat][btn:2] item:6948\n/cast [combat] %s\n"
+        .. "/cast [nocombat,nobtn:2] %s",
     item = "#showtooltip item:6948\n/use item:6948",
-    unknown = "#showtooltip %s\n/use [btn:2] item:6948\n/cast [nobtn:2] %s\n/use [nobtn:2] item:6948",
+    unknown = "#showtooltip [combat] item:6948; %s\n/use [combat][btn:2] item:6948\n/cast [nobtn:2] %s\n"
+        .. "/use [nocombat,nobtn:2] item:6948",
+    none = "#showtooltip %s\n/use [btn:2] item:6948; %s",
 }
 local function hearthCount()
     local n = call(C_Item and C_Item.GetItemCount, HEARTHSTONE)
@@ -67,12 +72,12 @@ ClassMacros.ENTRIES = {
         {
             id = "recall", spells = { ASTRAL_RECALL }, macro = "Tandem Recall", kinds = {}, noPick = true,
             description = "Left-click casts Astral Recall, or uses your Hearthstone while it is on cooldown; "
-                .. "right-click uses your Hearthstone",
+                .. "right-click uses your Hearthstone; in combat both use your Hearthstone",
             body = function(names, state)
-                if state == "item" and hearthCount() == 0 then
-                    state = "spell"
+                if hearthCount() == 0 then
+                    state = "none"
                 end
-                return RECALL[state]:format(names[1], names[1])
+                return RECALL[state]:format(names[1], names[1], names[1])
             end,
             note = function()
                 return hearthCount() == 0 and "No Hearthstone in your bags" or nil
