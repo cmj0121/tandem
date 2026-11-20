@@ -155,9 +155,9 @@ local function dump(v)
     return "{" .. table.concat(out, ",") .. "}"
 end
 
--- Returns true for a fresh schema-7 db: no keys but schemaVersion and empty weights, trainers and layout.
+-- Returns true for a fresh schema-8 db: no keys but schemaVersion and empty weights, trainers and layout.
 local function isCurrent(db)
-    if type(db) ~= "table" or db.schemaVersion ~= 7 or type(db.weights) ~= "table" or next(db.weights) ~= nil
+    if type(db) ~= "table" or db.schemaVersion ~= 8 or type(db.weights) ~= "table" or next(db.weights) ~= nil
         or type(db.trainers) ~= "table" or next(db.trainers) ~= nil or type(db.layout) ~= "table"
         or next(db.layout) ~= nil then
         return false
@@ -171,10 +171,10 @@ end
 
 do
     local addon, printed, env = loadWithDB(nil)
-    check("nil db becomes a fresh v7 table", isCurrent(env.TandemDB), true)
+    check("nil db becomes a fresh v8 table", isCurrent(env.TandemDB), true)
     check("nil db prints only the load line", #printed, 1)
     check("Store.db is TandemDB", addon.Store.db, env.TandemDB)
-    check("Store.SCHEMA is 7", addon.Store.SCHEMA, 7)
+    check("Store.SCHEMA is 8", addon.Store.SCHEMA, 8)
 end
 
 do
@@ -188,9 +188,10 @@ do
     check("zhTW reset line", printed[2], "Tandem：存檔資料無法讀取，已重設")
 end
 
--- Schema 6 (stage 11, D4), now 7: a v5 db keeps its weights and trainers; every other key is dropped and counted.
+-- Schema 6 (stage 11, D4), now 8: a v5 db keeps its weights and trainers; every other key is dropped and counted.
 do
     local weights = { ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5 } } } }
+    local rekeyed = { Thrall = weights["Thrall-Realm"] }
     local trainers = { MAGE = { [116] = { level = 4, rank = 1 }, [1459] = { level = 1 } } }
     local item = { 10, 5, 2, "INVTYPE_HEAD", 4, 1 }
     local addon, printed, env = loadWithDB({
@@ -209,14 +210,14 @@ do
         trainers = trainers,
     })
     local db = env.TandemDB
-    check("v5 db migrates to v7", db.schemaVersion, 7)
-    check("v5 db keeps its weights", dump(db.weights), dump(weights))
+    check("v5 db migrates to v8", db.schemaVersion, 8)
+    check("v5 db keeps its weights under the bare name", dump(db.weights), dump(rekeyed))
     check("v5 db keeps its trainers", dump(db.trainers), dump(trainers))
-    check("v5 db keeps nothing else", dump(db), dump({ schemaVersion = 7, weights = weights, trainers = trainers,
+    check("v5 db keeps nothing else", dump(db), dump({ schemaVersion = 8, weights = rekeyed, trainers = trainers,
         layout = {} }))
     check("v5 db trainers are read back", addon.Store.TrainerSpells("MAGE")[116].level, 4)
     check("v5 db is writable", addon.Store.readOnly, false)
-    check("v5 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 5 to 7")
+    check("v5 db prints the upgrade line", printed[2], "Tandem: saved data upgraded from schema 5 to 8")
     -- items, stats, statsVersion, scan, npcs, quests, loot, kills, corpses, ui
     check("v5 db counts each dropped key", printed[3], "Tandem: dropped 10 invalid or unused saved entries")
     check("v5 db prints nothing else", #printed, 3)
@@ -224,14 +225,14 @@ end
 
 do
     local _, printed = loadWithDB({ schemaVersion = 5, items = {}, weights = {} }, "zhTW")
-    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 5 升級到 7")
+    check("zhTW upgrade line", printed[2], "Tandem：存檔資料已從結構版本 5 升級到 8")
     check("zhTW dropped line", printed[3], "Tandem：已捨棄 1 筆無效或不再使用的存檔資料")
 end
 
 do
     local _, printed, env = loadWithDB({ unknownTop = true, weights = { ["Tom-Realm"] = { spec = 1 } } })
-    check("old db without a version is migrated to v7", env.TandemDB.schemaVersion, 7)
-    check("old db without a version keeps its weights", env.TandemDB.weights["Tom-Realm"].spec, 1)
+    check("old db without a version is migrated to v8", env.TandemDB.schemaVersion, 8)
+    check("old db without a version keeps its weights under the bare name", env.TandemDB.weights.Tom.spec, 1)
     check("old db drops unknown top-level keys", env.TandemDB.unknownTop, nil)
     check("old db without a version prints no upgrade line", printed[2],
         "Tandem: dropped 1 invalid or unused saved entries")
@@ -239,48 +240,99 @@ end
 
 for _, bad in ipairs({ 1.5, 0 / 0, -1, -math.huge }) do
     local _, printed, env = loadWithDB({ schemaVersion = bad })
-    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 7)
+    check("damaged version " .. tostring(bad) .. " is migrated", env.TandemDB.schemaVersion, 8)
     check("damaged version " .. tostring(bad) .. " prints no upgrade line", #printed, 1)
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 7, weights = { ["Tom-Realm"] = { spec = 3 } },
+    local _, printed, env = loadWithDB({ schemaVersion = 8, weights = { ["Tom"] = { spec = 3 } },
                                          trainers = { WARRIOR = { [100] = { level = 4 } } } })
-    check("v7 db keeps weights", env.TandemDB.weights["Tom-Realm"].spec, 3)
-    check("v7 db keeps trainers", env.TandemDB.trainers.WARRIOR[100].level, 4)
-    check("valid v7 db prints only the load line", #printed, 1)
+    check("v8 db keeps weights", env.TandemDB.weights["Tom"].spec, 3)
+    check("v8 db keeps trainers", env.TandemDB.trainers.WARRIOR[100].level, 4)
+    check("valid v8 db prints only the load line", #printed, 1)
 end
+
+-- Schema 8: each per-character table is rekeyed from "<name>-<realm>" to the bare name; enemy names stay.
+local function realmKeyed(version)
+    local me = "五行缺-CAMWOW TW4 Realm 2 PvP"
+    return {
+        schemaVersion = version,
+        weights = { [me] = { spec = 2, overrides = {} } },
+        modes = { [me] = "heal" },
+        picks = { [me] = "stormstrike" },
+        procs = { [me] = { windfury = { hits = 10, procs = 3 } } },
+        killers = { [me] = { ["Gank-Far"] = { name = "Gank", realm = "Far", count = 2, last = 100 } } },
+    }
+end
+for _, version in ipairs({ 7, 5, false, 0 / 0, "8" }) do
+    local raw = realmKeyed(version or nil)
+    local what = version and "a version " .. tostring(version) or "an unversioned"
+    local _, printed, env = loadWithDB(raw)
+    local db = env.TandemDB
+    check("schema 8: " .. what .. " db loads as schema 8", db.schemaVersion, 8)
+    check("schema 8: " .. what .. " db rekeys every per-character table to the bare name",
+        dump({ db.weights, db.modes, db.picks, db.procs, db.killers }),
+        dump({ { ["五行缺"] = { spec = 2, overrides = {} } }, { ["五行缺"] = "heal" }, { ["五行缺"] = "stormstrike" },
+            { ["五行缺"] = { windfury = { hits = 10, procs = 3 } } },
+            { ["五行缺"] = { ["Gank-Far"] = { name = "Gank", realm = "Far", count = 2, last = 100 } } } }))
+    check("schema 8: " .. what .. " db rekey drops nothing", printed[3] or printed[2] or "", version == 5
+        and "Tandem: saved data upgraded from schema 5 to 8" or "")
+end
+
+do
+    local _, printed, env = loadWithDB(realmKeyed(8))
+    local db = env.TandemDB
+    check("schema 8: a schema-8 db is never rekeyed", dump({ db.picks, db.killers }),
+        dump({ { ["五行缺-CAMWOW TW4 Realm 2 PvP"] = "stormstrike" },
+            { ["五行缺-CAMWOW TW4 Realm 2 PvP"] = { ["Gank-Far"] = { name = "Gank", realm = "Far", count = 2,
+                last = 100 } } } }))
+    check("schema 8: a schema-8 db prints only the load line", #printed, 1)
+end
+
+do
+    local _, printed, env = loadWithDB({ schemaVersion = 7,
+        picks = { ["Tom-B"] = "b", ["Tom-A"] = "a", Tom = "bare", ["Ann-X"] = "x" },
+        modes = { ["Ann-Y"] = "heal", ["Ann-X"] = "bad" } })
+    check("schema 8: on a collision the sorted-first old key wins", dump(env.TandemDB.picks),
+        dump({ Tom = "bare", Ann = "x" }))
+    check("schema 8: the winner is kept even when invalid", tostring(env.TandemDB.modes and env.TandemDB.modes.Ann),
+        "nil")
+    -- picks Tom-A, Tom-B; modes Ann-Y (lost to Ann-X), Ann-X (invalid)
+    check("schema 8: each collision loser counts as dropped", printed[3],
+        "Tandem: dropped 4 invalid or unused saved entries")
+end
+
 
 -- Store: weights (stage 7, decisions 6-8).
 do
     local _, printed, env = loadWithDB({
-        schemaVersion = 7,
+        schemaVersion = 8,
         weights = {
-            ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5, sta = 0 }, [1] = { int = 1 } } },
-            ["Jaina-Realm"] = { spec = 4, overrides = { [1] = { int = 1, fire = 2, sp = "x" }, [5] = { str = 1 },
+            ["Thrall"] = { spec = 2, overrides = { [2] = { str = 2.5, sta = 0 }, [1] = { int = 1 } } },
+            ["Jaina"] = { spec = 4, overrides = { [1] = { int = 1, fire = 2, sp = "x" }, [5] = { str = 1 },
                                                         [2] = "bad" } },
-            ["Arthas-Realm"] = { overrides = "bad" },
-            ["Uther-Realm"] = "bad",
+            ["Arthas"] = { overrides = "bad" },
+            ["Uther"] = "bad",
             [""] = { spec = 1 },
             [7] = { spec = 1 },
         },
     })
     local db = env.TandemDB
-    local w = db.weights["Thrall-Realm"]
+    local w = db.weights["Thrall"]
     check("weights: a valid entry keeps its spec", w and w.spec, 2)
     check("weights: a valid entry keeps its overrides", w and w.overrides[2].str .. " " .. w.overrides[2].sta
         .. " " .. w.overrides[1].int, "2.5 0 1")
-    local j = db.weights["Jaina-Realm"]
+    local j = db.weights["Jaina"]
     check("weights: spec 4 is dropped, the entry kept", j and tostring(j.spec), "nil")
     check("weights: a valid override key survives", j and j.overrides[1].int, 1)
     check("weights: bad override keys are dropped", j and tostring(j.overrides[1].fire) .. tostring(j.overrides[1].sp),
         "nilnil")
     check("weights: an override for spec 5 is dropped", j and j.overrides[5], nil)
     check("weights: a non-table override is dropped", j and j.overrides[2], nil)
-    local a = db.weights["Arthas-Realm"]
+    local a = db.weights["Arthas"]
     check("weights: bad overrides become empty", a and type(a.overrides) == "table" and next(a.overrides) == nil,
         true)
-    check("weights: a non-table entry is dropped", db.weights["Uther-Realm"], nil)
+    check("weights: a non-table entry is dropped", db.weights["Uther"], nil)
     check("weights: an empty name is dropped", db.weights[""], nil)
     check("weights: a number name is dropped", db.weights[7], nil)
     -- Jaina spec, fire, sp, [5], [2]; Arthas overrides; Uther, "", 7
@@ -288,7 +340,7 @@ do
 end
 
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 7, weights = "bad" })
+    local addon, printed, env = loadWithDB({ schemaVersion = 8, weights = "bad" })
     check("weights: a non-table weights becomes empty", type(env.TandemDB.weights), "table")
     check("weights: a bad weights counts as dropped", printed[2], "Tandem: dropped 1 invalid or unused saved entries")
     check("STAT_KEYS lists 21 keys", #addon.Store.STAT_KEYS, 21)
@@ -297,7 +349,7 @@ end
 -- Store: class trainer spells (stage 8, decision 4).
 do
     local addon, printed, env = loadWithDB({
-        schemaVersion = 7,
+        schemaVersion = 8,
         trainers = {
             MAGE = { [116] = { level = 4, rank = 1 }, [205] = { level = 8, rank = 2, extra = true },
                      [1459] = { level = 1 }, [0] = { level = 1 }, [10] = { level = 0 }, [11] = { level = 2.5 },
@@ -351,18 +403,18 @@ do
     end
     check("SetTrainerSpell rejections write nothing", mage[1], nil)
 
-    local newer = loadWithDB({ schemaVersion = 8, trainers = { MAGE = { [116] = { level = 4 } } } }).Store
+    local newer = loadWithDB({ schemaVersion = 9, trainers = { MAGE = { [116] = { level = 4 } } } }).Store
     check("newer db blocks SetTrainerSpell", newer.SetTrainerSpell("MAGE", 1, 1, 1), false)
     check("newer db reads no trainer spells", newer.TrainerSpells("MAGE"), nil)
 end
 
 do
-    local newer = { schemaVersion = 8, items = "new format", weights = "new format" }
+    local newer = { schemaVersion = 9, items = "new format", weights = "new format" }
     local addon, printed, env = loadWithDB(newer)
     check("newer db is left untouched", env.TandemDB, newer)
     check("newer db keeps its fields", env.TandemDB.items .. " " .. env.TandemDB.weights, "new format new format")
     check("newer db prints a warning", printed[2],
-        "Tandem: saved data uses newer schema 8; recording is off until the addon is updated")
+        "Tandem: saved data uses newer schema 9; recording is off until the addon is updated")
     check("newer db prints nothing else", #printed, 2)
     check("newer db is read-only", addon.Store.readOnly, true)
 end
@@ -387,9 +439,9 @@ do
         return v
     end
     local addon, printed, env = loadWithDB({
-        schemaVersion = 7,
+        schemaVersion = 8,
         killers = {
-            ["Thrall-Realm"] = {
+            ["Thrall"] = {
                 ["Gank-Realm"] = killer("Gank", "Realm", { class = "ROGUE", level = 60, count = 3, last = 500,
                     zone = "Duskwood", extra = true }),
                 ["Old-Other"] = killer("Old", "Other"),
@@ -403,11 +455,11 @@ do
                 ["Str-Realm"] = "bad",
             },
             [""] = {},
-            ["Jaina-Realm"] = "bad",
+            ["Jaina"] = "bad",
         },
     })
     local Store = addon.Store
-    local mine = env.TandemDB.killers["Thrall-Realm"]
+    local mine = env.TandemDB.killers["Thrall"]
     check("killers: a valid entry is kept, extra fields stripped", dump(mine["Gank-Realm"]), dump({ name = "Gank",
         realm = "Realm", class = "ROGUE", level = 60, count = 3, last = 500, zone = "Duskwood" }))
     check("killers: a minimal entry is kept", mine["Old-Other"] ~= nil, true)
@@ -415,28 +467,28 @@ do
     check("killers: invalid entries are dropped and counted", printed[2],
         "Tandem: dropped 10 invalid or unused saved entries")
     check("killers: bad character keys are dropped", tostring(env.TandemDB.killers[""])
-        .. tostring(env.TandemDB.killers["Jaina-Realm"]), "nilnil")
+        .. tostring(env.TandemDB.killers["Jaina"]), "nilnil")
 
-    local list = Store.Killers("Thrall-Realm")
+    local list = Store.Killers("Thrall")
     check("Killers lists copies, latest first, with fullName", #list .. " " .. list[1].fullName .. " "
         .. list[2].fullName .. " " .. tostring(list[1] ~= mine["Gank-Realm"]), "2 Gank-Realm Old-Other true")
-    check("Killers is empty for an unknown character", #Store.Killers("Nobody-Realm"), 0)
+    check("Killers is empty for an unknown character", #Store.Killers("Nobody"), 0)
 
-    check("AddKiller counts a known killer up", Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Realm",
+    check("AddKiller counts a known killer up", Store.AddKiller("Thrall", { name = "Gank", realm = "Realm",
         level = 61, when = 600 }), true)
     check("AddKiller updates last and level, keeps class and zone", dump(mine["Gank-Realm"]), dump({ name = "Gank",
         realm = "Realm", class = "ROGUE", level = 61, count = 4, last = 600, zone = "Duskwood" }))
     env.GetNormalizedRealmName = function() return "MyRealm" end
-    check("AddKiller records a new killer", Store.AddKiller("Thrall-Realm", { name = "Near", class = "MAGE",
+    check("AddKiller records a new killer", Store.AddKiller("Thrall", { name = "Near", class = "MAGE",
         zone = "Elwynn", when = 700 }), true)
     check("AddKiller uses the player's realm when none given", dump(mine["Near-MyRealm"]), dump({ name = "Near",
         realm = "MyRealm", class = "MAGE", count = 1, last = 700, zone = "Elwynn" }))
     env.GetNormalizedRealmName = nil
     env.GetRealmName = function() return "Plain" end
     check("AddKiller falls back to GetRealmName for an empty realm",
-        Store.AddKiller("Thrall-Realm", { name = "Far", realm = "", when = 50 }) and mine["Far-Plain"].realm, "Plain")
+        Store.AddKiller("Thrall", { name = "Far", realm = "", when = 50 }) and mine["Far-Plain"].realm, "Plain")
     env.GetRealmName = nil
-    check("AddKiller fails without a realm", Store.AddKiller("Thrall-Realm", { name = "Lost", when = 1 }), false)
+    check("AddKiller fails without a realm", Store.AddKiller("Thrall", { name = "Lost", when = 1 }), false)
     for what, k in pairs({
         ["no name"] = { realm = "R", when = 1 }, ["an empty name"] = { name = "", realm = "R", when = 1 },
         ["no time"] = { name = "A", realm = "R" }, ["a fractional time"] = { name = "A", realm = "R", when = 1.5 },
@@ -445,37 +497,37 @@ do
         ["an empty zone"] = { name = "A", realm = "R", zone = "", when = 1 },
         ["a number realm"] = { name = "A", realm = 5, when = 1 },
     }) do
-        check("AddKiller rejects " .. what, Store.AddKiller("Thrall-Realm", k), false)
+        check("AddKiller rejects " .. what, Store.AddKiller("Thrall", k), false)
     end
     check("AddKiller rejects an empty character", Store.AddKiller("", { name = "A", realm = "R", when = 1 }), false)
     check("AddKiller rejections write nothing", mine["A-R"], nil)
 
-    check("ForgetKiller removes one", Store.ForgetKiller("Thrall-Realm", "Far-Plain"), true)
+    check("ForgetKiller removes one", Store.ForgetKiller("Thrall", "Far-Plain"), true)
     check("ForgetKiller removed it", mine["Far-Plain"], nil)
-    check("ForgetKiller fails for an unknown one", Store.ForgetKiller("Thrall-Realm", "Far-Plain"), false)
-    check("ClearKillers empties the character", Store.ClearKillers("Thrall-Realm")
-        and #Store.Killers("Thrall-Realm"), 0)
+    check("ForgetKiller fails for an unknown one", Store.ForgetKiller("Thrall", "Far-Plain"), false)
+    check("ClearKillers empties the character", Store.ClearKillers("Thrall")
+        and #Store.Killers("Thrall"), 0)
 
     for i = 1, Store.MAX_KILLERS do
-        Store.AddKiller("Uther-Realm", { name = "K" .. i, realm = "R", when = 1000 - i })
+        Store.AddKiller("Uther", { name = "K" .. i, realm = "R", when = 1000 - i })
     end
     check("MAX_KILLERS is 50", Store.MAX_KILLERS, 50)
-    check("AddKiller re-counting at the cap drops none", Store.AddKiller("Uther-Realm", { name = "K50", realm = "R",
-        when = 2000 }) and #Store.Killers("Uther-Realm"), 50)
-    Store.AddKiller("Uther-Realm", { name = "New", realm = "R", when = 3000 })
-    local capped = Store.Killers("Uther-Realm")
+    check("AddKiller re-counting at the cap drops none", Store.AddKiller("Uther", { name = "K50", realm = "R",
+        when = 2000 }) and #Store.Killers("Uther"), 50)
+    Store.AddKiller("Uther", { name = "New", realm = "R", when = 3000 })
+    local capped = Store.Killers("Uther")
     check("AddKiller's 51st drops the least recently seen", #capped .. " " .. capped[1].fullName .. " "
-        .. tostring(env.TandemDB.killers["Uther-Realm"]["K49-R"]) .. " " .. capped[#capped].fullName,
+        .. tostring(env.TandemDB.killers["Uther"]["K49-R"]) .. " " .. capped[#capped].fullName,
         "50 New-R nil K48-R")
 
     local _, again = loadWithDB(env.TandemDB)
     check("killers: a saved db reloads without drops", #again, 1)
 
-    local newer = loadWithDB({ schemaVersion = 8, killers = { ["Thrall-Realm"] = {} } }).Store
-    check("newer db lists no killers", #newer.Killers("Thrall-Realm"), 0)
-    check("newer db blocks AddKiller", newer.AddKiller("Thrall-Realm", { name = "A", realm = "R", when = 1 }), false)
-    check("newer db blocks ForgetKiller", newer.ForgetKiller("Thrall-Realm", "A-R"), false)
-    check("newer db blocks ClearKillers", newer.ClearKillers("Thrall-Realm"), false)
+    local newer = loadWithDB({ schemaVersion = 9, killers = { ["Thrall"] = {} } }).Store
+    check("newer db lists no killers", #newer.Killers("Thrall"), 0)
+    check("newer db blocks AddKiller", newer.AddKiller("Thrall", { name = "A", realm = "R", when = 1 }), false)
+    check("newer db blocks ForgetKiller", newer.ForgetKiller("Thrall", "A-R"), false)
+    check("newer db blocks ClearKillers", newer.ClearKillers("Thrall"), false)
 end
 
 -- Commands: /tandem parsing and output.
@@ -540,13 +592,13 @@ do
     local function fresh(locale)
         local addon, printed = loadWithDB(nil, locale, { env = env })
         local Store = addon.Store
-        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", class = "ROGUE", level = 60, zone = "Duskwood",
+        Store.AddKiller("Thrall", { name = "Gank", realm = "Far", class = "ROGUE", level = 60, zone = "Duskwood",
             when = 100 })
-        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 300 })
-        Store.AddKiller("Thrall-Realm", { name = "Stab", realm = "Realm", class = "MAGE", when = 200 })
-        Store.AddKiller("Thrall-Realm", { name = "Stab", realm = "Far", when = 150 })
-        Store.AddKiller("Thrall-Realm", { name = "Twin", realm = "A", when = 50 })
-        Store.AddKiller("Thrall-Realm", { name = "Twin", realm = "B", when = 40 })
+        Store.AddKiller("Thrall", { name = "Gank", realm = "Far", when = 300 })
+        Store.AddKiller("Thrall", { name = "Stab", realm = "Realm", class = "MAGE", when = 200 })
+        Store.AddKiller("Thrall", { name = "Stab", realm = "Far", when = 150 })
+        Store.AddKiller("Thrall", { name = "Twin", realm = "A", when = 50 })
+        Store.AddKiller("Thrall", { name = "Twin", realm = "B", when = 40 })
         return addon, printed
     end
     local addon, printed = fresh()
@@ -565,16 +617,16 @@ do
         "Nobody is not on the list.")
     check("killers forget: an unknown Name-Realm", run(addon, printed, "killers forget Gank-Realm")[1],
         "Gank-Realm is not on the list.")
-    check("killers forget: removed ones are gone", #addon.Store.Killers("Thrall-Realm"), 2)
+    check("killers forget: removed ones are gone", #addon.Store.Killers("Thrall"), 2)
     check("killers clear empties the list", run(addon, printed, "killers clear")[1] .. " "
-        .. #addon.Store.Killers("Thrall-Realm"), "Killer list cleared. 0")
+        .. #addon.Store.Killers("Thrall"), "Killer list cleared. 0")
     check("killers: an empty list", table.concat(run(addon, printed, "killers"), " / "), "No one recorded yet.")
     for _, bad in ipairs({ "killers forget", "killers forget a b", "killers clear all", "killers list" }) do
         check(("%q prints usage"):format(bad), run(addon, printed, bad)[1], "Tandem commands:")
     end
 
     for _, msg in ipairs({ "killers", "killers forget Gank", "killers clear" }) do
-        local newer, newerPrinted = loadWithDB({ schemaVersion = 8 }, nil, { env = env })
+        local newer, newerPrinted = loadWithDB({ schemaVersion = 9 }, nil, { env = env })
         check(("killers: read-only saved data, %q"):format(msg), table.concat(run(newer, newerPrinted, msg), " / "),
             "Killer list unavailable.")
         local unknown, unknownPrinted = loadWithDB(nil, nil, { env = { UnitName = function() return nil end } })
@@ -596,6 +648,29 @@ do
     check("zhTW killers empty", run(addon, printed, "killers")[1], "尚無任何紀錄。")
 end
 
+
+-- Weights.CharacterKey: the player's name alone, since Forever blanks the realm APIs.
+do
+    local opts = { UnitName = function() return "五行缺", "命" end, GetRealmName = function() return "" end,
+        GetNormalizedRealmName = function() return "" end, UNKNOWNOBJECT = "Unknown",
+        date = function(_, t) return "D" .. t end }
+    local addon, printed, env = loadWithDB(nil, nil, { env = opts })
+    check("CharacterKey is the bare name with a blank realm", addon.Weights.CharacterKey(), "五行缺")
+    local Store = addon.Store
+    Store.AddKiller("五行缺", { name = "Gank", realm = "Far", when = 100 })
+    Store.SetPick("五行缺", "stormstrike")
+    Store.SetProcs("五行缺", "windfury", { hits = 4, procs = 1 })
+    Store.SetMode("五行缺", "heal")
+    check("killers resolve under the bare name with a blank realm", table.concat(run(addon, printed, "killers"),
+        " / "), "Seen targeting you at your death: / Gank-Far  x1  D100")
+    check("picks, procs and modes resolve under the bare name", Store.Pick(addon.Weights.CharacterKey()) .. " "
+        .. Store.Procs(addon.Weights.CharacterKey(), "windfury").procs .. " " .. addon.Layout.Mode(),
+        "stormstrike 1 heal")
+    env.UnitName = function() return "Unknown" end
+    check("CharacterKey is nil for the UNKNOWNOBJECT placeholder", addon.Weights.CharacterKey(), nil)
+    env.UnitName = function() return "" end
+    check("CharacterKey is nil for an empty name", addon.Weights.CharacterKey(), nil)
+end
 do
     local _, printed, _, fire = loadWithDB(nil)
     local before = #printed
@@ -2056,7 +2131,7 @@ end
 
 -- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
 
--- Loads the addon for "Tom-Realm" (ctx.name renames) with opts.talents as the talent API: "old" (name, icon,
+-- Loads the addon for "Tom" (ctx.name renames) with opts.talents as the talent API: "old" (name, icon,
 -- points), "new" (id, name, description, icon, points) over ctx.points, "spec" (C_SpecializationInfo over ctx.spec)
 -- or nil for none. opts.db is TandemDB. Returns addon, ctx, env.
 local function weightsData(opts)
@@ -2185,7 +2260,7 @@ do
     check("weights: set an override", W.SetOverride("str", 2, "WARRIOR", 60), true)
     check("weights: the weights table is created lazily", type(env.TandemDB.weights), "table")
     check("weights: the override is saved per character and spec",
-        env.TandemDB.weights["Tom-Realm"].overrides[1].str, 2)
+        env.TandemDB.weights["Tom"].overrides[1].str, 2)
     check("weights: Effective applies the override", W.Effective("WARRIOR", 1).str, 2)
     check("weights: Score uses the override", W.Score({ str = 10 }, "WARRIOR", 1), 20)
     check("weights: an override does not touch the built-ins", W.DEFAULTS.WARRIOR[1].str, 1)
@@ -2214,17 +2289,17 @@ do
     spec, auto = W.Active("WARRIOR", 60)
     check("weights: auto returns to the detected or default spec", spec, 1)
     check("weights: auto is auto", auto, true)
-    check("weights: auto clears the saved spec", env.TandemDB.weights["Tom-Realm"].spec, nil)
+    check("weights: auto clears the saved spec", env.TandemDB.weights["Tom"].spec, nil)
 end
 
 do
     local addon, ctx, env = weightsData()
     local W = addon.Weights
-    env.TandemDB.weights = { ["Tom-Realm"] = "bad", ["Ann-Realm"] = { spec = 7, overrides = {
+    env.TandemDB.weights = { ["Tom"] = "bad", ["Ann"] = { spec = 7, overrides = {
         [1] = { str = "x", fire = 3, agi = 2 }, [3] = "bad" } } }
     check("weights: a garbled entry reads as none", W.Effective("WARRIOR", 1).str, 1)
     check("weights: a garbled entry is replaced on write",
-        W.SetSpec(3) and env.TandemDB.weights["Tom-Realm"].spec, 3)
+        W.SetSpec(3) and env.TandemDB.weights["Tom"].spec, 3)
     ctx.name = "Ann"
     check("weights: an invalid saved spec is auto", select(2, W.Active("WARRIOR", 60)), true)
     local e = W.Effective("WARRIOR", 1)
@@ -2380,7 +2455,7 @@ end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
 
--- Loads the addon as a level 60 Tom-Realm warrior with no talent API; ctx.class, ctx.className, ctx.level,
+-- Loads the addon as a level 60 Tom warrior with no talent API; ctx.class, ctx.className, ctx.level,
 -- ctx.combat and ctx.name change the player. Returns ctx with ctx.run(msg) -> printed lines.
 local function loadWeights(locale, db)
     local ctx = { class = "WARRIOR", className = "Warrior", level = 60, name = "Tom" }
@@ -2416,19 +2491,19 @@ do
     check("weights: shows the active tree", out[1], "Tandem: Arms Warrior weights, tree 1 (auto)")
     check("weights: lists the weights in stat key order", out[2], ARMS)
     check("weights: no own weight, no legend", #out, 2)
-    check("weights: the command writes nothing", ctx.env.TandemDB.weights["Tom-Realm"], nil)
+    check("weights: the command writes nothing", ctx.env.TandemDB.weights["Tom"], nil)
 
     out = ctx.run("weights spec 2")
     check("weights spec 2: confirms", out[1], "Tandem: weights use tree 2")
     check("weights spec 2: shows the chosen tree", out[2], "Tandem: Fury Warrior weights, tree 2 (manual)")
-    check("weights spec 2: saves the spec", ctx.env.TandemDB.weights["Tom-Realm"].spec, 2)
+    check("weights spec 2: saves the spec", ctx.env.TandemDB.weights["Tom"].spec, 2)
 
     out = ctx.run("weights set hit 20")
     check("weights set: confirms", out[1], "Tandem: hit weight set to 20")
     check("weights set: marks the own weight", out[3],
         "str 1, agi 0.7, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 20*, crit 11")
     check("weights set: prints the legend", out[4], "  * your own weight; /tandem weights reset drops them")
-    check("weights set: saves on the active tree", ctx.env.TandemDB.weights["Tom-Realm"].overrides[2].hit, 20)
+    check("weights set: saves on the active tree", ctx.env.TandemDB.weights["Tom"].overrides[2].hit, 20)
     out = ctx.run("weights set sta 0")
     check("weights set 0: shows the ignored stat", out[3]:match("sta [^,]*"), "sta 0*")
     out = ctx.run("weights set sp 0.25")
@@ -2445,7 +2520,7 @@ do
     out = ctx.run("weights spec auto")
     check("weights spec auto: confirms", out[1], "Tandem: weights follow your talents")
     check("weights spec auto: back to the default tree", out[2], "Tandem: Arms Warrior weights, tree 1 (auto)")
-    check("weights spec auto: clears the saved spec", ctx.env.TandemDB.weights["Tom-Realm"].spec, nil)
+    check("weights spec auto: clears the saved spec", ctx.env.TandemDB.weights["Tom"].spec, nil)
     check("weights: SPECS names the trees", ctx.addon.Weights.SPECS.WARRIOR[1], "Arms")
 
     local before = ctx.run("weights")
@@ -2467,7 +2542,7 @@ do
         out = ctx.run(msg)
         check(("%q refuses in combat"):format(msg), out[1] .. "|" .. #out, "Tandem: not available in combat|1")
     end
-    check("weights in combat: nothing saved", ctx.env.TandemDB.weights["Tom-Realm"].spec, nil)
+    check("weights in combat: nothing saved", ctx.env.TandemDB.weights["Tom"].spec, nil)
     ctx.combat = false
 
     ctx.class, ctx.className = "MONK", "Monk"
@@ -3969,30 +4044,30 @@ local function savedTandem(state)
     end
 end
 
--- Schema 7 (D4): a v6 db gains the layout key silently, keeping its weights and trainers.
+-- Schema 7 (D4), now 8: a v6 db gains the layout key silently, keeping its weights (under the bare name) and trainers.
 do
     local weights = { ["Thrall-Realm"] = { spec = 2, overrides = { [2] = { str = 2.5 } } } }
     local trainers = { MAGE = { [116] = { level = 4, rank = 1 } } }
     local _, printed, env = loadWithDB({ schemaVersion = 6, weights = copyTable(weights),
         trainers = copyTable(trainers) })
-    check("schema 7: v6 db migrates", env.TandemDB.schemaVersion, 7)
+    check("schema 7: v6 db migrates", env.TandemDB.schemaVersion, 8)
     check("schema 7: v6 db keeps weights, trainers, gains layout", dump(env.TandemDB),
-        dump({ schemaVersion = 7, weights = weights, trainers = trainers, layout = {} }))
+        dump({ schemaVersion = 8, weights = { Thrall = weights["Thrall-Realm"] }, trainers = trainers, layout = {} }))
     check("schema 7: v6 migration prints only the load line", table.concat(printed, "|"), "Tandem loaded")
 end
 
 do
     local layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" }
-    local addon, printed, env = loadWithDB({ schemaVersion = 7, layout = copyTable(layout) })
+    local addon, printed, env = loadWithDB({ schemaVersion = 8, layout = copyTable(layout) })
     check("schema 7: a valid layout is kept", dump(env.TandemDB.layout), dump(layout))
     check("schema 7: a valid layout prints only the load line", #printed, 1)
     check("schema 7: Store.Layout reads it", addon.Store.Layout().previous.name, "view")
 
-    printed, env = select(2, loadWithDB({ schemaVersion = 7, layout = { on = "yes", previous = { name = "", type = 1 },
+    printed, env = select(2, loadWithDB({ schemaVersion = 8, layout = { on = "yes", previous = { name = "", type = 1 },
         tot = 1, extra = true } }))
     check("schema 7: bad layout fields are dropped", dump(env.TandemDB.layout), "{}")
     check("schema 7: bad layout fields are counted", printed[2], "Tandem: dropped 4 invalid or unused saved entries")
-    addon, printed, env = loadWithDB({ schemaVersion = 7, layout = "bad" })
+    addon, printed, env = loadWithDB({ schemaVersion = 8, layout = "bad" })
     check("schema 7: a non-table layout becomes empty", dump(env.TandemDB.layout), "{}")
     check("schema 7: a non-table layout is counted", printed[2], "Tandem: dropped 1 invalid or unused saved entries")
 
@@ -4008,7 +4083,7 @@ do
     check("SetLayout: previous is copied clean", dump(Store.Layout().previous), dump({ name = "a", type = 2 }))
     check("SetLayout: nil clears", Store.SetLayout("previous", nil) and Store.Layout().previous, nil)
 
-    local newer = loadWithDB({ schemaVersion = 8, layout = { on = true } }).Store
+    local newer = loadWithDB({ schemaVersion = 9, layout = { on = true } }).Store
     check("SetLayout: a newer db is not written", newer.SetLayout("on", false), false)
     check("SetLayout: a newer db reads as off", newer.Layout().on, nil)
 end
@@ -4227,7 +4302,7 @@ do
     check("heal: dps by default", Layout.Mode(), "dps")
     check("heal: SetMode while off only saves", tostring(Layout.SetMode("heal")) .. " " .. state.saved .. " "
         .. #state.activated .. " " .. #changes, "true 0 0 0")
-    check("heal: the mode is saved per character", dump(ctx.env.TandemDB.modes), dump({ ["Healer-Realm"] = "heal" }))
+    check("heal: the mode is saved per character", dump(ctx.env.TandemDB.modes), dump({ ["Healer"] = "heal" }))
     check("heal: Mode reads it", Layout.Mode(), "heal")
     check("heal: on", ctx.run("layout on"), "Tandem: layout on")
     local t = savedTandem(state)
@@ -4249,7 +4324,7 @@ do
     check("heal to dps: target of target shown", state.cvar, "1")
     check("heal to dps: built cleared, ToT kept", tostring(Store.Layout().built) .. " " .. Store.Layout().tot,
         "nil 1")
-    check("heal to dps: the mode cleared", ctx.env.TandemDB.modes["Healer-Realm"], nil)
+    check("heal to dps: the mode cleared", ctx.env.TandemDB.modes["Healer"], nil)
     check("heal to dps: listeners told", table.concat(changes, ","), "true,true")
     Layout.SetMode("heal")
     check("heal again: re-applied", Store.Layout().built .. " " .. state.cvar .. " " .. target.alpha, "heal 0 0")
@@ -4318,15 +4393,15 @@ end
 
 -- Saved modes: only "heal" under a character key is kept; anything else is dropped and counted.
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 7, weights = {}, trainers = {}, layout = { built = "dps" },
-        modes = { ["A-Realm"] = "heal", ["B-Realm"] = "tank", ["C-Realm"] = "dps", [""] = "heal", [3] = "heal" } })
-    check("heal db: valid modes kept", dump(env.TandemDB.modes), dump({ ["A-Realm"] = "heal" }))
+    local _, printed, env = loadWithDB({ schemaVersion = 8, weights = {}, trainers = {}, layout = { built = "dps" },
+        modes = { ["A"] = "heal", ["B"] = "tank", ["C"] = "dps", [""] = "heal", [3] = "heal" } })
+    check("heal db: valid modes kept", dump(env.TandemDB.modes), dump({ ["A"] = "heal" }))
     check("heal db: an invalid built dropped", env.TandemDB.layout.built, nil)
     check("heal db: invalid entries counted", printed[2], "Tandem: dropped 5 invalid or unused saved entries")
-    printed, env = select(2, loadWithDB({ schemaVersion = 7, modes = "bad" }))
+    printed, env = select(2, loadWithDB({ schemaVersion = 8, modes = "bad" }))
     check("heal db: a non-table modes dropped", tostring(env.TandemDB.modes) .. " " .. printed[2],
         "nil Tandem: dropped 1 invalid or unused saved entries")
-    env = select(3, loadWithDB({ schemaVersion = 7, layout = { built = "heal" } }))
+    env = select(3, loadWithDB({ schemaVersion = 8, layout = { built = "heal" } }))
     check("heal db: built heal kept", env.TandemDB.layout.built, "heal")
 end
 
@@ -4375,7 +4450,7 @@ end
 -- A rebuild at login that fails after saving is tried once per mismatch, not on every layout event.
 do
     local ctx = loadLayout({ name = "Healer", layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, modes = { ["Healer-Realm"] = "heal" },
+        db = { schemaVersion = 8, modes = { ["Healer"] = "heal" },
         layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" } } })
     local tries = 0
     ctx.env.C_EditMode.SetActiveLayout = function()
@@ -4394,7 +4469,7 @@ end
 -- A layout an older build turned on from ToT "1" saved no value; off after heal still shows the target of target.
 do
     local ctx = loadLayout({ name = "Healer", layouts = { editLayout(), editLayout("Tandem") }, active = 4, tot = "1",
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+        db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 } } } })
     ctx.fire("PLAYER_LOGIN")
     ctx.addon.Layout.SetMode("heal")
     check("heal old build: ToT hidden, \"1\" saved", ctx.state.cvar .. " " .. ctx.addon.Store.Layout().tot, "0 1")
@@ -4865,7 +4940,7 @@ do
     check("layout coords: off clears the field", ctx.addon.Store.Layout().coords, nil)
 
     ctx = loadLayout({ coords = "0", layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 }, coords = "1" } } })
+        db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 }, coords = "1" } } })
     ctx.fire("PLAYER_LOGIN")
     ctx.state.coords = "2"
     ctx.run("layout on")
@@ -4874,7 +4949,7 @@ do
     check("layout coords: off after a reload restores the saved value", ctx.state.coords, "1")
 
     ctx = loadLayout({ coords = "1", layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+        db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 } } } })
     ctx.fire("PLAYER_LOGIN")
     check("layout coords: on at login hides the client's coordinates", ctx.state.coords, "0")
     check("layout coords: on at login saves the old value", ctx.addon.Store.Layout().coords, "1")
@@ -4906,7 +4981,7 @@ do
     local enumNoVisible = copyTable(LAYOUT_ENUM)
     enumNoVisible.ActionBarVisibleSetting = nil
     local ctx = loadLayout({ env = { Enum = enumNoVisible }, layouts = { editLayout(), editLayout("Tandem") },
-        active = 4, db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 },
+        active = 4, db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 },
         tot = "0" } } })
     local changes = {}
     ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
@@ -4928,7 +5003,7 @@ end
 -- Gate: without Edit Mode the layout stays dark.
 do
     local ctx = loadLayout({ env = { MainActionBar = false, C_EditMode = false },
-        db = { schemaVersion = 7, layout = { on = true } } })
+        db = { schemaVersion = 8, layout = { on = true } } })
     local changes = 0
     ctx.addon.Layout.OnChange(function() changes = changes + 1 end)
     ctx.fire("PLAYER_LOGIN")
@@ -4937,7 +5012,7 @@ do
     check("layout gate: on refused", ctx.run("layout on"),
         "Tandem: the layout needs Edit Mode, which this client lacks")
     check("layout gate: nothing changed", ctx.state.cvar .. " " .. #ctx.state.activated, "0 0")
-    local newer = loadLayout({ db = { schemaVersion = 8 } })
+    local newer = loadLayout({ db = { schemaVersion = 9 } })
     check("layout: a newer db refuses", newer.run("layout on"),
         "Tandem: the layout cannot be saved: saved data uses a newer schema")
     local broken = loadLayout()
@@ -4985,7 +5060,7 @@ do
         .. ctx.state.cvar .. " " .. ctx.state.frames.MultiBar5.alpha, "false 0 1")
 
     ctx = loadLayout({ layouts = { editLayout(), editLayout("Tandem") }, active = 3,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" } } })
+        db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 }, tot = "0" } } })
     ctx.state.cvar = "1"
     changes = {}
     ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
@@ -4997,7 +5072,7 @@ do
         "0 0")
 
     ctx = loadLayout({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true } } })
+        db = { schemaVersion = 8, layout = { on = true } } })
     changes = {}
     ctx.addon.Layout.OnChange(function(on) changes[#changes + 1] = tostring(on) end)
     ctx.state.unknown = true
@@ -5082,7 +5157,7 @@ end
 do
     local _, printed = loadWithDB({ schemaVersion = 6, weights = "bad" })
     check("schema 7: a v6 db with drops still reports the upgrade", printed[2],
-        "Tandem: saved data upgraded from schema 6 to 7")
+        "Tandem: saved data upgraded from schema 6 to 8")
 end
 
 -- Shared helpers for the frame tests below (stage 12).
@@ -5259,7 +5334,7 @@ do
     check("xp bar: no GameTooltip is harmless", ctx.bar().shown, true)
 
     ctx = loadXP({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+        db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 } } } })
     ctx.fire("PLAYER_LOGIN")
     check("xp bar: relogin with the layout on shows it", tostring(ctx.bar().shown) .. " " .. ctx.text(),
         "true 30%")
@@ -5811,7 +5886,7 @@ do
     check("zhTW reload tooltip", ctx.tip.title .. " / " .. texts(ctx.tip), "重新載入介面 / 點擊重新載入介面")
 
     ctx = loadBags({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
+        db = { schemaVersion = 8, layout = { on = true, previous = { name = "view", type = 1 } } } })
     ctx.fire("PLAYER_LOGIN")
     check("bag row: relogin with the layout on shows it", tostring(ctx.row().shown) .. " " .. ctx.text(),
         "true " .. GENERAL_ICON .. " 19/38")
@@ -7095,7 +7170,7 @@ do
     end
     local function saved(ctx)
         local all = ctx.env.TandemDB.killers
-        local mine = all and all["Thrall-Realm"] or {}
+        local mine = all and all["Thrall"] or {}
         local out = {}
         for fullName, k in pairs(mine) do
             out[#out + 1] = ("%s %s %s %s %d %s"):format(fullName, tostring(k.class), tostring(k.level),
@@ -7116,7 +7191,7 @@ do
     local ctx = fresh()
     ctx.fire("PLAYER_DEAD")
     check("killers: a first death with nobody seen records nothing", tostring(ctx.env.TandemDB.killers
-        and ctx.env.TandemDB.killers["Thrall-Realm"]) .. " " .. logged(ctx), "nil ")
+        and ctx.env.TandemDB.killers["Thrall"]) .. " " .. logged(ctx), "nil ")
     units.target = { name = "Gank", realm = "Far", player = true, attack = true, class = "ROGUE", level = 60 }
     units.nameplate2 = { name = "Stab", full = "Near", player = true, attack = true, class = "MAGE", level = -1 }
     units.nameplate5 = { name = "Boar", player = false, attack = true, class = "WARRIOR", level = 12 }
@@ -7172,6 +7247,16 @@ do
     ctx.fire("PLAYER_DEAD")
     check("killers: the last scan at death finds an attacker no event showed", saved(ctx),
         "Late-Far ROGUE 30 Hillsbrad Foothills 1 5000")
+
+    ctx = fresh()
+    ctx.env.GetRealmName = function() return "" end
+    units.mouseover = { name = "Home", player = true, attack = true, class = "HUNTER", level = 40 }
+    targets = { mouseovertarget = true }
+    ctx.fire("UPDATE_MOUSEOVER_UNIT")
+    ctx.fire("UPDATE_MOUSEOVER_UNIT")
+    ctx.fire("PLAYER_DEAD")
+    check("killers: an enemy with no readable realm is not saved and logged once per name", saved(ctx) .. " / "
+        .. logged(ctx), " / killers: no realm for Home")
 
     local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
         __index = function() error("secret") end, __lt = function() error("secret") end,
@@ -7260,10 +7345,10 @@ do
         local ctx = loadShaman({ class = "WARRIOR", env = e })
         ctx.fire("PLAYER_LOGIN")
         local Store = ctx.addon.Store
-        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 1 })
-        Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 2 })
-        Store.AddKiller("Thrall-Realm", { name = "Boar", realm = "Far", when = 3 })
-        Store.AddKiller("Thrall-Realm", { name = "Pal", realm = "Far", when = 4 })
+        Store.AddKiller("Thrall", { name = "Gank", realm = "Far", when = 1 })
+        Store.AddKiller("Thrall", { name = "Gank", realm = "Far", when = 2 })
+        Store.AddKiller("Thrall", { name = "Boar", realm = "Far", when = 3 })
+        Store.AddKiller("Thrall", { name = "Pal", realm = "Far", when = 4 })
         function ctx.banner()
             for _, w in ipairs(ctx.ui.widgets) do
                 if w.name == "TandemKillerAlert" then return w end
@@ -7384,7 +7469,7 @@ local function loadProcs(opts)
     end
     function ctx.saved()
         local procs = ctx.env.TandemDB.procs
-        local c = procs and procs["Thrall-Realm"]
+        local c = procs and procs["Thrall"]
         local out = {}
         for _, f in ipairs({ "windfury", "flametongue", "frostbrand" }) do
             if c and c[f] then
@@ -7495,7 +7580,7 @@ end
 
 -- Store.Procs / SetProcs and the procs table on load: whole counts for the three families only.
 do
-    local addon = loadWithDB({ schemaVersion = 7, weights = {}, trainers = {}, layout = {}, procs = {
+    local addon = loadWithDB({ schemaVersion = 8, weights = {}, trainers = {}, layout = {}, procs = {
         ["A-R"] = { windfury = { hits = 10, procs = 2 }, rockbiter = { hits = 1, procs = 0 },
             flametongue = { hits = -1, procs = 0 } },
         [""] = {}, ["B-R"] = "x",
@@ -7761,9 +7846,9 @@ end
 do
     local ctx = loadKillersView()
     local Store, b = ctx.addon.Store, ctx.button()
-    Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", class = "ROGUE", level = 60, zone = "Duskwood",
+    Store.AddKiller("Thrall", { name = "Gank", realm = "Far", class = "ROGUE", level = 60, zone = "Duskwood",
         when = 300 })
-    Store.AddKiller("Thrall-Realm", { name = "Stab", realm = "Realm", class = "MAGE", when = 200 })
+    Store.AddKiller("Thrall", { name = "Stab", realm = "Realm", class = "MAGE", when = 200 })
     check("killers window: built on first use", ctx.window(), nil)
     ctx.addon.KillersView.Refresh()
     check("killers window: Refresh before the window does nothing", ctx.window(), nil)
@@ -7792,11 +7877,11 @@ do
     check("killers window: movable by dragging", table.concat(w.drag, " ") .. " "
         .. tostring(w.scripts.OnDragStart ~= nil and w.scripts.OnDragStop ~= nil), "LeftButton true")
 
-    Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 400 })
+    Store.AddKiller("Thrall", { name = "Gank", realm = "Far", when = 400 })
     ctx.run("killers forget Stab")
     check("killers window: refreshes after a forget command", ctx.rows(), "Gank-Far Rogue 60  x2  D400  Duskwood")
     w.rows[1].forget.scripts.OnClick(w.rows[1].forget)
-    check("killers window: a row's forget button drops it", #Store.Killers("Thrall-Realm") .. " " .. ctx.rows()
+    check("killers window: a row's forget button drops it", #Store.Killers("Thrall") .. " " .. ctx.rows()
         .. "|" .. w.status.text .. "|" .. tostring(w.clear.shown), "0 |No one recorded yet.|false")
 
     local refreshed = 0
@@ -7807,12 +7892,12 @@ do
     ctx.addon.KillersView.Refresh = real
 
     for i = 1, 30 do
-        Store.AddKiller("Thrall-Realm", { name = "K" .. i, realm = "R", when = 1000 + i })
+        Store.AddKiller("Thrall", { name = "K" .. i, realm = "R", when = 1000 + i })
     end
     ctx.run("killers clear")
     check("killers window: refreshes after a clear command", w.status.text, "No one recorded yet.")
     for i = 1, 30 do
-        Store.AddKiller("Thrall-Realm", { name = "K" .. i, realm = "R", when = 1000 + i })
+        Store.AddKiller("Thrall", { name = "K" .. i, realm = "R", when = 1000 + i })
     end
     ctx.addon.KillersView.Refresh()
     check("killers window: shows twelve rows and the range", select(2, ctx.rows():gsub(" / ", "")) + 1 .. " "
@@ -7830,7 +7915,7 @@ do
     check("killers window: scrolling stops at the first row", w.rows[1].name.text, "K30-R")
 
     w.clear.scripts.OnClick(w.clear)
-    check("killers window: Clear asks to confirm", w.clear.label.text .. " " .. #Store.Killers("Thrall-Realm"),
+    check("killers window: Clear asks to confirm", w.clear.label.text .. " " .. #Store.Killers("Thrall"),
         "Click again to clear 30")
     ctx.t = 104
     w.clear.scripts.OnUpdate(w.clear)
@@ -7840,11 +7925,11 @@ do
     ctx.t = 107.5
     w.clear.scripts.OnClick(w.clear)
     check("killers window: a late second click only asks again", w.clear.label.text .. " "
-        .. #Store.Killers("Thrall-Realm"), "Click again to clear 30")
+        .. #Store.Killers("Thrall"), "Click again to clear 30")
     ctx.t = 109
     ctx.state.combat = true
     w.clear.scripts.OnClick(w.clear)
-    check("killers window: a second click within 3 s clears, in combat too", #Store.Killers("Thrall-Realm") .. " "
+    check("killers window: a second click within 3 s clears, in combat too", #Store.Killers("Thrall") .. " "
         .. w.status.text .. " " .. tostring(w.clear.shown) .. " " .. w.clear.label.text,
         "0 No one recorded yet. false Clear")
     b.scripts.OnClick(b, "RightButton")
@@ -7857,11 +7942,11 @@ do
     ctx.button().scripts.OnClick(ctx.button(), "RightButton")
     check("killers window: no character", ctx.window().status.text .. " " .. tostring(ctx.window().clear.shown),
         "Killer list unavailable. false")
-    ctx = loadKillersView({ db = { schemaVersion = 8 } })
+    ctx = loadKillersView({ db = { schemaVersion = 9 } })
     ctx.button().scripts.OnClick(ctx.button(), "RightButton")
     check("killers window: read-only saved data", ctx.window().status.text, "Killer list unavailable.")
     ctx = loadKillersView({ locale = "zhTW" })
-    ctx.addon.Store.AddKiller("Thrall-Realm", { name = "Gank", realm = "Far", when = 300 })
+    ctx.addon.Store.AddKiller("Thrall", { name = "Gank", realm = "Far", when = 300 })
     ctx.env.Tandem_OnCompartmentClick("Tandem", "RightButton")
     local w = ctx.window()
     w.clear.scripts.OnClick(w.clear)
@@ -7878,7 +7963,7 @@ end
 
 -- Store: the optional minimap state in TandemDB.layout (U6), schema 7 unchanged.
 do
-    local addon, printed, env = loadWithDB({ schemaVersion = 7, layout = { on = true,
+    local addon, printed, env = loadWithDB({ schemaVersion = 8, layout = { on = true,
         minimap = { angle = 90.5, hidden = true } } })
     check("minimap store: a valid state is kept", dump(env.TandemDB.layout.minimap), dump({ angle = 90.5,
         hidden = true }))
@@ -7889,13 +7974,13 @@ do
     for name, v in pairs({ ["360"] = { angle = 360 }, ["a string angle"] = { angle = "90" },
         ["NaN"] = { angle = 0 / 0 }, ["a non-boolean hidden"] = { hidden = 1 }, ["a number"] = 5 }) do
         check("minimap store: SetLayout rejects " .. name, Store.SetLayout("minimap", v), false)
-        local _, out, e = loadWithDB({ schemaVersion = 7, layout = { on = true, minimap = v } })
+        local _, out, e = loadWithDB({ schemaVersion = 8, layout = { on = true, minimap = v } })
         check("minimap store: load drops " .. name, tostring(e.TandemDB.layout.minimap) .. " "
             .. tostring(e.TandemDB.layout.on) .. " " .. tostring(out[2]),
             "nil true Tandem: dropped 1 invalid or unused saved entries")
     end
     check("minimap store: a newer db is not written",
-        loadWithDB({ schemaVersion = 8 }).Store.SetLayout("minimap", { angle = 1 }), false)
+        loadWithDB({ schemaVersion = 9 }).Store.SetLayout("minimap", { angle = 1 }), false)
 end
 
 
@@ -8795,7 +8880,7 @@ local function runSnippet(code, self, owner)
     chunk()
 end
 
--- Loads withMacros(loadRodButton()) as the Shaman "Me-Realm": ctx.known[id] for IsPlayerSpell, ctx.party[unit] = name
+-- Loads withMacros(loadRodButton()) as the Shaman "Me": ctx.known[id] for IsPlayerSpell, ctx.party[unit] = name
 -- for UnitExists/UnitName, ctx.auras[unit] = { { name, dispelName }, ... } for C_UnitAuras.GetAuraDataByIndex
 -- (counted in ctx.auraCalls), ctx.wraps the SecureHandlerWrapScript calls. opts.insecure leaves out the secure
 -- handler APIs. ctx.main(), ctx.arrow(), ctx.list() and ctx.row(i) are the flyout's frames; ctx.click(b, button)
@@ -8997,7 +9082,7 @@ do
     check("flyout: and becomes the pick, closing the list", main.attrs.macrotext .. " | " .. main.attrs.entry
         .. " | " .. main.icon.texture .. " | " .. tostring(list.shown),
         STORMSTRIKE_CAST .. " | stormstrike | icon17364 | false")
-    check("flyout: an out-of-combat pick is saved at once", ctx.env.TandemDB.picks["Me-Realm"], "stormstrike")
+    check("flyout: an out-of-combat pick is saved at once", ctx.env.TandemDB.picks["Me"], "stormstrike")
     check("flyout: the pick is logged", debugText(ctx.env):match("flyout pick: stormstrike combat=false") ~= nil,
         true)
     ctx.click(arrow)
@@ -9015,7 +9100,7 @@ do
     ctx.click(ctx.row(1))
     check("flyout: a row picks in combat too", ctx.cast .. " | " .. main.attrs.entry .. " | " .. tostring(list.shown),
         CURE_POISON .. " | poison | false")
-    check("flyout: an in-combat pick waits for combat's end", ctx.env.TandemDB.picks["Me-Realm"], "stormstrike")
+    check("flyout: an in-combat pick waits for combat's end", ctx.env.TandemDB.picks["Me"], "stormstrike")
     check("flyout: the in-combat pick is logged", debugText(ctx.env):match("flyout pick: poison combat=true") ~= nil,
         true)
     ctx.known[17364] = nil
@@ -9023,7 +9108,7 @@ do
     check("flyout: rows wait in combat", rowIds(ctx), "poison,disease,cure,stormstrike")
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("flyout: combat's end saves the pick and applies the rows", ctx.env.TandemDB.picks["Me-Realm"] .. " | "
+    check("flyout: combat's end saves the pick and applies the rows", ctx.env.TandemDB.picks["Me"] .. " | "
         .. rowIds(ctx) .. " | " .. main.attrs.entry, "poison | poison,disease,cure | poison")
     check("flyout: the hidden row's entry is cleared", tostring(ctx.row(4).attrs.entry), "nil")
     ctx.known[17364] = true
@@ -9107,7 +9192,7 @@ end
 -- A pick saved earlier shows at login; a full macro list says so in the tooltip.
 do
     local ctx = loadFlyout()
-    ctx.env.TandemDB.picks = { ["Me-Realm"] = "disease" }
+    ctx.env.TandemDB.picks = { ["Me"] = "disease" }
     ctx.known[526], ctx.known[2870] = true, true
     ctx.charMacros = 18
     ctx.fire("PLAYER_LOGIN")
@@ -9139,7 +9224,7 @@ do
     check("flyout insecure: the arrow opens the list out of combat", list.shown, true)
     ctx.click(ctx.row(2))
     check("flyout insecure: a row casts, picks and closes out of combat", ctx.cast .. " | " .. main.attrs.entry
-        .. " | " .. tostring(list.shown) .. " | " .. ctx.env.TandemDB.picks["Me-Realm"],
+        .. " | " .. tostring(list.shown) .. " | " .. ctx.env.TandemDB.picks["Me"],
         CURE_DISEASE .. " | disease | false | disease")
     ctx.click(arrow)
     ctx.fire("PLAYER_REGEN_DISABLED")
@@ -9158,7 +9243,7 @@ do
         debugText(ctx.env):match("flyout pick: poison combat=true skipped") ~= nil, true)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("flyout insecure: the pick stays after combat", ctx.env.TandemDB.picks["Me-Realm"], "disease")
+    check("flyout insecure: the pick stays after combat", ctx.env.TandemDB.picks["Me"], "disease")
 end
 
 -- The recall row (D2, D3): casts but never picks; its body follows Astral Recall's cooldown, switched by
@@ -9229,7 +9314,7 @@ do
     ctx.click(row, "RightButton")
     check("recall flyout: a row click casts and closes, the pick stays", ctx.cast .. " | " .. tostring(list.shown)
         .. " | " .. main.attrs.entry .. " | " .. main.attrs.macrotext .. " | " .. tostring(ctx.env.TandemDB.picks
-        and ctx.env.TandemDB.picks["Me-Realm"]), RECALL_SPELL_CAST .. " | false | poison | " .. CURE_POISON .. " | nil")
+        and ctx.env.TandemDB.picks["Me"]), RECALL_SPELL_CAST .. " | false | poison | " .. CURE_POISON .. " | nil")
 
     local before = ctx.updates
     ctx.cd = { 100, 1.5 }
@@ -9375,7 +9460,7 @@ do
     check("flyout wire failure: the arrow still opens the list out of combat", list.shown, true)
     ctx.click(ctx.row(2))
     check("flyout wire failure: a row casts, picks and closes out of combat", ctx.cast .. " | " .. main.attrs.entry
-        .. " | " .. tostring(list.shown) .. " | " .. ctx.env.TandemDB.picks["Me-Realm"],
+        .. " | " .. tostring(list.shown) .. " | " .. ctx.env.TandemDB.picks["Me"],
         CURE_DISEASE .. " | disease | false | disease")
     ctx.click(arrow)
     ctx.fire("PLAYER_REGEN_DISABLED")
@@ -9885,7 +9970,7 @@ end
 -- Class macros (U1, D3, D5): a class's macro entries shown while the player knows their spells, and the pick each
 -- character saves.
 
--- Loads the addon as a Shaman "Me-Realm" with TandemDB set to db: ctx.known[id] for IsPlayerSpell, ctx.spellKnown[id]
+-- Loads the addon as a Shaman "Me" with TandemDB set to db: ctx.known[id] for IsPlayerSpell, ctx.spellKnown[id]
 -- for IsSpellKnown, ctx.names[id] for GetSpellInfo (icon "icon<id>"), ctx.cd = { start, duration } for
 -- GetSpellCooldown(556), ctx.hearths for GetItemCount(6948); ctx.list() is ClassMacros.List("SHAMAN").
 local MACRO_NAMES = {
@@ -10020,18 +10105,18 @@ do
     ctx.known[526], ctx.known[2870], ctx.known[17364] = true, true, true
     check("pick: the first shown entry by default", CM.Pick().id, "poison")
     check("pick: SetPick saves a class entry", CM.SetPick("stormstrike"), true)
-    check("pick: saved per character key", db.picks["Me-Realm"], "stormstrike")
+    check("pick: saved per character key", db.picks["Me"], "stormstrike")
     check("pick: Pick returns the saved entry", CM.Pick().id, "stormstrike")
     check("pick: SetPick rejects an id the class lacks", CM.SetPick("fireball"), false)
     check("pick: SetPick rejects a non-string", CM.SetPick(7), false)
-    check("pick: a rejected id writes nothing", db.picks["Me-Realm"], "stormstrike")
+    check("pick: a rejected id writes nothing", db.picks["Me"], "stormstrike")
     ctx.known[17364] = nil
     check("pick: a saved entry no longer shown falls back to the first shown", CM.Pick().id, "poison")
-    check("pick: the fallback keeps the saved id", db.picks["Me-Realm"], "stormstrike")
+    check("pick: the fallback keeps the saved id", db.picks["Me"], "stormstrike")
     ctx.name = "Alt"
     check("pick: another character has its own pick", CM.Pick().id, "poison")
     CM.SetPick("disease")
-    check("pick: the other character's pick saved", db.picks["Alt-Realm"], "disease")
+    check("pick: the other character's pick saved", db.picks["Alt"], "disease")
     ctx.name = "Me"
     ctx.known[17364] = true
     check("pick: the first character's pick is kept", CM.Pick().id, "stormstrike")
@@ -10111,7 +10196,7 @@ do
     check("recall pick: SetPick refuses it", CM.SetPick("recall"), false)
     ctx.known[17364] = true
     CM.SetPick("stormstrike")
-    check("recall pick: the saved pick stays", tostring(CM.SetPick("recall")) .. " " .. db.picks["Me-Realm"] .. " "
+    check("recall pick: the saved pick stays", tostring(CM.SetPick("recall")) .. " " .. db.picks["Me"] .. " "
         .. CM.Pick().id, "false stormstrike stormstrike")
 end
 
@@ -10147,23 +10232,23 @@ do
 end
 
 do
-    local ctx = loadClassMacros({ db = { schemaVersion = 7, picks = { ["Me-Realm"] = "cure" } } })
+    local ctx = loadClassMacros({ db = { schemaVersion = 8, picks = { ["Me"] = "cure" } } })
     ctx.known[526], ctx.known[2870] = true, true
     check("pick: a saved pick survives the load", ctx.CM.Pick().id, "cure")
     check("pick: a valid picks key prints only the load line", #ctx.printed, 1)
 end
 
 do
-    local _, printed, env = loadWithDB({ schemaVersion = 7, picks = { ["Me-Realm"] = "cure", ["Alt-Realm"] = 3,
-        ["Bad-Realm"] = "", [""] = "poison", [5] = "poison", ["Tab-Realm"] = { "poison" } } })
-    check("picks: string ids are kept, the rest dropped", dump(env.TandemDB.picks), dump({ ["Me-Realm"] = "cure" }))
+    local _, printed, env = loadWithDB({ schemaVersion = 8, picks = { ["Me"] = "cure", ["Alt"] = 3,
+        ["Bad"] = "", [""] = "poison", [5] = "poison", ["Tab"] = { "poison" } } })
+    check("picks: string ids are kept, the rest dropped", dump(env.TandemDB.picks), dump({ ["Me"] = "cure" }))
     check("picks: each invalid pick is counted", printed[2], "Tandem: dropped 5 invalid or unused saved entries")
-    _, printed, env = loadWithDB({ schemaVersion = 7, picks = "bad" })
+    _, printed, env = loadWithDB({ schemaVersion = 8, picks = "bad" })
     check("picks: a non-table picks is dropped", tostring(env.TandemDB.picks) .. " " .. printed[2],
         "nil Tandem: dropped 1 invalid or unused saved entries")
-    local newer = loadWithDB({ schemaVersion = 8, picks = { ["Me-Realm"] = "cure" } }).Store
-    check("picks: a newer db reads no pick", newer.Pick("Me-Realm"), nil)
-    check("picks: a newer db blocks SetPick", newer.SetPick("Me-Realm", "cure"), false)
+    local newer = loadWithDB({ schemaVersion = 9, picks = { ["Me"] = "cure" } }).Store
+    check("picks: a newer db reads no pick", newer.Pick("Me"), nil)
+    check("picks: a newer db blocks SetPick", newer.SetPick("Me", "cure"), false)
 end
 
 -- Food (eat button U1): bag food and drink classified by tooltip, ranked (D2), and the click's macro text (D1).
@@ -11367,15 +11452,15 @@ end
 
 do
     local layout = { books = false }
-    local addon, printed, env = loadWithDB({ schemaVersion = 7, layout = copyTable(layout) })
+    local addon, printed, env = loadWithDB({ schemaVersion = 8, layout = copyTable(layout) })
     check("books layout: a saved off is kept", dump(env.TandemDB.layout), dump(layout))
     check("books layout: prints only the load line", #printed, 1)
     check("books layout: rejects a non-boolean", addon.Store.SetLayout("books", "off"), false)
-    env = select(3, loadWithDB({ schemaVersion = 7, layout = { books = "no" } }))
+    env = select(3, loadWithDB({ schemaVersion = 8, layout = { books = "no" } }))
     check("books layout: a bad value is dropped", dump(env.TandemDB.layout), "{}")
     check("books layout: an absent switch reads on", loadWithDB(nil).BookPins.On(), true)
     local newer
-    newer, printed = loadWithDB({ schemaVersion = 8, layout = {} })
+    newer, printed = loadWithDB({ schemaVersion = 9, layout = {} })
     check("books layout: a newer db cannot save", newer.BookPins.Set(false), false)
     check("books layout: and stays on", newer.BookPins.On(), true)
     local out = run(newer, printed, "books off")
