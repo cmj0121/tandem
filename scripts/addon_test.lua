@@ -5022,6 +5022,7 @@ local function barTooltip()
     local tip = fakeTooltip()
     function tip.SetOwner(self, owner, anchor) self.owner, self.anchor, self.lines = owner, anchor, {} end
     function tip.SetText(self, text) self.title = text end
+    function tip.SetHyperlink(self, link) self.title, self.lines = link, {} end
     function tip.Show(self) self.shown = true end
     function tip.Hide(self) self.shown = false end
     return tip
@@ -8403,11 +8404,16 @@ do
 end
 
 -- The recall row (D2, D3): casts but never picks; its body follows Astral Recall's cooldown, switched by
--- Flyout.Update only when the state changes, only out of combat, and back when the cooldown ends.
-local RECALL_SPELL = "#showtooltip Astral Recall\n/use [btn:2] item:6948; Astral Recall"
+-- Flyout.Update only when the state changes, only out of combat, and back when the cooldown ends. In combat every
+-- body with a Hearthstone in the bags shows and uses it; with none, the body has no combat clause.
+local RECALL_SPELL_CAST = "/use [combat][btn:2] item:6948\n/cast [combat] Astral Recall\n"
+    .. "/cast [nocombat,nobtn:2] Astral Recall"
+local RECALL_SPELL = "#showtooltip [combat] item:6948; Astral Recall\n" .. RECALL_SPELL_CAST
 local RECALL_ITEM = "#showtooltip item:6948\n/use item:6948"
-local RECALL_UNKNOWN = "#showtooltip Astral Recall\n/use [btn:2] item:6948\n/cast [nobtn:2] Astral Recall\n"
-    .. "/use [nobtn:2] item:6948"
+local RECALL_UNKNOWN_CAST = "/use [combat][btn:2] item:6948\n/cast [nobtn:2] Astral Recall\n"
+    .. "/use [nocombat,nobtn:2] item:6948"
+local RECALL_UNKNOWN = "#showtooltip [combat] item:6948; Astral Recall\n" .. RECALL_UNKNOWN_CAST
+local RECALL_NONE = "#showtooltip Astral Recall\n/use [btn:2] item:6948; Astral Recall"
 local function loadRecallFlyout(opts)
     opts = opts or {}
     local ctx
@@ -8419,6 +8425,7 @@ local function loadRecallFlyout(opts)
             end
         end,
         GetItemCount = function(id) return id == 6948 and 1 or 0 end,
+        GetItemIcon = function(id) return id == 6948 and "icon6948" or nil end,
         issecretvalue = function(v) return v == "S" end,
         C_Timer = { After = function(delay, fn)
             ctx.timers[#ctx.timers + 1] = { delay, fn }
@@ -8459,13 +8466,12 @@ do
         .. tostring(row.attrs.nopick) .. " | " .. tostring(ctx.row(1).attrs.nopick),
         "poison,recall | poison | true | nil")
     check("recall flyout: ready, left casts Astral Recall, right uses the Hearthstone", row.attrs.type .. " | "
-        .. row.attrs.macrotext, "macro | /use [btn:2] item:6948; Astral Recall")
+        .. row.attrs.macrotext, "macro | " .. RECALL_SPELL_CAST)
     ctx.click(arrow)
     ctx.click(row, "RightButton")
     check("recall flyout: a row click casts and closes, the pick stays", ctx.cast .. " | " .. tostring(list.shown)
         .. " | " .. main.attrs.entry .. " | " .. main.attrs.macrotext .. " | " .. tostring(ctx.env.TandemDB.picks
-        and ctx.env.TandemDB.picks["Me-Realm"]), "/use [btn:2] item:6948; Astral Recall | false | poison | "
-        .. CURE_POISON .. " | nil")
+        and ctx.env.TandemDB.picks["Me-Realm"]), RECALL_SPELL_CAST .. " | false | poison | " .. CURE_POISON .. " | nil")
 
     local before = ctx.updates
     ctx.cd = { 100, 1.5 }
@@ -8490,7 +8496,7 @@ do
     ctx.cd, ctx.now = { 0, 0 }, 1000
     ctx.drain()
     check("recall flyout: the timer switches back", (ctx.updates - before) .. " | " .. row.attrs.macrotext,
-        "2 | /use [btn:2] item:6948; Astral Recall")
+        "2 | " .. RECALL_SPELL_CAST)
 
     -- Right after the teleport the client reads Astral Recall ready for a moment, then on cooldown again.
     ctx.cd, ctx.now = { 1000, 900 }, 1000
@@ -8515,19 +8521,43 @@ do
     ctx.now = 1010.5
     ctx.drain(0.5)
     check("recall flyout: a ready read that holds is a real reset", (ctx.updates - before) .. " | "
-        .. row.attrs.macrotext, "1 | /use [btn:2] item:6948; Astral Recall")
+        .. row.attrs.macrotext, "1 | " .. RECALL_SPELL_CAST)
     ctx.drain()
 
     row.scripts.OnDragStart(row)
     local m = ctx.macro("Tandem Recall")
     check("recall flyout: dragging makes the character macro", m and m.body, RECALL_SPELL)
+    check("recall flyout: out of combat the row shows Astral Recall", row.icon.texture, "icon556")
+    local sets, setAttribute = 0, WIDGET.SetAttribute
+    WIDGET.SetAttribute = function(...)
+        sets = sets + 1
+        return setAttribute(...)
+    end
+    ctx.state.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    row.scripts.OnEnter(row)
+    check("recall flyout: in combat the row shows the Hearthstone's icon and tooltip", row.icon.texture .. " | "
+        .. ctx.tip.title .. " | " .. #ctx.tip.lines .. " | " .. tostring(ctx.tip.shown),
+        "icon6948 | item:6948 | 0 | true")
+    ctx.row(1).scripts.OnEnter(ctx.row(1))
+    check("recall flyout: in combat a row without a combat icon keeps its own", ctx.row(1).icon.texture .. " | "
+        .. ctx.tip.title, "icon526 | Cure Poison")
+    check("recall flyout: the swap sets no attribute", sets, 0)
+    WIDGET.SetAttribute = setAttribute
+    local updates = ctx.updates
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    ctx.drain(0)
+    row.scripts.OnEnter(row)
+    check("recall flyout: leaving combat restores Astral Recall's icon and tooltip", (ctx.updates - updates) .. " | "
+        .. row.icon.texture .. " | " .. ctx.tip.title, "0 | icon556 | Astral Recall")
     ctx.state.combat = true
     ctx.fire("PLAYER_REGEN_DISABLED")
     ctx.cd = { 1000, 900 }
     ctx.fire("SPELL_UPDATE_COOLDOWN")
     ctx.drain(0)
     check("recall flyout: nothing changes in combat", row.attrs.macrotext .. " | " .. m.body,
-        "/use [btn:2] item:6948; Astral Recall | " .. RECALL_SPELL)
+        RECALL_SPELL_CAST .. " | " .. RECALL_SPELL)
     ctx.cd, ctx.now = { 0, 0 }, 2000
     ctx.drain()
     ctx.cd = { 1900, 900 }
@@ -8539,10 +8569,25 @@ do
     ctx.cd = { "S", "S" }
     ctx.fire("SPELL_UPDATE_COOLDOWN")
     ctx.drain(0)
-    check("recall flyout: unreadable, cast then use", row.attrs.macrotext, "/use [btn:2] item:6948\n"
-        .. "/cast [nobtn:2] Astral Recall\n/use [nobtn:2] item:6948")
+    check("recall flyout: unreadable, cast then use", row.attrs.macrotext, RECALL_UNKNOWN_CAST)
     check("recall flyout: the raw types logged", debugText(ctx.env):match("recall state=unknown start=secret "
         .. "duration=secret") ~= nil, true)
+end
+
+-- No item icon: in combat the recall row keeps Astral Recall's icon but its tooltip is still the Hearthstone.
+do
+    local ctx = loadRecallFlyout()
+    ctx.env.GetItemIcon = nil
+    ctx.known[526], ctx.known[556] = true, true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    ctx.drain()
+    local row = ctx.row(2)
+    ctx.state.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    row.scripts.OnEnter(row)
+    check("recall flyout: no item icon, the row keeps its icon, the tooltip is the Hearthstone", row.icon.texture
+        .. " | " .. ctx.tip.title, "icon556 | item:6948")
 end
 
 do
@@ -8554,7 +8599,7 @@ do
     ctx.click(ctx.arrow())
     ctx.click(ctx.row(2))
     check("recall flyout insecure: the row casts and closes, the pick stays", ctx.cast .. " | "
-        .. tostring(list.shown) .. " | " .. main.attrs.entry, "/use [btn:2] item:6948; Astral Recall | false | poison")
+        .. tostring(list.shown) .. " | " .. main.attrs.entry, RECALL_SPELL_CAST .. " | false | poison")
 end
 
 -- Secure wiring that raises falls back to the out-of-combat flyout.
@@ -9248,10 +9293,27 @@ do
     check("recall: fields", table.concat({ l[2].title, l[2].icon, l[2].macro, tostring(l[2].noPick),
         tostring(l[2].note), #l[2].kinds }, " | "), "Astral Recall | icon556 | Tandem Recall | true | nil | 0")
     check("recall: description", l[2].description, "Left-click casts Astral Recall, or uses your Hearthstone while "
-        .. "it is on cooldown; right-click uses your Hearthstone")
+        .. "it is on cooldown; right-click uses your Hearthstone; in combat both use your Hearthstone")
     check("recall: ready state", table.concat({ CM.RecallState() }, ","), "spell")
     check("recall: ready body", l[2].body, RECALL_SPELL)
-    check("recall: ready cast", l[2].cast, "/use [btn:2] item:6948; Astral Recall")
+    check("recall: ready cast", l[2].cast, RECALL_SPELL_CAST)
+    check("recall: a combat clause without the item icon API has no combat icon", tostring(l[2].combat) .. " | "
+        .. tostring(l[2].combatIcon), "true | nil")
+    local cItem = ctx.env.C_Item
+    ctx.env.GetItemIcon = function(id) return id == 6948 and "icon6948" or nil end
+    ctx.env.C_Item = { GetItemIconByID = function(id) return id == 6948 and 134414 or nil end }
+    check("recall: the combat icon is the Hearthstone's, read by GetItemIconByID first",
+        ctx.list()[2].combatIcon .. " | " .. tostring(ctx.list()[1].combatIcon), "134414 | nil")
+    ctx.env.C_Item = cItem
+    check("recall: GetItemIcon is the combat icon's fallback", ctx.list()[2].combatIcon, "icon6948")
+    local combat = {}
+    for _, state in ipairs({ "spell", "item", "unknown" }) do
+        local b = ctx.CM.List("SHAMAN", state)[2].body
+        combat[#combat + 1] = state .. "=" .. tostring((b:find("#showtooltip [combat] item:6948;", 1, true) == 1
+            and b:find("\n/use [combat][btn:2] item:6948\n", 1, true) ~= nil) or b == RECALL_ITEM)
+    end
+    check("recall: in combat every body with a Hearthstone shows and uses it", table.concat(combat, " "),
+        "spell=true item=true unknown=true")
     ctx.cd = { 100, 1.5 }
     check("recall: the global cooldown counts as ready", CM.RecallState(), "spell")
     ctx.cd = { 100, 900 }
@@ -9259,8 +9321,13 @@ do
     check("recall: on cooldown body", ctx.list()[2].body, RECALL_ITEM)
     ctx.hearths = 0
     l = ctx.list()
-    check("recall: no Hearthstone keeps the spell body and notes it", l[2].body .. " | " .. l[2].note,
-        RECALL_SPELL .. " | No Hearthstone in your bags")
+    check("recall: no Hearthstone casts Astral Recall without a combat clause and notes it", l[2].body .. " | "
+        .. l[2].note .. " | " .. tostring(l[2].body:find("combat", 1, true)),
+        RECALL_NONE .. " | No Hearthstone in your bags | nil")
+    check("recall: no Hearthstone and unreadable has no combat clause either",
+        ctx.CM.List("SHAMAN", "unknown")[2].body, RECALL_NONE)
+    check("recall: no Hearthstone, no combat clause or icon", tostring(l[2].combat) .. " | "
+        .. tostring(l[2].combatIcon), "nil | nil")
     ctx.hearths = 1
     ctx.cd = { "S", 900 }
     check("recall: a secret start is unknown", table.concat({ CM.RecallState() }, ","), "unknown")
@@ -9313,8 +9380,12 @@ do
     ctx.hearths = 0
     local e = ctx.list()[1]
     check("zhTW recall: body, description and note", e.body .. " | " .. e.description .. " | " .. e.note,
-        "#showtooltip 星界傳送\n/use [btn:2] item:6948; 星界傳送 | 左鍵施放星界傳送，冷卻中則使用爐石；右鍵使用爐石 | "
-            .. "背包裡沒有爐石")
+        "#showtooltip 星界傳送\n/use [btn:2] item:6948; 星界傳送 | 左鍵施放星界傳送，冷卻中則使用爐石；右鍵使用爐石；"
+            .. "戰鬥中兩鍵都使用爐石 | 背包裡沒有爐石")
+    ctx.hearths = 1
+    local spell, unknown = ctx.CM.List("SHAMAN", "spell")[1].body, ctx.CM.List("SHAMAN", "unknown")[1].body
+    check("zhTW recall: the combat bodies name the spell and fit a macro", tostring(spell:find("/cast [combat] 星界傳送\n"
+        .. "/cast [nocombat,nobtn:2] 星界傳送", 1, true) ~= nil and #spell <= 255 and #unknown <= 255), "true")
 end
 
 do
