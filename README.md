@@ -308,7 +308,8 @@ Tandem: Library book nearby: Bewitchments and Glamours — Moonbrook, first hous
 - A book inside a cave or a building with a separate way in also gets a dimmer pin at the entrance; its tooltip starts
   with `Entrance`.
 - Your faction's hand-in NPC shows with a different book icon and `Takes library books`: Garion Wendell in the
-  Stormwind Mage Tower for the Alliance, Owen Thadd in the Undercity Magic Quarter for the Horde.
+  Stormwind Mage Tower for the Alliance, Owen Thadd in the Undercity Magic Quarter for the Horde. Next to it a label
+  reads how many books you have [turned in](#turned-in-books) out of all of them, such as `12/36`.
 - Click a pin to set a waypoint and track it, at the entrance first when the book has one. Chat shows
   `Tandem: waypoint set to <title>`, or `Tandem: a waypoint cannot be set here` when the client cannot set one there.
 - Pins show whether the [layout](#layout) is on or not. Nothing is drawn when the `Book pins` line of
@@ -316,11 +317,12 @@ Tandem: Library book nearby: Bewitchments and Glamours — Moonbrook, first hous
 
 ### Book alert
 
-When you stand within 40 yards of a book your level reaches, or of its entrance, chat shows the line above, once per
-book per session: a book is named again only after you log in again or `/reload`. Nothing is checked in combat; the
-check resumes when combat ends. Distances are taken in world coordinates, so standing in a cave or Blackrock Mountain
-still counts against the book on the zone map; when the client gives no world position, only a book on the same map
-within 0.7 map percent on both axes counts. It needs the `Book alert` line of [`/tandem check`](#tandem-check).
+When you stand within 40 yards of a book your level reaches that you have not turned in, or of its entrance, chat
+shows the line above, once per book per session: a book is named again only after you log in again or `/reload`.
+Nothing is checked in combat; the check resumes when combat ends. Distances are taken in world coordinates, so
+standing in a cave or Blackrock Mountain still counts against the book on the zone map; when the client gives no world
+position, only a book on the same map within 0.7 map percent on both axes counts. It needs the `Book alert` line of
+[`/tandem check`](#tandem-check).
 
 ### The books switch
 
@@ -328,8 +330,13 @@ within 0.7 map percent on both axes counts. It needs the `Book alert` line of [`
 `Tandem: library book hints on` or `Tandem: library book hints off`, as does `/tandem books` alone. The switch is
 saved as `books` in the [layout](#saved-data) data and is on until you turn it off.
 
-Tandem does not track which books you have collected: a book you have already looted or handed in keeps its pin and
-its alert.
+### Turned-in books
+
+A book you have handed in to your librarian shows dimmed on the map, its tooltip gains a green `Turned in` line, its
+entrance pin goes away and the alert no longer names it. The librarian's tooltip adds `Books turned in: <n>/<total>`
+and, until you have every reward, `Next reward at <n> books` (10, 20, 25 or 35). Tandem reads this from the game's
+quest flags, so books you turned in before installing it count too, and a book you hand in now dims at once. A book
+you have looted but not yet handed in keeps its full pin and its alert.
 
 ### Where the book data comes from
 
@@ -346,7 +353,9 @@ The second line gives the distance in map percent instead when the client has no
 `Tandem: no eligible book on this continent`. To check every map id, turn on the [debug log](#debug-log) and
 `/reload`: at login it logs `books mapinfo id=<id> name=<name> type=<type>` (or `books mapinfo id=<id> missing`) for
 each map the table uses and `books worldpos ok|missing`, each world map change logs `books map=<id> pins=<n>`, each
-alert logs `books alert <key> map=<id> at (<x>, <y>)`, and the `/tandem books near` lines are logged too.
+alert logs `books alert <key> map=<id> at (<x>, <y>)`, and the `/tandem books near` lines are logged too. For the
+turned-in flags, login also logs `books turnedin <n>/<total> next=<n>|none` and one `books flag key=<key> quest=<id>
+flagged=true|false` per book, and each hand-in logs `books turnin quest=<id> title=<title> book=<key>|none`.
 
 ## Killers
 
