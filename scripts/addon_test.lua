@@ -1195,7 +1195,7 @@ local function checkAPIs()
         C_EditMode = { GetLayouts = fn, SaveLayouts = fn, SetActiveLayout = fn }, EditModeManagerFrame = {},
         EditModePresetLayoutManager = { GetCopyOfPresetLayouts = fn },
         MainActionBar = {}, UnitXP = fn, UnitXPMax = fn, MainMenuBarBackpackButton = {},
-        GetTotemInfo = fn, GetWeaponEnchantInfo = fn, UnitPower = fn, PlayerFrame = {}, GetTime = fn,
+        GetWeaponEnchantInfo = fn, UnitPower = fn, PlayerFrame = {}, GetTime = fn,
         GetInventoryItemID = fn, InCombatLockdown = fn, SecureActionButtonMixin = {},
         SecureCmdList = { EQUIP_TO_SLOT = fn }, EquipItemByName = fn,
         CreateMacro = fn, EditMacro = fn, GetMacroIndexByName = fn, GetMacroInfo = fn, PickupMacro = fn,
@@ -1235,7 +1235,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: twenty-five features", #addon.Check.FEATURES, 25)
+    check("check: twenty-four features", #addon.Check.FEATURES, 24)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1246,7 +1246,7 @@ do
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
         "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Mute button", "Role button", "Map info",
-        "Shaman area", "Weapon procs", "Eat button", "Book pins", "Book alert" }) do
+        "Weapon procs", "Eat button", "Book pins", "Book alert" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1308,7 +1308,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on twenty-three features", count, 23)
+    check("check: kept code gates on twenty-two features", count, 22)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -2335,7 +2335,7 @@ do
     check("zhTW check: present probe", run(zh, zhPrinted, "check")[n + 1], "探測：LootButton1 存在")
 end
 
--- Layout, XP bar, bag button and Shaman area gates in /tandem check (stage 12, unit 1).
+-- Layout, XP bar and bag button gates in /tandem check (stage 12, unit 1).
 
 do
     local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
@@ -2349,8 +2349,6 @@ do
         "Bag button: ok (C_Container.GetContainerNumFreeSlots ok, GetContainerNumFreeSlots missing, "
         .. "MainMenuBarBackpackButton ok, InCombatLockdown ok, SecureActionButton_OnClick missing, "
         .. "SecureActionButtonMixin ok)")
-    check("check: shaman area line", byName["Shaman area"],
-        "Shaman area: ok (GetTotemInfo ok, UnitPower ok)")
 
     local fn = function() end
     local env = checkAPIs()
@@ -2365,8 +2363,7 @@ do
         { "Layout", "C_EditMode" }, { "Layout", "EditModeManagerFrame" }, { "Layout", "MainActionBar" },
         { "Layout", "EditModePresetLayoutManager" },
         { "XP bar", "UnitXPMax" }, { "Bag button", "MainMenuBarBackpackButton" },
-        { "Bag button", "SecureActionButtonMixin" }, { "Shaman area", "GetTotemInfo" },
-        { "Shaman area", "UnitPower" },
+        { "Bag button", "SecureActionButtonMixin" },
     }) do
         env = checkAPIs()
         env[case[2]] = nil
@@ -2379,8 +2376,6 @@ do
     check("zhTW check: layout line", lineFor(out, "介面配置"):match("^(.-)：可用"), "介面配置")
     check("zhTW check: xp bar line", lineFor(out, "經驗條"), "經驗條：可用（UnitXP 可用, UnitXPMax 可用）")
     check("zhTW check: bag button line", lineFor(out, "背包按鈕"):match("^(.-)：可用"), "背包按鈕")
-    check("zhTW check: shaman area line", lineFor(out, "薩滿區"),
-        "薩滿區：可用（GetTotemInfo 可用, UnitPower 可用）")
 end
 
 -- /tandem weights (stage 7, unit 6): show, spec, set and reset.
@@ -4236,7 +4231,7 @@ do
     check("heal: Mode reads it", Layout.Mode(), "heal")
     check("heal: on", ctx.run("layout on"), "Tandem: layout on")
     local t = savedTandem(state)
-    check("heal: party frames above the class area", anchorText(systemOf(t, 3, 4)), "BOTTOM UIParent BOTTOM 0 292")
+    check("heal: party frames above the unit row", anchorText(systemOf(t, 3, 4)), "BOTTOM UIParent BOTTOM 0 292")
     check("heal: raid frames share the anchor", anchorText(systemOf(t, 3, 5)), "BOTTOM UIParent BOTTOM 0 292")
     check("heal: player frame keeps its place", anchorText(systemOf(t, 3, 1)), "BOTTOMRIGHT UIParent BOTTOM -120 192")
     check("heal: target frame keeps its place", anchorText(systemOf(t, 3, 2)), "BOTTOMLEFT UIParent BOTTOM 120 192")
@@ -5834,13 +5829,10 @@ do
         "/click MainMenuBarBackpackButton\n/click CharacterReagentBag0Slot")
 end
 
--- Class rail above the top action bar, Shaman first (stage 12, U5, D5, D12, PLAN decision 6).
-
--- Loads the layout as a Shaman: ctx.t is GetTime; ctx.totems[slot] = { have, name, start, duration, icon };
--- ctx.weapon is GetWeaponEnchantInfo's returns (n of them); ctx.auras[name] = aura data for
--- C_UnitAuras.GetAuraDataBySpellName and ctx.buffs the UnitBuff list { name, icon, count, expiration }, so a buff
--- the rail must not show can be up; ctx.mana = { cur, max }; ctx.tickers lists C_Timer.NewTicker calls; ctx.calls
--- counts totem, weapon, weapon icon, aura and power API calls; ctx.tip is GameTooltip. opts.class is the class file.
+-- Loads the layout as a Shaman: ctx.t is GetTime; ctx.weapon is GetWeaponEnchantInfo's returns (n of them);
+-- ctx.auras[name] = aura data for C_UnitAuras.GetAuraDataBySpellName and ctx.buffs the UnitBuff list
+-- { name, icon, count, expiration }; ctx.mana = { cur, max }; ctx.tickers lists C_Timer.NewTicker calls; ctx.calls
+-- counts weapon, weapon icon, aura and power API calls; ctx.tip is GameTooltip. opts.class is the class file.
 local function loadShaman(opts)
     opts = opts or {}
     local ui = { widgets = {} }
@@ -5851,14 +5843,6 @@ local function loadShaman(opts)
         GameTooltip = barTooltip(),
         UnitClass = function() return "Class", opts.class or "SHAMAN" end,
         GetTime = function() return ctx.t end,
-        GetTotemInfo = function(slot)
-            ctx.calls = ctx.calls + 1
-            local t = ctx.totems[slot]
-            if not t then
-                return false, "", 0, 0, ""
-            end
-            return t[1], t[2], t[3], t[4], t[5]
-        end,
         GetWeaponEnchantInfo = function()
             ctx.calls = ctx.calls + 1
             local w = ctx.weapon
@@ -5901,44 +5885,8 @@ local function loadShaman(opts)
         widgets = function(kind, name, parent, template)
             return newWidget(ui, kind, name, parent, template)
         end })
-    ctx.ui, ctx.t, ctx.totems, ctx.weapon, ctx.auras, ctx.buffs = ui, 100, {}, { n = 8 }, {}, {}
+    ctx.ui, ctx.t, ctx.weapon, ctx.auras, ctx.buffs = ui, 100, { n = 8 }, {}, {}
     ctx.mana, ctx.tickers, ctx.calls, ctx.tip = { 800, 1000 }, {}, 0, env.GameTooltip
-    function ctx.area()
-        for _, w in ipairs(ui.widgets) do
-            if w.kind == "Frame" and w.parent == ctx.env.UIParent then
-                return w
-            end
-        end
-    end
-    -- The rail's shown slots in order, as "icon time" plus " x<count>" when a count shows.
-    function ctx.shownSlots()
-        local out = {}
-        for _, w in ipairs(ui.widgets) do
-            if w.kind == "Frame" and w.parent == ctx.area() and w.shown then
-                out[#out + 1] = w
-            end
-        end
-        return out
-    end
-    function ctx.slots()
-        local out = {}
-        for i, s in ipairs(ctx.shownSlots()) do
-            out[i] = tostring(s.icon.texture) .. " " .. s.time.text .. (s.count.text ~= "" and (" x" .. s.count.text)
-                or "")
-        end
-        return table.concat(out, " | ")
-    end
-    -- The tooltip of shown slot i as "title / line / ...".
-    function ctx.tooltip(i)
-        local s = ctx.shownSlots()[i]
-        s.scripts.OnEnter(s)
-        local out = { ctx.tip.title }
-        for _, l in ipairs(ctx.tip.lines) do
-            out[#out + 1] = l.text
-        end
-        s.scripts.OnLeave(s)
-        return table.concat(out, " / ")
-    end
     function ctx.live()
         local n = 0
         for _, t in ipairs(ctx.tickers) do
@@ -5947,163 +5895,6 @@ local function loadShaman(opts)
         return n
     end
     return ctx
-end
-
-do
-    local ctx = loadShaman()
-    check("class rail: nothing made while the layout is off", (ctx.area()), nil)
-    ctx.fire("PLAYER_TOTEM_UPDATE")
-    ctx.fire("UNIT_AURA", "player")
-    check("class rail: events while off are harmless", (ctx.area()), nil)
-    ctx.run("layout on")
-    local a = ctx.area()
-    check("class rail: 36x232 between the unit frames, 30 above the unit row; mana and no slot keep it hidden",
-        tostring(a.shown) .. " " .. a.height .. "x" .. tostring(a.width) .. " "
-        .. tostring(a.template) .. " " .. #a.points .. " " .. a.points[1][1] .. " "
-        .. tostring(a.points[1][2] == ctx.env.UIParent) .. " " .. table.concat(a.points[1], " ", 3),
-        "false 36x232 nil 1 BOTTOM true BOTTOM 0 222")
-    check("class rail: no totem or enchant shows no slot", ctx.slots(), "")
-    check("class rail: mana line along the bottom", a.line.kind .. " " .. a.line.height .. " " .. a.line.points[1][1]
-        .. " " .. a.line.points[2][1] .. " " .. a.line.value .. " " .. a.line.min .. " " .. a.line.max .. " "
-        .. tostring(a.line.shown) .. " " .. rgb(a.line.barColor), "StatusBar 4 BOTTOMLEFT BOTTOMRIGHT 800 0 1000 true "
-        .. "0.00,0.44,0.87")
-
-    ctx.totems[1] = { true, "Searing Totem", 90, 55, "fireIcon" }
-    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
-    ctx.totems[4] = { true, "Windfury Totem", 40, 120, "airIcon" }
-    ctx.fire("PLAYER_TOTEM_UPDATE")
-    check("class rail: active totems only, in Earth, Fire, Water, Air order; m:ss above a minute, else seconds",
-        ctx.slots(), "earthIcon 2:00 | fireIcon 45 | airIcon 60")
-    check("class rail: a slot shows the rail with its mana line", tostring(a.shown) .. " " .. tostring(a.line.shown)
-        .. " " .. ctx.live(), "true true 1")
-    local s = ctx.shownSlots()
-    check("class rail: 32px slots centred above the line", s[1].width .. "x" .. s[1].height .. " "
-        .. ("%s %d %d / %d / %d "):format(s[1].points[1][3], s[1].points[1][4], s[1].points[1][5], s[2].points[1][4],
-        s[3].points[1][4]) .. tostring(s[1].points[1][2] == a), "32x32 BOTTOM -36 4 / 0 / 36 true")
-    check("class rail: a totem's tooltip is its name", ctx.tooltip(1) .. " " .. tostring(ctx.tip.shown),
-        "Stoneskin Totem / 2:00 false")
-    check("class rail: one ticker at 4 Hz while shown", #ctx.tickers .. " " .. ctx.tickers[1].interval .. " "
-        .. ctx.live(), "1 0.25 1")
-    ctx.t = 150
-    ctx.calls = 0
-    ctx.tickers[1].fn()
-    check("class rail: the ticker counts down; an expired totem's slot goes", ctx.slots(),
-        "earthIcon 1:10 | airIcon 10")
-    check("class rail: a tick calls no totem, weapon, aura or power API", ctx.calls, 0)
-    check("class rail: the remaining slots re-centre", ("%d %d"):format(ctx.shownSlots()[1].points[1][4],
-        ctx.shownSlots()[2].points[1][4]), "-18 18")
-    ctx.t = 100
-    ctx.totems = {}
-    ctx.fire("PLAYER_TOTEM_UPDATE")
-
-    ctx.weapon = { true, 1234567, 0, 563, true, 61000, 0, 2, n = 8 }
-    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
-    check("class rail: weapon enchants never show", ctx.slots(), "")
-    ctx.weapon = { n = 8 }
-
-    ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 640, icon = "lsIcon" }
-    ctx.buffs = { { "Lightning Shield", "lsIcon", 3, 640 } }
-    ctx.fire("UNIT_AURA", "player")
-    check("class rail: Lightning Shield up shows no slot", ctx.slots(), "")
-    ctx.auras["Water Shield"] = { applications = 3, expirationTime = 640, icon = "wsIcon" }
-    ctx.totems[3] = { true, "Healing Stream Totem", 100, 60, "waterIcon" }
-    ctx.fire("PLAYER_TOTEM_UPDATE")
-    check("class rail: a shield up beside a totem shows only the totem", ctx.slots() .. " / " .. ctx.tooltip(1),
-        "waterIcon 60 / Healing Stream Totem / 1:00")
-
-    ctx.mana = { 450, 1200 }
-    ctx.fire("UNIT_POWER_UPDATE", "player", "MANA")
-    check("class rail: UNIT_POWER_UPDATE", a.line.value .. " " .. a.line.max, "450 1200")
-    ctx.mana = { 450, 1500 }
-    ctx.fire("UNIT_MAXPOWER", "player", "MANA")
-    check("class rail: UNIT_MAXPOWER", a.line.value .. " " .. a.line.max, "450 1500")
-
-    local clickable, mouse = {}, 0
-    for _, w in ipairs(ctx.ui.widgets) do
-        if w.template or w.scripts.OnClick or w.scripts.OnMouseDown or w.scripts.OnMouseUp or w.kind == "Button" then
-            clickable[#clickable + 1] = w.kind
-        end
-        if w.mouse and not (w.parent == a and w.scripts.OnEnter) then
-            mouse = mouse + 1
-        end
-    end
-    check("class rail: nothing clickable, no templates; only slots take the mouse, for their tooltip",
-        #clickable .. " " .. mouse, "0 0")
-
-    ctx.run("layout off")
-    check("class rail: hidden with the layout off; ticker stopped", tostring(a.shown) .. " " .. ctx.live(),
-        "false 0")
-    ctx.fire("PLAYER_TOTEM_UPDATE")
-    check("class rail: events while off keep it hidden", a.shown, false)
-    ctx.run("layout on")
-    check("class rail: shown again, one rail, one live ticker", tostring(a.shown) .. " "
-        .. tostring(ctx.area() == a) .. " " .. ctx.live(), "true true 1")
-end
-
-do
-    local ctx = loadShaman({ env = { UnitPowerMax = function() return 0 end } })
-    ctx.run("layout on")
-    check("class rail: no mana and no slot hides the rail and the line", tostring(ctx.area().shown) .. " "
-        .. tostring(ctx.area().line.shown) .. " " .. ctx.live(), "false false 0")
-    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
-    ctx.fire("PLAYER_TOTEM_UPDATE")
-    check("class rail: a slot shows the rail again", tostring(ctx.area().shown) .. " " .. ctx.slots() .. " "
-        .. ctx.live(), "true earthIcon 2:00 1")
-    ctx.t = 220
-    ctx.tickers[1].fn()
-    check("class rail: the last slot running out hides the rail", tostring(ctx.area().shown) .. " " .. ctx.live(),
-        "false 0")
-
-    ctx = loadShaman({ class = "WARRIOR" })
-    ctx.run("layout on")
-    check("class rail: another class gets no rail", (ctx.area()), nil)
-
-    ctx = loadShaman()
-    ctx.env.GetTotemInfo = nil
-    ctx.run("layout on")
-    check("class rail: not ready stays dark", (ctx.area()), nil)
-
-    ctx = loadShaman({ env = { C_Timer = false } })
-    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
-    ctx.run("layout on")
-    check("class rail: no C_Timer still shows", ctx.area().shown, true)
-
-    ctx = loadShaman({ env = { GameTooltip = false } })
-    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
-    ctx.run("layout on")
-    local s = ctx.shownSlots()[1]
-    s.scripts.OnEnter(s)
-    s.scripts.OnLeave(s)
-    check("class rail: no GameTooltip is harmless", ctx.slots(), "earthIcon 2:00")
-
-    ctx = loadShaman()
-    for i = 1, 4 do
-        ctx.totems[i] = { true, "Totem " .. i, 100, 120, "t" .. i }
-    end
-    ctx.weapon = { true, 60000, 0, 1, true, 60000, 0, 2, n = 8 }
-    ctx.auras["Lightning Shield"] = { applications = 3, expirationTime = 160, icon = "lsIcon" }
-    ctx.run("layout on")
-    check("class rail: four slots at most for a Shaman, centred", ("%d %d %d"):format(#ctx.shownSlots(),
-        ctx.shownSlots()[1].points[1][4], ctx.shownSlots()[4].points[1][4]), "4 -54 54")
-
-    local many = {}
-    for i = 1, 14 do
-        many[i] = { icon = "i" .. i, label = "L" .. i }
-    end
-    ctx.addon.ClassArea.Set(many)
-    check("class rail: twelve slots at most", ("%d %d %d"):format(#ctx.shownSlots(), ctx.shownSlots()[1].points[1][4],
-        ctx.shownSlots()[12].points[1][4]), "12 -198 198")
-
-    ctx = loadShaman({ layouts = { editLayout(), editLayout("Tandem") }, active = 4,
-        db = { schemaVersion = 7, layout = { on = true, previous = { name = "view", type = 1 } } } })
-    ctx.totems[2] = { true, "Stoneskin Totem", 100, 120, "earthIcon" }
-    ctx.fire("PLAYER_LOGIN")
-    check("class rail: relogin with the layout on shows it", ctx.area().shown, true)
-    local reg = ctx.frame.registered
-    check("class rail: unit events registered (falling back to every unit); no UNIT_AURA; the proc icon's "
-        .. "UNIT_INVENTORY_CHANGED", tostring(reg.UNIT_AURA) .. " " .. tostring(reg.UNIT_POWER_UPDATE) .. " "
-        .. tostring(reg.UNIT_MAXPOWER) .. " " .. tostring(reg.PLAYER_TOTEM_UPDATE) .. " "
-        .. tostring(reg.UNIT_INVENTORY_CHANGED), "nil true true true true")
 end
 
 -- The weapon enchant proc probe: for a Shaman with the recorder on, logs which candidate events register and each
@@ -6504,6 +6295,471 @@ do
         "item:8149=uncached combat=false / item:10645=uncached combat=false / item:13289=uncached combat=false / "
         .. "item:835=cached combat=false / C_Item.IsItemInRange:8149=nil-fn combat=false / "
         .. "IsItemInRange:8149=error combat=false / ")
+end
+
+-- The Maelstrom Weapon probe (PLAN D1-D3): for a Shaman with the recorder on, logs the bolt cast times, overlay
+-- state and events, player UNIT_AURA shapes, cast spell ids, an out-of-combat Maelstrom buff scan and the rune API
+-- at login as "maelstrom probe: <name>=<value> combat=<bool>", once per change; never raises; at most 250 lines.
+do
+    local MSECRET = setmetatable({}, { __eq = function() error("secret") end,
+        __concat = function() error("secret") end, __index = function() error("secret") end })
+    local m = { combat = false, cast = { [403] = 2500, [421] = 2000 }, overlay = false, auras = {}, scans = 0 }
+    local menv = {
+        issecretvalue = function(v) return rawequal(v, MSECRET) end,
+        InCombatLockdown = function() return m.combat end,
+        C_Spell = { GetSpellInfo = function(id)
+            if id == 421 and m.cast[421] == "raise" then error("blocked") end
+            return { castTime = m.cast[id] }
+        end },
+        GetSpellInfo = function(id) return "Bolt", nil, "icon", id == 403 and MSECRET or 1500 end,
+        C_SpellActivationOverlay = { IsSpellOverlayed = function() return m.overlay end },
+        C_UnitAuras = { GetAuraDataByIndex = function(unit, i, filter)
+            if m.combat then error("aura API in combat") end
+            m.scans = m.scans + 1
+            return unit == "player" and filter == "HELPFUL" and m.auras[i] or nil
+        end },
+        C_Engraving = { IsRuneEquipped = function() return true end },
+        IsPlayerSpell = function(id) return id == 408498 or MSECRET end,
+    }
+    local function mload(class, on)
+        local ctx = loadShaman({ class = class, env = menv })
+        ctx.out = {}
+        local log = ctx.addon.Debug.Log
+        ctx.addon.Debug.Log = function(what)
+            local line = what:match("^maelstrom probe: (.*)$")
+            if line then
+                ctx.out[#ctx.out + 1] = line
+            end
+            return log(what)
+        end
+        if on then
+            ctx.run("debug on")
+        end
+        return ctx
+    end
+    local function since(ctx, from)
+        return table.concat(ctx.out, " / ", from)
+    end
+    local function mticker(ctx)
+        local found, count = nil, 0
+        for _, t in ipairs(ctx.tickers) do
+            if t.interval == 0.2 then
+                found, count = found or t, count + 1
+            end
+        end
+        return found, count
+    end
+
+    local ctx = mload("WARRIOR", true)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    check("maelstrom probe: another class registers nothing, logs nothing, starts no ticker",
+        #ctx.out .. " " .. tostring(ctx.frame.registered.SPELL_ACTIVATION_OVERLAY_SHOW) .. " "
+        .. select(2, mticker(ctx)), "0 nil 0")
+
+    ctx = mload("SHAMAN")
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    ctx.fire("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", 403)
+    m.combat = true
+    mticker(ctx).fn()
+    m.combat = false
+    check("maelstrom probe: the recorder off logs nothing and leaves UNIT_AURA unregistered; its ticker and the bolt "
+        .. "icon's", #ctx.out .. " " .. tostring(ctx.frame.registered.UNIT_AURA) .. " " .. select(2, mticker(ctx)),
+        "0 nil 2")
+
+    ctx = mload("SHAMAN", true)
+    local register = ctx.frame.RegisterEvent
+    ctx.frame.RegisterEvent = function(self, ev)
+        if ev == "SPELL_ACTIVATION_OVERLAY_SHOW" then
+            error("unknown event")
+        end
+        return register(self, ev)
+    end
+    local ok = pcall(ctx.fire, "PLAYER_LOGIN")
+    ctx.addon.MaelstromProbe.OnLogin(ctx.frame)
+    check("maelstrom probe: registrations, rune API and candidate spells at login; an unknown event never raises",
+        tostring(ok) .. " " .. since(ctx, 1), "true registered:SPELL_ACTIVATION_OVERLAY_GLOW_SHOW=true combat=false / "
+        .. "registered:SPELL_ACTIVATION_OVERLAY_GLOW_HIDE=true combat=false / "
+        .. "registered:SPELL_ACTIVATION_OVERLAY_SHOW=false combat=false / "
+        .. "registered:SPELL_ACTIVATION_OVERLAY_HIDE=true combat=false / registered:UNIT_AURA=true combat=false / "
+        .. "registered:UNIT_SPELLCAST_SUCCEEDED=true combat=false / registered:PLAYER_REGEN_DISABLED=true combat=false"
+        .. " / registered:PLAYER_REGEN_ENABLED=true combat=false / C_Engraving=true combat=false / "
+        .. "C_Engraving.IsRuneEquipped=true combat=false / C_Engraving.GetRuneForEquipmentSlot=false combat=false / "
+        .. "IsPlayerSpell:408498=true combat=false / IsPlayerSpell:408505=secret combat=false")
+    check("maelstrom probe: one ticker however often login runs (and the bolt icon's)", select(2, mticker(ctx)), 2)
+
+    local n = #ctx.out
+    mticker(ctx).fn()
+    check("maelstrom probe: the ticker is idle out of combat without a Maelstrom buff", #ctx.out, n)
+
+    ctx.fire("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", 403)
+    ctx.fire("SPELL_ACTIVATION_OVERLAY_SHOW")
+    check("maelstrom probe: an overlay firing logs its args and the spell readings; an unregistered event is ignored",
+        since(ctx, n + 1), "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW=403 combat=false / castTime:403=2500 combat=false / "
+        .. "GetSpellInfo.castTime:403=secret combat=false / castTime:421=2000 combat=false / "
+        .. "GetSpellInfo.castTime:421=1500 combat=false / C_SpellActivationOverlay.IsSpellOverlayed:403=false "
+        .. "combat=false")
+
+    n = #ctx.out
+    ctx.fire("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", 403)
+    check("maelstrom probe: every overlay firing logs, unchanged readings do not", since(ctx, n + 1),
+        "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW=403 combat=false")
+
+    n = #ctx.out
+    m.auras = { { name = "Lightning Shield", applications = 3, spellId = 324 },
+        { name = "Maelstrom Weapon", applications = 2, spellId = 408505 } }
+    ctx.fire("UNIT_AURA", "target", { isFullUpdate = true })
+    ctx.fire("UNIT_AURA", "player", { isFullUpdate = false, addedAuras = {} })
+    check("maelstrom probe: a player UNIT_AURA logs its arg shapes and the Maelstrom buff; another unit is ignored",
+        since(ctx, n + 1), "UNIT_AURA#1=string table{addedAuras,isFullUpdate} combat=false / "
+        .. "buff:408505=Maelstrom Weapon x2 combat=false")
+
+    n = #ctx.out
+    m.cast[403], m.overlay = 1250, true
+    mticker(ctx).fn()
+    check("maelstrom probe: with a Maelstrom buff seen the ticker logs changed readings", since(ctx, n + 1),
+        "castTime:403=1250 combat=false / C_SpellActivationOverlay.IsSpellOverlayed:403=true combat=false")
+
+    n = #ctx.out
+    local scans = m.scans
+    m.combat = true
+    ok = pcall(function()
+        ctx.fire("PLAYER_REGEN_DISABLED")
+        ctx.fire("UNIT_AURA", "player", MSECRET)
+        ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 421)
+        ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 403)
+    end)
+    check("maelstrom probe: in combat no buff scan, every reading again with combat=true, cast ids for the player",
+        tostring(ok) .. " " .. (m.scans - scans) .. " " .. since(ctx, n + 1), "true 0 castTime:403=1250 combat=true"
+        .. " / GetSpellInfo.castTime:403=secret combat=true / castTime:421=2000 combat=true / "
+        .. "GetSpellInfo.castTime:421=1500 combat=true / C_SpellActivationOverlay.IsSpellOverlayed:403=true "
+        .. "combat=true / UNIT_AURA#2=string secret combat=true / UNIT_SPELLCAST_SUCCEEDED=421 combat=true")
+
+    n = #ctx.out
+    m.cast[421], m.auras = "raise", { { name = "氣漩武器", applications = 5, spellId = 408505 } }
+    mticker(ctx).fn()
+    m.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("maelstrom probe: a raising read logs error; out of combat the scan finds the zhTW buff",
+        since(ctx, n + 1), "castTime:421=error combat=true / buff:408505=氣漩武器 x5 combat=false / "
+        .. "castTime:403=1250 combat=false / GetSpellInfo.castTime:403=secret combat=false / castTime:421=error "
+        .. "combat=false / GetSpellInfo.castTime:421=1500 combat=false / "
+        .. "C_SpellActivationOverlay.IsSpellOverlayed:403=true combat=false")
+
+    n = #ctx.out
+    m.auras = {}
+    ctx.fire("UNIT_AURA", "player")
+    ctx.fire("UNIT_AURA", "player")
+    m.cast[403] = 2500
+    mticker(ctx).fn()
+    check("maelstrom probe: a buff gone logs once and the ticker idles again", since(ctx, n + 1),
+        "UNIT_AURA#3=string combat=false / buff:408505=gone combat=false / UNIT_AURA#4=string combat=false")
+
+    for _ = 5, 50 do
+        ctx.fire("UNIT_AURA", "player")
+    end
+    n = #ctx.out
+    for _ = 51, 100 do
+        ctx.fire("UNIT_AURA", "player")
+    end
+    check("maelstrom probe: past 50 UNIT_AURA firings one line per 25", since(ctx, n + 1),
+        "UNIT_AURA#75=string combat=false / UNIT_AURA#100=string combat=false")
+
+    ok = pcall(function()
+        for i = 1, 400 do
+            ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", i)
+        end
+    end)
+    check("maelstrom probe: never raises; at most 250 lines a session", tostring(ok) .. " " .. #ctx.out, "true 250")
+
+    local bare = {}
+    for k in pairs(menv) do
+        bare[k] = false
+    end
+    bare.issecretvalue, bare.InCombatLockdown = menv.issecretvalue, menv.InCombatLockdown
+    ctx = loadShaman({ env = bare })
+    ctx.run("debug on")
+    ok = pcall(function()
+        ctx.fire("PLAYER_LOGIN")
+        ctx.fire("UNIT_AURA", "player")
+        ctx.fire("PLAYER_REGEN_ENABLED")
+    end)
+    local got = table.concat(ctx.env.TandemDebug.log, " / ")
+    check("maelstrom probe: missing functions log nil-fn and never raise", tostring(ok) .. " "
+        .. tostring(got:find("maelstrom probe: castTime:403=nil-fn", 1, true) ~= nil) .. " "
+        .. tostring(got:find("C_Engraving=false", 1, true) ~= nil) .. " "
+        .. tostring(got:find("IsPlayerSpell:408498=nil-fn", 1, true) ~= nil), "true true true true")
+end
+
+-- The instant Lightning Bolt icon (PLAN D4, D5): for a Shaman knowing Lightning Bolt, its icon with a yellow ADD glow
+-- shows 40 px square just above the distance text exactly while C_Spell.GetSpellInfo(403).castTime reads a plain 0;
+-- read on the player's UNIT_AURA and casts (on its own frame), combat start and end, and a 0.2 s ticker while in
+-- combat or shown; never an aura API.
+do
+    local BOLT_SECRET = setmetatable({}, { __eq = function() error("secret") end,
+        __concat = function() error("secret") end, __index = function() error("secret") end })
+    local b = { info = { castTime = 1500 }, known = true, combat = false, auraCalls = 0,
+        textures = { [408505] = "maelstromIcon", [408498] = "altIcon", [403] = "boltIcon" } }
+    local function auraCall()
+        b.auraCalls = b.auraCalls + 1
+    end
+    local boltEnv = {
+        issecretvalue = function(v) return rawequal(v, BOLT_SECRET) end,
+        InCombatLockdown = function() return b.combat end,
+        IsPlayerSpell = function(id) return id == 403 and b.known end,
+        C_Spell = {
+            GetSpellInfo = function(id)
+                if b.info == "raise" then error("blocked") end
+                return id == 403 and b.info or nil
+            end,
+            GetSpellTexture = function(id) return b.textures[id] end,
+        },
+        C_UnitAuras = { GetAuraDataByIndex = auraCall, GetAuraDataBySpellName = auraCall,
+            GetPlayerAuraBySpellID = auraCall },
+        UnitBuff = auraCall,
+        UnitAura = auraCall,
+    }
+    local function named(ctx, name)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == name then
+                return w
+            end
+        end
+        return nil
+    end
+    local function boltShown(ctx)
+        local w = named(ctx, "TandemMaelstromIcon")
+        return w and w.shown or false
+    end
+    local function unitEvent(ctx, event, unit, ...)
+        local w = named(ctx, "TandemMaelstromEvents")
+        w.scripts.OnEvent(w, event, unit, ...)
+    end
+    local function boltTicker(ctx)
+        local found
+        for _, t in ipairs(ctx.tickers) do
+            if t.interval == 0.2 then
+                found = t
+            end
+        end
+        return found
+    end
+
+    local ctx = loadShaman({ class = "WARRIOR", env = boltEnv })
+    b.info = { castTime = 0 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("bolt icon: another class creates no icon, no event frame, no ticker",
+        tostring(named(ctx, "TandemMaelstromIcon")) .. " " .. tostring(named(ctx, "TandemMaelstromEvents")) .. " "
+        .. tostring((boltTicker(ctx))), "nil nil nil")
+
+    b.info = { castTime = 1500 }
+    ctx = loadShaman({ env = boltEnv })
+    ctx.fire("PLAYER_LOGIN")
+    local tickers = #ctx.tickers
+    ctx.addon.Maelstrom.OnLogin(ctx.frame)
+    check("bolt icon: a slow bolt makes no icon; UNIT_AURA stays off Tandem's frame; one ticker however often login "
+        .. "runs", tostring(named(ctx, "TandemMaelstromIcon")) .. " " .. tostring(ctx.frame.registered.UNIT_AURA) .. " "
+        .. (#ctx.tickers - tickers) .. " " .. tostring(boltTicker(ctx) ~= nil), "nil nil 0 true")
+
+    b.info = { castTime = 0 }
+    unitEvent(ctx, "UNIT_AURA", "player")
+    local icon = named(ctx, "TandemMaelstromIcon")
+    local p = icon.points[1]
+    check("bolt icon: a 0 cast time on the player's UNIT_AURA shows it, 40 px at the right slot (22, -106)",
+        ("%s %s %s %s %s %s %d %d"):format(tostring(icon.shown), p[1], p[2].name, p[3], p[4], p[5], icon.width,
+            icon.height), "true CENTER UIParent CENTER 22 -106 40 40")
+    local art, glow
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.parent == icon and w.kind == "Texture" then
+            if w.blend then
+                glow = w
+            else
+                art = w
+            end
+        end
+    end
+    check("bolt icon: the Maelstrom Weapon texture under a yellow ADD glow 1.8 times the size",
+        ("%s %s %s %d %d"):format(art.texture, glow.texture, glow.blend, glow.width, glow.height),
+        "maelstromIcon Interface\\Buttons\\UI-ActionButton-Border ADD 72 72")
+    check("bolt icon: its bottom sits above the distance text's top (-140 + 10)", p[5] - icon.height / 2 > -130, true)
+
+    b.info = { castTime = 900 }
+    unitEvent(ctx, "UNIT_AURA", "target")
+    check("bolt icon: another unit's UNIT_AURA is ignored", boltShown(ctx), true)
+    boltTicker(ctx).fn()
+    check("bolt icon: the ticker hides it while shown once the cast time is above 0", boltShown(ctx), false)
+
+    b.info = { castTime = 0 }
+    boltTicker(ctx).fn()
+    check("bolt icon: the ticker idles out of combat while hidden", boltShown(ctx), false)
+    b.combat = true
+    boltTicker(ctx).fn()
+    check("bolt icon: in combat the ticker shows it", boltShown(ctx), true)
+
+    local hidden = {}
+    for _, info in ipairs({ { castTime = BOLT_SECRET }, BOLT_SECRET, "raise", false, {}, { castTime = "0" } }) do
+        b.info = { castTime = 0 }
+        unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player")
+        b.info = info
+        local ok = pcall(unitEvent, ctx, "UNIT_SPELLCAST_SUCCEEDED", "player")
+        hidden[#hidden + 1] = tostring(ok and not boltShown(ctx))
+    end
+    check("bolt icon: a secret cast time or info, a raising read, no info, no or a string cast time hide it",
+        table.concat(hidden, " "), "true true true true true true")
+
+    b.info, b.known = { castTime = 0 }, false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("bolt icon: an unknown Lightning Bolt hides it on combat end", boltShown(ctx), false)
+    b.known = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("bolt icon: combat start reads it again", boltShown(ctx), true)
+    check("bolt icon: never calls an aura API", b.auraCalls, 0)
+    b.combat = false
+
+    -- The texture falls back from 408505 to 408498, then to Lightning Bolt's; the global GetSpellTexture per id.
+    local function shownTexture(textures, global)
+        local texEnv = {}
+        for k, v in pairs(boltEnv) do
+            texEnv[k] = v
+        end
+        texEnv.GetSpellTexture = global
+        b.textures = textures
+        local texCtx = loadShaman({ env = texEnv })
+        texCtx.fire("PLAYER_LOGIN")
+        unitEvent(texCtx, "UNIT_AURA", "player")
+        local mwIcon = named(texCtx, "TandemMaelstromIcon")
+        for _, w in ipairs(texCtx.ui.widgets) do
+            if w.parent == mwIcon and w.kind == "Texture" and not w.blend then
+                return tostring(w.texture)
+            end
+        end
+    end
+    check("bolt icon: the texture falls back to 408498, then the global GetSpellTexture, then Lightning Bolt's",
+        shownTexture({ [408498] = "altIcon", [403] = "boltIcon" }) .. " "
+        .. shownTexture({ [403] = "boltIcon" }, function(id) return id == 408505 and "globalIcon" or nil end) .. " "
+        .. shownTexture({ [403] = "boltIcon" }), "altIcon globalIcon boltIcon")
+
+    -- The Stormstrike ready icon (PLAN D6, D7): in combat only, while Stormstrike is known and ready, at the left slot.
+    local st = { known = true, cd = { startTime = 0, duration = 0 } }
+    local strikeEnv = {}
+    for k, v in pairs(boltEnv) do
+        strikeEnv[k] = v
+    end
+    strikeEnv.IsPlayerSpell = function(id) return id == 17364 and st.known end
+    strikeEnv.C_Spell = {
+        GetSpellInfo = boltEnv.C_Spell.GetSpellInfo,
+        GetSpellTexture = function(id) return id == 17364 and "strikeIcon" or nil end,
+        GetSpellCooldown = function(id) return id == 17364 and st.cd or nil end,
+    }
+    b.info, b.combat = { castTime = 1500 }, false
+    local function strikeShown(sctx)
+        local w = named(sctx, "TandemStormstrikeIcon")
+        return w and w.shown or false
+    end
+    ctx = loadShaman({ env = strikeEnv })
+    ctx.fire("PLAYER_LOGIN")
+    boltTicker(ctx).fn()
+    check("strike icon: never made out of combat, even when ready", tostring(named(ctx, "TandemStormstrikeIcon")),
+        "nil")
+
+    b.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    local strikeIcon = named(ctx, "TandemStormstrikeIcon")
+    p = strikeIcon.points[1]
+    local strikeArt, strikeGlow
+    for _, w in ipairs(ctx.ui.widgets) do
+        if w.parent == strikeIcon and w.kind == "Texture" then
+            if w.blend then
+                strikeGlow = w
+            else
+                strikeArt = w
+            end
+        end
+    end
+    check("strike icon: in combat and off cooldown it shows, 40 px at the left slot (-22, -106), the Maelstrom look",
+        ("%s %s %s %s %s %s %d %s %s %d"):format(tostring(strikeIcon.shown), p[1], p[2].name, p[3], p[4], p[5],
+            strikeIcon.width, strikeArt.texture, strikeGlow.blend, strikeGlow.width),
+        "true CENTER UIParent CENTER -22 -106 40 strikeIcon ADD 72")
+
+    st.cd = { startTime = 100, duration = 1.5 }
+    boltTicker(ctx).fn()
+    local gcd = strikeShown(ctx)
+    st.cd = { startTime = 100, duration = 10 }
+    boltTicker(ctx).fn()
+    check("strike icon: a global cooldown counts as ready, a plain cooldown hides it",
+        tostring(gcd) .. " " .. tostring(strikeShown(ctx)), "true false")
+
+    st.cd, ctx.t = BOLT_SECRET, 200
+    boltTicker(ctx).fn()
+    local before = strikeShown(ctx)
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 17364)
+    local after = strikeShown(ctx)
+    ctx.t = 209.9
+    boltTicker(ctx).fn()
+    local early = strikeShown(ctx)
+    ctx.t = 210
+    boltTicker(ctx).fn()
+    check("strike icon: with a secret cooldown, ready until a cast, then hidden for the remembered 10 s",
+        ("%s %s %s %s"):format(tostring(before), tostring(after), tostring(early), tostring(strikeShown(ctx))),
+        "true false false true")
+
+    b.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    local outside = strikeShown(ctx)
+    b.combat, st.known = true, false
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("strike icon: hidden on combat end and without Stormstrike known", tostring(outside) .. " "
+        .. tostring(strikeShown(ctx)), "false false")
+
+    st.known, st.cd = true, { startTime = BOLT_SECRET, duration = BOLT_SECRET }
+    ctx = loadShaman({ env = strikeEnv })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.t = 100
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 17364)
+    ctx.t = 119.9
+    boltTicker(ctx).fn()
+    local waiting = strikeShown(ctx)
+    ctx.t = 120
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", BOLT_SECRET)
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 17364)
+    check("strike icon: secret cooldown fields use 20 s; secret, other and another unit's casts keep the timer",
+        tostring(waiting) .. " " .. tostring(strikeShown(ctx)) .. " " .. b.auraCalls, "false true 0")
+    b.combat = false
+
+    -- The length is learnt from a plain read out of combat, then times a cast in combat; a global cooldown read
+    -- right after a cast waits for that length.
+    b.combat, st.cd = false, { startTime = 50, duration = 8 }
+    ctx = loadShaman({ env = strikeEnv })
+    ctx.fire("PLAYER_LOGIN")
+    st.cd = { startTime = 0, duration = 0 }
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    local learnt = strikeShown(ctx)
+    b.combat, st.cd, ctx.t = true, BOLT_SECRET, 100
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    local ready = strikeShown(ctx)
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 17364)
+    ctx.t = 107.9
+    boltTicker(ctx).fn()
+    local timing = strikeShown(ctx)
+    ctx.t = 108
+    boltTicker(ctx).fn()
+    check("strike icon: a length read out of combat (never shown there) times a cast in combat with a secret "
+        .. "cooldown", ("%s %s %s %s"):format(tostring(learnt), tostring(ready), tostring(timing),
+        tostring(strikeShown(ctx))), "false true false true")
+
+    ctx.t = 200
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 17364)
+    st.cd, ctx.t = { startTime = 200, duration = 1.5 }, 201
+    boltTicker(ctx).fn()
+    local gcdOnly = strikeShown(ctx)
+    ctx.t = 208
+    boltTicker(ctx).fn()
+    check("strike icon: a global cooldown read right after a cast stays hidden until the length has passed",
+        tostring(gcdOnly) .. " " .. tostring(strikeShown(ctx)), "false true")
+    b.combat = false
 end
 
 -- The range text (PLAN D1-D3): one coloured line at a fixed place under the player's character by band, nearest
