@@ -42,6 +42,7 @@ ClassArea.lua
 Classes\Shaman.lua
 ProcProbe.lua
 KillerProbe.lua
+RangeProbe.lua
 Killers.lua
 KillersView.lua
 Procs.lua
