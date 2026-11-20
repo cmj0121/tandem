@@ -33,11 +33,18 @@ local function hearthCount()
     return n
 end
 
+local function hearthIcon()
+    return call(C_Item and C_Item.GetItemIconByID, HEARTHSTONE) or call(_G.GetItemIcon, HEARTHSTONE)
+end
+
+-- The hyperlink of the item the recall macro shows in combat, for the flyout row's combat tooltip.
+ClassMacros.COMBAT_LINK = "item:" .. HEARTHSTONE
+
 -- Per class, its entries in display order, bottom-up: the id, the spells it needs known (the first gives the icon),
 -- its character macro's name, the debuff types it cures, its description (an enUS locale key) and its macro body
 -- for the spells' localized names and the recall state (RecallState); logKnown debug-logs whether its spell is known,
 -- once per login; noPick keeps its row from becoming the pick; note returns an enUS locale key the tooltip adds, or
--- nil.
+-- nil; combat returns whether its body has a combat clause, and combatIcon the icon the row then shows, or nil.
 ClassMacros.ENTRIES = {
     SHAMAN = {
         {
@@ -82,6 +89,10 @@ ClassMacros.ENTRIES = {
             note = function()
                 return hearthCount() == 0 and "No Hearthstone in your bags" or nil
             end,
+            combat = function()
+                return hearthCount() ~= 0
+            end,
+            combatIcon = hearthIcon,
         },
     },
 }
@@ -165,8 +176,8 @@ end
 
 -- ClassMacros.List(classFile, state) -> { entry... }: the class's shown entries in display order, each { id, title
 -- (the localized spell names), icon, body (the macro's), cast (the body without its #showtooltip line), macro,
--- description (localized), kinds, noPick, note (localized or nil) }, the bodies for the recall state (read now when
--- nil); empty for a class without entries.
+-- description (localized), kinds, noPick, note (localized or nil), combat (true or nil), combatIcon (or nil) }, the
+-- bodies for the recall state (read now when nil); empty for a class without entries.
 function ClassMacros.List(classFile, state)
     local shown = {}
     for _, e in ipairs(ClassMacros.ENTRIES[classFile] or {}) do
@@ -175,6 +186,7 @@ function ClassMacros.List(classFile, state)
             state = state or ClassMacros.RecallState()
             local note = e.note and e.note()
             local body = e.body(names, state)
+            local combat = e.combat and e.combat() or nil
             shown[#shown + 1] = {
                 id = e.id,
                 title = table.concat(names, " / "),
@@ -186,6 +198,8 @@ function ClassMacros.List(classFile, state)
                 kinds = copy(e.kinds),
                 noPick = e.noPick,
                 note = note and ns.L[note] or nil,
+                combat = combat,
+                combatIcon = combat and e.combatIcon() or nil,
             }
         end
     end
