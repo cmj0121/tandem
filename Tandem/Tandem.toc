@@ -44,6 +44,7 @@ ProcProbe.lua
 KillerProbe.lua
 RangeProbe.lua
 MaelstromProbe.lua
+Maelstrom.lua
 RangeText.lua
 Killers.lua
 KillersView.lua
