@@ -144,12 +144,12 @@ str 1, agi 0.6, sta 0.5, armor 0.01, dps 3, ap 0.5, hit 10, crit 10
 - `/tandem weights reset` 刪除目前天賦系的自訂權重，並印出 `Tandem: own weights for tree <n> dropped`。其他天賦系的
   自訂權重保留。
 
-每次變更後都會顯示目前的權重。你的選擇依角色（`Name-Realm`）與天賦系分別儲存，因此切換天賦後仍會保留。其他訊息：
+每次變更後都會顯示目前的權重。你的選擇依角色（`Name`）與天賦系分別儲存，因此切換天賦後仍會保留。其他訊息：
 
 - 其他任何輸入：`Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]`，不做任何變更。
 - 不在上列的屬性代碼：`Tandem: unknown stat <stat>; use one of: <keys>`。
 - 沒有內建權重的職業：`Tandem: no built-in weights for <class>`。
-- 存檔資料使用較新的結構版本，或用戶端尚未提供你的名字與伺服器時：
+- 存檔資料使用較新的結構版本，或用戶端尚未提供你的角色名字時：
   `Tandem: weights cannot be saved: recording is off or your character is not known yet`。
 
 `zhTW` 用戶端的這些訊息與天賦系名稱會顯示為中文。
@@ -607,11 +607,11 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 
 | Key        | 內容                                                                                                         |
 | ---------- | ------------------------------------------------------------------------------------------------------------ |
-| `weights`  | 每個角色（`Name-Realm`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`             |
+| `weights`  | 每個角色（`Name`）：選定的 `spec`（1-3，不存在表示自動），以及各天賦的屬性權重 `overrides`                   |
 | `trainers` | 每個職業（`MAGE`）：職業訓練師教授的每個法術 ID，需求等級 `level` 與法術等級 `rank`（沒有時不存在）          |
 | `layout`   | [介面配置](#介面配置) `on`、先前版面 `previous`、原本的目標的目標與小地圖座標 `coords`、`minimap` 位置與隱藏 |
-| `modes`    | 每個角色（`Name-Realm`）：[版面模式](#移動了什麼) `heal`；不存在表示輸出                                     |
-| `picks`    | 每個角色（`Name-Realm`）：選用的[職業巨集](#背包圖示列)項目，例如 `poison` 或 `stormstrike`                  |
+| `modes`    | 每個角色（`Name`）：[版面模式](#移動了什麼) `heal`；不存在表示輸出                                           |
+| `picks`    | 每個角色（`Name`）：選用的[職業巨集](#背包圖示列)項目，例如 `poison` 或 `stormstrike`                        |
 
 - 每次在戰鬥外開啟或更新職業訓練師視窗時，都會以你角色的職業記錄它的法術：列出的每個法術（不論是否已學會）、需求
   等級，以及法術等級文字中的數字（`等級 3` 記為 `3`）。分類標題、專業技能訓練師，以及用戶端沒有提供法術 ID 的法術會
@@ -624,11 +624,17 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 - 不是非空項目 ID 的 `picks` 項目會在載入時捨棄。
 - `layout.books` 是[圖書館書籍](#書籍開關)的開關：`/tandem books off` 之後為 `false`，`/tandem books on` 之後為
   `true`，兩者都沒用過時不存在（即開啟）。不是 `true` 或 `false` 的值會在載入時捨棄。
+- 每個角色只以名字為鍵，不含伺服器：Forever 的伺服器 API 不回傳任何值，顯示的伺服器也只是化名。因此不同伺服器上同名的
+  角色會共用同一筆 `weights`、`modes`、`picks`、[武器附魔觸發](#武器附魔觸發)與[擊殺者](#擊殺者)。
 
-`TandemDB.schemaVersion` 為 `7`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers`、`layout`、`modes` 與 `picks`，
+`TandemDB.schemaVersion` 為 `8`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers`、`layout`、`modes`、`picks`、`procs` 與 `killers`，
 其他所有鍵（例如舊版的物品快取、掉落紀錄與屬性）都會捨棄。聊天視窗接著顯示
-`Tandem：存檔資料已從結構版本 <n> 升級到 7` 與 `Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`；schema 6 的資料在
+`Tandem：存檔資料已從結構版本 <n> 升級到 8` 與 `Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`；schema 6 與 7 的資料在
 沒有捨棄任何項目時會靜默升級。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會儲存任何資料。
+
+Schema 8 會在第一次載入時，把每個角色的項目從 `Name-Realm` 改名為 `Name`，只做一次。若有多筆舊項目同名（不同伺服器上
+的同名角色），保留 `Name-Realm` 依字母順序排在最前的一筆，其餘各算一筆捨棄。這一步無法還原：較舊的 Tandem 會把它視為
+較新的 schema 而不儲存任何資料；要退回舊版，請還原更新前備份的 `Tandem.lua`。
 
 同一個檔案也存放 `TandemDebug`，即[除錯紀錄](#除錯紀錄)：`on`、最多 300 行 `log`、50 筆 `blocked` 與 20 筆 `errors`，只在你開啟後
 才有。
