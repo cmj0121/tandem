@@ -6565,9 +6565,18 @@ do
 
     b.info = { castTime = 0 }
     unitEvent(ctx, "UNIT_AURA", "player")
+    check("bolt icon: a 0 cast time out of combat shows nothing", boltShown(ctx), false)
+    b.combat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    check("bolt icon: entering combat with a 0 cast time shows it", boltShown(ctx), true)
+    b.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("bolt icon: leaving combat hides it at once", boltShown(ctx), false)
+    b.combat = true
+    unitEvent(ctx, "UNIT_AURA", "player")
     local icon = named(ctx, "TandemMaelstromIcon")
     local p = icon.points[1]
-    check("bolt icon: a 0 cast time on the player's UNIT_AURA shows it, 40 px at the right slot (22, -106)",
+    check("bolt icon: in combat a 0 cast time on the player's UNIT_AURA shows it, 40 px at the right slot (22, -106)",
         ("%s %s %s %s %s %s %d %d"):format(tostring(icon.shown), p[1], p[2].name, p[3], p[4], p[5], icon.width,
             icon.height), "true CENTER UIParent CENTER 22 -106 40 40")
     local art, glow
@@ -6591,7 +6600,7 @@ do
     boltTicker(ctx).fn()
     check("bolt icon: the ticker hides it while shown once the cast time is above 0", boltShown(ctx), false)
 
-    b.info = { castTime = 0 }
+    b.info, b.combat = { castTime = 0 }, false
     boltTicker(ctx).fn()
     check("bolt icon: the ticker idles out of combat while hidden", boltShown(ctx), false)
     b.combat = true
@@ -6628,7 +6637,9 @@ do
         b.textures = textures
         local texCtx = loadShaman({ env = texEnv })
         texCtx.fire("PLAYER_LOGIN")
+        b.combat = true
         unitEvent(texCtx, "UNIT_AURA", "player")
+        b.combat = false
         local mwIcon = named(texCtx, "TandemMaelstromIcon")
         for _, w in ipairs(texCtx.ui.widgets) do
             if w.parent == mwIcon and w.kind == "Texture" and not w.blend then

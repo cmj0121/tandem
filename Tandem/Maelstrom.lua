@@ -1,11 +1,11 @@
 local _, ns = ...
 
 -- The Shaman's ready icons, in fixed slots just above the distance text (PLAN D4-D7), each a 40 px icon with a yellow
--- glow that fades in and hides at once. Right: the Maelstrom Weapon icon while Maelstrom Weapon makes Lightning Bolt
--- instant. Forever's overlay events are unusable, but C_Spell.GetSpellInfo(403).castTime reads plainly in combat and
--- drops 300 ms a stack, to 0 at five (Maelstrom probe, 2026-11-20), so it shows only while that cast time is a plain
--- 0 and the bolt is known; a missing, secret or raising read hides it. Left: Stormstrike's icon, in combat only, while
--- Stormstrike is known and ready. Its cooldown is read when plain (out of combat), and its length remembered; in
+-- glow that fades in and hides at once, both in combat only. Right: the Maelstrom Weapon icon while Maelstrom Weapon
+-- makes Lightning Bolt instant. Forever's overlay events are unusable, but C_Spell.GetSpellInfo(403).castTime reads
+-- plainly in combat and drops 300 ms a stack, to 0 at five (Maelstrom probe, 2026-11-20), so it shows only while that
+-- cast time is a plain 0 and the bolt is known; a missing, secret or raising read hides it. Left: Stormstrike's icon,
+-- while Stormstrike is known and ready. Its cooldown is read when plain (out of combat), and its length remembered; in
 -- combat the cooldown is secret, so readiness comes from the last Stormstrike cast seen plus that length (else
 -- STRIKE_LENGTH). No aura API is called. The player's UNIT_AURA and casts go on this module's own event frame so
 -- Tandem's other aura handlers stay as they were; combat start and end come from Tandem's frame through
@@ -169,7 +169,7 @@ local function set(item, shown)
 end
 
 local function update()
-    set(maelstrom, known(BOLT) and instant())
+    set(maelstrom, inCombat() and known(BOLT) and instant())
     -- Read out of combat too, where the cooldown is plain and its length is learnt; shown in combat only.
     local ready = known(STORMSTRIKE) and strikeReady()
     set(strike, inCombat() and ready)

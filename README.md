@@ -403,10 +403,10 @@ updates ten times a second and goes at once when you lose or change the target.
 
 ## Instant Lightning Bolt
 
-For a Shaman, the Maelstrom Weapon icon with a yellow glow shows just above the target distance line while
-Maelstrom Weapon has made Lightning Bolt instant (five stacks), and goes as soon as it is not. Tandem reads the bolt's
-cast time, which the client answers in combat too, so it needs no buff reading. It sits on the right of the two
-icon slots.
+In combat, a Shaman sees the Maelstrom Weapon icon with a yellow glow just above the target distance line while
+Maelstrom Weapon has made Lightning Bolt instant (five stacks), and it goes as soon as it is not or combat ends.
+Tandem reads the bolt's cast time, which the client answers in combat too, so it needs no buff reading. It sits on
+the right of the two icon slots. Out of combat the icon never shows.
 
 ## Stormstrike ready
 
