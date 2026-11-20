@@ -2,12 +2,13 @@ local _, ns = ...
 
 -- The melee range probe: before Tandem shows whether a hostile target is in melee range, it must learn which range
 -- APIs Forever answers, in and out of combat, and what the nameplates' settings and the target's plate look like.
--- While the debug recorder is on, this reads each candidate on a hostile target (spell, action, interact distance and
--- unit range) on target change, combat start and end, auto attack start and every TICK seconds, and logs a reading
--- as "range probe: <name>=<value> combat=<bool>" only when its value or the combat state changed, up to LIMIT lines a
--- session. The nameplate CVars are logged at login, the target's nameplate on target change. A value the client keeps
--- secret logs "secret", a raising read "error", a missing function "nil-fn". The events go on Tandem's own frame,
--- which forwards them through RangeProbe.OnEvent. Reads only, and logs nothing while the recorder is off.
+-- While the debug recorder is on, this reads each candidate on a hostile target (spell, item, action, interact
+-- distance and unit range) on target change, combat start and end, auto attack start and every TICK seconds, and logs
+-- a reading as "range probe: <name>=<value> combat=<bool>" only when its value or the combat state changed, up to
+-- LIMIT lines a session. The nameplate CVars and whether each probed item's data is cached are logged at login, the
+-- target's nameplate on target change. A value the client keeps secret logs "secret", a raising read "error", a
+-- missing function "nil-fn". The events go on Tandem's own frame, which forwards them through RangeProbe.OnEvent.
+-- Reads only, and logs nothing while the recorder is off.
 local RangeProbe = {}
 ns.RangeProbe = RangeProbe
 
@@ -18,6 +19,8 @@ local ATTACK = 6603
 local STORMSTRIKE = 17364
 -- The spells whose range is read: Attack and Stormstrike (melee), Earth Shock (a 20 yd reference).
 local SPELLS = { { ATTACK, "Attack" }, { STORMSTRIKE, "Stormstrike" }, { 8042, "Earth Shock" } }
+-- The items whose range is read on the target: 8149, 10645, 13289, 835, 7734 and 18904.
+local ITEMS = { 8149, 10645, 13289, 835, 7734, 18904 }
 local CVARS = { "nameplateOtherAtBase", "nameplateShowEnemies", "nameplateMinScale", "nameplateMaxScale",
     "nameplateGlobalScale", "nameplateOverlapV" }
 local PLATE = { "GetScale", "GetEffectiveScale", "GetWidth", "GetHeight", "GetCenter" }
@@ -156,6 +159,11 @@ local function readRanges()
             report("IsSpellInRange:" .. name, read(_G.IsSpellInRange, name, "target"))
         end
     end
+    local item = _G.C_Item
+    for _, id in ipairs(ITEMS) do
+        report("C_Item.IsItemInRange:" .. id, read(field(item, "IsItemInRange"), id, "target"))
+        report("IsItemInRange:" .. id, read(_G.IsItemInRange, id, "target"))
+    end
     local slot = findAttackSlot()
     report("attack.slot", slot and tostring(slot) or "noslot")
     if slot then
@@ -196,6 +204,22 @@ local function readCVars()
     end
 end
 
+-- Requests each probed item's data and logs whether it is already cached.
+local function readItems()
+    local item = _G.C_Item
+    local cached = field(item, "IsItemDataCachedByID")
+    for _, id in ipairs(ITEMS) do
+        call(field(item, "RequestLoadItemDataByID"), id)
+        local is
+        if type(cached) == "function" then
+            is = call(cached, id) == true
+        else
+            is = call(_G.GetItemInfo, id) ~= nil
+        end
+        report("item:" .. id, is and "cached" or "uncached")
+    end
+end
+
 local function safely(fn)
     local ok, err = pcall(fn)
     if not ok then
@@ -222,7 +246,7 @@ function RangeProbe.OnEvent(event)
 end
 
 -- PLAYER_LOGIN: registers the probed events on frame (Tandem's), logs which the client accepts and the nameplate
--- CVars, and starts the range ticker.
+-- CVars, requests the probed items' data and logs which are cached, and starts the range ticker.
 function RangeProbe.OnLogin(frame)
     if next(registered) then
         return
@@ -233,6 +257,7 @@ function RangeProbe.OnLogin(frame)
         report("registered:" .. event, tostring(ok))
     end
     safely(readCVars)
+    safely(readItems)
     local timer = _G.C_Timer
     if not ticker and type(field(timer, "NewTicker")) == "function" then
         ticker = call(timer.NewTicker, TICK, tick)

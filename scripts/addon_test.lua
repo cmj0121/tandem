@@ -6311,7 +6311,7 @@ do
     local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
         __index = function() error("secret") end })
     local s = { target = true, attack = true, inCombat = false, spell = { [6603] = true, [8042] = false },
-        stormstrike = false, distance = { true, false, true }, plate = true, width = 120 }
+        stormstrike = false, distance = { true, false, true }, plate = true, width = 120, item = true, requested = {} }
     local plate = {
         GetScale = function() return 1 end,
         GetEffectiveScale = function() return 0.8 end,
@@ -6343,6 +6343,15 @@ do
             GetCVar = function(name) return name == "nameplateOtherAtBase" and "2" or "1" end,
         },
         C_NamePlate = { GetNamePlateForUnit = function() return s.plate and plate or nil end },
+        C_Item = {
+            IsItemInRange = function(id, unit)
+                if id == 13289 then error("blocked") end
+                return unit == "target" and ({ [8149] = true, [10645] = false, [835] = SECRET, [18904] = s.item })[id]
+            end,
+            RequestLoadItemDataByID = function(id) s.requested[#s.requested + 1] = id end,
+            IsItemDataCachedByID = function(id) return id == 8149 or (id == 10645 and SECRET) end,
+        },
+        IsItemInRange = function(id) return id == 8149 and 1 or nil end,
     }
     local function probed(ctx, from)
         local out = {}
@@ -6371,6 +6380,7 @@ do
         tostring(ctx.frame.registered.PLAYER_ENTER_COMBAT) .. " "
         .. tostring(ctx.frame.registered.PLAYER_REGEN_DISABLED) .. " " .. select(2, probed(ctx)), "true true 0")
 
+    s.requested = {}
     ctx = loadShaman({ class = "WARRIOR", env = env })
     ctx.run("debug on")
     local register = ctx.frame.RegisterEvent
@@ -6383,17 +6393,27 @@ do
     ctx.fire("PLAYER_LOGIN")
     local got, n = probed(ctx)
     check("range probe: registrations and the nameplate CVars at login", n .. " " .. got:gsub(" / GetCVar.*", ""),
-        "16 registered:PLAYER_TARGET_CHANGED=true combat=false / registered:PLAYER_REGEN_DISABLED=true combat=false / "
+        "22 registered:PLAYER_TARGET_CHANGED=true combat=false / registered:PLAYER_REGEN_DISABLED=true combat=false / "
         .. "registered:PLAYER_REGEN_ENABLED=true combat=false / registered:PLAYER_ENTER_COMBAT=false combat=false")
     check("range probe: a CVar through GetCVarInfo and GetCVar", got:match("GetCVarInfo:nameplateOtherAtBase.-/ [^/]*"),
         "GetCVarInfo:nameplateOtherAtBase=2 0 combat=false / GetCVar:nameplateOtherAtBase=2 combat=false ")
+    check("range probe: each item's data requested and its cache state logged at login; a secret one is uncached",
+        table.concat(s.requested, " ") .. " " .. got:match("item:.*$"), "8149 10645 13289 835 7734 18904 "
+        .. "item:8149=cached combat=false / item:10645=uncached combat=false / item:13289=uncached combat=false / "
+        .. "item:835=uncached combat=false / item:7734=uncached combat=false / item:18904=uncached combat=false")
 
     ctx.fire("PLAYER_TARGET_CHANGED")
     check("range probe: on target change the plate and every range reading; secret, raising and missing reads",
-        probed(ctx, 17), "plate.found=true combat=false / plate.GetScale=1 combat=false / plate.GetEffectiveScale=0.8 "
+        probed(ctx, 23), "plate.found=true combat=false / plate.GetScale=1 combat=false / plate.GetEffectiveScale=0.8 "
         .. "combat=false / plate.GetWidth=120 combat=false / plate.GetHeight=30 combat=false / plate.GetCenter=512 300 "
         .. "combat=false / C_Spell.IsSpellInRange:6603=true combat=false / IsSpellInRange:Attack=1 combat=false / "
         .. "C_Spell.IsSpellInRange:8042=false combat=false / IsSpellInRange:Earth Shock=0 combat=false / "
+        .. "C_Item.IsItemInRange:8149=true combat=false / IsItemInRange:8149=1 combat=false / "
+        .. "C_Item.IsItemInRange:10645=false combat=false / IsItemInRange:10645=nil combat=false / "
+        .. "C_Item.IsItemInRange:13289=error combat=false / IsItemInRange:13289=nil combat=false / "
+        .. "C_Item.IsItemInRange:835=secret combat=false / IsItemInRange:835=nil combat=false / "
+        .. "C_Item.IsItemInRange:7734=nil combat=false / IsItemInRange:7734=nil combat=false / "
+        .. "C_Item.IsItemInRange:18904=true combat=false / IsItemInRange:18904=nil combat=false / "
         .. "attack.slot=13 combat=false / IsActionInRange=secret combat=false / "
         .. "CheckInteractDistance:1=true combat=false / CheckInteractDistance:2=false combat=false / "
         .. "CheckInteractDistance:3=true combat=false / "
@@ -6405,18 +6425,18 @@ do
     check("range probe: unchanged readings are not logged again; an unregistered event is ignored",
         select(2, probed(ctx)), n)
 
-    s.stormstrike, s.spell[6603], s.width = true, nil, 130
+    s.stormstrike, s.spell[6603], s.width, s.item = true, nil, 130, false
     ticker(ctx).fn()
     check("range probe: the ticker logs only changes; Stormstrike once known", probed(ctx, n + 1),
         "C_Spell.IsSpellInRange:6603=nil combat=false / C_Spell.IsSpellInRange:17364=nil combat=false / "
-        .. "IsSpellInRange:Stormstrike=0 combat=false")
+        .. "IsSpellInRange:Stormstrike=0 combat=false / C_Item.IsItemInRange:18904=false combat=false")
     n = select(2, probed(ctx))
     s.inCombat = true
     ctx.fire("PLAYER_REGEN_DISABLED")
     got = probed(ctx, n + 1)
     check("range probe: entering combat logs each range reading again with combat=true",
         select(2, probed(ctx)) - n .. " " .. got:match("^[^/]*") .. got:match("/ [^/]*$"),
-        "13 C_Spell.IsSpellInRange:6603=nil combat=true / UnitInRange=nil-fn combat=true")
+        "25 C_Spell.IsSpellInRange:6603=nil combat=true / UnitInRange=nil-fn combat=true")
 
     n = select(2, probed(ctx))
     s.attack = false
@@ -6463,6 +6483,26 @@ do
         .. "false combat=false / CheckInteractDistance:3=true combat=false / CheckInteractDistance:4=error combat=false"
         .. " / UnitInRange=nil-fn combat=false")
     check("range probe: Stormstrike is skipped while its knowledge is secret", got:find("17364", 1, true), nil)
+
+    -- No C_Item range or cache API: the item cache state comes from GetItemInfo, a missing read logs nil-fn.
+    local itemEnv = {}
+    for k, v in pairs(env) do
+        itemEnv[k] = v
+    end
+    itemEnv.C_Item = {}
+    itemEnv.GetItemInfo = function(id) return id == 835 and "Dense Sharpening Stone" or nil end
+    itemEnv.IsItemInRange = function() error("blocked") end
+    s.inCombat = false
+    ctx = loadShaman({ class = "WARRIOR", env = itemEnv })
+    ctx.run("debug on")
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    got = probed(ctx)
+    check("range probe: without C_Item the cache state comes from GetItemInfo; missing and raising item reads",
+        got:match("item:8149=.-/ [^/]*/ [^/]*/ [^/]*/ ") .. got:match("C_Item%.IsItemInRange:8149=.-/ [^/]*/ "),
+        "item:8149=uncached combat=false / item:10645=uncached combat=false / item:13289=uncached combat=false / "
+        .. "item:835=cached combat=false / C_Item.IsItemInRange:8149=nil-fn combat=false / "
+        .. "IsItemInRange:8149=error combat=false / ")
 end
 
 -- Killers (D1, D2): at PLAYER_DEAD each hostile player seen targeting the player within the last 10 s is saved once
