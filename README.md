@@ -534,7 +534,10 @@ entry you have learned:
 - `Astral Recall` casts Astral Recall on a left click, or uses your Hearthstone while Astral Recall is on cooldown; a
   right click always uses your Hearthstone. When the client hides the cooldown, a left click tries Astral Recall and
   falls back to the Hearthstone. The switch happens out of combat, so a cooldown that starts or ends in a fight takes
-  effect once it ends. With no Hearthstone in your bags the tooltip says `No Hearthstone in your bags`.
+  effect once it ends. In combat both clicks use your Hearthstone, and cast Astral Recall only when the Hearthstone
+  cannot be used, for example while it is on cooldown; the row's icon and tooltip show the Hearthstone until the fight
+  ends. With no Hearthstone in your bags combat changes nothing, Astral Recall still casts, and the tooltip says
+  `No Hearthstone in your bags`.
 
 Click a row: it casts that entry, becomes the button's pick and the list closes. `Astral Recall` is the exception: it
 casts and closes the list but never becomes the pick. The pick is saved per character, so

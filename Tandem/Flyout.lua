@@ -150,6 +150,11 @@ local function showTooltip(self)
     end
     local L, fighting = ns.L, inCombat()
     tip:SetOwner(self, "ANCHOR_TOPLEFT")
+    if fighting and e.combat then
+        call(tip.SetHyperlink, tip, ns.ClassMacros.COMBAT_LINK)
+        tip:Show()
+        return
+    end
     tip:SetText(e.title)
     tip:AddLine(e.description, 1, 0.82, 0, true)
     if e.note then
@@ -408,16 +413,32 @@ function Flyout.Update()
     end
 end
 
--- PLAYER_REGEN_DISABLED: without the secure handler APIs the list cannot close in combat, so it closes now.
+-- Sets each row's icon to its entry's combat icon in combat (where it has one), else to its icon; a texture only.
+local function rowIcons(fighting)
+    for i, row in ipairs(rows) do
+        local e = entries[i]
+        if e and e.combatIcon then
+            row.icon:SetTexture(fighting and e.combatIcon or e.icon or UNKNOWN_ICON)
+        end
+    end
+end
+
+-- PLAYER_REGEN_DISABLED: a row with a combat icon shows it; without the secure handler APIs the list cannot close in
+-- combat, so it closes now.
 function Flyout.OnCombatStart()
-    if main and not secure then
+    if not main then
+        return
+    end
+    rowIcons(true)
+    if not secure then
         list:Hide()
     end
 end
 
--- PLAYER_REGEN_ENABLED: saves the pick made in combat, applies the change combat held back and reads the debuffs
--- again.
+-- PLAYER_REGEN_ENABLED: restores the rows' icons, saves the pick made in combat, applies the change combat held back
+-- and reads the debuffs again.
 function Flyout.OnCombatEnd()
+    rowIcons(false)
     if pending or macroPending or combatPick then
         Flyout.Update()
     end
