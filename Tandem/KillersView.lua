@@ -8,7 +8,8 @@ ns.KillersView = KillersView
 
 local ROWS = 12
 local ROW_HEIGHT = 20
-local WIDTH = 560
+local HEADER_HEIGHT = 18
+local WIDTH = 610
 local CONFIRM = 3
 local L = ns.L
 local call = ns.Store.Call
@@ -16,8 +17,20 @@ local call = ns.Store.Call
 local window
 local offset = 0
 
--- The fields of killer k after its name: "<class> <level>", "x<count>", the date of the last one and the zone, each
--- left out when missing (killers D5).
+-- The table's columns after the name, in order: key, header, width and justification. A missing value shows blank,
+-- so every row keeps the same columns (killers D5).
+KillersView.COLUMNS = {
+    { key = "class", header = "Class", width = 70, justify = "LEFT" },
+    { key = "level", header = "Level", width = 32, justify = "RIGHT" },
+    { key = "count", header = "Kills", width = 36, justify = "RIGHT" },
+    { key = "last", header = "Last killed", width = 110, justify = "LEFT" },
+    { key = "zone", header = "Zone", width = 130, justify = "LEFT" },
+}
+local NAME_WIDTH = 140
+local GAP = 8
+
+-- The fields of killer k after its name for the chat line: "<class> <level>", "x<count>", the date of the last one and
+-- the zone, each left out when missing (killers D5).
 function KillersView.Details(k)
     local names = LOCALIZED_CLASS_NAMES_MALE
     local who = {}
@@ -29,6 +42,19 @@ function KillersView.Details(k)
     parts[#parts + 1] = call(date, "%Y-%m-%d %H:%M", k.last)
     parts[#parts + 1] = k.zone
     return parts
+end
+
+-- The cells of killer k after its name in the window, one per column: the class name, the level, the count, the
+-- date of the last one and the zone, each "" when missing.
+function KillersView.Cells(k)
+    local names = LOCALIZED_CLASS_NAMES_MALE
+    return {
+        class = k.class and (type(names) == "table" and names[k.class] or k.class) or "",
+        level = k.level and tostring(k.level) or "",
+        count = tostring(k.count),
+        last = call(date, "%Y-%m-%d %H:%M", k.last) or "",
+        zone = k.zone or "",
+    }
 end
 
 local function now()
@@ -97,18 +123,45 @@ local function clearClick(button)
     end)
 end
 
+-- Lays out the name (in nameFont) and one font string per column (in font) on row, left to right, each fixed width
+-- and on one line, so the columns line up row to row and a long value is cut instead of wrapping.
+local function addCells(row, nameFont, font)
+    row.name = row:CreateFontString(nil, "OVERLAY", nameFont)
+    row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.name:SetWidth(NAME_WIDTH)
+    row.name:SetJustifyH("LEFT")
+    row.name:SetWordWrap(false)
+    row.cells = {}
+    local x = NAME_WIDTH + GAP
+    for _, col in ipairs(KillersView.COLUMNS) do
+        local cell = row:CreateFontString(nil, "OVERLAY", font)
+        cell:SetPoint("LEFT", row, "LEFT", x, 0)
+        cell:SetWidth(col.width)
+        cell:SetJustifyH(col.justify)
+        cell:SetWordWrap(false)
+        row.cells[col.key] = cell
+        x = x + col.width + GAP
+    end
+end
+
+-- The header row above the list: the column titles in the gold small font.
+local function newHeader(parent)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetSize(WIDTH - 24, HEADER_HEIGHT)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, -36)
+    addCells(row, "GameFontNormalSmall", "GameFontNormalSmall")
+    row.name:SetText(L["Name"])
+    for _, col in ipairs(KillersView.COLUMNS) do
+        row.cells[col.key]:SetText(L[col.header])
+    end
+    return row
+end
+
 local function newRow(parent, i)
     local row = CreateFrame("Frame", nil, parent)
     row:SetSize(WIDTH - 24, ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, -36 - (i - 1) * ROW_HEIGHT)
-    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.name:SetWidth(170)
-    row.name:SetJustifyH("LEFT")
-    row.details = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.details:SetPoint("LEFT", row, "LEFT", 176, 0)
-    row.details:SetWidth(WIDTH - 24 - 176 - 28)
-    row.details:SetJustifyH("LEFT")
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 12, -36 - HEADER_HEIGHT - (i - 1) * ROW_HEIGHT)
+    addCells(row, "GameFontNormal", "GameFontHighlightSmall")
     row.forget = CreateFrame("Button", nil, row)
     row.forget:SetSize(18, 18)
     row.forget:SetPoint("RIGHT", row, "RIGHT", 0, 0)
@@ -129,7 +182,10 @@ local function showRow(row, k)
     else
         row.name:SetTextColor(1, 1, 1)
     end
-    row.details:SetText(table.concat(KillersView.Details(k), "  "))
+    local cells = KillersView.Cells(k)
+    for _, col in ipairs(KillersView.COLUMNS) do
+        row.cells[col.key]:SetText(cells[col.key])
+    end
     row:Show()
 end
 
@@ -157,7 +213,7 @@ end
 
 local function build()
     local f = CreateFrame("Frame", "TandemKillersFrame", UIParent)
-    f:SetSize(WIDTH, 36 + ROWS * ROW_HEIGHT + 40)
+    f:SetSize(WIDTH, 36 + HEADER_HEIGHT + ROWS * ROW_HEIGHT + 40)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
     f:SetFrameStrata("DIALOG")
     f:SetClampedToScreen(true)
@@ -183,7 +239,8 @@ local function build()
         f:Hide()
     end)
     f.status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.status:SetPoint("TOP", f, "TOP", 0, -60)
+    f.status:SetPoint("TOP", f, "TOP", 0, -36 - HEADER_HEIGHT - 24)
+    f.header = newHeader(f)
     f.rows = {}
     for i = 1, ROWS do
         f.rows[i] = newRow(f, i)
