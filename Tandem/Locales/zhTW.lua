@@ -86,7 +86,6 @@ L["%dm"] = "%d分"
 L["Played: %s"] = "遊玩時間：%s"
 L["This level: %s"] = "本等級：%s"
 L["This session: %s"] = "本次上線：%s"
-L["Shaman area"] = "薩滿區"
 L["Weapon procs"] = "武器觸發"
 L["  /tandem layout [on|off] - arrange bars, unit frames and chat for Tandem, or restore your layout"] =
     "  /tandem layout [on|off] - 為 Tandem 排列快捷列、頭像框與聊天框，或還原你的版面"

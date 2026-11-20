@@ -1,22 +1,22 @@
 local _, ns = ...
 
--- The Tandem Edit Mode layout (stage 12, D4, D12, D13, D14): an account layout named "Tandem" stacks the three
--- bottom action bars at the bottom centre over Blizzard's (faded) XP status bars, the main bar on top (Blizzard
--- keeps a Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target
--- frames in a row well above them, left and right of centre with the class rail between (the unit row), moves the
--- chat frame bottom-left, the micro menu bottom-right under the bag row and the minimap and buffs
--- top-right (each only when the client's Edit Mode has its system) and hides the other bars. Blizzard frames move
--- only through Edit Mode, anchored to UIParent or to each other; a frame Edit Mode cannot hide is faded with
--- SetAlpha(0) and EnableMouse(false), both undone on off. In the healer mode (per character) the party and raid
--- frames move above the class area, the target frame fades and the target of target is hidden.
+-- The Tandem Edit Mode layout (stage 12, D4, D12, D13, D14): an account layout named "Tandem" stacks the three bottom
+-- action bars at the bottom centre over Blizzard's (faded) XP status bars, the main bar on top (Blizzard keeps a
+-- Shaman's totem bar just above it, also in combat, so that room stays free), puts the player and target frames in a
+-- row well above them, left and right of centre (the unit row), moves the chat frame bottom-left, the micro menu
+-- bottom-right under the bag row and the minimap and buffs top-right (each only when the client's Edit Mode has its
+-- system) and hides the other bars. Blizzard frames move only through Edit Mode, anchored to UIParent or to each other;
+-- a frame Edit Mode cannot hide is faded with SetAlpha(0) and EnableMouse(false), both undone on off. In the healer
+-- mode (per character) the party and raid frames move above the unit row, the target frame fades and the target of
+-- target is hidden.
 local Layout = {}
 ns.Layout = Layout
 
 local NAME = "Tandem"
 -- Room under the bottom bar (Blizzard's faded status bars sit there), and between bars.
 local XP_ROOM, BAR_GAP = 8, 2
--- Height of one status bar; half the gap between the player and target frames, where the class rail sits; the unit
--- row's gap above the bar stack (and the totem bar).
+-- Height of one status bar; half the gap between the player and target frames; the unit row's gap above the bar
+-- stack (and the totem bar).
 local STATUS_HEIGHT, UNIT_SPREAD, UNIT_LIFT = 17, 120, 60
 -- Chat frame size in Edit Mode's hundreds / tens-and-ones settings, and the narrowest chat kept beside the band.
 local CHAT_WIDTH, CHAT_HEIGHT, CHAT_MIN = 380, 120, 260
@@ -29,7 +29,7 @@ local TOT_CVAR = "showTargetOfTarget"
 local COORDS_CVAR = "minimapShowPlayerCoords"
 -- How far above the main bar's bottom edge Edit Mode puts the totem bar.
 local TOTEM_Y = 70
--- How far above the unit row the healer mode puts the party and raid frames, clear of the class area.
+-- How far above the unit row the healer mode puts the party and raid frames, clear of the player frame.
 local HEAL_LIFT = 100
 
 local listeners = {}

@@ -10,7 +10,7 @@ armor or weapon type, tooltip requirements and stats, weighted for your class an
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
 screen around the action bars, with an XP bar, a bag row, a mute button, an eat and drink button, a map info line and,
-for a Shaman, a class area and a weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches on
+for a Shaman, a weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches on
 the world map and tells you in chat when you pass one. It never acts for the player: it only advises, and it saves
 nothing but your own stat weights, what your class trainer teaches, its layout state and mode, your class macro pick,
 your weapon enchant proc counts and whether book hints are on.
@@ -108,7 +108,7 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area`,
+`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`,
 `Weapon procs`, `Eat button`, `Book pins` and `Book alert`. A feature whose API is missing stays off instead of
 raising an error. Without `Class macros` the [class macro button](#bag-row) still works, but its list opens and picks
 only out of combat.
@@ -401,6 +401,20 @@ The distance comes from item ranges the client checks for every class, so it nee
 the client gives no answer (a dead target, or right after login before the items have loaded), nothing shows. The line
 updates ten times a second and goes at once when you lose or change the target.
 
+## Instant Lightning Bolt
+
+For a Shaman, the Maelstrom Weapon icon with a yellow glow shows just above the target distance line while
+Maelstrom Weapon has made Lightning Bolt instant (five stacks), and goes as soon as it is not. Tandem reads the bolt's
+cast time, which the client answers in combat too, so it needs no buff reading. It sits on the right of the two
+icon slots.
+
+## Stormstrike ready
+
+In combat, a Shaman who knows Stormstrike sees its icon, with the same yellow glow, in the left slot above the target
+distance line whenever Stormstrike is off cooldown, and it goes as soon as you cast it. The client hides cooldowns in
+combat, so Tandem reads the cooldown's length out of combat and times it from your cast; until it has read one, it
+counts 20 seconds. Out of combat the icon never shows.
+
 ## Layout
 
 ```text
@@ -436,7 +450,7 @@ Tandem's entry in the addon compartment menu does the same as a click. A right-c
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
 │              [==| XP 62% |(42.31, 67.80) · 1H20m]   [buffs][map] │
-│      [player]          [class rail]          [target][ToT]       │
+│      [player]                                [target][ToT]       │
 │                                                                  │
 │                      [ Shaman totem bar ]                        │
 │ [chat]               [ main action bar  ]                        │
@@ -447,8 +461,8 @@ Tandem's entry in the addon compartment menu does the same as a click. A right-c
 
 - The three bottom action bars stack at the bottom centre, 12 buttons in one row each, the main bar on top, without
   the gryphon art. A Shaman's totem bar keeps its own row just above the main bar, where Blizzard puts it.
-- The player frame and the target frame sit in a row well above the bars, left and right of centre, with the
-  [class area](#shaman-class-area) between them. The target of target is shown, next to the target frame.
+- The player frame and the target frame sit in a row well above the bars, left and right of centre. The target of
+  target is shown, next to the target frame.
 - The [XP bar](#xp-bar) sits at the top centre of the screen, with the [map info](#map-info) line centred just below it.
 - The chat window goes to the bottom left, about 380 by 120, when the client's Edit Mode has a chat system; without
   Edit Mode's chat size settings it only moves; without a chat system it stays put. On a narrow screen it narrows to
@@ -467,16 +481,16 @@ In healer mode the screen is the same except for the unit frames:
 ┌──────────────────────────────────────────────────────────────────┐
 │              [==| XP 62% |(42.31, 67.80) · 1H20m]   [buffs][map] │
 │                       [ party / raid ]                           │
-│      [player]          [class rail]                              │
+│      [player]                                                    │
 │                                                                  │
 │                      [ main action bar  ]                        │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- The party frames and the raid frames move to the centre, just above the row of the player frame and the
-  [class area](#shaman-class-area), so the people you heal sit in front of you. A frame whose Edit Mode system the
-  client lacks (the `Enum.EditModeUnitFrameSystemIndices.Party` or `.Raid` probe of
-  [`/tandem check`](#tandem-check) is `missing`) stays where it was.
+- The party frames and the raid frames move to the centre, just above the row of the player frame, so the people you
+  heal sit in front of you. A frame whose Edit Mode system the client lacks (the
+  `Enum.EditModeUnitFrameSystemIndices.Party` or `.Raid` probe of [`/tandem check`](#tandem-check) is `missing`) stays
+  where it was.
 - The target frame is faded and does not take clicks, and the target of target is turned off.
 
 The Tandem layout is shared by your characters, but each character's mode is its own: logging in with a character
@@ -632,18 +646,6 @@ coordinates. It needs the `Map info` line of [`/tandem check`](#tandem-check).
 While the layout is on, Tandem hides the client's own coordinates on the minimap so they don't show twice; turning
 the layout off restores them.
 
-### Shaman class area
-
-For a Shaman, a rail of icons between the player and target frames shows, centred, one icon for each totem that is
-down, in Earth, Fire, Water, Air order, with its time left. Lightning Shield and Water Shield get no icon.
-
-A totem's time left reads `m:ss` above a minute, else whole seconds, and counts down; its icon goes when its time runs
-out. Hover an icon for the totem's name and time left. While any icon shows, a thin blue mana line runs along the
-rail's bottom; with no icon, the whole rail hides.
-
-It only shows state and timers: nothing in it can be clicked, and it never advises what to cast. Other classes get no
-rail. It needs the `Shaman area` line of [`/tandem check`](#tandem-check).
-
 ### Weapon enchant procs
 
 For a Shaman whose main hand carries Windfury, Flametongue or Frostbrand, an icon under the player frame, below its
@@ -659,7 +661,7 @@ Stormstrike or a shock, and Flame Shock's damage over time are left out. Another
 also count, so the rate is exact only when you fight alone. It shows only while the layout is on and needs the
 `Weapon procs` line of [`/tandem check`](#tandem-check).
 
-Each part, the layout, XP bar, bag row, map info and Shaman area, stays dark when its `/tandem check` line is `missing`,
+Each part, the layout, XP bar, bag row and map info, stays dark when its `/tandem check` line is `missing`,
 and the rest still works.
 
 ### Debug log
@@ -737,10 +739,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-five lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-four lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area`,
+   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`,
    `Weapon procs`, `Eat button`, `Book pins` and `Book alert`, each followed by `ok` or `missing` and its APIs.
    Twenty `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
@@ -844,11 +846,7 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    rod, click it again to cast Fishing. Left of the rod icon (or of the bag row, with no rod; on a Shaman, left of the
    class macro button), a horn icon sits: click it and all game sound goes off and the horn turns grey; click it
    again and the sound is back. Left of the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
-4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat, and nothing
-   shows between the unit frames at first. Cast Lightning Shield: still nothing shows there. Drop a totem: its icon
-   appears on the rail between the player and target frames with its time left counting down, and a thin blue mana
-   line under it. Hover it: its name. When a totem runs out, its icon goes; when the last goes, the rail and its mana
-   line go. Clicking the rail does nothing.
+4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat.
 5. On a Shaman who knows Cure Poison, the class macro button sits left of the rod icon (or of the bag row), with a
    small arrow above it. Click the arrow: a list of your learned entries opens upward. Hover a row: its title, what it
    does and `Drag to place this macro on your action bar`. Click the `Cure Poison` row: it casts, the list closes and
@@ -875,10 +873,10 @@ upgrade without a border, whether the border sits well on the button, and any Lu
     fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
     coordinates as before.
 11. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, class macro button, mute
-    button, role button, map info line and class area go.
+    button, role button and map info line go.
 
 Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Class macro button`,
-`Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`, `Shaman area` and `Probe:` lines of
+`Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Probe:` lines of
 `/tandem check`, the `flyout` lines of `TandemDebug` from step 6, any frame that landed in the wrong place or overlaps
 another, anything not restored by `off`, and any Lua error.
 
@@ -916,7 +914,7 @@ only.
 checks the load line for the `enUS`, `zhTW` and an unsupported locale. It also tests `TandemDB` validation and
 migration, `/tandem` parsing and output, stat weights, tooltip stat reading, trainer recording, the upgrade judge with
 stubbed class, level, equipped and bag items, the upgrade alert and borders, the quest reward pick, the action bar
-borders, the item tooltip line, the layout, the XP bar, the bag row, the map info line and the Shaman class area. These
+borders, the item tooltip line, the layout, the XP bar, the bag row and the map info line. These
 tests prove the logic only; the client's real API is checked in game.
 
 ### Translations
