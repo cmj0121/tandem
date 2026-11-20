@@ -6854,7 +6854,7 @@ end
 do
     local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
         __index = function() error("secret") end })
-    local s = { target = true, reads = 0, spells = 0, combat = false, requested = {},
+    local s = { target = true, reads = 0, spells = 0, combat = false, requested = {}, canAttack = true, enemy = true,
         range = { [8149] = true, [10645] = true, [835] = true } }
     local function spell()
         s.spells = s.spells + 1
@@ -6864,6 +6864,12 @@ do
         issecretvalue = function(v) return rawequal(v, SECRET) end,
         UnitExists = function(u) return u == "target" and s.target end,
         InCombatLockdown = function() return s.combat end,
+        UnitCanAttack = function(a, b)
+            if a == "player" and b == "target" then return s.canAttack end
+        end,
+        UnitIsEnemy = function(a, b)
+            if a == "player" and b == "target" then return s.enemy end
+        end,
         IsPlayerSpell = spell,
         IsSpellKnown = spell,
         CheckInteractDistance = spell,
@@ -7004,6 +7010,56 @@ do
     check("range text: a target change without a target is quiet", tostring(ok) .. " " .. tostring((ctx.widget())),
         "true nil")
     s.target = true
+
+    -- Hostile only (hostile-only plan D1, D2).
+    ctx = load()
+    ctx.run("debug on")
+    ctx.tickText()
+    f = ctx.widget()
+    s.canAttack, s.enemy = false, false
+    reads = s.reads
+    ctx.tickText()
+    check("range text: a friendly target hides it and reads no item range", state(f) .. " " .. (s.reads - reads),
+        "hidden 0")
+    s.canAttack, s.enemy = false, true
+    ctx.tickText()
+    check("range text: a plain false UnitCanAttack is the answer, UnitIsEnemy not asked", state(f), "hidden")
+    s.canAttack, s.enemy = SECRET, true
+    ctx.tickText()
+    local fallback = state(f)
+    s.canAttack, s.enemy = nil, false
+    ctx.tickText()
+    check("range text: an unreadable UnitCanAttack falls back to UnitIsEnemy", fallback .. " / " .. state(f),
+        "0 - 5 " .. TEXT_RED .. " / hidden")
+    s.canAttack, s.enemy = SECRET, SECRET
+    s.combat = true
+    reads = s.reads
+    ctx.tickText()
+    check("range text: both unreadable uses this target's last answer (not hostile)", state(f) .. " "
+        .. (s.reads - reads), "hidden 0")
+    s.canAttack, s.enemy = true, true
+    ctx.tickText()
+    s.canAttack, s.enemy = SECRET, SECRET
+    ctx.tickText()
+    check("range text: both unreadable uses this target's last answer (hostile)", state(f), "0 - 5 " .. TEXT_RED)
+    s.canAttack, s.enemy = false, false
+    ctx.tickText()
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    s.canAttack, s.enemy = SECRET, SECRET
+    ctx.tickText()
+    s.combat = false
+    check("range text: a target change forgets the answer; never read shows it", state(f), "0 - 5 " .. TEXT_RED)
+    check("range text: unknown hostility in combat logged once", select(2, ctx.logged():gsub("hostile unknown", "")), 1)
+    s.canAttack, s.enemy = true, true
+
+    ctx = load({ UnitCanAttack = false })
+    s.enemy = false
+    ctx.tickText()
+    hidden = state(ctx.widget())
+    s.enemy = true
+    ctx.tickText()
+    check("range text: without UnitCanAttack, UnitIsEnemy decides", hidden .. " / " .. state(ctx.widget()),
+        "hidden / 0 - 5 " .. TEXT_RED)
 end
 
 -- Killers (D1, D2): at PLAYER_DEAD each hostile player seen targeting the player within the last 10 s is saved once

@@ -387,8 +387,8 @@ label reading `Click again to clear` meanwhile. The window follows every new dea
 
 ## Target distance
 
-Tandem shows how far your target is, in yards, in a short coloured line on the screen under your own character, in
-combat too:
+Tandem shows how far a hostile target is, in yards, in a short coloured line on the screen under your own character,
+in combat too:
 
 | Text      | Colour |
 | --------- | ------ |
@@ -398,8 +398,9 @@ combat too:
 | `30+`     | gray   |
 
 The distance comes from item ranges the client checks for every class, so it needs no spell and no nameplate. When
-the client gives no answer (a dead target, or right after login before the items have loaded), nothing shows. The line
-updates ten times a second and goes at once when you lose or change the target.
+the client gives no answer (a dead target, or right after login before the items have loaded), nothing shows, and a
+friendly or neutral target you cannot attack shows nothing either. The line updates ten times a second and goes at
+once when you lose or change the target.
 
 ## Instant Lightning Bolt
 
