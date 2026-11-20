@@ -6112,7 +6112,7 @@ do
     ctx.run("debug on")
     ctx.fire("PLAYER_LOGIN")
     check("proc probe: another class registers nothing", tostring(ctx.frame.registered.UNIT_SPELLCAST_SUCCEEDED) .. " "
-        .. tostring(ctx.frame.registered.PLAYER_ENTER_COMBAT), "nil nil")
+        .. tostring(ctx.frame.registered.CHAT_MSG_COMBAT_SELF_HITS), "nil nil")
 
     ctx = loadShaman({ env = { issecretvalue = function(v) return v == "S" end } })
     ctx.run("debug on")
@@ -6302,6 +6302,167 @@ do
         ctx.fire("PLAYER_DEAD")
     end
     check("killer probe: at most 200 lines kept", #lines(), 200)
+end
+
+-- The melee range probe: with the recorder on, logs each range reading on a hostile target and the nameplate CVars
+-- and target plate as "range probe: <name>=<value> combat=<bool>", once per change of value or combat state; secret,
+-- raising and missing reads log as such and never raise; nothing while the recorder is off; at most 200 lines.
+do
+    local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
+        __index = function() error("secret") end })
+    local s = { target = true, attack = true, inCombat = false, spell = { [6603] = true, [8042] = false },
+        stormstrike = false, distance = { true, false, true }, plate = true, width = 120 }
+    local plate = {
+        GetScale = function() return 1 end,
+        GetEffectiveScale = function() return 0.8 end,
+        GetWidth = function() return s.width end,
+        GetHeight = function() return 30 end,
+        GetCenter = function() return 512, 300 end,
+    }
+    local env = {
+        issecretvalue = function(v) return rawequal(v, SECRET) end,
+        UnitExists = function(u) return u == "target" and s.target end,
+        UnitCanAttack = function() return s.attack end,
+        InCombatLockdown = function() return s.inCombat end,
+        C_Spell = {
+            GetSpellName = function(id) return ({ [6603] = "Attack", [8042] = "Earth Shock" })[id] end,
+            IsSpellInRange = function(id) return s.spell[id] end,
+        },
+        IsSpellInRange = function(name) return name == "Attack" and 1 or 0 end,
+        IsPlayerSpell = function(id) return id == 17364 and s.stormstrike end,
+        GetActionInfo = function(slot)
+            if slot == 13 then return "spell", 6603 end
+        end,
+        IsActionInRange = function() return SECRET end,
+        CheckInteractDistance = function(_, i)
+            if i == 4 then error("blocked") end
+            return s.distance[i]
+        end,
+        C_CVar = {
+            GetCVarInfo = function(name) return name == "nameplateOtherAtBase" and "2" or "1", "0" end,
+            GetCVar = function(name) return name == "nameplateOtherAtBase" and "2" or "1" end,
+        },
+        C_NamePlate = { GetNamePlateForUnit = function() return s.plate and plate or nil end },
+    }
+    local function probed(ctx, from)
+        local out = {}
+        for _, line in ipairs(ctx.env.TandemDebug and ctx.env.TandemDebug.log or {}) do
+            local what = line:match("range probe: (.*)$")
+            if what then
+                out[#out + 1] = what
+            end
+        end
+        return table.concat(out, " / ", from or 1), #out
+    end
+    local function ticker(ctx)
+        for _, t in ipairs(ctx.tickers) do
+            if t.interval == 0.5 then
+                return t
+            end
+        end
+    end
+
+    local ctx = loadShaman({ class = "WARRIOR", env = env })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    ticker(ctx).fn()
+    check("range probe: events registered, nothing logged with the recorder off",
+        tostring(ctx.frame.registered.PLAYER_ENTER_COMBAT) .. " "
+        .. tostring(ctx.frame.registered.PLAYER_REGEN_DISABLED) .. " " .. select(2, probed(ctx)), "true true 0")
+
+    ctx = loadShaman({ class = "WARRIOR", env = env })
+    ctx.run("debug on")
+    local register = ctx.frame.RegisterEvent
+    ctx.frame.RegisterEvent = function(self, ev)
+        if ev == "PLAYER_ENTER_COMBAT" then
+            error("unknown event")
+        end
+        return register(self, ev)
+    end
+    ctx.fire("PLAYER_LOGIN")
+    local got, n = probed(ctx)
+    check("range probe: registrations and the nameplate CVars at login", n .. " " .. got:gsub(" / GetCVar.*", ""),
+        "16 registered:PLAYER_TARGET_CHANGED=true combat=false / registered:PLAYER_REGEN_DISABLED=true combat=false / "
+        .. "registered:PLAYER_REGEN_ENABLED=true combat=false / registered:PLAYER_ENTER_COMBAT=false combat=false")
+    check("range probe: a CVar through GetCVarInfo and GetCVar", got:match("GetCVarInfo:nameplateOtherAtBase.-/ [^/]*"),
+        "GetCVarInfo:nameplateOtherAtBase=2 0 combat=false / GetCVar:nameplateOtherAtBase=2 combat=false ")
+
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    check("range probe: on target change the plate and every range reading; secret, raising and missing reads",
+        probed(ctx, 17), "plate.found=true combat=false / plate.GetScale=1 combat=false / plate.GetEffectiveScale=0.8 "
+        .. "combat=false / plate.GetWidth=120 combat=false / plate.GetHeight=30 combat=false / plate.GetCenter=512 300 "
+        .. "combat=false / C_Spell.IsSpellInRange:6603=true combat=false / IsSpellInRange:Attack=1 combat=false / "
+        .. "C_Spell.IsSpellInRange:8042=false combat=false / IsSpellInRange:Earth Shock=0 combat=false / "
+        .. "attack.slot=13 combat=false / IsActionInRange=secret combat=false / "
+        .. "CheckInteractDistance:1=true combat=false / CheckInteractDistance:2=false combat=false / "
+        .. "CheckInteractDistance:3=true combat=false / "
+        .. "CheckInteractDistance:4=error combat=false / UnitInRange=nil-fn combat=false")
+    n = select(2, probed(ctx))
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    ticker(ctx).fn()
+    ctx.fire("PLAYER_ENTER_COMBAT")
+    check("range probe: unchanged readings are not logged again; an unregistered event is ignored",
+        select(2, probed(ctx)), n)
+
+    s.stormstrike, s.spell[6603], s.width = true, nil, 130
+    ticker(ctx).fn()
+    check("range probe: the ticker logs only changes; Stormstrike once known", probed(ctx, n + 1),
+        "C_Spell.IsSpellInRange:6603=nil combat=false / C_Spell.IsSpellInRange:17364=nil combat=false / "
+        .. "IsSpellInRange:Stormstrike=0 combat=false")
+    n = select(2, probed(ctx))
+    s.inCombat = true
+    ctx.fire("PLAYER_REGEN_DISABLED")
+    got = probed(ctx, n + 1)
+    check("range probe: entering combat logs each range reading again with combat=true",
+        select(2, probed(ctx)) - n .. " " .. got:match("^[^/]*") .. got:match("/ [^/]*$"),
+        "13 C_Spell.IsSpellInRange:6603=nil combat=true / UnitInRange=nil-fn combat=true")
+
+    n = select(2, probed(ctx))
+    s.attack = false
+    ticker(ctx).fn()
+    s.attack, s.target, s.plate = true, false, false
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    check("range probe: no range readings on a friendly or missing target; a missing plate", probed(ctx, n + 1),
+        "plate.found=false combat=true")
+
+    s.target = true
+    local ok = pcall(function()
+        for i = 1, 300 do
+            s.distance[1] = i % 2 == 0
+            ticker(ctx).fn()
+        end
+    end)
+    check("range probe: never raises; at most 200 lines a session", tostring(ok) .. " " .. select(2, probed(ctx)),
+        "true 200")
+    ctx.run("debug off")
+    s.distance[1] = "x"
+    ticker(ctx).fn()
+    check("range probe: the ticker logs nothing with the recorder off", select(2, probed(ctx)), 200)
+
+    -- Secret action info, combat state and spell knowledge: read as absent, never compared, never raised.
+    local secretEnv = {}
+    for k, v in pairs(env) do
+        secretEnv[k] = v
+    end
+    secretEnv.GetActionInfo = function() return SECRET, SECRET end
+    secretEnv.InCombatLockdown = function() return SECRET end
+    secretEnv.IsPlayerSpell = function() return SECRET end
+    s.distance[1], s.plate = true, true
+    ctx = loadShaman({ class = "WARRIOR", env = secretEnv })
+    ctx.run("debug on")
+    ok = pcall(function()
+        ctx.fire("PLAYER_LOGIN")
+        ctx.fire("PLAYER_TARGET_CHANGED")
+        ticker(ctx).fn()
+    end)
+    got = probed(ctx)
+    check("range probe: a secret GetActionInfo is no slot and the later readings still log; a secret combat state "
+        .. "and spell knowledge do not raise", tostring(ok) .. " " .. got:match("attack%.slot.*$"),
+        "true attack.slot=noslot combat=false / CheckInteractDistance:1=true combat=false / CheckInteractDistance:2="
+        .. "false combat=false / CheckInteractDistance:3=true combat=false / CheckInteractDistance:4=error combat=false"
+        .. " / UnitInRange=nil-fn combat=false")
+    check("range probe: Stormstrike is skipped while its knowledge is secret", got:find("17364", 1, true), nil)
 end
 
 -- Killers (D1, D2): at PLAYER_DEAD each hostile player seen targeting the player within the last 10 s is saved once
