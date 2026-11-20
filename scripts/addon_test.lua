@@ -1108,6 +1108,7 @@ function WIDGET.SetAttribute(w, key, value)
     w.attrs = w.attrs or {}
     w.attrs[key] = value
 end
+function WIDGET.SetFont(w, ...) w.font = { ... } end
 -- Six pixels a character stands in for the font's measure.
 function WIDGET.GetStringWidth(w) return 6 * #(w.text or "") end
 
@@ -6398,7 +6399,7 @@ do
     check("range probe: a CVar through GetCVarInfo and GetCVar", got:match("GetCVarInfo:nameplateOtherAtBase.-/ [^/]*"),
         "GetCVarInfo:nameplateOtherAtBase=2 0 combat=false / GetCVar:nameplateOtherAtBase=2 combat=false ")
     check("range probe: each item's data requested and its cache state logged at login; a secret one is uncached",
-        table.concat(s.requested, " ") .. " " .. got:match("item:.*$"), "8149 10645 13289 835 7734 18904 "
+        table.concat(s.requested, " ", 1, 6) .. " " .. got:match("item:.*$"), "8149 10645 13289 835 7734 18904 "
         .. "item:8149=cached combat=false / item:10645=uncached combat=false / item:13289=uncached combat=false / "
         .. "item:835=uncached combat=false / item:7734=uncached combat=false / item:18904=uncached combat=false")
 
@@ -6503,6 +6504,165 @@ do
         "item:8149=uncached combat=false / item:10645=uncached combat=false / item:13289=uncached combat=false / "
         .. "item:835=cached combat=false / C_Item.IsItemInRange:8149=nil-fn combat=false / "
         .. "IsItemInRange:8149=error combat=false / ")
+end
+
+-- The range text (PLAN D1-D3): one coloured line at a fixed place under the player's character by band, nearest
+-- first, from C_Item.IsItemInRange: 8149 "0 - 5" red, 10645 "5 - 20" green, 835 "20 - 30" blue, 835 false "30+" gray,
+-- else hidden; no spell or nameplate read, so any class. One 0.1 s ticker, idle and hidden without a target; a target
+-- change hides it until the next tick.
+do
+    local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
+        __index = function() error("secret") end })
+    local s = { target = true, reads = 0, spells = 0, combat = false, requested = {},
+        range = { [8149] = true, [10645] = true, [835] = true } }
+    local function spell()
+        s.spells = s.spells + 1
+        return true
+    end
+    local env = {
+        issecretvalue = function(v) return rawequal(v, SECRET) end,
+        UnitExists = function(u) return u == "target" and s.target end,
+        InCombatLockdown = function() return s.combat end,
+        IsPlayerSpell = spell,
+        IsSpellKnown = spell,
+        CheckInteractDistance = spell,
+        C_Spell = { IsSpellInRange = spell },
+        C_NamePlate = { GetNamePlateForUnit = spell },
+        C_Item = {
+            IsItemInRange = function(id, unit)
+                s.reads = s.reads + 1
+                if unit == "target" then
+                    return s.range[id]
+                end
+            end,
+            RequestLoadItemDataByID = function(id) s.requested[#s.requested + 1] = id end,
+        },
+    }
+    local function load(extra)
+        local loadEnv = {}
+        for k, v in pairs(env) do
+            loadEnv[k] = v
+        end
+        for k, v in pairs(extra or {}) do
+            loadEnv[k] = v
+        end
+        local ctx = loadShaman({ class = "WARRIOR", env = loadEnv })
+        ctx.fire("PLAYER_LOGIN")
+        ctx.widget = function()
+            for _, w in ipairs(ctx.ui.widgets) do
+                if w.name == "TandemRangeText" then
+                    return w
+                end
+            end
+        end
+        ctx.textTickers = function()
+            local out = {}
+            for _, t in ipairs(ctx.tickers) do
+                if t.interval == 0.1 then
+                    out[#out + 1] = t
+                end
+            end
+            return out
+        end
+        ctx.tickText = function()
+            ctx.textTickers()[1].fn()
+        end
+        ctx.logged = function()
+            local lines = {}
+            for _, line in ipairs(ctx.env.TandemDebug and ctx.env.TandemDebug.log or {}) do
+                lines[#lines + 1] = line:match("range text: (.*)$")
+            end
+            return table.concat(lines, " / ")
+        end
+        return ctx
+    end
+    -- "text r,g,b" of the range text, "hidden" when not shown.
+    local function state(f)
+        if not f or not f.shown then
+            return "hidden"
+        end
+        local c = f.label.textColor
+        return ("%s %s,%s,%s"):format(f.label.text, c[1], c[2], c[3])
+    end
+    local TEXT_RED, TEXT_GREEN = "0.88,0.19,0.19", "0.25,0.88,0.25"
+    local TEXT_BLUE, TEXT_GRAY = "0.25,0.66,1", "0.62,0.62,0.62"
+
+    s.target = false
+    local ctx = load()
+    ctx.tickText()
+    check("range text: event registered, the items' data requested, one 0.1 s ticker, no frame until it first shows",
+        tostring((ctx.widget())) .. " " .. tostring(ctx.frame.registered.PLAYER_TARGET_CHANGED) .. " "
+        .. table.concat(s.requested, ",", #s.requested - 2) .. " " .. #ctx.textTickers(), "nil true 8149,10645,835 1")
+    s.target = true
+    ctx.tickText()
+    local f = ctx.widget()
+    local p = f.points[1]
+    check("range text: 20 pt thick outline, anchored once 140 below the screen's centre",
+        ("%s %s %s %s %s,%s %d"):format(f.label.font and table.concat(f.label.font, " ") or "nofont", p[1], p[3],
+            tostring(p[2] == ctx.env.UIParent), p[4], p[5], #f.points),
+        "Fonts\\FRIZQT__.TTF 20 THICKOUTLINE CENTER CENTER true 0,-140 1")
+    ctx.fire("PLAYER_LOGIN")
+    check("range text: a second login starts no second ticker", #ctx.textTickers(), 1)
+
+    for _, case in ipairs({
+        { "8149 in range: red 0 - 5", { true, true, true }, "0 - 5 " .. TEXT_RED },
+        { "10645 in range: green 5 - 20", { false, true, true }, "5 - 20 " .. TEXT_GREEN },
+        { "10645 in range with a nil 8149 reading", { nil, true, true }, "5 - 20 " .. TEXT_GREEN },
+        { "835 in range: blue 20 - 30", { false, false, true }, "20 - 30 " .. TEXT_BLUE },
+        { "835 in range with nil nearer readings", { nil, nil, true }, "20 - 30 " .. TEXT_BLUE },
+        { "835 out of range: gray 30+", { false, false, false }, "30+ " .. TEXT_GRAY },
+        { "835 out of range with nil nearer readings", { nil, nil, false }, "30+ " .. TEXT_GRAY },
+        { "nearer readings false, 835 nil: hidden", { false, false, nil }, "hidden" },
+        { "only nil readings: hidden", { nil, nil, nil }, "hidden" },
+        { "secret readings are nil: hidden", { SECRET, SECRET, SECRET }, "hidden" },
+        { "shown again once a reading answers", { true, true, true }, "0 - 5 " .. TEXT_RED },
+    }) do
+        s.range[8149], s.range[10645], s.range[835] = case[2][1], case[2][2], case[2][3]
+        ctx.tickText()
+        check("range text: " .. case[1], state(f), case[3])
+    end
+    check("range text: no spell, interact distance or nameplate is read; never anchored again",
+        s.spells .. " " .. #f.points, "0 1")
+
+    s.target = false
+    local reads = s.reads
+    ctx.tickText()
+    local hidden = state(f)
+    ctx.tickText()
+    check("range text: no target hides it; the ticker then reads no range", hidden .. " " .. (s.reads - reads),
+        "hidden 0")
+    s.target = true
+    ctx.tickText()
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    hidden = state(f)
+    ctx.tickText()
+    check("range text: a target change hides it at once, until the next tick reads a band",
+        hidden .. " / " .. state(f), "hidden / 0 - 5 " .. TEXT_RED)
+
+    ctx = load({ C_NamePlate = false })
+    ctx.tickText()
+    check("range text: shows with no nameplate API at all", state(ctx.widget()), "0 - 5 " .. TEXT_RED)
+
+    ctx = load()
+    ctx.run("debug on")
+    ctx.tickText()
+    s.combat = true
+    s.range[8149] = false
+    ctx.tickText()
+    s.range[8149] = true
+    ctx.tickText()
+    s.combat = false
+    check("range text: the first band shown in combat logged once", ctx.logged(), "first combat band=5 - 20")
+
+    ctx = load()
+    s.target = false
+    local ok = pcall(function()
+        ctx.fire("PLAYER_TARGET_CHANGED")
+        ctx.tickText()
+    end)
+    check("range text: a target change without a target is quiet", tostring(ok) .. " " .. tostring((ctx.widget())),
+        "true nil")
+    s.target = true
 end
 
 -- Killers (D1, D2): at PLAYER_DEAD each hostile player seen targeting the player within the last 10 s is saved once

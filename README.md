@@ -385,6 +385,22 @@ cross at the end of a row forgets that name, and `Clear` empties the list after 
 label reading `Click again to clear` meanwhile. The window follows every new death, `forget` and `clear`, shows
 `No one recorded yet.` when the list is empty and `Killer list unavailable.` when it cannot be read.
 
+## Target distance
+
+Tandem shows how far your target is, in yards, in a short coloured line on the screen under your own character, in
+combat too:
+
+| Text      | Colour |
+| --------- | ------ |
+| `0 - 5`   | red    |
+| `5 - 20`  | green  |
+| `20 - 30` | blue   |
+| `30+`     | gray   |
+
+The distance comes from item ranges the client checks for every class, so it needs no spell and no nameplate. When
+the client gives no answer (a dead target, or right after login before the items have loaded), nothing shows. The line
+updates ten times a second and goes at once when you lose or change the target.
+
 ## Layout
 
 ```text
