@@ -43,6 +43,7 @@ Classes\Shaman.lua
 ProcProbe.lua
 KillerProbe.lua
 RangeProbe.lua
+RangeText.lua
 Killers.lua
 KillersView.lua
 Procs.lua
