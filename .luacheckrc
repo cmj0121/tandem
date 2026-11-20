@@ -116,7 +116,6 @@ read_globals = {
     "UnitName",
     "GetTime",
     "debugstack",
-    "GetTotemInfo",
     "GetWeaponEnchantInfo",
     "UnitPower",
     "UnitPowerMax",

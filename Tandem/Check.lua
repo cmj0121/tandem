@@ -89,9 +89,6 @@ Check.FEATURES = {
     { name = "Map info", needs = {
         { "C_Map.GetBestMapForUnit" }, { "C_Map.GetPlayerMapPosition" }, { "RequestTimePlayed" },
     } },
-    { name = "Shaman area", needs = {
-        { "GetTotemInfo" }, { "UnitPower" },
-    } },
     { name = "Weapon procs", needs = {
         { "GetWeaponEnchantInfo" }, { "PlayerFrame" }, { "GetTime" },
     } },

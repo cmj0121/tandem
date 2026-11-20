@@ -10,12 +10,12 @@ for _, event in ipairs({
     "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_TAB", "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED",
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
-    "PLAYER_TOTEM_UPDATE", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
+    "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
     "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "CVAR_UPDATE",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
--- The class area's unit events, for the player only where the client allows it.
+-- The eat button's unit events, for the player only where the client allows it.
 local PLAYER_EVENTS = { UNIT_POWER_UPDATE = true, UNIT_MAXPOWER = true }
 for event in pairs(PLAYER_EVENTS) do
     ns.Store.RegisterUnitEvent(frame, event, "player")
@@ -123,9 +123,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
     if PROC_EVENTS[event] then
         ns.Procs.OnEvent(event, ...)
     end
-    if PLAYER_EVENTS[event] or event == "PLAYER_TOTEM_UPDATE" then
-        ns.ClassArea.OnEvent(event, ...)
-        if PLAYER_EVENTS[event] and (...) == "player" then
+    if PLAYER_EVENTS[event] then
+        if (...) == "player" then
             ns.Eat.Schedule()
         end
     elseif event == "ADDON_LOADED" then

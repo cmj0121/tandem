@@ -38,8 +38,6 @@ Eat.lua
 MapInfo.lua
 BookPins.lua
 BookAlert.lua
-ClassArea.lua
-Classes\Shaman.lua
 ProcProbe.lua
 KillerProbe.lua
 RangeProbe.lua
