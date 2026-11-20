@@ -152,14 +152,14 @@ per 1%.
 - `/tandem weights reset` drops your own weights for the active tree, printing
   `Tandem: own weights for tree <n> dropped`. The other trees keep theirs.
 
-Each change then shows the weights as they now are. Your choices are saved per character (`Name-Realm`) and per tree,
+Each change then shows the weights as they now are. Your choices are saved per character (`Name`) and per tree,
 so they survive switching talents. Other messages:
 
 - `Tandem: usage /tandem weights [spec <1|2|3|auto> | set <stat> <number> | reset]` for anything else; nothing changes.
 - `Tandem: unknown stat <stat>; use one of: <keys>` for a stat key not in the list above.
 - `Tandem: no built-in weights for <class>` for a class without built-in weights.
 - `Tandem: weights cannot be saved: recording is off or your character is not known yet` on saved data of a newer
-  schema, or while the client does not tell your name and realm.
+  schema, or while the client does not tell your character's name yet.
 
 ## Upgrade advice
 
@@ -698,11 +698,11 @@ Tandem saves one account-wide table, `TandemDB`, as
 
 | Key        | Content                                                                                                        |
 | ---------- | -------------------------------------------------------------------------------------------------------------- |
-| `weights`  | Per character (`Name-Realm`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec          |
+| `weights`  | Per character (`Name`): chosen `spec` (1-3, absent = auto) and stat weight `overrides` per spec                |
 | `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
 | `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target and `coords`, the `minimap` `angle`, `hidden`  |
-| `modes`    | Per character (`Name-Realm`): the [layout mode](#what-moves), `heal`; absent = damage                          |
-| `picks`    | Per character (`Name-Realm`): the [class macro](#bag-row) entry picked, such as `poison` or `stormstrike`      |
+| `modes`    | Per character (`Name`): the [layout mode](#what-moves), `heal`; absent = damage                                |
+| `picks`    | Per character (`Name`): the [class macro](#bag-row) entry picked, such as `poison` or `stormstrike`            |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
@@ -718,12 +718,20 @@ Tandem saves one account-wide table, `TandemDB`, as
 - A `picks` entry that is not a non-empty entry id is dropped on load.
 - `layout.books` is the [library books](#the-books-switch) switch: `false` after `/tandem books off`, `true` after
   `/tandem books on`, absent (on) until you use either. A value that is not `true` or `false` is dropped on load.
+- Each character is keyed by its name alone, without the realm: Forever's realm APIs return nothing and the realm it
+  shows is only a pseudonym. Two characters with the same name on different realms therefore share one entry of
+  `weights`, `modes`, `picks`, [weapon procs](#weapon-enchant-procs) and [killers](#killers).
 
-`TandemDB.schemaVersion` is `7`. Saved data from an older schema is migrated on load: `weights`, `trainers`,
-`layout`, `modes` and `picks` are kept and every other key, such as the item cache, loot log and stats of earlier versions, is
-dropped. Chat then shows `Tandem: saved data upgraded from schema <n> to 7` and
-`Tandem: dropped <n> invalid or unused saved entries`; schema 6 data is upgraded silently when nothing is dropped.
+`TandemDB.schemaVersion` is `8`. Saved data from an older schema is migrated on load: `weights`, `trainers`,
+`layout`, `modes`, `picks`, `procs` and `killers` are kept and every other key, such as the item cache, loot log and
+stats of earlier versions, is dropped. Chat then shows `Tandem: saved data upgraded from schema <n> to 8` and
+`Tandem: dropped <n> invalid or unused saved entries`; schema 6 and 7 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
+
+Schema 8 renames every per-character entry from `Name-Realm` to `Name`, once, on the first load. When several old
+entries share a name (the same name on different realms), the first in alphabetical order of `Name-Realm` is kept and
+each other one counts as dropped. The step is one way: an older Tandem then finds a newer schema and saves nothing, so
+to go back to one, restore a copy of `Tandem.lua` taken before updating.
 
 The same file also holds `TandemDebug`, the [debug log](#debug-log): `on`, up to 300 `log` lines, 50 `blocked` and 20 `errors`,
 only after you turn it on.

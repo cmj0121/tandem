@@ -6,7 +6,7 @@ local _, ns = ...
 local Store = { readOnly = false }
 ns.Store = Store
 
-local SCHEMA = 7
+local SCHEMA = 8
 Store.SCHEMA = SCHEMA
 -- Locale-independent stat keys a weights override may carry: sp is spell damage and healing, heal healing only, dps a
 -- weapon's damage per second.
@@ -191,24 +191,51 @@ local function copyLayoutField(field, v)
     return v
 end
 
+-- Returns a per-character table rekeyed from "<name>-<realm>" (schema 7 and older) to "<name>", the part before the
+-- first "-"; a key with no "-" is kept. When several old keys map to one name, the first in sorted order wins and
+-- each other counts as a drop.
+local function rekey(t, drop)
+    local names = {}
+    local out = {}
+    for key, v in pairs(t) do
+        if type(key) == "string" then
+            names[#names + 1] = key
+        else
+            out[key] = v
+        end
+    end
+    table.sort(names)
+    for _, key in ipairs(names) do
+        local name = key:match("^[^-]*")
+        if out[name] == nil then
+            out[name] = t[key]
+        else
+            drop()
+        end
+    end
+    return out
+end
+
 -- Copies every entry of raw that passes its type check into a fresh current-schema table; every key a current db
--- does not hold counts as one drop.
+-- does not hold counts as one drop. A db older than schema 8, unversioned or with a damaged version has its
+-- per-character tables rekeyed to the bare name.
 local function migrate(raw, report)
     local db = newDB()
     local function drop()
         report.dropped = report.dropped + 1
     end
-    local function entries(t)
-        if type(t) == "table" then
-            return t
+    local old = not isNum(raw.schemaVersion) or raw.schemaVersion < 8
+    local function entries(t, perCharacter)
+        if type(t) ~= "table" then
+            if t ~= nil then
+                drop()
+            end
+            return {}
         end
-        if t ~= nil then
-            drop()
-        end
-        return {}
+        return perCharacter and old and rekey(t, drop) or t
     end
 
-    for name, v in pairs(entries(raw.weights)) do
+    for name, v in pairs(entries(raw.weights, true)) do
         local weights = type(name) == "string" and name ~= "" and copyWeights(v, drop)
         if weights then
             db.weights[name] = weights
@@ -234,7 +261,7 @@ local function migrate(raw, report)
         end
     end
 
-    for name, v in pairs(entries(raw.modes)) do
+    for name, v in pairs(entries(raw.modes, true)) do
         if type(name) == "string" and name ~= "" and isMode(v) then
             db.modes = db.modes or {}
             db.modes[name] = v
@@ -243,7 +270,7 @@ local function migrate(raw, report)
         end
     end
 
-    for name, v in pairs(entries(raw.picks)) do
+    for name, v in pairs(entries(raw.picks, true)) do
         if type(name) == "string" and name ~= "" and isPick(v) then
             db.picks = db.picks or {}
             db.picks[name] = v
@@ -252,7 +279,7 @@ local function migrate(raw, report)
         end
     end
 
-    for name, families in pairs(entries(raw.procs)) do
+    for name, families in pairs(entries(raw.procs, true)) do
         if type(name) == "string" and name ~= "" and type(families) == "table" then
             local clean = {}
             for family, v in pairs(families) do
@@ -270,7 +297,7 @@ local function migrate(raw, report)
         end
     end
 
-    for name, killers in pairs(entries(raw.killers)) do
+    for name, killers in pairs(entries(raw.killers, true)) do
         if isText(name) and type(killers) == "table" then
             local clean = {}
             for fullName, v in pairs(killers) do
