@@ -211,6 +211,12 @@ local MAX_STACK = 600
 -- locals.
 local MAX_ERRORS = 20
 local errorsHooked = false
+-- Out of combat a blocked action is logged once per key in this many seconds; in combat once per fight (D2).
+local BLOCKED_WINDOW = 60
+-- The blocked actions seen in the current window, by key (event, func and site): { at, n, site, event, combat }.
+local seen = {}
+-- Stack files that only dispatch, never the cause of a blocked action (D1).
+local DISPATCH = { Debug = true, Store = true, Tandem = true }
 
 -- While recording, keeps "<time> <message> stack=<stack> locals=<locals>" for a Lua error in TandemDebug.errors,
 -- then hands it to the client's own handler as before.
@@ -259,6 +265,7 @@ function Debug.Set(on)
         d.log = {}
         d.blocked = {}
         d.errors = {}
+        seen = {}
         Debug.Log("debug on")
         hookErrors()
     end
@@ -266,28 +273,76 @@ function Debug.Set(on)
     return #d.log
 end
 
--- ADDON_ACTION_BLOCKED, ADDON_ACTION_FORBIDDEN: while recording, logs "blocked <event> addon=<name> func=<func>"
--- with the call stack, to the log and to TandemDebug.blocked (the last MAX_BLOCKED), which the busy log cannot push
--- out.
-function Debug.OnBlocked(event, addon, func)
-    if not Debug.IsOn() then
-        return
+-- The first Tandem "<file>.lua:<line>" in the stack outside the dispatch files, or "unknown".
+local function siteOf(stack)
+    if type(stack) == "string" then
+        for file, line in stack:gmatch('Interface/AddOns/Tandem/([%w_/]+)%.lua"?%]?:(%d+)') do
+            if not DISPATCH[file] then
+                return file .. ".lua:" .. line
+            end
+        end
     end
-    local line = ("blocked %s addon=%s func=%s"):format(tostring(event), tostring(addon), tostring(func))
-    Debug.Log(line)
-    local stack = call(debugstack, 2, 12, 0)
+    return "unknown"
+end
+
+local function keep(entry)
     local d = db()
     if type(d.blocked) ~= "table" then
         d.blocked = {}
-    end
-    local entry = ("%.2f %s"):format(tonumber((call(GetTime))) or 0, line)
-    if type(stack) == "string" and stack ~= "" then
-        entry = entry .. " stack=" .. stack:sub(1, MAX_STACK):gsub("\n", " | ")
     end
     d.blocked[#d.blocked + 1] = entry
     while #d.blocked > MAX_BLOCKED do
         table.remove(d.blocked, 1)
     end
+end
+
+-- Logs "blocked x<n> at <site> (<event>)" to the log and to TandemDebug.blocked when a key was seen more than once.
+local function summarize(hit)
+    if hit.n > 1 then
+        local line = ("blocked x%d at %s (%s)"):format(hit.n, hit.site, hit.event)
+        Debug.Log(line)
+        keep(("%.2f %s"):format(tonumber((call(GetTime))) or 0, line))
+    end
+end
+
+-- ADDON_ACTION_BLOCKED, ADDON_ACTION_FORBIDDEN: while recording, logs "blocked <event> addon=<name> func=<func>"
+-- with the call stack, to the log and to TandemDebug.blocked (the last MAX_BLOCKED), which the busy log cannot push
+-- out. Only the first of a key (event, func and site) in its window is logged; repeats are counted for the summary.
+function Debug.OnBlocked(event, addon, func)
+    if not Debug.IsOn() then
+        return
+    end
+    local stack = call(debugstack, 2, 12, 0)
+    local site = siteOf(stack)
+    local key = tostring(event) .. "\0" .. tostring(func) .. "\0" .. site
+    local now = tonumber((call(GetTime))) or 0
+    local inCombat = call(InCombatLockdown) == true
+    local hit = seen[key]
+    if hit and (now - hit.at < BLOCKED_WINDOW or (hit.combat and inCombat)) then
+        hit.n = hit.n + 1
+        return
+    end
+    if hit then
+        summarize(hit)
+    end
+    seen[key] = { at = now, n = 1, site = site, event = tostring(event), combat = inCombat }
+    local line = ("blocked %s addon=%s func=%s"):format(tostring(event), tostring(addon), tostring(func))
+    Debug.Log(line)
+    local entry = ("%.2f %s"):format(now, line)
+    if type(stack) == "string" and stack ~= "" then
+        entry = entry .. " stack=" .. stack:sub(1, MAX_STACK):gsub("\n", " | ")
+    end
+    keep(entry)
+end
+
+-- PLAYER_REGEN_ENABLED: summarizes the blocked actions seen more than once, then starts a fresh window.
+function Debug.OnCombatEnd()
+    if Debug.IsOn() then
+        for _, hit in pairs(seen) do
+            summarize(hit)
+        end
+    end
+    seen = {}
 end
 
 -- At login: keeps recording across /reload while it is on, logs the library books' map ids, with a snapshot once

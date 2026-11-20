@@ -6,10 +6,13 @@ local _, ns = ...
 -- C_Item.IsItemInRange answers in combat for every class (item range probe, 2026-11-20), so no spell is involved, and
 -- no nameplate is needed. A reading counts only when it is true; nil (no or a dead target, item data not loaded) is no
 -- answer, so then the text hides (D2). The items' data is requested at login so their reads answer. One ticker checks
--- every TICK seconds; without a target it hides the text and reads nothing more. A target change hides the text at
--- once until the next tick reads a band. Every read goes through Store.Call, so a secret or raising one is read as
--- absent. The first band shown in combat logs one "range text: ..." debug line a session, to check the bands in game.
--- The events go on Tandem's own frame, which forwards them through RangeText.OnEvent.
+-- every TICK seconds; without a target it hides the text and reads nothing more. Only a hostile target shows it
+-- (hostile-only plan D1): UnitCanAttack, else UnitIsEnemy when that is unreadable, else the last plain answer for this
+-- target, else shown; for any other target no item range is read at all, since in combat each such read is a blocked
+-- action. A target change hides the text at once until the next tick reads a band and forgets the hostile answer. Every
+-- read goes through Store.Call, so a secret or raising one is read as absent. The first band shown in combat logs one
+-- "range text: ..." debug line a session, to check the bands in game. The events go on Tandem's own frame, which
+-- forwards them through RangeText.OnEvent.
 local RangeText = {}
 ns.RangeText = RangeText
 
@@ -32,6 +35,8 @@ local call = ns.Store.Call
 local registered = {}
 local logged = {}
 local frame, ticker
+-- The last plain hostile answer for the current target, nil until one is read.
+local hostileSeen
 
 local function logOnce(key, what)
     if not logged[key] and ns.Debug.IsOn() then
@@ -63,6 +68,34 @@ local function band()
     end
 end
 
+-- Returns the first plain true/false of UnitCanAttack, then UnitIsEnemy, on the target; nil when neither is plain.
+local function readHostile()
+    local v = call(_G.UnitCanAttack, "player", "target")
+    if type(v) ~= "boolean" then
+        v = call(_G.UnitIsEnemy, "player", "target")
+    end
+    if type(v) == "boolean" then
+        return v
+    end
+end
+
+-- Returns whether the target is to be treated as hostile: the plain answer, else the last one for this target, else
+-- true; logs once a session when neither read answers in combat.
+local function hostile()
+    local v = readHostile()
+    if v ~= nil then
+        hostileSeen = v
+        return v
+    end
+    if call(_G.InCombatLockdown) == true then
+        logOnce("hostile", "hostile unknown in combat")
+    end
+    if hostileSeen ~= nil then
+        return hostileSeen
+    end
+    return true
+end
+
 local function hide()
     if not frame or not frame.visible then
         return
@@ -88,6 +121,10 @@ end
 
 local function update()
     if call(_G.UnitExists, "target") ~= true then
+        hide()
+        return
+    end
+    if not hostile() then
         hide()
         return
     end
@@ -121,9 +158,11 @@ local function tick()
     end
 end
 
--- Hides the text at once on a target change, until the next tick reads a band. Other events are ignored.
+-- Hides the text at once on a target change, until the next tick reads a band, and forgets the hostile answer. Other
+-- events are ignored.
 function RangeText.OnEvent(event)
     if registered[event] then
+        hostileSeen = nil
         hide()
     end
 end

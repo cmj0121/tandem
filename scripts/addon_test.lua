@@ -4582,12 +4582,86 @@ do
     check("blocked: kept apart with the stack", env.TandemDebug.blocked[1],
         "3.00 blocked ADDON_ACTION_FORBIDDEN addon=Tandem func=PickupContainerItem() stack="
             .. "Interface/AddOns/Tandem/Rod.lua:1 | Interface/FrameXML/x.lua:2")
-    for _ = 1, 60 do
-        ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "x")
+    for i = 1, 60 do
+        ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "x" .. i)
     end
     check("blocked: the last 50 are kept", #env.TandemDebug.blocked, 50)
     ctx.run("debug off")
     check("blocked: debug off turns the taint log off", cvars.taintLog, "0")
+end
+
+-- Blocked dedupe (D1-D3): one line per key (event, func, first Tandem site outside the dispatch files) per window,
+-- in combat until combat ends, out of combat 60 s; at combat end a "blocked x<n>" summary for keys seen again.
+do
+    local now, stack = 10, nil
+    local function site(file, line)
+        return '[string "@Interface/AddOns/Tandem/Tandem.lua"]:267: in function\n'
+            .. '[string "@Interface/AddOns/Tandem/' .. file .. '.lua"]:' .. line .. ': in function'
+    end
+    local ctx = loadLayout({ env = { UIParent = {}, GetTime = function() return now end,
+        debugstack = function() return stack end } })
+    local env = ctx.env
+    local function count(list, pattern)
+        local n = 0
+        for _, l in ipairs(list) do
+            n = n + (l:match(pattern) and 1 or 0)
+        end
+        return n
+    end
+    stack = site("RangeText", 53)
+    ctx.state.combat = true
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "UseAction()")
+    check("blocked dedupe: recorder off logs nothing", env.TandemDebug, nil)
+    ctx.run("debug on")
+    for _ = 1, 30 do
+        ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    end
+    local d = env.TandemDebug
+    check("blocked dedupe: one full line in a fight", count(d.log, "blocked ADDON_ACTION_BLOCKED addon="), 1)
+    check("blocked dedupe: one kept entry in a fight", #d.blocked, 1)
+    stack = site("Rod", 9)
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    check("blocked dedupe: another site gets its own line", count(d.log, "blocked ADDON_ACTION_BLOCKED addon="), 2)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("blocked dedupe: summary at combat end", count(d.log, "^.* blocked x30 at RangeText%.lua:53 %(ADDON_"), 1)
+    check("blocked dedupe: summary kept apart",
+        d.blocked[#d.blocked]:match("blocked x30 at RangeText%.lua:53 %(ADDON_ACTION_BLOCKED%)$") ~= nil, true)
+    check("blocked dedupe: no summary for a key seen once", count(d.log, "blocked x1 "), 0)
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    check("blocked dedupe: a new window logs again", count(d.log, "blocked ADDON_ACTION_BLOCKED addon="), 3)
+    now = 50
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    check("blocked dedupe: out of combat a repeat within 60 s is counted",
+        count(d.log, "blocked ADDON_ACTION_BLOCKED addon="), 3)
+    now = 71
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    check("blocked dedupe: out of combat after 60 s logged again",
+        count(d.log, "blocked ADDON_ACTION_BLOCKED addon="), 4)
+    stack = "Interface/FrameXML/x.lua:2"
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    ctx.state.combat = true
+    ctx.run("debug on")
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("blocked dedupe: debug on resets the counts", count(env.TandemDebug.log, "blocked x"), 0)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    stack = "[Interface/AddOns/Tandem/Store.lua]:563: in function <x>\n"
+        .. "[Interface/AddOns/Tandem/RangeText.lua]:55: in function <y>"
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    d = env.TandemDebug
+    check("blocked dedupe: the bracket stack form gives the site",
+        d.blocked[#d.blocked]:match("stack=%[Interface/AddOns/Tandem/Store") ~= nil, true)
+    now = 200
+    ctx.state.combat = true
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    ctx.fire("ADDON_ACTION_BLOCKED", "Tandem", "IsItemInRange()")
+    check("blocked dedupe: an expired out-of-combat window is not carried into combat",
+        count(d.log, "blocked ADDON_ACTION_BLOCKED addon="), 2)
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("blocked dedupe: the bracket form site in the summary", count(d.log, "blocked x2 at RangeText%.lua:55 "), 1)
 end
 
 -- The snapshot's minimap probe (D11): MinimapCluster and Minimap walked breadth first to depth 6, named nodes and
@@ -6780,7 +6854,7 @@ end
 do
     local SECRET = setmetatable({}, { __eq = function() error("secret") end, __concat = function() error("secret") end,
         __index = function() error("secret") end })
-    local s = { target = true, reads = 0, spells = 0, combat = false, requested = {},
+    local s = { target = true, reads = 0, spells = 0, combat = false, requested = {}, canAttack = true, enemy = true,
         range = { [8149] = true, [10645] = true, [835] = true } }
     local function spell()
         s.spells = s.spells + 1
@@ -6790,6 +6864,12 @@ do
         issecretvalue = function(v) return rawequal(v, SECRET) end,
         UnitExists = function(u) return u == "target" and s.target end,
         InCombatLockdown = function() return s.combat end,
+        UnitCanAttack = function(a, b)
+            if a == "player" and b == "target" then return s.canAttack end
+        end,
+        UnitIsEnemy = function(a, b)
+            if a == "player" and b == "target" then return s.enemy end
+        end,
         IsPlayerSpell = spell,
         IsSpellKnown = spell,
         CheckInteractDistance = spell,
@@ -6930,6 +7010,56 @@ do
     check("range text: a target change without a target is quiet", tostring(ok) .. " " .. tostring((ctx.widget())),
         "true nil")
     s.target = true
+
+    -- Hostile only (hostile-only plan D1, D2).
+    ctx = load()
+    ctx.run("debug on")
+    ctx.tickText()
+    f = ctx.widget()
+    s.canAttack, s.enemy = false, false
+    reads = s.reads
+    ctx.tickText()
+    check("range text: a friendly target hides it and reads no item range", state(f) .. " " .. (s.reads - reads),
+        "hidden 0")
+    s.canAttack, s.enemy = false, true
+    ctx.tickText()
+    check("range text: a plain false UnitCanAttack is the answer, UnitIsEnemy not asked", state(f), "hidden")
+    s.canAttack, s.enemy = SECRET, true
+    ctx.tickText()
+    local fallback = state(f)
+    s.canAttack, s.enemy = nil, false
+    ctx.tickText()
+    check("range text: an unreadable UnitCanAttack falls back to UnitIsEnemy", fallback .. " / " .. state(f),
+        "0 - 5 " .. TEXT_RED .. " / hidden")
+    s.canAttack, s.enemy = SECRET, SECRET
+    s.combat = true
+    reads = s.reads
+    ctx.tickText()
+    check("range text: both unreadable uses this target's last answer (not hostile)", state(f) .. " "
+        .. (s.reads - reads), "hidden 0")
+    s.canAttack, s.enemy = true, true
+    ctx.tickText()
+    s.canAttack, s.enemy = SECRET, SECRET
+    ctx.tickText()
+    check("range text: both unreadable uses this target's last answer (hostile)", state(f), "0 - 5 " .. TEXT_RED)
+    s.canAttack, s.enemy = false, false
+    ctx.tickText()
+    ctx.fire("PLAYER_TARGET_CHANGED")
+    s.canAttack, s.enemy = SECRET, SECRET
+    ctx.tickText()
+    s.combat = false
+    check("range text: a target change forgets the answer; never read shows it", state(f), "0 - 5 " .. TEXT_RED)
+    check("range text: unknown hostility in combat logged once", select(2, ctx.logged():gsub("hostile unknown", "")), 1)
+    s.canAttack, s.enemy = true, true
+
+    ctx = load({ UnitCanAttack = false })
+    s.enemy = false
+    ctx.tickText()
+    hidden = state(ctx.widget())
+    s.enemy = true
+    ctx.tickText()
+    check("range text: without UnitCanAttack, UnitIsEnemy decides", hidden .. " / " .. state(ctx.widget()),
+        "hidden / 0 - 5 " .. TEXT_RED)
 end
 
 -- Killers (D1, D2): at PLAYER_DEAD each hostile player seen targeting the player within the last 10 s is saved once

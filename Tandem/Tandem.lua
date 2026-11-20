@@ -238,6 +238,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
             scheduleRecall()
         end
         ns.Mute.OnCombatEnd()
+        ns.Debug.OnCombatEnd()
         ns.Role.OnCombatEnd()
         ns.Eat.OnCombatEnd()
         ns.BookAlert.OnCombatEnd()
