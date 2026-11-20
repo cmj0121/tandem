@@ -3,6 +3,7 @@ local _, ns = ...
 -- Library book pins (library books D2-D4): own small frames on the world map canvas for the eligible books of the
 -- zone map shown (books stacked within MERGE map percent share one pin), a dimmer pin at a book's entrance and one at
 -- the player's faction's hand-in NPC. The tooltip says where; a click sets a waypoint. /tandem books off hides them.
+-- Turned-in books (library books D6) show dimmed without their entrance; the hand-in pin reads the count turned in.
 local BookPins = {}
 ns.BookPins = BookPins
 
@@ -14,6 +15,7 @@ local HAND_IN_ICON = "Interface\\Icons\\INV_Misc_Book_11"
 local PIN_SIZE = 18
 local PIN_LEVEL = 100
 local ENTRANCE_ALPHA = 0.55
+local DONE_ALPHA = 0.35
 local MERGE = 0.5
 -- Enum.UIMapType up to Continent (cosmic, world, continent): such maps show no pins.
 local CONTINENT = 2
@@ -22,6 +24,7 @@ local NOTE_COLOR = { 1, 0.82, 0 }
 local LEVEL_COLOR = { 0.8, 0.8, 0.8 }
 local ENEMY_COLOR = { 1, 0.2, 0.2 }
 local HINT_COLOR = { 0.5, 0.5, 0.5 }
+local DONE_COLOR = { 0.2, 1, 0.2 }
 
 local canvas
 local pins = {}
@@ -50,10 +53,12 @@ end
 
 -- The pins of the map with this uiMapID for a player of this level and faction, in order: books (merged when
 -- stacked) and their entrances as { kind = "book"|"entrance", x, y, books = { book, ... } }, then the faction's
--- hand-in NPCs as { kind = "handin", x, y, npc }. x and y are map percent.
+-- hand-in NPCs as { kind = "handin", x, y, npc, done, total, nextMilestone }. x and y are map percent. A book spot
+-- whose every book is turned in has done = true and turned-in books bring no entrance (library books D6).
 function BookPins.Spots(mapID, level, faction)
     local spots = {}
     for _, book in ipairs(ns.Books.ForMap(mapID, level)) do
+        local done = ns.Books.TurnedIn(book.key)
         local merged
         for _, spot in ipairs(spots) do
             if spot.kind == "book" and math.abs(spot.x - book.x) <= MERGE and math.abs(spot.y - book.y) <= MERGE then
@@ -63,15 +68,21 @@ function BookPins.Spots(mapID, level, faction)
         end
         if merged then
             merged.books[#merged.books + 1] = book
+            merged.done = merged.done and done
         else
-            spots[#spots + 1] = { kind = "book", x = book.x, y = book.y, books = { book } }
+            spots[#spots + 1] = { kind = "book", x = book.x, y = book.y, books = { book }, done = done }
         end
-        if book.entrance then
+        if book.entrance and not done then
             spots[#spots + 1] = { kind = "entrance", x = book.entrance[1], y = book.entrance[2], books = { book } }
         end
     end
-    for _, npc in ipairs(ns.Books.HandIns(faction, mapID)) do
-        spots[#spots + 1] = { kind = "handin", x = npc.x, y = npc.y, npc = npc }
+    local handIns = ns.Books.HandIns(faction, mapID)
+    if #handIns > 0 then
+        local done, total, nextMilestone = ns.Books.Progress()
+        for _, npc in ipairs(handIns) do
+            spots[#spots + 1] = { kind = "handin", x = npc.x, y = npc.y, npc = npc, done = done, total = total,
+                nextMilestone = nextMilestone }
+        end
     end
     return spots
 end
@@ -108,6 +119,10 @@ local function onEnter(pin)
         tip:SetText(spot.npc.name, 1, 1, 1)
         line(tip, L[spot.npc.note], NOTE_COLOR, true)
         line(tip, L["Takes library books"], LEVEL_COLOR)
+        line(tip, L["Books turned in: %d/%d"]:format(spot.done, spot.total), LEVEL_COLOR)
+        if spot.nextMilestone then
+            line(tip, L["Next reward at %d books"]:format(spot.nextMilestone), LEVEL_COLOR)
+        end
     else
         if spot.kind == "entrance" then
             tip:SetText(L["Entrance"], NOTE_COLOR[1], NOTE_COLOR[2], NOTE_COLOR[3])
@@ -117,6 +132,9 @@ local function onEnter(pin)
                 tip:SetText(book.title, 1, 1, 1)
             else
                 tip:AddLine(book.title, 1, 1, 1)
+            end
+            if spot.kind == "book" and ns.Books.TurnedIn(book.key) then
+                line(tip, L["Turned in"], DONE_COLOR)
             end
             line(tip, L[book.note], NOTE_COLOR, true)
             line(tip, L["Level %d+"]:format(book.level), LEVEL_COLOR)
@@ -160,6 +178,13 @@ local function newPin()
     pin:SetFrameLevel((tonumber((call(canvas.GetFrameLevel, canvas))) or 0) + PIN_LEVEL)
     pin.icon = pin:CreateTexture(nil, "OVERLAY")
     pin.icon:SetAllPoints()
+    pin.label = pin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pin.label:SetPoint("LEFT", pin, "RIGHT", 2, 0)
+    pin.label:SetTextColor(1, 1, 1)
+    local font, size = call(pin.label.GetFont, pin.label)
+    if font then
+        call(pin.label.SetFont, pin.label, font, size, "OUTLINE")
+    end
     pin:SetScript("OnEnter", onEnter)
     pin:SetScript("OnLeave", onLeave)
     pin:SetScript("OnClick", onClick)
@@ -187,7 +212,14 @@ function BookPins.Refresh(level)
         pins[i] = pin
         pin.spot, pin.map, pin.faction = spot, map, faction
         pin.icon:SetTexture(spot.kind == "handin" and HAND_IN_ICON or BOOK_ICON)
-        pin:SetAlpha(spot.kind == "entrance" and ENTRANCE_ALPHA or 1)
+        pin:SetAlpha(spot.kind == "entrance" and ENTRANCE_ALPHA or spot.kind == "book" and spot.done and DONE_ALPHA
+            or 1)
+        if spot.kind == "handin" then
+            pin.label:SetText(("%d/%d"):format(spot.done, spot.total))
+            pin.label:Show()
+        else
+            pin.label:Hide()
+        end
         pin:ClearAllPoints()
         pin:SetPoint("CENTER", canvas, "TOPLEFT", spot.x / 100 * width, -spot.y / 100 * height)
         pin:Show()

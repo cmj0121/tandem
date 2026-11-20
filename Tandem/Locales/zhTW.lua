@@ -261,6 +261,10 @@ L["Tandem: nearest book %s (%s), map %d, %d yd"] = "Tandem：最近的書 %s（%
 L["Tandem: nearest book %s (%s), %.1f map percent away"] = "Tandem：最近的書 %s（%s），相距地圖 %.1f%%"
 L["Tandem: no eligible book on this continent"] = "Tandem：這塊大陸上沒有符合等級的書"
 L["Tandem: Library book nearby: %s — %s"] = "Tandem：附近有圖書館書籍：%s — %s"
+-- Turned-in library books on the map (library books D6).
+L["Turned in"] = "已繳交"
+L["Books turned in: %d/%d"] = "已繳交書籍：%d/%d"
+L["Next reward at %d books"] = "下一個獎勵：%d 本"
 L["%s is nearby (seen at your death %d times)"] = "%s 就在附近（你死亡時見過 %d 次）"
 L["  /tandem killers - list the enemy players seen targeting you at your death"] =
     "  /tandem killers - 列出你死亡時以你為目標的敵方玩家"

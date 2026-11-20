@@ -58,7 +58,8 @@ local function playerMap()
     return type(map) == "number" and map or nil
 end
 
--- The eligible books on the continent of this map not yet announced this session, kept until Update or an alert.
+-- The eligible books on the continent of this map not yet announced this session nor turned in (library books D6),
+-- kept until Update or an alert.
 local cache, cacheContinent
 
 local function pending(map, level)
@@ -70,7 +71,7 @@ local function pending(map, level)
     if map ~= nil then
         level = tonumber(level) or tonumber((call(_G.UnitLevel, "player"))) or 0
         for _, book in ipairs(ns.Books.Eligible(level)) do
-            if not alerted[book.key] and continentOf(book.map) == continent then
+            if not alerted[book.key] and not ns.Books.TurnedIn(book.key) and continentOf(book.map) == continent then
                 list[#list + 1] = book
             end
         end
