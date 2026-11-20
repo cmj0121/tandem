@@ -35,6 +35,9 @@ local function isText(v)
     return type(v) == "string" and v ~= ""
 end
 
+-- The enemy names already logged as having no readable realm this session.
+local noRealmLogged = {}
+
 -- Returns { name, realm, fullName, class, level } of unit when it is a hostile player (D1), else nil. class is the
 -- class file and level a level of at least 1, each nil when unreadable.
 local function identity(unit)
@@ -52,6 +55,10 @@ local function identity(unit)
         realm = call(GetNormalizedRealmName) or call(GetRealmName)
     end
     if not isText(realm) then
+        if not noRealmLogged[name] then
+            noRealmLogged[name] = true
+            ns.Debug.Log("killers: no realm for " .. name)
+        end
         return nil
     end
     local _, class = call(UnitClass, unit)

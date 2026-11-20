@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- Stat weights per class and talent tree (decision 8): built-in Classic defaults, the active tree detected from the
--- talent points spent, and per-character overrides in TandemDB.weights["Name-Realm"] =
+-- talent points spent, and per-character overrides in TandemDB.weights["Name"] =
 -- { spec = n|nil, overrides = { [spec] = { key = w } } }. A nil spec means auto.
 -- revision goes up with every saved spec or weight change; Upgrade keys its memo on it.
 local Weights = { revision = 0 }
@@ -94,12 +94,14 @@ local function isWeight(v)
     return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
 end
 
--- Returns the player's "Name-Realm", or nil when the client hides either part.
+-- Returns the player's name as the character key, or nil when the client hides it or still shows its placeholder
+-- (UNKNOWNOBJECT) early at login. The key has no realm: Forever blanks the realm APIs (GetRealmName returns "") and
+-- the realm UnitName gives is a pseudonym.
 function Weights.CharacterKey()
     local name = UnitName and Safe((UnitName("player")))
-    local realm = GetRealmName and Safe(GetRealmName())
-    if type(name) == "string" and name ~= "" and type(realm) == "string" and realm ~= "" then
-        return name .. "-" .. realm
+    local unknown = _G.UNKNOWNOBJECT
+    if type(name) == "string" and name ~= "" and not (type(unknown) == "string" and name == unknown) then
+        return name
     end
 end
 
