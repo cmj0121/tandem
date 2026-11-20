@@ -1177,6 +1177,7 @@ function WIDGET.SetTextColor(w, r, g, b) w.textColor = { r, g, b } end
 function WIDGET.SetStatusBarColor(w, r, g, b) w.barColor = { r, g, b } end
 function WIDGET.SetHeight(w, h) w.height = h end
 function WIDGET.SetWidth(w, v) w.width = v end
+function WIDGET.SetJustifyH(w, v) w.justifyH = v end
 function WIDGET.RegisterForClicks(w, ...) w.clicks = { ... } end
 function WIDGET.RegisterForDrag(w, ...) w.drag = { ... } end
 function WIDGET.SetAttribute(w, key, value)
@@ -7835,7 +7836,11 @@ local function loadKillersView(opts)
         local out = {}
         for _, row in ipairs(ctx.window().rows) do
             if row.shown then
-                out[#out + 1] = row.name.text .. " " .. row.details.text
+                local cells = { row.name.text }
+                for _, col in ipairs(ctx.addon.KillersView.COLUMNS) do
+                    cells[#cells + 1] = row.cells[col.key].text
+                end
+                out[#out + 1] = table.concat(cells, "|")
             end
         end
         return table.concat(out, " / ")
@@ -7857,8 +7862,28 @@ do
     check("killers window: a right-click shows it", tostring(w.shown) .. " " .. w.title.text .. " "
         .. tostring(ctx.addon.Layout.IsOn()), "true Killers false")
     check("killers window: ESC closes it", ctx.env.UISpecialFrames[1], "TandemKillersFrame")
-    check("killers window: lists newest first", ctx.rows(), "Gank-Far Rogue 60  x1  D300  Duskwood"
-        .. " / Stab-Realm MAGE  x1  D200")
+    check("killers window: lists newest first, a missing value left blank", ctx.rows(),
+        "Gank-Far|Rogue|60|1|D300|Duskwood / Stab-Realm|MAGE||1|D200|")
+    local header = {}
+    for _, col in ipairs(ctx.addon.KillersView.COLUMNS) do
+        header[#header + 1] = w.header.cells[col.key].text
+    end
+    check("killers window: a header names the columns", w.header.name.text .. "|" .. table.concat(header, "|"),
+        "Name|Class|Level|Kills|Last killed|Zone")
+    local aligned, right, total = true, {}, w.header.name.width
+    for _, col in ipairs(ctx.addon.KillersView.COLUMNS) do
+        local x = w.header.cells[col.key].points[1][4]
+        for _, row in ipairs(w.rows) do
+            local cell = row.cells[col.key]
+            aligned = aligned and cell.points[1][4] == x and cell.width == col.width
+        end
+        right[#right + 1] = col.key .. "=" .. tostring(w.rows[1].cells[col.key].justifyH)
+        total = x + col.width
+    end
+    check("killers window: every row's columns start where the header's do", aligned, true)
+    check("killers window: numbers right-aligned", table.concat(right, " "),
+        "class=LEFT level=RIGHT count=RIGHT last=LEFT zone=LEFT")
+    check("killers window: the columns fit left of the forget button", total + 18 <= w.rows[1].width, true)
     check("killers window: class colour", table.concat(w.rows[1].name.textColor, ","), "1,0.96,0.41")
     check("killers window: no class colour is white", table.concat(w.rows[2].name.textColor, ","), "1,1,1")
     check("killers window: no status with a list", w.status.text .. "|" .. w.range.text .. "|"
@@ -7879,7 +7904,7 @@ do
 
     Store.AddKiller("Thrall", { name = "Gank", realm = "Far", when = 400 })
     ctx.run("killers forget Stab")
-    check("killers window: refreshes after a forget command", ctx.rows(), "Gank-Far Rogue 60  x2  D400  Duskwood")
+    check("killers window: refreshes after a forget command", ctx.rows(), "Gank-Far|Rogue|60|2|D400|Duskwood")
     w.rows[1].forget.scripts.OnClick(w.rows[1].forget)
     check("killers window: a row's forget button drops it", #Store.Killers("Thrall") .. " " .. ctx.rows()
         .. "|" .. w.status.text .. "|" .. tostring(w.clear.shown), "0 |No one recorded yet.|false")
@@ -7951,6 +7976,11 @@ do
     local w = ctx.window()
     w.clear.scripts.OnClick(w.clear)
     check("zhTW killers window", w.title.text .. " " .. w.clear.label.text, "擊殺者 再點一次以清空")
+    local header = { w.header.name.text }
+    for _, col in ipairs(ctx.addon.KillersView.COLUMNS) do
+        header[#header + 1] = w.header.cells[col.key].text
+    end
+    check("zhTW killers window header", table.concat(header, "|"), "名稱|職業|等級|次數|最後擊殺|地區")
     w.rows[1].forget.scripts.OnClick(w.rows[1].forget)
     check("zhTW killers window empty", w.status.text .. " " .. w.clear.label.text, "尚無任何紀錄。 清空")
 end

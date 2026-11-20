@@ -280,6 +280,12 @@ L["Killer list unavailable."] = "無法使用擊殺者名單。"
 L["Killers"] = "擊殺者"
 L["Clear"] = "清空"
 L["Click again to clear"] = "再點一次以清空"
+L["Name"] = "名稱"
+L["Class"] = "職業"
+L["Level"] = "等級"
+L["Kills"] = "次數"
+L["Last killed"] = "最後擊殺"
+L["Zone"] = "地區"
 L["Right-click to show the killer list"] = "右鍵點擊以顯示擊殺者名單"
 
 -- Tooltip stat lines as the zhTW client shows them (see enUS.lua); a pattern that would also match a more specific

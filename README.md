@@ -388,9 +388,10 @@ the only one with that name. It prints `<name> removed from the list.`, `<name> 
 When your character is not known yet or the saved data is read-only, each prints `Killer list unavailable.`.
 
 Right-click the [minimap button](#minimap-button) or Tandem's addon compartment entry to open the same list in a
-window you can drag, closed with its close button, Escape or another right-click. Each row shows the class-coloured
-name, class and level, the count, the date and the zone; scroll with the mouse wheel when there are more than 12. The
-cross at the end of a row forgets that name, and `Clear` empties the list after a second click within 3 seconds, its
+window you can drag, closed with its close button, Escape or another right-click. It is a table under the headers
+`Name`, `Class`, `Level`, `Kills`, `Last killed` and `Zone`, each value lined up in its column, the name class-coloured
+and a value the client did not give left blank; scroll with the mouse wheel when there are more than 12. The cross at
+the end of a row forgets that name, and `Clear` empties the list after a second click within 3 seconds, its
 label reading `Click again to clear` meanwhile. The window follows every new death, `forget` and `clear`, shows
 `No one recorded yet.` when the list is empty and `Killer list unavailable.` when it cannot be read.
 
