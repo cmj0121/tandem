@@ -257,7 +257,8 @@ local function hookErrors()
 end
 
 -- Turns recording on or off (on starts a fresh log and blocked list); returns the number of lines kept. On also
--- turns the client's taint log on, off turns it off again.
+-- turns the client's taint log on, off turns it off again. On drops Upgrade's kept answers, so a verdict made before
+-- debug was on is reassessed, and logged, on its next Better call (D3).
 function Debug.Set(on)
     local d = db()
     d.on = on == true
@@ -268,6 +269,9 @@ function Debug.Set(on)
         seen = {}
         Debug.Log("debug on")
         hookErrors()
+        if ns.Upgrade and ns.Upgrade.Invalidate then
+            ns.Upgrade.Invalidate()
+        end
     end
     ns.Store.SetCVar(TAINT_CVAR, d.on and "1" or "0")
     return #d.log

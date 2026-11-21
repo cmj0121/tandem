@@ -12,6 +12,7 @@ for _, event in ipairs({
     "EDIT_MODE_LAYOUTS_UPDATED", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION",
     "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
     "TIME_PLAYED_MSG", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "CVAR_UPDATE", "QUEST_TURNED_IN",
+    "TRAIT_CONFIG_UPDATED", "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED",
 }) do
     ns.Store.RegisterEvent(frame, event)
 end
@@ -229,11 +230,14 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.BookPins.Refresh(...)
             ns.BookAlert.Update(...)
             ns.Eat.Rescan()
+            ns.Weights.OnTalents()
             ns.Upgrade.Invalidate()
             ns.ItemBorders.Schedule()
         end
         ns.ActionBorders.Schedule()
     elseif event == "PLAYER_REGEN_ENABLED" then
+        -- A talent walk that failed in combat may try again (D4).
+        ns.Weights.OnTalents()
         ns.Upgrade.OnCombatEnd()
         ns.ActionBorders.Schedule()
         ns.Layout.OnCombatEnd()
@@ -248,6 +252,16 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.Role.OnCombatEnd()
         ns.Eat.OnCombatEnd()
         ns.BookAlert.OnCombatEnd()
+    elseif event == "TRAIT_CONFIG_UPDATED" or event == "PLAYER_TALENT_UPDATE"
+        or event == "CHARACTER_POINTS_CHANGED" then
+        -- Talents changed: the C_Traits tab is walked again and the upgrade verdicts judged again (D4). Which event
+        -- Forever fires is logged to confirm in game.
+        if ns.Debug.IsOn() then
+            ns.Debug.Log("spec event " .. event)
+        end
+        ns.Weights.OnTalents()
+        ns.Upgrade.Invalidate()
+        ns.ItemBorders.Schedule()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Flyout.OnCombatStart()
         ns.BookAlert.OnCombatStart()
