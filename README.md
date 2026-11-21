@@ -684,6 +684,9 @@ most 300 lines, is saved in the `TandemDebug` saved variable when you `/reload` 
 recording and prints how many lines it kept; `/tandem debug` alone toggles it, and `snap` turns recording on if
 needed and takes a snapshot.
 
+It also logs each upgrade verdict with its score and the talent tree it used, and how that tree was found from your
+talents. `on` drops the verdicts already made, so every item is judged again, and logged, the next time it is looked at.
+
 While it records, every "Interface action failed because of an AddOn" the client raises is logged with the addon, the
 blocked function and the call stack, and also kept apart in `blocked` (the last 50), so the busy log cannot push it
 out. `on` also sets the client's `taintLog` setting to `1`, so the client writes `Logs/taint.log` naming the code that
