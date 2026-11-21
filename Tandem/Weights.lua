@@ -140,8 +140,123 @@ local function tabPoints(i)
     return type(points) == "number" and points or 0
 end
 
+-- The C_Traits walk's cache (D4): tab is the last good result (a tree, or false for nothing spent), fresh whether it
+-- still stands, failed whether a walk failed since the last OnTalents (no walk again until then).
+local traits = { tab = nil, fresh = false, failed = false }
+
+-- Returns whether v is a secret value, which must not be read.
+local function secret(v)
+    return issecretvalue ~= nil and issecretvalue(v) == true
+end
+
+-- Returns the visible talent nodes of the active config as a list of { x = posX, points = ranksPurchased }, or nil
+-- and why when an API raises, is missing or returns something unreadable.
+local function traitNodes()
+    local config = ns.Store.Call(C_ClassTalents.GetActiveConfigID)
+    if type(config) ~= "number" then
+        return nil, "no active config"
+    end
+    local info = ns.Store.Call(C_Traits.GetConfigInfo, config)
+    local trees = type(info) == "table" and Safe(info.treeIDs)
+    if type(trees) ~= "table" then
+        return nil, "no trees"
+    end
+    local nodes = {}
+    for _, treeID in ipairs(trees) do
+        local ids = ns.Store.Call(C_Traits.GetTreeNodes, Safe(treeID))
+        if type(ids) ~= "table" then
+            return nil, "no nodes"
+        end
+        for _, id in ipairs(ids) do
+            local n = ns.Store.Call(C_Traits.GetNodeInfo, config, Safe(id))
+            if type(n) ~= "table" then
+                return nil, "no node info"
+            end
+            local visible, x, ranks = n.isVisible, n.posX, n.ranksPurchased
+            if secret(visible) or secret(x) or secret(ranks) then
+                return nil, "secret node"
+            end
+            if visible ~= false and type(x) == "number" and x == x then
+                nodes[#nodes + 1] = { x = x, points = type(ranks) == "number" and ranks or 0 }
+            end
+        end
+    end
+    return nodes
+end
+
+-- Returns the indices after which the sorted distinct xs split into three columns: the two largest gaps between
+-- neighbours (the leftmost on a tie), in order.
+local function columnSplits(xs)
+    local first, second
+    for i = 1, #xs - 1 do
+        local gap = xs[i + 1] - xs[i]
+        if not first or gap > xs[first + 1] - xs[first] then
+            first, second = i, first
+        elseif not second or gap > xs[second + 1] - xs[second] then
+            second = i
+        end
+    end
+    return math.min(first, second), math.max(first, second)
+end
+
+-- Walks the C_Traits tree once: groups the visible nodes into three tabs by posX and returns the tab with the most
+-- ranks purchased (the first on a tie), false when nothing is spent, or nil when the walk fails; and the debug line.
+local function walkTraits()
+    local nodes, why = traitNodes()
+    if not nodes then
+        return nil, "spec traits failed: " .. why
+    end
+    local xs, seen = {}, {}
+    for _, n in ipairs(nodes) do
+        if not seen[n.x] then
+            seen[n.x] = true
+            xs[#xs + 1] = n.x
+        end
+    end
+    if #xs < 3 then
+        return nil, ("spec traits failed: %d columns"):format(#xs)
+    end
+    table.sort(xs)
+    local a, b = columnSplits(xs)
+    local points = { 0, 0, 0 }
+    for _, n in ipairs(nodes) do
+        local tab = n.x <= xs[a] and 1 or n.x <= xs[b] and 2 or 3
+        points[tab] = points[tab] + n.points
+    end
+    local best, most = false, 0
+    for i = 1, 3 do
+        if points[i] > most then
+            best, most = i, points[i]
+        end
+    end
+    return best, ("spec traits columns %s-%s %s-%s %s-%s points %s/%s/%s -> %s"):format(xs[1], xs[a], xs[a + 1],
+        xs[b], xs[b + 1], xs[#xs], points[1], points[2], points[3], tostring(best))
+end
+
+-- Returns the cached C_Traits tab (a tree, false for nothing spent, nil when unknown), walking the tree only when
+-- the cache is stale and no walk failed since the last OnTalents. A failed walk keeps the last good tab.
+local function traitsSpec()
+    if not traits.fresh and not traits.failed then
+        local tab, line = walkTraits()
+        if tab == nil then
+            traits.failed = true
+        else
+            traits.tab, traits.fresh = tab, true
+        end
+        if ns.Debug ~= nil and ns.Debug.IsOn() then
+            ns.Debug.Log(line)
+        end
+    end
+    return traits.tab
+end
+
+-- Marks the C_Traits tab stale after a talent change, level up or combat end; the next DetectSpec walks again.
+function Weights.OnTalents()
+    traits.fresh, traits.failed = false, false
+end
+
 -- Returns the talent tree with the most points spent (the first on a tie), or nil below level 10, when the client
--- cannot say or nothing is spent.
+-- cannot say or nothing is spent. Sources in order: GetTalentTabInfo, the C_Traits tree (D1), GetSpecialization.
 function Weights.DetectSpec(level)
     if type(level) ~= "number" or level < 10 or not ns.Check.Ready("Talent spec") then
         return nil
@@ -157,8 +272,19 @@ function Weights.DetectSpec(level)
         end
         return best
     end
+    if type(C_ClassTalents) == "table" and type(C_Traits) == "table" then
+        local tab = traitsSpec()
+        if tab ~= nil then
+            return tab or nil
+        end
+    end
+    -- A one-spec client (Forever) always answers 1 (D2).
+    local count = ns.Store.Call(GetNumSpecializations)
+    if type(count) == "number" and count <= 1 then
+        return nil
+    end
     local get = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization or GetSpecialization
-    local spec = Safe(get())
+    local spec = ns.Store.Call(get)
     return isSpec(spec) and spec or nil
 end
 

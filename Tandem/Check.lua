@@ -26,7 +26,8 @@ Check.FEATURES = {
         { "C_TooltipInfo.GetItemByID" },
     } },
     { name = "Talent spec", needs = {
-        { "GetTalentTabInfo", "C_SpecializationInfo.GetSpecialization", "GetSpecialization" },
+        { "GetTalentTabInfo", "C_ClassTalents.GetActiveConfigID", "C_SpecializationInfo.GetSpecialization",
+            "GetSpecialization" },
     } },
     { name = "Trainer record", needs = {
         { "GetNumTrainerServices" }, { "GetTrainerServiceInfo" }, { "GetTrainerServiceLevelReq" },
