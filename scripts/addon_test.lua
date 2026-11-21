@@ -1989,6 +1989,17 @@ do
     check("upgrade better: an equipment change recomputes", Upgrade.Better(1), true)
 end
 
+-- D3: an answer kept before debug was on is reassessed, and logged, on the first Better call after debug on.
+do
+    local ctx = loadUpgrade()
+    local Upgrade = ctx.addon.Upgrade
+    check("upgrade debug: first answer while off", Upgrade.Better(1), true)
+    ctx.addon.Debug.Set(true)
+    check("upgrade debug: the answer after debug on", Upgrade.Better(1), true)
+    local log = table.concat(ctx.env.TandemDebug.log, "\n")
+    check("upgrade debug: the kept answer is reassessed and logged", log:match("upgrade %S+ slot") ~= nil, true)
+end
+
 do
     local ctx = loadUpgrade()
     ctx.bags[0] = { 900 }
@@ -2133,8 +2144,11 @@ end
 -- Weights (stage 7, unit 4): built-in weights per class and tree, spec detection, per-character overrides, Score.
 
 -- Loads the addon for "Tom" (ctx.name renames) with opts.talents as the talent API: "old" (name, icon,
--- points), "new" (id, name, description, icon, points) over ctx.points, "spec" (C_SpecializationInfo over ctx.spec)
--- or nil for none. opts.db is TandemDB. Returns addon, ctx, env.
+-- points), "new" (id, name, description, icon, points) over ctx.points, "spec" (C_SpecializationInfo over ctx.spec),
+-- "traits" (a Forever-like C_Traits tree: three posX columns of four nodes, ctx.points on each column's first node,
+-- plus a hidden and a position-less node; ctx.walks counts GetConfigInfo calls, ctx.raise makes GetNodeInfo raise)
+-- or nil for none. opts.numSpecs adds GetNumSpecializations returning it. opts.db is TandemDB.
+-- Returns addon, ctx, env, fire.
 local function weightsData(opts)
     opts = opts or {}
     local ctx = { points = { 0, 0, 0 } }
@@ -2163,9 +2177,48 @@ local function weightsData(opts)
         env.C_SpecializationInfo = { GetSpecialization = function()
             return ctx.spec
         end }
+    elseif opts.talents == "traits" then
+        ctx.walks = 0
+        local columns = { { 1020, 1620, 2220, 2820 }, { 5020, 5620, 6220, 6820 }, { 9080, 9680, 10280, 10880 } }
+        local nodes = { [900] = { posX = 20000, ranksPurchased = 5, isVisible = false },
+            [901] = { ranksPurchased = 5, isVisible = true } }
+        local ids = { 900, 901 }
+        for tab, xs in ipairs(columns) do
+            for i, x in ipairs(xs) do
+                local id = tab * 100 + i
+                ids[#ids + 1] = id
+                nodes[id] = { posX = x, posY = 100 * i, tab = tab, first = i == 1, isVisible = true }
+            end
+        end
+        env.C_ClassTalents = { GetActiveConfigID = function()
+            return 19568
+        end }
+        env.C_Traits = {
+            GetConfigInfo = function(config)
+                ctx.walks = ctx.walks + 1
+                return config == 19568 and { ID = config, type = 4, treeIDs = { 1082 } } or nil
+            end,
+            GetTreeNodes = function(tree)
+                return tree == 1082 and ids or {}
+            end,
+            GetNodeInfo = function(_, id)
+                if ctx.raise then
+                    error("secret")
+                end
+                local n = nodes[id]
+                local ranks = n.ranksPurchased or (n.first and ctx.points[n.tab]) or 0
+                return { posX = n.posX, posY = n.posY, isVisible = n.isVisible, ranksPurchased = ranks,
+                    currentRank = ranks, maxRanks = 5 }
+            end,
+        }
     end
-    local addon, _, e = loadWithDB(opts.db, "enUS", { env = env })
-    return addon, ctx, e
+    if opts.numSpecs then
+        env.GetNumSpecializations = function()
+            return opts.numSpecs
+        end
+    end
+    local addon, _, e, fire = loadWithDB(opts.db, "enUS", { env = env })
+    return addon, ctx, e, fire
 end
 
 do
@@ -2255,6 +2308,67 @@ do
 end
 
 do
+    local addon, ctx = weightsData({ talents = "spec", numSpecs = 1 })
+    local W = addon.Weights
+    ctx.spec = 1
+    check("weights spec d2: a one-spec client detects nothing", W.DetectSpec(60), nil)
+    check("weights spec d2: a one-spec client falls back to the default", (W.Active("MAGE", 60)), 3)
+end
+
+do
+    local addon, ctx = weightsData({ talents = "spec", numSpecs = 3 })
+    ctx.spec = 3
+    check("weights spec d2: a client with more specs reads the specialization", addon.Weights.DetectSpec(60), 3)
+end
+
+do
+    local addon, ctx, env, fire = weightsData({ talents = "traits", numSpecs = 1 })
+    local W = addon.Weights
+    check("weights traits: C_ClassTalents makes the spec ready", addon.Check.Ready("Talent spec"), true)
+    env.TandemDebug = { on = true, log = {} }
+    check("weights traits: nothing spent detects nothing", W.DetectSpec(60), nil)
+    check("weights traits: nothing spent falls back to the default", (W.Active("WARRIOR", 60)), 1)
+    check("weights traits: the walk logs its columns", env.TandemDebug.log[1]:match("spec traits .*"),
+        "spec traits columns 1020-2820 5020-6820 9080-10880 points 0/0/0 -> false")
+    local walks = ctx.walks
+    ctx.points = { 0, 28, 0 }
+    check("weights traits: a cached walk is not repeated", (W.DetectSpec(60)) == nil and ctx.walks, walks)
+    W.OnTalents()
+    check("weights traits: points in the middle column detect tree 2", W.DetectSpec(60), 2)
+    check("weights traits: Active follows the tree", (W.Active("WARRIOR", 60)), 2)
+    check("weights traits: hidden and position-less nodes are skipped", env.TandemDebug.log[2]:match("points .*"),
+        "points 0/28/0 -> 2")
+    ctx.points = { 10, 10, 0 }
+    fire("TRAIT_CONFIG_UPDATED")
+    check("weights traits: a talent event logs its name", env.TandemDebug.log[3]:match("spec event .*"),
+        "spec event TRAIT_CONFIG_UPDATED")
+    check("weights traits: a tie picks the first tree", W.DetectSpec(60), 1)
+    ctx.points = { 0, 0, 31 }
+    ctx.raise = true
+    fire("PLAYER_TALENT_UPDATE")
+    walks = ctx.walks
+    check("weights traits: a failed walk keeps the last tab", W.DetectSpec(60), 1)
+    check("weights traits: the failure is logged", env.TandemDebug.log[#env.TandemDebug.log]:match("spec traits .*"),
+        "spec traits failed: no node info")
+    check("weights traits: a failed walk is not retried", W.DetectSpec(60) == 1 and ctx.walks, walks + 1)
+    ctx.raise = false
+    fire("PLAYER_REGEN_ENABLED")
+    check("weights traits: combat end walks again", W.DetectSpec(60), 3)
+    ctx.points = { 31, 0, 0 }
+    fire("CHARACTER_POINTS_CHANGED")
+    check("weights traits: CHARACTER_POINTS_CHANGED walks again", W.DetectSpec(60), 1)
+    ctx.points = { 0, 31, 0 }
+    fire("PLAYER_LEVEL_UP", 61)
+    check("weights traits: a level up walks again", W.DetectSpec(60), 2)
+end
+
+do
+    local addon, ctx = weightsData({ talents = "traits" })
+    ctx.raise = true
+    check("weights traits: a failed walk with nothing cached detects nothing", addon.Weights.DetectSpec(60), nil)
+end
+
+do
     local addon, _, env = weightsData({ talents = "old" })
     local W = addon.Weights
     check("weights: a db without weights reads the built-ins", W.Effective("WARRIOR", 1).str, 1)
@@ -2329,8 +2443,8 @@ do
     local addon, printed = loadWithDB(nil, "enUS", { env = checkAPIs() })
     local byName = runCheck(addon, printed)
     check("check: talent spec lists its alternatives", byName["Talent spec"],
-        "Talent spec: ok (GetTalentTabInfo missing, C_SpecializationInfo.GetSpecialization ok, "
-            .. "GetSpecialization missing)")
+        "Talent spec: ok (GetTalentTabInfo missing, C_ClassTalents.GetActiveConfigID missing, "
+            .. "C_SpecializationInfo.GetSpecialization ok, GetSpecialization missing)")
     local zh, zhPrinted = loadWithDB(nil, "zhTW")
     local out = run(zh, zhPrinted, "check")
     check("zhTW check: talent spec line", lineFor(out, "天賦專精"):match("^天賦專精："), "天賦專精：")
