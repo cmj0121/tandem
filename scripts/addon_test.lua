@@ -3025,7 +3025,7 @@ do
     local ok = pcall(ctx.fire, "PLAYER_LOGIN")
     check("borders: missing API raises nothing", ok, true)
     check("borders: missing API leaves buttons untouched", ctx.border("ActionButton1"), "none")
-    check("borders: missing API makes no frames", #ctx.ui.widgets, 36)
+    check("borders: missing API makes no frames", #ctx.ui.widgets, 37)
 end
 
 do
@@ -6754,6 +6754,128 @@ do
         .. tostring(got:find("maelstrom probe: castTime:403=nil-fn", 1, true) ~= nil) .. " "
         .. tostring(got:find("C_Engraving=false", 1, true) ~= nil) .. " "
         .. tostring(got:find("IsPlayerSpell:408498=nil-fn", 1, true) ~= nil), "true true true true")
+end
+
+-- The mana probe (five-second rule U0): with the recorder on, logs to TandemDebug.mana each player cast with its id,
+-- name, power costs and texture, each player power event with its token and the seconds since the last one and the
+-- last cast, never the amount, and once at login the cooldown frame check and the power type; capped at 500 lines.
+do
+    local NSECRET = setmetatable({}, { __eq = function() error("secret") end,
+        __concat = function() error("secret") end, __index = function() error("secret") end })
+    local p = { combat = false, costs = { [403] = { { type = 0, cost = 30, costPercent = 0 } } } }
+    local penv = {
+        issecretvalue = function(v) return rawequal(v, NSECRET) end,
+        InCombatLockdown = function() return p.combat end,
+        UnitPowerType = function(unit) if unit == "player" then return 0, "MANA" end end,
+        C_Spell = {
+            GetSpellName = function(id) return ({ [403] = "Lightning Bolt", [8042] = "Earth Shock" })[id] end,
+            GetSpellTexture = function(id) return id == 403 and 136048 or nil end,
+            GetSpellPowerCost = function(id)
+                if p.costs[id] == "raise" then error("blocked") end
+                return p.costs[id]
+            end,
+        },
+    }
+    local function pload(on, env)
+        local ctx = loadShaman({ env = env or penv })
+        if on then
+            ctx.run("debug on")
+        end
+        return ctx
+    end
+    local function events(ctx)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemManaProbeEvents" then
+                return w
+            end
+        end
+    end
+    local function unitEvent(ctx, event, ...)
+        local w = events(ctx)
+        w.scripts.OnEvent(w, event, ...)
+    end
+    local function mana(ctx, from)
+        return table.concat(ctx.env.TandemDebug and ctx.env.TandemDebug.mana or {}, " / ", from or 1)
+    end
+
+    local ctx = pload(false)
+    ctx.fire("PLAYER_LOGIN")
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    check("mana probe: the recorder off logs nothing, not even the login line", mana(ctx), "")
+    ctx.run("debug on")
+    unitEvent(ctx, "UNIT_POWER_FREQUENT", "player", "MANA")
+    check("mana probe: its events stay registered; turned on later it logs", mana(ctx),
+        "100.00 combat=false UNIT_POWER_FREQUENT token=MANA gap=none sinceCast=none")
+
+    ctx = pload(true)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.addon.ManaProbe.OnLogin()
+    local w = events(ctx)
+    local cooldown
+    for _, x in ipairs(ctx.ui.widgets) do
+        if x.kind == "Cooldown" then
+            cooldown = x
+        end
+    end
+    check("mana probe: one login line with the cooldown frame check and the power type, however often login runs",
+        mana(ctx) .. " | " .. cooldown.template .. " " .. tostring(cooldown.parent == ctx.env.UIParent),
+        "100.00 combat=false login cooldown=frame powerType=0 MANA | CooldownFrameTemplate true")
+    check("mana probe: its own frame takes the events", tostring(w ~= nil and w.scripts.OnEvent ~= nil), "true")
+
+    local n = #ctx.env.TandemDebug.mana
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 403)
+    ctx.t = 101
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "target", "MANA")
+    ctx.t = 103
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    unitEvent(ctx, "UNIT_POWER_FREQUENT", "player", NSECRET)
+    check("mana probe: a player cast with its costs and texture, then power events with gap and delay since the cast;"
+        .. " other units ignored, a secret token masked", mana(ctx, n + 1),
+        "100.00 combat=false cast id=403 name=Lightning Bolt cost=0:30:0 texture=136048 / "
+        .. "101.00 combat=false UNIT_POWER_UPDATE token=MANA gap=none sinceCast=1.00 / "
+        .. "103.00 combat=false UNIT_POWER_UPDATE token=MANA gap=2.00 sinceCast=3.00 / "
+        .. "103.00 combat=false UNIT_POWER_FREQUENT token=secret gap=none sinceCast=3.00")
+
+    n = #ctx.env.TandemDebug.mana
+    p.combat = true
+    p.costs[8042] = { { type = 0, cost = NSECRET, costPercent = 5 }, NSECRET, { type = 3, cost = 20 } }
+    p.costs[421], p.costs[17364], p.costs[1] = {}, "raise", NSECRET
+    ctx.t = 104
+    for _, id in ipairs({ 8042, 421, 17364, 1, NSECRET }) do
+        unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", id)
+    end
+    ctx.t = 105.5
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    check("mana probe: in combat; several, secret, empty, raising and secret-table costs; a secret id logs secret",
+        mana(ctx, n + 1),
+        "104.00 combat=true cast id=8042 name=Earth Shock cost=0:secret:5,secret,3:20:nil texture=nil / "
+        .. "104.00 combat=true cast id=421 name=nil cost=none texture=nil / "
+        .. "104.00 combat=true cast id=17364 name=nil cost=error texture=nil / "
+        .. "104.00 combat=true cast id=1 name=nil cost=secret texture=nil / "
+        .. "104.00 combat=true cast id=secret name=nil cost=nil texture=nil / "
+        .. "105.50 combat=true UNIT_POWER_UPDATE token=MANA gap=2.50 sinceCast=1.50")
+    p.combat = false
+
+    local ok = pcall(function()
+        for i = 1, 600 do
+            unitEvent(ctx, "UNIT_POWER_FREQUENT", "player", "MANA")
+            ctx.addon.ManaProbe.OnEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", i)
+        end
+    end)
+    check("mana probe: never raises; at most 500 lines a session", tostring(ok) .. " " .. #ctx.env.TandemDebug.mana,
+        "true 500")
+
+    ctx = pload(true, { issecretvalue = penv.issecretvalue, C_Spell = false, UnitPowerType = false })
+    ok = pcall(function()
+        ctx.fire("PLAYER_LOGIN")
+        unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    end)
+    check("mana probe: missing functions log nil-fn and never raise", tostring(ok) .. " " .. mana(ctx),
+        "true 100.00 combat=false login cooldown=frame powerType=nil-fn / "
+        .. "100.00 combat=false cast id=403 name=nil-fn cost=nil-fn texture=nil-fn")
 end
 
 -- The instant Lightning Bolt icon (PLAN D4, D5): for a Shaman knowing Lightning Bolt, its icon with a yellow ADD glow
