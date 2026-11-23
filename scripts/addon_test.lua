@@ -1140,6 +1140,7 @@ function WIDGET.SetDesaturated(w, v) w.desaturated = v end
 function WIDGET.SetChecked(w, checked) w.checked = checked end
 function WIDGET.GetChecked(w) return w.checked end
 function WIDGET.SetAlpha(w, alpha) w.alpha = alpha end
+function WIDGET.SetCooldown(w, start, duration) w.cooldownStart, w.cooldownDuration = start, duration end
 function WIDGET.SetTitle(w, title) w.title = title end
 function WIDGET.ClearAllPoints(w) w.points = {} end
 function WIDGET.SetPoint(w, ...) w.points[#w.points + 1] = { ... } end
@@ -3025,7 +3026,7 @@ do
     local ok = pcall(ctx.fire, "PLAYER_LOGIN")
     check("borders: missing API raises nothing", ok, true)
     check("borders: missing API leaves buttons untouched", ctx.border("ActionButton1"), "none")
-    check("borders: missing API makes no frames", #ctx.ui.widgets, 36)
+    check("borders: missing API makes no frames", #ctx.ui.widgets, 38)
 end
 
 do
@@ -6756,6 +6757,128 @@ do
         .. tostring(got:find("IsPlayerSpell:408498=nil-fn", 1, true) ~= nil), "true true true true")
 end
 
+-- The mana probe (five-second rule U0): with the recorder on, logs to TandemDebug.mana each player cast with its id,
+-- name, power costs and texture, each player power event with its token and the seconds since the last one and the
+-- last cast, never the amount, and once at login the cooldown frame check and the power type; capped at 500 lines.
+do
+    local NSECRET = setmetatable({}, { __eq = function() error("secret") end,
+        __concat = function() error("secret") end, __index = function() error("secret") end })
+    local p = { combat = false, costs = { [403] = { { type = 0, cost = 30, costPercent = 0 } } } }
+    local penv = {
+        issecretvalue = function(v) return rawequal(v, NSECRET) end,
+        InCombatLockdown = function() return p.combat end,
+        UnitPowerType = function(unit) if unit == "player" then return 0, "MANA" end end,
+        C_Spell = {
+            GetSpellName = function(id) return ({ [403] = "Lightning Bolt", [8042] = "Earth Shock" })[id] end,
+            GetSpellTexture = function(id) return id == 403 and 136048 or nil end,
+            GetSpellPowerCost = function(id)
+                if p.costs[id] == "raise" then error("blocked") end
+                return p.costs[id]
+            end,
+        },
+    }
+    local function pload(on, env)
+        local ctx = loadShaman({ env = env or penv })
+        if on then
+            ctx.run("debug on")
+        end
+        return ctx
+    end
+    local function events(ctx)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemManaProbeEvents" then
+                return w
+            end
+        end
+    end
+    local function unitEvent(ctx, event, ...)
+        local w = events(ctx)
+        w.scripts.OnEvent(w, event, ...)
+    end
+    local function mana(ctx, from)
+        return table.concat(ctx.env.TandemDebug and ctx.env.TandemDebug.mana or {}, " / ", from or 1)
+    end
+
+    local ctx = pload(false)
+    ctx.fire("PLAYER_LOGIN")
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    check("mana probe: the recorder off logs nothing, not even the login line", mana(ctx), "")
+    ctx.run("debug on")
+    unitEvent(ctx, "UNIT_POWER_FREQUENT", "player", "MANA")
+    check("mana probe: its events stay registered; turned on later it logs", mana(ctx),
+        "100.00 combat=false UNIT_POWER_FREQUENT token=MANA gap=none sinceCast=none")
+
+    ctx = pload(true)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.addon.ManaProbe.OnLogin()
+    local w = events(ctx)
+    local cooldown
+    for _, x in ipairs(ctx.ui.widgets) do
+        if x.kind == "Cooldown" then
+            cooldown = x
+        end
+    end
+    check("mana probe: one login line with the cooldown frame check and the power type, however often login runs",
+        mana(ctx) .. " | " .. cooldown.template .. " " .. tostring(cooldown.parent == ctx.env.UIParent),
+        "100.00 combat=false login cooldown=frame powerType=0 MANA | CooldownFrameTemplate true")
+    check("mana probe: its own frame takes the events", tostring(w ~= nil and w.scripts.OnEvent ~= nil), "true")
+
+    local n = #ctx.env.TandemDebug.mana
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 403)
+    ctx.t = 101
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "target", "MANA")
+    ctx.t = 103
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    unitEvent(ctx, "UNIT_POWER_FREQUENT", "player", NSECRET)
+    check("mana probe: a player cast with its costs and texture, then power events with gap and delay since the cast;"
+        .. " other units ignored, a secret token masked", mana(ctx, n + 1),
+        "100.00 combat=false cast id=403 name=Lightning Bolt cost=0:30:0 texture=136048 / "
+        .. "101.00 combat=false UNIT_POWER_UPDATE token=MANA gap=none sinceCast=1.00 / "
+        .. "103.00 combat=false UNIT_POWER_UPDATE token=MANA gap=2.00 sinceCast=3.00 / "
+        .. "103.00 combat=false UNIT_POWER_FREQUENT token=secret gap=none sinceCast=3.00")
+
+    n = #ctx.env.TandemDebug.mana
+    p.combat = true
+    p.costs[8042] = { { type = 0, cost = NSECRET, costPercent = 5 }, NSECRET, { type = 3, cost = 20 } }
+    p.costs[421], p.costs[17364], p.costs[1] = {}, "raise", NSECRET
+    ctx.t = 104
+    for _, id in ipairs({ 8042, 421, 17364, 1, NSECRET }) do
+        unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", id)
+    end
+    ctx.t = 105.5
+    unitEvent(ctx, "UNIT_POWER_UPDATE", "player", "MANA")
+    check("mana probe: in combat; several, secret, empty, raising and secret-table costs; a secret id logs secret",
+        mana(ctx, n + 1),
+        "104.00 combat=true cast id=8042 name=Earth Shock cost=0:secret:5,secret,3:20:nil texture=nil / "
+        .. "104.00 combat=true cast id=421 name=nil cost=none texture=nil / "
+        .. "104.00 combat=true cast id=17364 name=nil cost=error texture=nil / "
+        .. "104.00 combat=true cast id=1 name=nil cost=secret texture=nil / "
+        .. "104.00 combat=true cast id=secret name=nil cost=nil texture=nil / "
+        .. "105.50 combat=true UNIT_POWER_UPDATE token=MANA gap=2.50 sinceCast=1.50")
+    p.combat = false
+
+    local ok = pcall(function()
+        for i = 1, 600 do
+            unitEvent(ctx, "UNIT_POWER_FREQUENT", "player", "MANA")
+            ctx.addon.ManaProbe.OnEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", i)
+        end
+    end)
+    check("mana probe: never raises; at most 500 lines a session", tostring(ok) .. " " .. #ctx.env.TandemDebug.mana,
+        "true 500")
+
+    ctx = pload(true, { issecretvalue = penv.issecretvalue, C_Spell = false, UnitPowerType = false })
+    ok = pcall(function()
+        ctx.fire("PLAYER_LOGIN")
+        unitEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 403)
+    end)
+    check("mana probe: missing functions log nil-fn and never raise", tostring(ok) .. " " .. mana(ctx),
+        "true 100.00 combat=false login cooldown=frame powerType=nil-fn / "
+        .. "100.00 combat=false cast id=403 name=nil-fn cost=nil-fn texture=nil-fn")
+end
+
 -- The instant Lightning Bolt icon (PLAN D4, D5): for a Shaman knowing Lightning Bolt, its icon with a yellow ADD glow
 -- shows 40 px square just above the distance text exactly while C_Spell.GetSpellInfo(403).castTime reads a plain 0;
 -- read on the player's UNIT_AURA and casts (on its own frame), combat start and end, and a 0.2 s ticker while in
@@ -7556,6 +7679,210 @@ do
     ok, err = pcall(ctx.fire, "NAME_PLATE_UNIT_ADDED", "nameplate6")
     check("killer alert: a secret name never raises nor alerts", tostring(ok) .. tostring(err) .. " " .. #sounds,
         "truenil 0")
+end
+
+-- The five-second rule icon (five-second rule D1-D5): after a mana-costing player cast, a 28 px icon right of the proc
+-- icon under the player frame shows the spell's texture, a 5 s swipe and the whole seconds left, restarts on a recast
+-- and hides after 5 s. Costs come from C_Spell.GetSpellPowerCost, remembered per id from plain reads and learnt out
+-- of combat from the action bars; a free, unread or secret-only spell or a non-mana class shows nothing.
+do
+    local FSECRET = setmetatable({}, { __eq = function() error("secret") end,
+        __concat = function() error("secret") end, __index = function() error("secret") end,
+        __len = function() error("secret") end, __lt = function() error("secret") end })
+    local MANA_COST = { { type = 0, cost = 30, costPercent = 0 } }
+    local f = { combat = false, powerType = 0, reads = 0,
+        bar = { [1] = { "spell", 403 }, [2] = { "spell", 2 }, [3] = { "macro", 403 }, [180] = { "spell", 8042 } },
+        costs = { [403] = MANA_COST, [2] = {}, [8042] = { { type = 0, cost = 0, costPercent = 4 } },
+            [6] = { { type = 1, cost = 10 } } },
+        textures = { [403] = "boltIcon", [8042] = "shockIcon", [2] = "freeIcon" } }
+    local fsEnv = {
+        PlayerFrame = { name = "PlayerFrame" },
+        issecretvalue = function(v) return rawequal(v, FSECRET) end,
+        InCombatLockdown = function() return f.combat end,
+        UnitPowerType = function(unit) if unit == "player" then return f.powerType, "MANA" end end,
+        GetActionInfo = function(slot)
+            f.reads = f.reads + 1
+            local a = f.bar[slot]
+            if a then return a[1], a[2] end
+        end,
+        C_Spell = {
+            GetSpellPowerCost = function(id)
+                if f.costs[id] == "raise" then error("blocked") end
+                return f.costs[id]
+            end,
+            GetSpellTexture = function(id) return f.textures[id] end,
+        },
+    }
+    local function named(ctx, name)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == name then
+                return w
+            end
+        end
+        return nil
+    end
+    local function cast(ctx, id, unit)
+        local w = named(ctx, "TandemFiveSecondEvents")
+        w.scripts.OnEvent(w, "UNIT_SPELLCAST_SUCCEEDED", unit or "player", "guid", id)
+    end
+    local function own(ctx, event, slot)
+        local w = named(ctx, "TandemFiveSecondEvents")
+        w.scripts.OnEvent(w, event, slot)
+    end
+    local function envWith(extra)
+        local env = {}
+        for k, v in pairs(fsEnv) do
+            env[k] = v
+        end
+        for k, v in pairs(extra) do
+            env[k] = v
+        end
+        return env
+    end
+    local function shown(ctx)
+        local w = named(ctx, "TandemFiveSecondIcon")
+        return w ~= nil and w.shown
+    end
+    local function cooldownOf(icon)
+        for _, w in ipairs(icon.ui.widgets) do
+            if w.kind == "Cooldown" and w.parent == icon then
+                return w
+            end
+        end
+    end
+    local function state(ctx)
+        local icon = named(ctx, "TandemFiveSecondIcon")
+        local cd = cooldownOf(icon)
+        return tostring(icon.shown) .. " " .. tostring(icon.art.texture) .. " " .. tostring(cd.cooldownStart) .. "/"
+            .. tostring(cd.cooldownDuration) .. " " .. tostring(icon.count.text)
+    end
+
+    local ctx = loadShaman({ class = "PRIEST", env = fsEnv })
+    ctx.fire("PLAYER_LOGIN")
+    check("five second: login makes its event frame and no icon",
+        tostring(named(ctx, "TandemFiveSecondEvents") ~= nil) .. " " .. tostring(named(ctx, "TandemFiveSecondIcon")),
+        "true nil")
+    local tickers = #ctx.tickers
+    cast(ctx, 403)
+    local icon = named(ctx, "TandemFiveSecondIcon")
+    local p = icon.points[#icon.points]
+    check("five second: placed 28 px under the player frame, right of the proc icon, MEDIUM, not clickable",
+        p[1] .. " " .. tostring(p[2] == ctx.env.PlayerFrame) .. " " .. p[3] .. " " .. p[4] .. " " .. p[5] .. " "
+        .. icon.width .. "x" .. icon.height .. " " .. icon.strata .. " " .. tostring(icon.mouse) .. " "
+        .. tostring(icon.parent == ctx.env.UIParent), "TOP true BOTTOM 32 -40 28x28 MEDIUM false true")
+    local cd = cooldownOf(icon)
+    check("five second: a mana cast shows its texture, a 5 s swipe from now and 5 seconds left", state(ctx)
+        .. " " .. cd.template .. " " .. (#ctx.tickers - tickers) .. " " .. ctx.tickers[#ctx.tickers].interval,
+        "true boltIcon 100/5 5 CooldownFrameTemplate 1 0.1")
+    local ticker = ctx.tickers[#ctx.tickers]
+    ctx.t = 101.5
+    ticker.fn()
+    check("five second: the ticker counts the whole seconds left", icon.count.text, "4")
+
+    ctx.t = 103
+    cast(ctx, 8042)
+    check("five second: a recast restarts it with the new spell's texture, on the same ticker",
+        state(ctx) .. " " .. (#ctx.tickers - tickers) .. " " .. tostring(ticker.cancelled),
+        "true shockIcon 103/5 5 1 nil")
+    ctx.t = 107.9
+    ticker.fn()
+    check("five second: one second left near the end", icon.count.text, "1")
+    ctx.t = 108
+    ticker.fn()
+    check("five second: hidden after 5 s and the ticker stopped",
+        tostring(icon.shown) .. " " .. tostring(ticker.cancelled), "false true")
+
+    cast(ctx, 2)
+    f.costs[7] = { { type = 1, cost = 10 } }
+    cast(ctx, 7)
+    check("five second: a free spell and a non-mana cost show nothing", shown(ctx), false)
+    cast(ctx, 999)
+    f.costs[998] = "raise"
+    cast(ctx, 998)
+    check("five second: an uncached spell, raising or missing, shows nothing", shown(ctx), false)
+    cast(ctx, 403, "party1")
+    cast(ctx, FSECRET)
+    check("five second: another unit's cast or a secret id shows nothing", shown(ctx), false)
+
+    f.combat = true
+    f.costs[403] = FSECRET
+    cast(ctx, 403)
+    check("five second: a secret cost falls back to the cache", shown(ctx), true)
+    ctx.t = 113
+    ctx.tickers[#ctx.tickers].fn()
+    f.costs[403] = { { type = 0, cost = FSECRET, costPercent = 0 } }
+    f.costs[2] = FSECRET
+    cast(ctx, 2)
+    check("five second: a secret cost for a spell cached free shows nothing", shown(ctx), false)
+    cast(ctx, 403)
+    check("five second: a secret field also falls back to the cache, never raising", shown(ctx), true)
+    ctx.t = 118
+    ctx.tickers[#ctx.tickers].fn()
+
+    f.powerType = 1
+    f.costs[403] = MANA_COST
+    cast(ctx, 403)
+    check("five second: a non-mana power type at the cast shows nothing", shown(ctx), false)
+    f.powerType = 0
+
+    f.bar[4] = { "spell", 5000 }
+    f.costs[5000] = MANA_COST
+    f.textures[5000] = "newIcon"
+    own(ctx, "ACTIONBAR_SLOT_CHANGED")
+    f.costs[5000], f.textures[5000] = FSECRET, nil
+    cast(ctx, 5000)
+    check("five second: no warm-up in combat", shown(ctx), false)
+    f.combat = false
+    f.costs[5000], f.textures[5000] = MANA_COST, "newIcon"
+    own(ctx, "PLAYER_REGEN_ENABLED")
+    f.combat = true
+    f.costs[5000], f.textures[5000] = FSECRET, nil
+    cast(ctx, 5000)
+    check("five second: combat end learns the bars; a secret read then uses the cached cost and texture",
+        tostring(shown(ctx)) .. " " .. icon.art.texture, "true newIcon")
+    f.combat = false
+
+    ctx = loadShaman({ class = "PRIEST", env = fsEnv })
+    f.costs[5001], f.textures[5001] = {}, nil
+    f.bar[5] = { "spell", 5001 }
+    ctx.fire("PLAYER_LOGIN")
+    f.costs[5001] = MANA_COST
+    own(ctx, "SPELLS_CHANGED")
+    f.costs[5001] = nil
+    cast(ctx, 5001)
+    check("five second: a later plain read corrects the first; no texture falls back to the question mark",
+        tostring(shown(ctx)) .. " " .. named(ctx, "TandemFiveSecondIcon").art.texture,
+        "true Interface\\Icons\\INV_Misc_QuestionMark")
+
+    f.bar[6], f.costs[5002], f.textures[5002] = { "spell", 5002 }, MANA_COST, "slotIcon"
+    f.reads = 0
+    own(ctx, "ACTIONBAR_SLOT_CHANGED", 6)
+    local slotReads = f.reads
+    f.costs[5002], f.textures[5002] = nil, nil
+    cast(ctx, 5002)
+    f.reads = 0
+    own(ctx, "ACTIONBAR_SLOT_CHANGED")
+    local noSlotReads = f.reads
+    f.reads = 0
+    own(ctx, "ACTIONBAR_SLOT_CHANGED", 0)
+    check("five second: a slot change learns that slot only; without a slot or with slot 0 it scans every slot",
+        slotReads .. " " .. tostring(shown(ctx)) .. " " .. named(ctx, "TandemFiveSecondIcon").art.texture .. " "
+        .. noSlotReads .. " " .. f.reads, "1 true slotIcon 180 180")
+
+    for _, timer in ipairs({ false, { NewTicker = function() error("blocked") end } }) do
+        ctx = loadShaman({ class = "PRIEST", env = envWith({ C_Timer = timer }) })
+        ctx.fire("PLAYER_LOGIN")
+        cast(ctx, 403)
+        check("five second: without a ticker the icon never shows (" .. type(timer) .. ")", shown(ctx), false)
+    end
+
+    local ok = pcall(function()
+        ctx = loadShaman({ class = "PRIEST", env = { C_Spell = false, GetActionInfo = false, UnitPowerType = false } })
+        ctx.fire("PLAYER_LOGIN")
+        cast(ctx, 403)
+    end)
+    check("five second: missing functions never raise and show nothing", tostring(ok) .. " " .. tostring(shown(ctx)),
+        "true false")
 end
 
 -- Weapon enchant procs: an icon under the player frame with the main-hand enchant's procs per hit, counted from

@@ -42,11 +42,13 @@ ProcProbe.lua
 KillerProbe.lua
 RangeProbe.lua
 MaelstromProbe.lua
+ManaProbe.lua
 Maelstrom.lua
 RangeText.lua
 Killers.lua
 KillersView.lua
 Procs.lua
+FiveSecond.lua
 Launcher.lua
 QuestPick.lua
 Upgrade.lua

@@ -426,6 +426,15 @@ distance line whenever Stormstrike is off cooldown, and it goes as soon as you c
 combat, so Tandem reads the cooldown's length out of combat and times it from your cast; until it has read one, it
 counts 20 seconds. Out of combat the icon never shows.
 
+## Five-second rule
+
+After you cast a spell that costs mana, a class that uses mana sees that spell's icon just right of the weapon enchant
+proc icon under the player frame, with a five-second cooldown swipe and the whole seconds left until spirit regenerates
+mana again. Casting another mana spell restarts it with that spell's icon, and it goes when the five seconds are up.
+The client hides your mana, so Tandem judges each cast from the spell's cost, which it learns out of combat from the
+spells on your action bars; a free spell, or one it has not learnt yet, shows nothing. Clearcasting and other free
+casts still show the icon.
+
 ## Layout
 
 ```text
