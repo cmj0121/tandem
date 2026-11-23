@@ -73,6 +73,7 @@ L["Choosing waits until combat ends"] = "要等戰鬥結束才能選擇"
 L["Cures poison on your mouseover friend, your target or yourself"] = "對滑鼠指向的友方、目標或自己解除中毒"
 L["Cures disease on your mouseover friend, your target or yourself"] = "對滑鼠指向的友方、目標或自己解除疾病"
 L["Left-click cures poison, right-click cures disease"] = "左鍵解除中毒，右鍵解除疾病"
+L["Left-click casts Call of the Elements, right-click casts Call of the Ancestors"] = "左鍵施放元素召喚，右鍵施放先祖召喚"
 L["Switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet fighting), "
     .. "starts attacking and casts Stormstrike"] =
     "目標不存在、已死亡或為友方時自動切換到最近的敵人（可能是還沒開打的怪），開始攻擊並施放風暴打擊"

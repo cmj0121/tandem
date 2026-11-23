@@ -9357,7 +9357,8 @@ end
 -- handler APIs. ctx.main(), ctx.arrow(), ctx.list() and ctx.row(i) are the flyout's frames; ctx.click(b, button)
 -- clicks b as the client would (snippets, PreClick, OnClick, then the macro cast into ctx.cast).
 local FLYOUT_SPELLS = { [526] = { "Cure Poison", "icon526" }, [2870] = { "Cure Disease", "icon2870" },
-    [17364] = { "Stormstrike", "icon17364" }, [556] = { "Astral Recall", "icon556" } }
+    [17364] = { "Stormstrike", "icon17364" }, [556] = { "Astral Recall", "icon556" },
+    [66842] = { "Call of the Elements", "icon66842" }, [66843] = { "Call of the Ancestors", "icon66843" } }
 local function loadFlyout(opts)
     opts = opts or {}
     local ctx
@@ -9483,8 +9484,8 @@ do
     check("flyout: the arrow and the list are secure handlers", arrow.template .. " " .. list.template .. " "
         .. tostring(arrow.parent == main) .. " " .. tostring(list.parent == main),
         "SecureHandlerClickTemplate SecureHandlerBaseTemplate true true")
-    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(5) ~= nil) .. " "
-        .. tostring(ctx.row(6) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
+    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(6) ~= nil) .. " "
+        .. tostring(ctx.row(7) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
         "true true SecureActionButtonTemplate true")
     check("flyout: aura events registered once it exists",
         tostring(ctx.frame.registered.UNIT_AURA) .. " " .. tostring(ctx.frame.registered.GROUP_ROSTER_UPDATE),
@@ -9531,7 +9532,7 @@ do
     check("flyout: the secure snippets are wired",
         tostring(arrow.attrs._onclick == ctx.addon.Flyout.SNIPPETS.arrow) .. " "
             .. tostring(arrow.refs.list == list) .. " " .. tostring(list.refs.main == main) .. " " .. #ctx.wraps,
-        "true true true 6")
+        "true true true 7")
     local wrapped = {}
     for _, w in ipairs(ctx.wraps) do
         wrapped[#wrapped + 1] = (w.frame == main and "main" or tostring(w.frame.name):match("%d$")) .. ":"
@@ -9540,7 +9541,7 @@ do
     end
     check("flyout: each row and the main button wrapped by the list", table.concat(wrapped, " "),
         "1:OnClick:true:true 2:OnClick:true:true 3:OnClick:true:true 4:OnClick:true:true 5:OnClick:true:true "
-            .. "main:OnClick:true:true")
+            .. "6:OnClick:true:true main:OnClick:true:true")
 
     check("flyout: the list starts closed", list.shown, false)
     ctx.click(arrow)
@@ -9676,6 +9677,15 @@ do
     check("flyout: character macros full, none made, tooltip says so", tostring(ctx.macro("Tandem Disease")) .. " "
         .. tostring(ctx.picked) .. " /" .. texts(ctx.tip):match("[^/]*$"),
         "nil nil / Character macros full: no room for this macro")
+    ctx.known[66842], ctx.known[66843] = true, true
+    ctx.fire("SPELLS_CHANGED")
+    local row = ctx.row(4)
+    check("flyout: the totems row", tostring(row.attrs.entry), "totems")
+    row.scripts.OnDragStart(row)
+    row.scripts.OnEnter(row)
+    check("flyout: dragging totems with character macros full", tostring(ctx.macro("Tandem Totems")) .. " "
+        .. tostring(ctx.picked) .. " /" .. texts(ctx.tip):match("[^/]*$"),
+        "nil nil / Character macros full: no room for this macro")
 end
 
 -- Without the secure handler APIs the flyout works out of combat only.
@@ -9690,7 +9700,7 @@ do
         .. " " .. tostring(list.template) .. " " .. main.template .. " " .. ctx.row(1).template .. " " .. #ctx.wraps,
         "nil nil SecureActionButtonTemplate SecureActionButtonTemplate 0")
     check("flyout insecure: logged at login", debugText(ctx.env):match("flyout login: class=SHAMAN ready=true "
-        .. "secure=false rows=5") ~= nil, true)
+        .. "secure=false rows=6") ~= nil, true)
     ctx.click(arrow)
     check("flyout insecure: the arrow opens the list out of combat", list.shown, true)
     ctx.click(ctx.row(2))
@@ -10011,7 +10021,7 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("flyout: set up at combat's end", tostring(main.shown) .. " " .. main.attrs.entry .. " " .. #ctx.wraps,
-        "true poison 6")
+        "true poison 7")
 end
 
 -- Mute button: left of the class macro button (or the rod button, or the bag row) while the layout is on, flipping
@@ -10445,8 +10455,10 @@ end
 -- for IsSpellKnown, ctx.names[id] for GetSpellInfo (icon "icon<id>"), ctx.cd = { start, duration } for
 -- GetSpellCooldown(556), ctx.hearths for GetItemCount(6948); ctx.list() is ClassMacros.List("SHAMAN").
 local MACRO_NAMES = {
-    enUS = { [526] = "Cure Poison", [2870] = "Cure Disease", [17364] = "Stormstrike", [556] = "Astral Recall" },
-    zhTW = { [526] = "解毒術", [2870] = "祛病術", [17364] = "風暴打擊", [556] = "星界傳送" },
+    enUS = { [526] = "Cure Poison", [2870] = "Cure Disease", [17364] = "Stormstrike", [556] = "Astral Recall",
+        [66842] = "Call of the Elements", [66843] = "Call of the Ancestors" },
+    zhTW = { [526] = "解毒術", [2870] = "祛病術", [17364] = "風暴打擊", [556] = "星界傳送", [66842] = "元素召喚",
+        [66843] = "先祖召喚" },
 }
 local function loadClassMacros(opts)
     opts = opts or {}
@@ -10567,6 +10579,37 @@ do
     check("class macros debug: the stormstrike known line", text:match("class macros: stormstrike known=false")
         ~= nil, true)
     check("class macros debug: logged once per login", select(2, text:gsub("stormstrike known", "")), 1)
+    check("class macros debug: each totems spell logged, 66843 even with 66842 unknown",
+        tostring(text:match("class macros: totems 66842 known=false") ~= nil) .. " "
+            .. tostring(text:match("class macros: totems 66843 known=false") ~= nil), "true true")
+    check("class macros debug: totems logged once per login", select(2, text:gsub("totems %d+ known", "")), 2)
+end
+
+-- The totems entry (D1, D2): Call of the Elements on a left click, Call of the Ancestors on a right click, shown
+-- once both are known.
+do
+    local ctx = loadClassMacros()
+    ctx.known[526], ctx.known[2870], ctx.known[17364] = true, true, true
+    ctx.known[66842] = true
+    check("totems: not shown with only Call of the Elements", ctx.ids(), "poison,disease,cure,stormstrike")
+    ctx.known[66842], ctx.known[66843] = nil, true
+    check("totems: not shown with only Call of the Ancestors", ctx.ids(), "poison,disease,cure,stormstrike")
+    ctx.known[66842] = true
+    check("totems: after cure once both are known", ctx.ids(), "poison,disease,cure,totems,stormstrike")
+    local e = ctx.list()[4]
+    check("totems: fields, icon of 66842", table.concat({ e.title, e.icon, e.macro, #e.kinds }, " | "),
+        "Call of the Elements / Call of the Ancestors | icon66842 | Tandem Totems | 0")
+    check("totems: body", e.body, "#showtooltip\n/cast [btn:2] Call of the Ancestors; Call of the Elements")
+    check("totems: description", e.description,
+        "Left-click casts Call of the Elements, right-click casts Call of the Ancestors")
+end
+
+do
+    local ctx = loadClassMacros({ locale = "zhTW" })
+    ctx.known[66842], ctx.known[66843] = true, true
+    local e = ctx.list()[1]
+    check("zhTW totems: body and description", e.body .. " | " .. e.description,
+        "#showtooltip\n/cast [btn:2] 先祖召喚; 元素召喚 | 左鍵施放元素召喚，右鍵施放先祖召喚")
 end
 
 do

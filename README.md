@@ -579,6 +579,8 @@ entry you have learned:
   yourself.
 - `Cure Poison / Cure Disease`, once you know both, casts Cure Poison on a left click and Cure Disease on a right click,
   on the same targets.
+- `Call of the Elements / Call of the Ancestors`, once you know both, casts Call of the Elements on a left click and
+  Call of the Ancestors on a right click.
 - `Stormstrike` switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet
   fighting), starts attacking and casts Stormstrike.
 - `Astral Recall` casts Astral Recall on a left click, or uses your Hearthstone while Astral Recall is on cooldown; a
@@ -603,11 +605,11 @@ which debuff (or `No one in your party has a Poison effect`; in combat `Party de
 `Drag to place this macro on your action bar` (`Drag out of combat to place this macro` in combat).
 
 Drag the button or a row to put that entry's character macro, `Tandem Poison`, `Tandem Disease`, `Tandem Cure`,
-`Tandem Stormstrike` or `Tandem Recall`, on an action bar. Tandem makes it on that first drag and keeps it current out
-of combat; when your character macro slots are full the tooltip says `Character macros full: no room for this macro`.
-Tandem only casts on your click. In combat the button cannot move, appear or hide, so a spell learned or a rod swapped
-in a fight shows once it ends. It shows only while the layout is on, and needs the `Class macro button` line of
-[`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
+`Tandem Totems`, `Tandem Stormstrike` or `Tandem Recall`, on an action bar. Tandem makes it on that first drag and
+keeps it current out of combat; when your character macro slots are full the tooltip says `Character macros full: no
+room for this macro`. Tandem only casts on your click. In combat the button cannot move, appear or hide, so a spell
+learned or a rod swapped in a fight shows once it ends. It shows only while the layout is on, and needs the
+`Class macro button` line of [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
 
 One more icon, left of the class macro button (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
 a click turns all sound off, the next click turns it back on, in combat too. It flips the client's
