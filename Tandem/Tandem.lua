@@ -184,6 +184,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.RangeText.OnLogin(self)
         ns.Killers.OnLogin(self)
         ns.Procs.OnLogin(self)
+        ns.FiveSecond.OnLogin()
         ns.BagButton.OnLogin()
         -- Before the rod button, whose first update places the class macro button. Aura events only once it exists.
         if ns.Flyout.OnLogin() then

@@ -48,6 +48,7 @@ RangeText.lua
 Killers.lua
 KillersView.lua
 Procs.lua
+FiveSecond.lua
 Launcher.lua
 QuestPick.lua
 Upgrade.lua
