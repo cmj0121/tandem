@@ -9,6 +9,7 @@ local Cure = ns.Cure
 local call = ns.Store.Call
 
 local STORMSTRIKE = "#showtooltip %s\n/targetenemy [noharm][dead]\n/startattack [harm]\n/cast %s"
+local TOTEMS = "#showtooltip\n/cast [btn:2] %s; %s"
 
 local ASTRAL_RECALL, HEARTHSTONE = 556, 6948
 -- A cooldown this short or shorter is the global cooldown, so the spell counts as ready.
@@ -42,9 +43,10 @@ ClassMacros.COMBAT_LINK = "item:" .. HEARTHSTONE
 
 -- Per class, its entries in display order, bottom-up: the id, the spells it needs known (the first gives the icon),
 -- its character macro's name, the debuff types it cures, its description (an enUS locale key) and its macro body
--- for the spells' localized names and the recall state (RecallState); logKnown debug-logs whether its spell is known,
--- once per login; noPick keeps its row from becoming the pick; note returns an enUS locale key the tooltip adds, or
--- nil; combat returns whether its body has a combat clause, and combatIcon the icon the row then shows, or nil.
+-- for the spells' localized names and the recall state (RecallState); logKnown debug-logs whether each of its spells
+-- is known, once per login; noPick keeps its row from becoming the pick; note returns an enUS locale key the tooltip
+-- adds, or nil; combat returns whether its body has a combat clause, and combatIcon the icon the row then shows, or
+-- nil.
 ClassMacros.ENTRIES = {
     SHAMAN = {
         {
@@ -66,6 +68,14 @@ ClassMacros.ENTRIES = {
             description = "Left-click cures poison, right-click cures disease",
             body = function(names)
                 return Cure.CombinedBody(names[1], names[2])
+            end,
+        },
+        {
+            id = "totems", spells = { 66842, 66843 }, macro = "Tandem Totems", kinds = {}, logKnown = true,
+            description = "Left-click casts Call of the Elements, right-click casts Call of the "
+                .. "Ancestors",
+            body = function(names)
+                return TOTEMS:format(names[2], names[1])
             end,
         },
         {
@@ -97,7 +107,7 @@ ClassMacros.ENTRIES = {
     },
 }
 
-local loggedKnown, loggedRecall
+local loggedKnown, loggedRecall = {}, nil
 
 local function log(text)
     if ns.Debug ~= nil and ns.Debug.IsOn() then
@@ -105,15 +115,28 @@ local function log(text)
     end
 end
 
+-- Debug-logs, once per login, whether each of the logKnown entry's spells is known.
+local function logKnown(e)
+    if not e.logKnown or loggedKnown[e.id] then
+        return
+    end
+    loggedKnown[e.id] = true
+    for _, id in ipairs(e.spells) do
+        local known = tostring(Cure.Known(id))
+        if #e.spells == 1 then
+            log(("class macros: %s known=%s"):format(e.id, known))
+        else
+            log(("class macros: %s %d known=%s"):format(e.id, id, known))
+        end
+    end
+end
+
 -- The localized names of the entry's spells and its first spell's icon, or nil when one is unknown or unnamed.
 local function resolve(e)
+    logKnown(e)
     local names, icon = {}, nil
     for i, id in ipairs(e.spells) do
         local known = Cure.Known(id)
-        if e.logKnown and not loggedKnown then
-            loggedKnown = true
-            log(("class macros: stormstrike known=%s"):format(tostring(known)))
-        end
         local name, spellIcon = Cure.SpellInfo(id)
         if not (known and name) then
             return nil
