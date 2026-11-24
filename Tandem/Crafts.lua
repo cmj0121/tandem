@@ -490,7 +490,8 @@ function Crafts.ReadRecipes()
             local icon = Safe(info.icon)
             local line = Safe((select(2, call(ui.GetTradeSkillLineForRecipe, recipe))))
             lineMatch = lineMatch or (prof ~= nil and line == prof)
-            local profession = prof or line
+            -- The recipe's own line first: while a window switches, the base info may still name the old profession.
+            local profession = isText(line) and line or prof
             local r = { name = name, icon = (isID(icon) or isText(icon)) and icon or nil,
                 item = outputItem(ui, recipe), profession = isText(profession) and profession or nil }
             if not sameRecipe(s.recipes[recipe], r) then
@@ -544,8 +545,13 @@ function Crafts.TryCraft(entry)
         log(("craft %s: open profession %s, wants %s"):format(entry.id, tostring(prof), tostring(entry.profession)))
         return false
     end
-    call(ui.CraftRecipe, entry.recipe, 1)
-    log("craft " .. entry.id .. ": CraftRecipe")
+    local craftable = Safe((call(ui.GetCraftableCount, entry.recipe)))
+    local ok, err = false, "nil-fn"
+    if type(ui.CraftRecipe) == "function" then
+        ok, err = pcall(ui.CraftRecipe, entry.recipe, 1)
+    end
+    log(("craft %s: CraftRecipe craftable=%s ok=%s err=%s"):format(entry.id, tostring(craftable), tostring(ok),
+        ok and "-" or tostring(err)))
     return true
 end
 

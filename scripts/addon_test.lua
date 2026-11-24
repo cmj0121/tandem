@@ -7056,7 +7056,11 @@ do
                     return 185, cr.line
                 end,
                 IsTradeSkillReady = function() return cr.ready end,
-                CraftRecipe = function(id, n) cr.crafted[#cr.crafted + 1] = id .. "x" .. n end,
+                GetCraftableCount = function() return cr.craftable end,
+                CraftRecipe = function(id, n)
+                    if cr.craftError then error(cr.craftError, 0) end
+                    cr.crafted[#cr.crafted + 1] = id .. "x" .. n
+                end,
             },
         }
     end
@@ -7257,6 +7261,23 @@ do
     check("crafts: TryCraft crafts one in the ready window", tostring(ctx.addon.Crafts.TryCraft(entry)) .. " "
         .. table.concat(cr.crafted, ","), "true 2538x1")
     check("crafts: TryCraft never crafts a spell entry", ctx.addon.Crafts.TryCraft(ctx.addon.Crafts.List()[2]), false)
+    ctx.run("debug on")
+    cr.craftable, cr.craftError = 0, "no reagents"
+    ctx.addon.Crafts.TryCraft(entry)
+    local tried = ctx.env.TandemDebug.crafts[#ctx.env.TandemDebug.crafts]
+    check("crafts: TryCraft logs the craftable count and a CraftRecipe error",
+        tried:match("craft recipe:2538: .*$"), "craft recipe:2538: CraftRecipe craftable=0 ok=false err=no reagents")
+    cr.craftError = nil
+
+    -- While a profession window switches, the base info names the new profession over the old list: each recipe
+    -- keeps the profession its own line names.
+    reset()
+    ctx = cload()
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    cr.prof, cr.line = "First Aid", "Cooking"
+    craftsEvent(ctx, "TRADE_SKILL_DATA_SOURCE_CHANGED")
+    check("crafts: a stale list during a window switch keeps each recipe's own profession",
+        ctx.env.TandemDB.crafts.Jaina.recipes[2538].profession, "Cooking")
 
     local register, registerUnit = WIDGET.RegisterEvent, WIDGET.RegisterUnitEvent
     WIDGET.RegisterEvent = function(_, ev)
