@@ -7091,6 +7091,7 @@ do
             for _, recipe in ipairs({ 2538, 2540, 2541, 9000 }) do
                 ctx.addon.Crafts.CAMP_RECIPES[recipe] = true
             end
+            ctx.addon.Crafts.CAMP_ITEMS[19807] = true
         end
         ctx.fire("PLAYER_LOGIN")
         return ctx
@@ -7278,6 +7279,21 @@ do
     craftsEvent(ctx, "TRADE_SKILL_DATA_SOURCE_CHANGED")
     check("crafts: a stale list during a window switch keeps each recipe's own profession",
         ctx.env.TandemDB.crafts.Jaina.recipes[2538].profession, "Cooking")
+    cr.line = "Cooking"
+    cr.recipeIDs = { 2538 }
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: a stale list during a window switch sweeps nothing",
+        tostring(ctx.env.TandemDB.crafts.Jaina.recipes[2541] ~= nil), "true")
+    cr.line = nil
+
+    -- A learned pair is listed only when its item is a camp item.
+    reset()
+    ctx = cload()
+    ctx.addon.Crafts.CAMP_ITEMS[19807] = nil
+    cr.known[7620] = true
+    ctx.env.TandemDB.crafts = { Jaina = { pairs = { [7620] = 19807 }, recipes = {}, made = {} } }
+    check("crafts: a learned pair of a non-camp item is not listed", tostring(list(ctx):find("spell:7620", 1, true)),
+        "nil")
 
     local register, registerUnit = WIDGET.RegisterEvent, WIDGET.RegisterUnitEvent
     WIDGET.RegisterEvent = function(_, ev)

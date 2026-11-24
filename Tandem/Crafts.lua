@@ -22,8 +22,8 @@ Crafts.MAX_PAIRS = 40
 -- Gathering and opening spells, never learned as pairs: their loot reaches the bags after auto-loot has closed the
 -- loot window, often unseen. Fishing is not on the list.
 Crafts.SKIP_SPELLS = {}
-for _, spell in ipairs({ 3365, 6247, 6477, 6478, 21248, 22810, 1804, 8613, 8617, 8618, 10768, 2575, 2576, 3564,
-    10248, 2366, 2368, 3570, 11993, 13262 }) do
+for _, spell in ipairs({ 3365, 6247, 6477, 6478, 21248, 22810, 1269673, 1804, 8613, 8617, 8618, 10768, 2575, 2576,
+    3564, 10248, 2366, 2368, 3570, 11993, 13262 }) do
     Crafts.SKIP_SPELLS[spell] = true
 end
 
@@ -237,8 +237,8 @@ function Crafts.List()
             end
         end
     end
-    for spell in pairs(s.pairs) do
-        if not SEED[spell] and not s.recipes[spell] and isKnown(spell) then
+    for spell, item in pairs(s.pairs) do
+        if not SEED[spell] and not s.recipes[spell] and Crafts.CAMP_ITEMS[item] and isKnown(spell) then
             all[#all + 1] = spellEntry(s, spell)
         end
     end
@@ -478,6 +478,26 @@ function Crafts.ReadRecipes()
     end
     local base = call(ui.GetBaseProfessionInfo)
     local prof = type(base) == "table" and Safe(base.professionName) or nil
+    -- While a window switches, the base info already names the new profession over the old list, whose lines then
+    -- name no profession: a list with learned recipes none of whose lines names the open profession is skipped whole
+    -- (nothing cached or swept); the open profession's own list follows at once.
+    if prof then
+        local any, match = false, false
+        for _, recipe in ipairs(ids) do
+            local info = isID(recipe) and call(ui.GetRecipeInfo, recipe)
+            if type(info) == "table" and Safe(info.learned) == true then
+                any = true
+                match = Safe((select(2, call(ui.GetTradeSkillLineForRecipe, recipe)))) == prof
+                if match then
+                    break
+                end
+            end
+        end
+        if any and not match then
+            log(("recipes %s: stale list skipped, %d ids"):format(prof, #ids))
+            return
+        end
+    end
     local s, key = state()
     local learned, changed, seen, lineMatch = 0, 0, {}, false
     for _, recipe in ipairs(ids) do
