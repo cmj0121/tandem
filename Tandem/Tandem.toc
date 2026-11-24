@@ -19,6 +19,7 @@ Data\Books.lua
 Books.lua
 Items.lua
 SpellRanks.lua
+Crafts.lua
 ActionBorders.lua
 Trainer.lua
 View.lua

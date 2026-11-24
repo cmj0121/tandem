@@ -136,6 +136,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.ItemBorders.Schedule()
         end
         ns.Rod.Schedule()
+        ns.Crafts.OnItemInfo(...)
         ns.Eat.Invalidate()
         ns.Eat.Schedule()
     elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
@@ -169,6 +170,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.BagButton.Update()
         ns.Rod.Update()
         ns.Eat.Rescan()
+        ns.Crafts.OnBagUpdate()
     elseif event == "PLAYER_LOGIN" then
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
@@ -181,6 +183,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MaelstromProbe.OnLogin(self)
         ns.ManaProbe.OnLogin()
         ns.CraftProbe.OnLogin()
+        ns.Crafts.OnLogin()
         ns.Maelstrom.OnLogin(self)
         ns.RangeText.OnLogin(self)
         ns.Killers.OnLogin(self)
@@ -221,6 +224,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.Role.Update()
             if event == "SPELLS_CHANGED" and ns.Flyout.Made() then
                 scheduleRecall()
+            end
+            if event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
+                or event == "LEARNED_SPELL_IN_SKILL_LINE" then
+                ns.Crafts.OnSpellsChanged()
             end
         end
         if event == "PLAYER_ENTERING_WORLD" then

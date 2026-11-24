@@ -3026,7 +3026,7 @@ do
     local ok = pcall(ctx.fire, "PLAYER_LOGIN")
     check("borders: missing API raises nothing", ok, true)
     check("borders: missing API leaves buttons untouched", ctx.border("ActionButton1"), "none")
-    check("borders: missing API makes no frames", #ctx.ui.widgets, 39)
+    check("borders: missing API makes no frames", #ctx.ui.widgets, 40)
 end
 
 do
@@ -7010,6 +7010,398 @@ do
         "true 500")
 end
 
+-- The craftable list (craft flyout U1, D1, D3): known item-making spells at their highest known rank, spells whose
+-- item was learned from a single stack rise after a cast, and learned recipes cached from C_TradeSkillUI, usable items
+-- only; pairs, recipes, made times and the pick survive a reload; rejected event names never raise; TryCraft crafts
+-- only in the recipe's open, ready profession window out of combat.
+local CRAFT_SECRET = setmetatable({}, { __eq = function() error("secret") end })
+do
+    local cr
+    local function crenv()
+        return {
+            UnitName = function() return cr.name end,
+            IsPlayerSpell = function(id) return cr.known[id] == true end,
+            time = function() return cr.now end,
+            issecretvalue = function(v) return rawequal(v, CRAFT_SECRET) end,
+            C_SpellBook = {
+                GetSpellBookItemInfo = function(i) if i == 1 and cr.first then return { name = cr.first } end end,
+            },
+            C_Spell = {
+                GetSpellInfo = function(v) if type(v) == "string" and cr.profs[v] then return { name = v } end end,
+                GetSpellName = function(id) return cr.names[id] end,
+                GetSpellTexture = function(id) return "icon" .. id end,
+            },
+            C_Item = {
+                GetItemInfo = function(id) if cr.loaded[id] ~= false then return "Item" .. id end end,
+                GetItemSpell = function(id) return cr.itemSpell[id] end,
+                GetItemInfoInstant = function(id) return id, "t", "s", "", 1, cr.class[id] or 7 end,
+                RequestLoadItemDataByID = function(id) cr.requested[#cr.requested + 1] = id end,
+            },
+            C_Container = {
+                GetContainerNumSlots = function(bag) return cr.bags[bag] and 4 or 0 end,
+                GetContainerItemID = function(bag, slot) local s = cr.bags[bag][slot] return s and s[1] end,
+                GetContainerItemInfo = function(bag, slot)
+                    local s = cr.bags[bag][slot]
+                    return s and { itemID = s[1], stackCount = s[2] }
+                end,
+            },
+            C_TradeSkillUI = {
+                GetAllRecipeIDs = function() return cr.recipeIDs end,
+                GetRecipeInfo = function(id) return cr.recipes[id] end,
+                GetRecipeSchematic = function(id) return { outputItemID = cr.outputs[id] } end,
+                GetRecipeOutputItemData = function(id) return { itemID = cr.data[id] } end,
+                GetBaseProfessionInfo = function() return { professionName = cr.prof } end,
+                GetTradeSkillLineForRecipe = function()
+                    if cr.line == nil then return 185, cr.prof end
+                    return 185, cr.line
+                end,
+                IsTradeSkillReady = function() return cr.ready end,
+                CraftRecipe = function(id, n) cr.crafted[#cr.crafted + 1] = id .. "x" .. n end,
+            },
+        }
+    end
+    local function reset()
+        cr = {
+            name = "Jaina", now = 5000, prof = "Cooking", ready = false, crafted = {}, requested = {},
+            profs = { Cooking = true, Mining = true },
+            known = { [5504] = true, [5505] = true, [587] = true },
+            names = { [5504] = "Conjure Water", [5505] = "Conjure Water", [587] = "Conjure Food", [7620] = "Fishing" },
+            loaded = {}, itemSpell = { [5349] = 433 }, class = { [2288] = 0, [2679] = 0, [19807] = 0 },
+            bags = { [0] = { { 19807, 1 } }, [1] = {} },
+            recipeIDs = { 2538, 3370, 2540, 2541 },
+            recipes = {
+                [2538] = { learned = true, name = "Charred Wolf Meat", icon = 133974 },
+                [3370] = { learned = false, name = "Crocolisk Steak", icon = 1 },
+                [2540] = { learned = true, name = "Smelt Copper", icon = 2 },
+                [2541] = { learned = true, name = "Roasted Boar Meat", icon = 3 },
+            },
+            outputs = { [2538] = 2679, [2540] = 2840 },
+            data = { [2541] = 2681 },
+        }
+        cr.class[2681] = 0
+    end
+    local function cload(db)
+        local ctx = loadShaman({ class = "MAGE", env = crenv(), db = db })
+        ctx.fire("PLAYER_LOGIN")
+        return ctx
+    end
+    local function craftsEvent(ctx, event, ...)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemCraftsEvents" then
+                return w.scripts.OnEvent(w, event, ...)
+            end
+        end
+    end
+    local function list(ctx)
+        local out = {}
+        for _, e in ipairs(ctx.addon.Crafts.List()) do
+            out[#out + 1] = e.id .. "=" .. tostring(e.item)
+        end
+        return table.concat(out, " ")
+    end
+
+    reset()
+    local ctx = cload()
+    check("crafts: the highest known rank of each seed family, with its seed item", list(ctx),
+        "spell:587=5349 spell:5505=2288")
+    local water = ctx.addon.Crafts.List()[2]
+    check("crafts: a spell entry carries its make data", ("%s %s %s %s %s"):format(water.kind, water.name,
+        tostring(water.icon), water.spell, tostring(water.made)), "spell Conjure Water icon5505 5505 nil")
+
+    local changes = 0
+    ctx.addon.Crafts.OnChange(function() changes = changes + 1 end)
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    check("crafts: learned usable recipes are cached from the open window, output from schematic or output data",
+        list(ctx), "recipe:2538=2679 spell:587=5349 spell:5505=2288 recipe:2541=2681")
+    local meat = ctx.addon.Crafts.List()[1]
+    check("crafts: a recipe entry carries its make data", ("%s %s %s %d %s"):format(meat.kind, meat.name,
+        tostring(meat.icon), meat.recipe, meat.profession), "recipe Charred Wolf Meat 133974 2538 Cooking")
+    check("crafts: a changed list calls OnChange once", changes, 1)
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: an unchanged recipe list calls no OnChange", changes, 1)
+    check("crafts: the recipe cache is saved per character", dump(ctx.env.TandemDB.crafts.Jaina.recipes[2538]),
+        dump({ name = "Charred Wolf Meat", icon = 133974, item = 2679, profession = "Cooking" }))
+
+    cr.known[7620] = true
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 7620)
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 7620)
+    ctx.t = 101.5
+    cr.bags[0][1] = { 19807, 2 }
+    cr.now = 6000
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("crafts: a cast then exactly one stack count rise learns the pair, made now, listed first", list(ctx),
+        "spell:7620=19807 recipe:2538=2679 spell:587=5349 spell:5505=2288 recipe:2541=2681")
+    check("crafts: the pair and made time are saved", ctx.env.TandemDB.crafts.Jaina.pairs[7620] .. " "
+        .. ctx.env.TandemDB.crafts.Jaina.made["spell:7620"], "19807 6000")
+
+    local function tryPair(spell, setup, after)
+        ctx.t = 200
+        if setup then setup() end
+        craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", spell)
+        ctx.t = after or 201
+        cr.bags[1][1] = { 2288, (cr.bags[1][1] and cr.bags[1][1][2] or 0) + 1 }
+        ctx.addon.Crafts.OnBagUpdate()
+        ctx.state.combat = false
+        for _, e in ipairs({ "LOOT_CLOSED", "MAIL_CLOSED", "TRADE_CLOSED", "MERCHANT_CLOSED" }) do
+            craftsEvent(ctx, e)
+        end
+        return ctx.env.TandemDB.crafts.Jaina.pairs[spell]
+    end
+    cr.known[1] = true
+    check("crafts: no pair in combat", tryPair(1, function() ctx.state.combat = true end), nil)
+    check("crafts: no pair with a merchant open", tryPair(1, function() craftsEvent(ctx, "MERCHANT_SHOW") end), nil)
+    check("crafts: the same cast with no window open learns", tryPair(1), 2288)
+    ctx.t = 200
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 2)
+    craftsEvent(ctx, "LOOT_OPENED")
+    craftsEvent(ctx, "LOOT_CLOSED")
+    cr.bags[1][2] = { 4, 1 }
+    ctx.addon.Crafts.OnBagUpdate()
+    check("crafts: no pair with a loot window opened after the cast", ctx.env.TandemDB.crafts.Jaina.pairs[2], nil)
+    check("crafts: no pair after 3 s", tryPair(3, nil, 203.5), nil)
+    ctx.t = 300
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 4)
+    cr.bags[1][3], cr.bags[1][4] = { 5, 1 }, { 6, 1 }
+    ctx.addon.Crafts.OnBagUpdate()
+    check("crafts: no pair when two items rose", ctx.env.TandemDB.crafts.Jaina.pairs[4], nil)
+
+    check("crafts: SetPick of a listed entry saves it and lists it first", tostring(ctx.addon.Crafts.SetPick(
+        "recipe:2541")) .. " " .. ctx.addon.Crafts.Pick().id .. " " .. ctx.env.TandemDB.crafts.Jaina.pick,
+        "true recipe:2541 recipe:2541")
+    check("crafts: SetPick of an unlisted entry fails", ctx.addon.Crafts.SetPick("spell:5504"), false)
+
+    local saved = ctx.env.TandemDB
+    reset()
+    cr.known[7620] = true
+    local again = cload(saved)
+    check("crafts: pairs, recipes, made and pick survive a reload", list(again),
+        "recipe:2541=2681 spell:7620=19807 recipe:2538=2679 spell:587=5349 spell:5505=2288")
+    check("crafts: a saved db reloads without drops", #again.printed, 1)
+    cr.known[7620] = nil
+    again.fire("SPELLS_CHANGED")
+    check("crafts: a learned spell no longer known is not listed", list(again):find("spell:7620") == nil, true)
+
+    reset()
+    cr.loaded[2288] = false
+    ctx = cload()
+    changes = 0
+    ctx.addon.Crafts.OnChange(function() changes = changes + 1 end)
+    cr.requested = {}
+    check("crafts: an item with no info yet is kept and asked for", list(ctx) .. " "
+        .. table.concat(cr.requested, ","), "spell:587=5349 spell:5505=2288 2288")
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 9999)
+    check("crafts: info for an item not waited on changes nothing", changes, 0)
+    cr.loaded[2288], cr.class[2288] = nil, 15
+    ctx.fire("GET_ITEM_INFO_RECEIVED", 2288)
+    check("crafts: once its info arrives it is checked again", list(ctx) .. " " .. changes, "spell:587=5349 1")
+
+    reset()
+    cr.name = nil
+    ctx = cload()
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 5505)
+    cr.bags[0][2], cr.class[8077] = { 8077, 20 }, 0
+    ctx.addon.Crafts.OnBagUpdate()
+    check("crafts: an unknown character keeps a learned pair for the session only", list(ctx) .. " "
+        .. tostring(ctx.env.TandemDB.crafts), "spell:5505=8077 spell:587=5349 nil")
+    cr.name = "Jaina"
+    check("crafts: the session's pair is saved once the character is known", list(ctx) and
+        ctx.env.TandemDB.crafts.Jaina.pairs[5505], 8077)
+
+    reset()
+    ctx = cload()
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    local entry = ctx.addon.Crafts.List()[1]
+    check("crafts: TryCraft waits for a ready window", tostring(ctx.addon.Crafts.TryCraft(entry)) .. " "
+        .. #cr.crafted, "false 0")
+    cr.ready, cr.prof = true, "Mining"
+    check("crafts: TryCraft waits for the recipe's profession", tostring(ctx.addon.Crafts.TryCraft(entry)) .. " "
+        .. #cr.crafted, "false 0")
+    cr.prof = "Cooking"
+    ctx.state.combat = true
+    check("crafts: TryCraft does nothing in combat", tostring(ctx.addon.Crafts.TryCraft(entry)) .. " "
+        .. #cr.crafted, "false 0")
+    ctx.state.combat = false
+    check("crafts: TryCraft crafts one in the ready window", tostring(ctx.addon.Crafts.TryCraft(entry)) .. " "
+        .. table.concat(cr.crafted, ","), "true 2538x1")
+    check("crafts: TryCraft never crafts a spell entry", ctx.addon.Crafts.TryCraft(ctx.addon.Crafts.List()[2]), false)
+
+    local register, registerUnit = WIDGET.RegisterEvent, WIDGET.RegisterUnitEvent
+    WIDGET.RegisterEvent = function(_, ev)
+        if ev:find("TRADE_SKILL") or ev:find("MERCHANT") then
+            error(('Attempt to register unknown event "%s"'):format(ev))
+        end
+    end
+    WIDGET.RegisterUnitEvent = function(_, ev)
+        error(('Attempt to register unknown event "%s"'):format(ev))
+    end
+    reset()
+    local ok, rctx = pcall(cload)
+    WIDGET.RegisterEvent, WIDGET.RegisterUnitEvent = register, registerUnit
+    check("crafts: rejected event names never raise", tostring(ok) .. " " .. (ok and list(rctx) or ""),
+        "true spell:587=5349 spell:5505=2288")
+
+    local function recipes(c)
+        local ids = {}
+        for id in pairs(c.env.TandemDB.crafts.Jaina.recipes) do
+            ids[#ids + 1] = id
+        end
+        table.sort(ids)
+        return table.concat(ids, ",")
+    end
+    reset()
+    ctx = cload()
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    cr.prof = "Mining"
+    cr.recipeIDs, cr.recipes[9000] = { 9000 }, { learned = true, name = "Bar", icon = 4 }
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    cr.prof = "Cooking"
+    cr.recipeIDs = { 2538, 2540, 2541 }
+    cr.recipes[2541] = { learned = false, name = "Roasted Boar Meat", icon = 3 }
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: a recipe read back unlearned leaves the cache and the list", recipes(ctx) .. " " .. list(ctx),
+        "2538,2540,9000 recipe:9000=nil recipe:2538=2679 spell:587=5349 spell:5505=2288")
+    cr.recipeIDs = { 2540, 3370 }
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: a cached recipe missing from its open profession's learned list leaves; others stay",
+        recipes(ctx), "2540,9000")
+    cr.recipeIDs = {}
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: an empty list read drops nothing", recipes(ctx), "2540,9000")
+    cr.profs.Mining = nil
+    ctx.fire("SPELLS_CHANGED")
+    check("crafts: an unreadable spellbook drops no profession's recipes", recipes(ctx), "2540,9000")
+    ctx.run("debug on")
+    cr.first = "Frostbolt"
+    ctx.fire("SPELLS_CHANGED")
+    local skipped = false
+    for _, line in ipairs(ctx.env.TandemDebug.log) do
+        skipped = skipped or line:find("crafts: profession prune skipped", 1, true) ~= nil
+    end
+    check("crafts: a failed control lookup by name skips the prune and logs it", recipes(ctx) .. " "
+        .. tostring(skipped), "2540,9000 true")
+    cr.profs.Frostbolt = true
+    ctx.fire("SPELLS_CHANGED")
+    check("crafts: a profession no longer known drops its recipes", recipes(ctx), "2540")
+
+    reset()
+    ctx = cload()
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    cr.line = "Other"
+    cr.recipes[2538].learned, cr.recipes[2541].learned = nil, CRAFT_SECRET
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: a nil or secret learned flag drops no cached recipe", recipes(ctx), "2538,2540,2541")
+    cr.recipeIDs = { 2540 }
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: no listed recipe's line matching the profession skips the not-seen sweep", recipes(ctx),
+        "2538,2540,2541")
+    cr.line = nil
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts: a matching line runs the sweep", recipes(ctx), "2540")
+
+    local registerWin = WIDGET.RegisterEvent
+    WIDGET.RegisterEvent = function(_, ev)
+        if ev == "MERCHANT_CLOSED" then error(('Attempt to register unknown event "%s"'):format(ev)) end
+    end
+    reset()
+    ctx = cload()
+    WIDGET.RegisterEvent = registerWin
+    craftsEvent(ctx, "MERCHANT_SHOW")
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 7620)
+    cr.bags[0][1] = { 19807, 2 }
+    ctx.addon.Crafts.OnBagUpdate()
+    check("crafts: a window whose close event was rejected is not tracked as open", ctx.env.TandemDB.crafts
+        and ctx.env.TandemDB.crafts.Jaina.pairs[7620], 19807)
+
+    reset()
+    ctx = cload()
+    cr.recipes[2538].learned = CRAFT_SECRET
+    cr.prof, cr.line = nil, CRAFT_SECRET
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    local boar = ctx.env.TandemDB.crafts.Jaina.recipes[2541]
+    check("crafts: a secret learned flag caches nothing; a secret profession line name is left out",
+        tostring(ctx.env.TandemDB.crafts.Jaina.recipes[2538]) .. " " .. tostring(boar.profession), "nil nil")
+
+    reset()
+    ctx = cload()
+    cr.class[2681] = 0
+    craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 2541)
+    cr.bags[1][1] = { 2681, 1 }
+    ctx.addon.Crafts.OnBagUpdate()
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    local made = ctx.env.TandemDB.crafts.Jaina.made
+    check("crafts: a recipe cast before its recipe was cached keeps its made time under the recipe",
+        tostring(made["spell:2541"]) .. " " .. tostring(made["recipe:2541"]) .. " " .. ctx.addon.Crafts.Pick().id,
+        "nil 5000 recipe:2541")
+
+    for _, case in ipairs({ { "QUEST_TURNED_IN" }, { "QUEST_COMPLETE", "QUEST_FINISHED" },
+        { "BANKFRAME_OPENED", "BANKFRAME_CLOSED" }, { "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED" } }) do
+        reset()
+        ctx = cload()
+        craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 7620)
+        for _, e in ipairs(case) do
+            craftsEvent(ctx, e)
+        end
+        cr.bags[0][1] = { 19807, 2 }
+        ctx.addon.Crafts.OnBagUpdate()
+        check("crafts: no pair after " .. case[1], ctx.env.TandemDB.crafts and
+            ctx.env.TandemDB.crafts.Jaina.pairs[7620], nil)
+    end
+
+    reset()
+    ctx = cload()
+    check("crafts: MAX_PAIRS is 40", ctx.addon.Crafts.MAX_PAIRS, 40)
+    for i = 1, 41 do
+        cr.now = 1000 + (i == 1 and 100 or i)
+        craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 30000 + i)
+        cr.bags[1][1] = { 2288, i }
+        ctx.addon.Crafts.OnBagUpdate()
+    end
+    local pairs41 = ctx.env.TandemDB.crafts.Jaina.pairs
+    local n = 0
+    for _ in pairs(pairs41) do
+        n = n + 1
+    end
+    check("crafts: the 41st pair drops the least recently made", n .. " " .. tostring(pairs41[30002]) .. " "
+        .. tostring(pairs41[30001]) .. " " .. tostring(pairs41[30041]), "40 nil 2288 2288")
+end
+
+-- Store: the crafts data is validated on load.
+do
+    local addon, printed, env = loadWithDB({
+        schemaVersion = 8,
+        crafts = {
+            Jaina = {
+                pairs = { [7620] = 19807, [0] = 1, [5] = "x" },
+                recipes = { [2538] = { name = "Meat", icon = 1, item = 2679, profession = "Cooking", extra = 1 },
+                    [2] = { icon = 1 }, [3] = { name = "N", item = 1.5 } },
+                made = { ["spell:7620"] = 10, ["bad:1"] = 1, ["recipe:2538"] = -1 },
+                pick = "spell:7620",
+            },
+            Thrall = { pick = "nope", pairs = "x" },
+            [""] = {},
+            Uther = "bad",
+        },
+    })
+    check("crafts store: valid entries are kept, extra fields stripped", dump(env.TandemDB.crafts.Jaina),
+        dump({ pairs = { [7620] = 19807 }, recipes = { [2538] = { name = "Meat", icon = 1, item = 2679,
+            profession = "Cooking" } }, made = { ["spell:7620"] = 10 }, pick = "spell:7620" }))
+    -- pairs 0, 5; recipes 2, 3; made bad, -1; Thrall pick, pairs; "", Uther
+    check("crafts store: invalid entries are dropped and counted", printed[2],
+        "Tandem: dropped 10 invalid or unused saved entries")
+    local Store = addon.Store
+    check("crafts store: Crafts returns a copy", Store.Crafts("Jaina") ~= env.TandemDB.crafts.Jaina
+        and Store.Crafts("Jaina").pairs[7620], 19807)
+    check("crafts store: setters reject invalid data", tostring(Store.SetCraftPair("Jaina", 1.5, 2)) .. " "
+        .. tostring(Store.SetCraftRecipe("Jaina", 9, { icon = 1 })) .. " "
+        .. tostring(Store.SetCraftMade("Jaina", "x", 1)) .. " " .. tostring(Store.SetCraftPick("Jaina", "y")) .. " "
+        .. tostring(Store.SetCraftPair("", 1, 2)), "false false false false false")
+    check("crafts store: SetCraftRecipe(nil) clears", Store.SetCraftRecipe("Jaina", 2538, nil)
+        and env.TandemDB.crafts.Jaina.recipes[2538], nil)
+    local newer = loadWithDB({ schemaVersion = 9, crafts = { Jaina = { pairs = { [1] = 2 } } } }).Store
+    check("crafts store: a newer db reads empty and blocks writes", tostring(newer.Crafts("Jaina").pairs[1]) .. " "
+        .. tostring(newer.SetCraftPair("Jaina", 1, 2)), "nil false")
+end
+
 -- The instant Lightning Bolt icon (PLAN D4, D5): for a Shaman knowing Lightning Bolt, its icon with a yellow ADD glow
 -- shows 40 px square just above the distance text exactly while C_Spell.GetSpellInfo(403).castTime reads a plain 0;
 -- read on the player's UNIT_AURA and casts (on its own frame), combat start and end, and a 0.2 s ticker while in
@@ -7394,6 +7786,8 @@ do
         "Fonts\\FRIZQT__.TTF 20 THICKOUTLINE CENTER CENTER true 0,-140 1")
     ctx.fire("PLAYER_LOGIN")
     check("range text: a second login starts no second ticker", #ctx.textTickers(), 1)
+    -- Login's spell reads are the craft list's (Crafts.List); the ticks below must read none.
+    s.spells = 0
 
     for _, case in ipairs({
         { "8149 in range: red 0 - 5", { true, true, true }, "0 - 5 " .. TEXT_RED },
