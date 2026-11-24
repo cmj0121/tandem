@@ -7140,6 +7140,21 @@ do
             drops = drops + (line:find("crafts: enhancement dropped item=4265 class=0/6", 1, true) and 1 or 0)
         end
         check("crafts: a dropped enhancement is logged once", drops, 1)
+
+        -- An item in Forever's camp item block counts as camp, logged once as a candidate; one outside it does not.
+        cr.recipeIDs = { 1229432, 818, 7001, 7002 }
+        cr.recipes[7001] = { learned = true, name = "Camp Stove", icon = 7 }
+        cr.recipes[7002] = { learned = true, name = "Linen Bandage", icon = 8 }
+        cr.outputs[7001], cr.outputs[7002], cr.class[279950], cr.class[1251] = 279950, 1251, 0, 0
+        craftsEvent(cctx, "TRADE_SKILL_LIST_UPDATE")
+        list(cctx)
+        local found = 0
+        for _, line in ipairs(cctx.env.TandemDebug.crafts) do
+            found = found + (line:find("crafts: camp candidate recipe=7001 item=279950", 1, true) and 1 or 0)
+        end
+        check("crafts: an item in the camp item block is listed, an item outside it is not", list(cctx),
+            "recipe:818=nil recipe:7001=279950 recipe:1229432=279978 spell:587=5349 spell:5505=2288")
+        check("crafts: a camp candidate is logged once", found, 1)
     end
     reset()
     local water = ctx.addon.Crafts.List()[2]
