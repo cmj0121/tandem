@@ -7279,7 +7279,7 @@ do
     check("crafts: TryCraft never crafts a spell entry", ctx.addon.Crafts.TryCraft(ctx.addon.Crafts.List()[2]), false)
     ctx.run("debug on")
     cr.craftable, cr.craftError = 0, "no reagents"
-    ctx.addon.Crafts.TryCraft(entry)
+    check("crafts: TryCraft reports a raising CraftRecipe as not crafted", ctx.addon.Crafts.TryCraft(entry), false)
     local tried = ctx.env.TandemDebug.crafts[#ctx.env.TandemDebug.crafts]
     check("crafts: TryCraft logs the craftable count and a CraftRecipe error",
         tried:match("craft recipe:2538: .*$"), "craft recipe:2538: CraftRecipe craftable=0 ok=false err=no reagents")
