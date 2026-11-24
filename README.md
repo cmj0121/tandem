@@ -620,17 +620,18 @@ above it opens an upward list of up to 10 entries you can make:
 - Any other spell Tandem has seen make an item: you cast it out of combat, and within 3 seconds exactly one item in
   your bags grows in count, with no loot, mail, trade, merchant, quest or bank window open meanwhile. Up to 40 such
   spells are remembered; the least recently made is forgotten first.
-- The profession recipes you have learned, read while that profession's window is open. A left click casts the
-  profession, which opens its window; the next left click, out of combat with that window open, crafts one. A recipe
-  you unlearn, or whose profession you drop, leaves the list.
+- The camp recipes you have learned, read while that profession's window is open: Leatherworking's Camp Tent and
+  Cooking's Basic Campfire; a profession's other recipes are left out. A left click casts the profession, which opens
+  its window; the next left click, out of combat with that window open, crafts one. A recipe you unlearn, or whose
+  profession you drop, leaves the list.
 
-Only items you can use (with a use effect, or a consumable) are listed: the pick first, then the most recently made,
-then by name. Click a row: a left click makes that entry, a right click uses its item, it becomes the button's pick
-and the list closes. The pick is saved per character, so it outlasts a `/reload`; when it is no longer listed, the
-first entry is used. Like the class macro button, this works in combat too when the `Class macros` line of
-[`/tandem check`](#tandem-check) is `ok`; without it the list opens and picks only out of combat. Hover the arrow:
-`Craft button` and `Click to choose what the button makes`, or `Choosing waits until combat ends` when a pick has to
-wait.
+Only items you can use (with a use effect, or a consumable) are listed, never an item enhancement such as an armor kit:
+the pick first, then the most recently made, then by name. Click a row: a left click makes that entry, a right click
+uses its item, it becomes the button's pick and the list closes. The pick is saved per character, so it outlasts a
+`/reload`; when it is no longer listed, the first entry is used. Like the class macro button, this works in combat too
+when the `Class macros` line of [`/tandem check`](#tandem-check) is `ok`; without it the list opens and picks only out
+of combat. Hover the arrow: `Craft button` and `Click to choose what the button makes`, or `Choosing waits until combat
+ends` when a pick has to wait.
 
 Hover the button or a row: the entry's name, `Makes <item>`, for a recipe `The first click opens the profession; the
 next one makes it`, then `Left click: make` and `Right click: use`. With nothing to list yet the button shows a
@@ -913,8 +914,9 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    class macro button), the craft button sits. On a character that knows no item-making spell yet it shows a
    placeholder: hover it for `Craft button` and `Cast an item-making spell or open a profession once to fill this
 list`. On a Mage, cast Conjure Water: the button takes its icon; right-click it and you drink. Open a profession
-   you know and close it: its learned recipes join the list above the arrow. Left of the craft button, a horn icon
-   sits: click it and all game sound goes off and the horn turns grey; click it again and the sound is back. Left of
+   you know and close it: its learned camp recipes (Leatherworking's Camp Tent) join the list above the arrow. Left of
+   the craft button, a horn icon sits: click it and all game sound goes off and the horn turns grey; click it again and
+   the sound is back. Left of
    the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat.
 5. On a Shaman who knows Cure Poison, the class macro button sits left of the rod icon (or of the bag row), with a
