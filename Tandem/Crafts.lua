@@ -173,8 +173,14 @@ local function spellInfo(spell)
     return legacyName, icon
 end
 
--- Whether item can be used (D1): it has a use spell or is a consumable. True for an unknown item, and for one whose
--- info is not loaded yet, which is then asked for and re-checked when it arrives.
+-- The item classes of an item enhancement (an armor kit, an oil), used on other gear rather than made to be used:
+-- class 8, or the older Consumable class 0 with its Item Enhancement subclass 6.
+local ENHANCEMENT_CLASS, CONSUMABLE_CLASS, ENHANCEMENT_SUBCLASS = 8, 0, 6
+-- dropped[item] = true once its "enhancement dropped" line is logged.
+local dropped = {}
+
+-- Whether item can be used (D1): it has a use spell or is a consumable, and is not an item enhancement. True for an
+-- unknown item, and for one whose info is not loaded yet, which is then asked for and re-checked when it arrives.
 local function usable(item)
     if not item then
         return true
@@ -185,10 +191,29 @@ local function usable(item)
         call(c.RequestLoadItemDataByID, item)
         return true
     end
+    local classID, subclassID = select(6, call(c.GetItemInfoInstant or _G.GetItemInfoInstant, item))
+    if classID == ENHANCEMENT_CLASS or classID == CONSUMABLE_CLASS and subclassID == ENHANCEMENT_SUBCLASS then
+        if not dropped[item] then
+            dropped[item] = true
+            log(("enhancement dropped item=%s class=%s/%s"):format(tostring(item), tostring(classID),
+                tostring(subclassID)))
+        end
+        return false
+    end
     if call(c.GetItemSpell or _G.GetItemSpell, item) then
         return true
     end
-    return select(6, call(c.GetItemInfoInstant or _G.GetItemInfoInstant, item)) == 0
+    return classID == CONSUMABLE_CLASS
+end
+
+-- The camp recipes the flyout lists (by recipe ID, or by the item a recipe makes); any other recipe is left out, so a
+-- profession shows its camp gear only: Leatherworking's 營地帳篷 (Camp Tent) and Cooking's Basic Campfire, which
+-- makes no item.
+Crafts.CAMP_RECIPES = { [818] = true, [1229432] = true }
+Crafts.CAMP_ITEMS = { [279978] = true }
+
+local function camp(recipe, item)
+    return Crafts.CAMP_RECIPES[recipe] == true or item ~= nil and Crafts.CAMP_ITEMS[item] == true
 end
 
 local function spellEntry(s, spell, seedItem)
@@ -199,7 +224,7 @@ local function spellEntry(s, spell, seedItem)
 end
 
 -- Crafts.List() -> entries { id, kind, name, icon, spell | recipe, profession (recipe), item|nil, made|nil }: one per
--- seed family at its highest known rank, per learned non-seed spell still known and per cached recipe, whose item
+-- seed family at its highest known rank, per learned non-seed spell still known and per cached camp recipe, whose item
 -- can be used; the pick first, then the latest made, then by name.
 function Crafts.List()
     local s = state()
@@ -218,9 +243,11 @@ function Crafts.List()
         end
     end
     for recipe, r in pairs(s.recipes) do
-        local id = "recipe:" .. recipe
-        all[#all + 1] = { id = id, kind = "recipe", name = r.name, icon = r.icon, recipe = recipe,
-            profession = r.profession, item = s.pairs[recipe] or r.item, made = s.made[id] }
+        local id, item = "recipe:" .. recipe, s.pairs[recipe] or r.item
+        if camp(recipe, item) then
+            all[#all + 1] = { id = id, kind = "recipe", name = r.name, icon = r.icon, recipe = recipe,
+                profession = r.profession, item = item, made = s.made[id] }
+        end
     end
     local out = {}
     for _, e in ipairs(all) do

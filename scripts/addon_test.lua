@@ -7034,7 +7034,7 @@ do
             C_Item = {
                 GetItemInfo = function(id) if cr.loaded[id] ~= false then return "Item" .. id end end,
                 GetItemSpell = function(id) return cr.itemSpell[id] end,
-                GetItemInfoInstant = function(id) return id, "t", "s", "", 1, cr.class[id] or 7 end,
+                GetItemInfoInstant = function(id) return id, "t", "s", "", 1, cr.class[id] or 7, cr.subclass[id] end,
                 RequestLoadItemDataByID = function(id) cr.requested[#cr.requested + 1] = id end,
             },
             C_Container = {
@@ -7066,7 +7066,7 @@ do
             profs = { Cooking = true, Mining = true },
             known = { [5504] = true, [5505] = true, [587] = true },
             names = { [5504] = "Conjure Water", [5505] = "Conjure Water", [587] = "Conjure Food", [7620] = "Fishing" },
-            loaded = {}, itemSpell = { [5349] = 433 }, class = { [2288] = 0, [2679] = 0, [19807] = 0 },
+            loaded = {}, itemSpell = { [5349] = 433 }, class = { [2288] = 0, [2679] = 0, [19807] = 0 }, subclass = {},
             bags = { [0] = { { 19807, 1 } }, [1] = {} },
             recipeIDs = { 2538, 3370, 2540, 2541 },
             recipes = {
@@ -7080,8 +7080,14 @@ do
         }
         cr.class[2681] = 0
     end
-    local function cload(db)
+    -- The test recipes count as camp recipes (Crafts lists camp recipes only), unless camp is false.
+    local function cload(db, camp)
         local ctx = loadShaman({ class = "MAGE", env = crenv(), db = db })
+        if camp ~= false then
+            for _, recipe in ipairs({ 2538, 2540, 2541, 9000 }) do
+                ctx.addon.Crafts.CAMP_RECIPES[recipe] = true
+            end
+        end
         ctx.fire("PLAYER_LOGIN")
         return ctx
     end
@@ -7104,6 +7110,33 @@ do
     local ctx = cload()
     check("crafts: the highest known rank of each seed family, with its seed item", list(ctx),
         "spell:587=5349 spell:5505=2288")
+
+    do
+        reset()
+        -- Only camp recipes are listed: by recipe ID (the tent's 1229432, the campfire's 818) or by the item made.
+        cr.recipeIDs = { 2538, 1229432, 818, 3780 }
+        cr.recipes[1229432] = { learned = true, name = "Camp Tent", icon = 4 }
+        cr.recipes[818] = { learned = true, name = "Basic Campfire", icon = 5 }
+        cr.recipes[3780] = { learned = true, name = "Heavy Armor Kit", icon = 6 }
+        cr.outputs[1229432], cr.outputs[3780], cr.class[279978], cr.itemSpell[4265] = 279978, 4265, 0, 1
+        cr.ready = true
+        local cctx = cload(nil, false)
+        craftsEvent(cctx, "TRADE_SKILL_SHOW")
+        check("crafts: a profession lists its camp recipes only", list(cctx),
+            "recipe:818=nil recipe:1229432=279978 spell:587=5349 spell:5505=2288")
+        cctx.run("debug on")
+        cctx.addon.Crafts.CAMP_ITEMS[4265] = true
+        cr.class[4265], cr.subclass[4265] = 0, 6
+        check("crafts: an item enhancement is never listed, even as a camp item", list(cctx),
+            "recipe:818=nil recipe:1229432=279978 spell:587=5349 spell:5505=2288")
+        list(cctx)
+        local drops = 0
+        for _, line in ipairs(cctx.env.TandemDebug.crafts) do
+            drops = drops + (line:find("crafts: enhancement dropped item=4265 class=0/6", 1, true) and 1 or 0)
+        end
+        check("crafts: a dropped enhancement is logged once", drops, 1)
+    end
+    reset()
     local water = ctx.addon.Crafts.List()[2]
     check("crafts: a spell entry carries its make data", ("%s %s %s %s %s"):format(water.kind, water.name,
         tostring(water.icon), water.spell, tostring(water.made)), "spell Conjure Water icon5505 5505 nil")
