@@ -617,7 +617,7 @@ above it opens an upward list of up to 10 entries you can make:
 
 - The item-making spells you know, each at its highest known rank: Conjure Water, Conjure Food, Conjure Mana Gem,
   Create Healthstone, Create Soulstone, Create Spellstone and Create Firestone.
-- Any other spell Tandem has seen make an item: you cast it out of combat, and within 3 seconds exactly one item in
+- Any other spell Tandem has seen make a camp item: you cast it out of combat, and within 3 seconds exactly one item in
   your bags grows in count, with no loot, mail, trade, merchant, quest or bank window open meanwhile. Up to 40 such
   spells are remembered; the least recently made is forgotten first.
 - The camp recipes you have learned, read while that profession's window is open: Leatherworking's Camp Tent and
