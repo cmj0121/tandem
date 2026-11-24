@@ -515,7 +515,7 @@ function Crafts.ReadRecipes()
         end
     end
     local s, key = state()
-    local learned, changed, seen, lineMatch = 0, 0, {}, false
+    local learned, changed, seen = 0, 0, {}
     for _, recipe in ipairs(ids) do
         local info = isID(recipe) and call(ui.GetRecipeInfo, recipe)
         local flag = type(info) == "table" and Safe(info.learned)
@@ -525,7 +525,6 @@ function Crafts.ReadRecipes()
             seen[recipe] = true
             local icon = Safe(info.icon)
             local line = Safe((select(2, call(ui.GetTradeSkillLineForRecipe, recipe))))
-            lineMatch = lineMatch or (prof ~= nil and line == prof)
             -- The recipe's own line first: while a window switches, the base info may still name the old profession.
             local profession = isText(line) and line or prof
             local r = { name = name, icon = (isID(icon) or isText(icon)) and icon or nil,
@@ -542,11 +541,9 @@ function Crafts.ReadRecipes()
             setRecipe(s, key, recipe, nil)
         end
     end
-    -- A cached recipe of the open profession no longer in its learned list, once the list reads at all and is the
-    -- open profession's (a listed learned recipe's line names it).
-    if prof and learned > 0 and not lineMatch then
-        log("recipes: sweep skipped, no line matches " .. prof)
-    elseif prof and learned > 0 then
+    -- A cached recipe of the open profession no longer in its learned list, once the list reads at all (a stale list
+    -- returned above, so this one is the open profession's).
+    if prof and learned > 0 then
         for recipe, r in pairs(s.recipes) do
             if r.profession == prof and not seen[recipe] then
                 changed = changed + 1
@@ -561,7 +558,7 @@ function Crafts.ReadRecipes()
 end
 
 -- Crafts.TryCraft(entry) -> crafted: for a recipe entry out of combat, with its profession's window open and ready,
--- crafts one; false otherwise (the click then casts the profession to open its window).
+-- crafts one; false otherwise, also when CraftRecipe is missing or raises (the click then casts the profession).
 function Crafts.TryCraft(entry)
     if type(entry) ~= "table" or entry.kind ~= "recipe" then
         return false
@@ -588,7 +585,7 @@ function Crafts.TryCraft(entry)
     end
     log(("craft %s: CraftRecipe craftable=%s ok=%s err=%s"):format(entry.id, tostring(craftable), tostring(ok),
         ok and "-" or tostring(err)))
-    return true
+    return ok
 end
 
 -- Whether the player knows the profession spell named name (the make action casts it by name).
