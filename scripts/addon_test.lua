@@ -13339,15 +13339,26 @@ do
 
     ctx.fire("AUCTION_HOUSE_CLOSED")
     check("auction probe: AH close hides the button", b.shown, false)
+    ctx.run("debug off")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    b:Show()
+    ctx.fire("AUCTION_HOUSE_CLOSED")
+    local queries = #a.queries
+    b:Show()
+    b.scripts.OnClick(b)
+    check("auction probe: with the recorder off, close hides the button and a click hides it and sends nothing",
+        tostring(b.shown) .. " " .. tostring(#a.queries == queries), "false true")
+    ctx.run("debug on")
     ctx.fire("AUCTION_HOUSE_SHOW")
     check("auction probe: AH open again shows the same button",
         tostring(b.shown) .. " " .. tostring(probeButton(ctx) == b), "true true")
 
     -- A modern-only client: C_AuctionHouse browse query and results; an unknown event never raises.
-    local browse = {}
-    local bar = { StartSearch = function(self) browse[#browse + 1] = self end }
+    local browse, started = {}, 0
+    local bar = { StartSearch = function() started = started + 1 end }
     ctx = aload(true, { QueryAuctionItems = false, AuctionHouseFrame = { name = "AuctionHouseFrame", SearchBar = bar },
         C_AuctionHouse = {
+            SendBrowseQuery = function(q) browse[#browse + 1] = q end,
             GetNumBrowseResults = function() return 1 end,
             GetBrowseResults = function()
                 return { { itemKey = { itemID = 99 }, minPrice = 700, totalQuantity = 2 } }
@@ -13365,8 +13376,8 @@ do
     ctx.fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     check("auction probe: an unknown event never raises and logs false", tostring(ok) .. " "
         .. tostring(has(ctx, "registered:AUCTION_ITEM_LIST_UPDATE=false")), "true true")
-    check("auction probe: a modern client searches through its own search bar and logs its results",
-        #browse .. " " .. tostring(browse[1] == bar) .. " "
+    check("auction probe: a modern client sends C_AuctionHouse's own browse query, never the search bar's",
+        #browse .. " " .. tostring(type(browse[1]) == "table" and started == 0) .. " "
         .. tostring(has(ctx, "browse:1={itemKey=table{itemID} minPrice=700 totalQuantity=2}")) .. " "
         .. tostring(has(ctx, "browse:1.itemKey={itemID=99}")) .. " "
         .. tostring(has(ctx, "button.parent=AuctionHouseFrame")),

@@ -291,17 +291,23 @@ local function query(how)
             false, q.exact, q.filters))
         return
     end
-    -- The modern AH: its own search bar sends the query with the player's selector.
-    local bar = field(_G.AuctionHouseFrame, "SearchBar")
-    local start = field(bar, "StartSearch")
-    if type(start) == "function" then
-        report("query:" .. how, read(start, bar))
+    -- The modern AH: a browse query of the selector's name, sent by C_AuctionHouse itself (never through Blizzard's
+    -- search bar, whose state the buy flow reads and an addon call would taint).
+    local send = field(_G.C_AuctionHouse, "SendBrowseQuery")
+    if type(send) == "function" then
+        local q = selector()
+        report("query:" .. how, read(send, { searchString = q.name or "", sorts = {}, filters = {} }))
         return
     end
     report("query:" .. how, "no-api")
 end
 
 local function onClick()
+    -- A button made in an earlier recording stays on the AH frame: off, it hides and sends nothing.
+    if not ns.Debug.IsOn() then
+        button:Hide()
+        return
+    end
     safely(query, "click")
     local after = field(_G.C_Timer, "After")
     if type(after) == "function" then
@@ -366,6 +372,10 @@ end
 
 -- Handles a probed event Tandem's frame received while the recorder is on; any other event is ignored.
 function AuctionProbe.OnEvent(event, ...)
+    -- The button hides on close even with the recorder off, so one made in an earlier recording never lingers.
+    if event == "AUCTION_HOUSE_CLOSED" and button then
+        button:Hide()
+    end
     if not registered[event] or not ns.Debug.IsOn() then
         return
     end
