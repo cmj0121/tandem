@@ -620,9 +620,10 @@ above it opens an upward list of up to 10 entries you can make:
 - Any other spell Tandem has seen make a camp item: you cast it out of combat, and within 3 seconds exactly one item in
   your bags grows in count, with no loot, mail, trade, merchant, quest or bank window open meanwhile. Up to 40 such
   spells are remembered; the least recently made is forgotten first.
-- The camp recipes you have learned, read while that profession's window is open: Leatherworking's Camp Tent and
-  Cooking's Basic Campfire; a profession's other recipes are left out. A left click casts the profession, which opens
-  its window; the next left click, out of combat with that window open, crafts one. A recipe you unlearn, or whose
+- The camp recipes you have learned, read while that profession's window is open: Leatherworking's Camp Tent, First
+  Aid's First Aid Kit, Cooking's Basic Campfire, and any recipe making an item in Forever's camp item block (IDs
+  279900-279999); a profession's other recipes are left out. A left click casts the profession, which opens its
+  window; the next left click, out of combat with that window open, crafts one. A recipe you unlearn, or whose
   profession you drop, leaves the list.
 
 Only items you can use (with a use effect, or a consumable) are listed, never an item enhancement such as an armor kit:

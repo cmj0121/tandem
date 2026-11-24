@@ -207,13 +207,29 @@ local function usable(item)
 end
 
 -- The camp recipes the flyout lists (by recipe ID, or by the item a recipe makes); any other recipe is left out, so a
--- profession shows its camp gear only: Leatherworking's 營地帳篷 (Camp Tent) and Cooking's Basic Campfire, which
--- makes no item.
-Crafts.CAMP_RECIPES = { [818] = true, [1229432] = true }
-Crafts.CAMP_ITEMS = { [279978] = true }
+-- profession shows its camp gear only: Leatherworking's 營地帳篷 (Camp Tent), First Aid's 急救箱 (First Aid Kit) and
+-- Cooking's Basic Campfire, which makes no item. Forever's camp items sit in one item ID block (279968, 279978), so
+-- an item in CAMP_ITEM_RANGE counts too, each logged once as a camp candidate.
+Crafts.CAMP_RECIPES = { [818] = true, [1229432] = true, [1230117] = true }
+Crafts.CAMP_ITEMS = { [279968] = true, [279978] = true }
+Crafts.CAMP_ITEM_RANGE = { 279900, 279999 }
+
+-- candidates[item] = true once its "camp candidate" line is logged.
+local candidates = {}
 
 local function camp(recipe, item)
-    return Crafts.CAMP_RECIPES[recipe] == true or item ~= nil and Crafts.CAMP_ITEMS[item] == true
+    if Crafts.CAMP_RECIPES[recipe] == true or item ~= nil and Crafts.CAMP_ITEMS[item] == true then
+        return true
+    end
+    local range = Crafts.CAMP_ITEM_RANGE
+    if type(item) == "number" and item >= range[1] and item <= range[2] then
+        if not candidates[item] then
+            candidates[item] = true
+            log(("camp candidate recipe=%s item=%d"):format(tostring(recipe), item))
+        end
+        return true
+    end
+    return false
 end
 
 local function spellEntry(s, spell, seedItem)
@@ -238,7 +254,7 @@ function Crafts.List()
         end
     end
     for spell, item in pairs(s.pairs) do
-        if not SEED[spell] and not s.recipes[spell] and Crafts.CAMP_ITEMS[item] and isKnown(spell) then
+        if not SEED[spell] and not s.recipes[spell] and camp(nil, item) and isKnown(spell) then
             all[#all + 1] = spellEntry(s, spell)
         end
     end
