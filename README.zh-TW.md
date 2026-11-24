@@ -7,10 +7,10 @@
 Tandem 是一個 World of Warcraft addon，會在物品勝過你身上的裝備時告訴你。它依用戶端當下提供的資料判斷背包、拾取
 視窗與任務獎勵中的每件物品：部位、需求等級、護甲或武器類型、提示框中的需求，以及依你的職業與天賦樹加權的屬性。升級
 物品會在背包或拾取按鈕上出現紅色邊框與綠色向上箭頭，聊天視窗顯示一行訊息，提示框也多一行綠字。Tandem 也會標出最佳的
-任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、靜音
-按鈕、飲食按鈕、地圖資訊，薩滿還有武器附魔觸發率。它會在世界地圖上標出你的等級能拿的 WoW Forever 圖書館書籍，
+任務獎勵選擇，並標示快捷列上等級過時的法術。在你要求時，它會以快捷列為中心重新排列畫面，加上經驗條、背包圖示列、製造
+按鈕、靜音按鈕、飲食按鈕、地圖資訊，薩滿還有武器附魔觸發率。它會在世界地圖上標出你的等級能拿的 WoW Forever 圖書館書籍，
 經過時在聊天視窗提醒你。它絕不會替玩家執行任何動作：它只提供建議，除了你自己的屬性權重、職業訓練師教授的
-內容、介面配置的狀態與模式、你選的職業巨集、武器附魔的觸發計數，以及書籍提示是否開啟之外，不儲存任何資料。
+內容、介面配置的狀態與模式、你選的職業巨集、製造按鈕能製造的物品與你的選擇、武器附魔的觸發計數，以及書籍提示是否開啟之外，不儲存任何資料。
 
 ## 安裝
 
@@ -104,9 +104,9 @@ Probe: LootFrame.ScrollBox missing
 每項功能一行：它需要的 API 都找到時顯示 `ok`，後面列出每個 API 以及是否找到。兩個 API 擇一即可時，兩個都會列出，
 找到其中一個就夠了。功能有 `Item tooltip`、`Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、
 `Talent spec`、`Trainer record`、`Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、
-`Fishing macro`、`Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
-`Weapon procs`、`Eat button`、`Book pins` 與 `Book alert`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)仍可使用，
-只是它的清單只能在戰鬥外開啟與選擇。
+`Fishing macro`、`Class macro button`、`Class macros`、`Craft button`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
+`Weapon procs`、`Eat button`、`Book pins` 與 `Book alert`。缺少 API 的功能會保持關閉，而不會引發錯誤。沒有 `Class macros` 時，[職業巨集按鈕](#背包圖示列)與製造按鈕仍可使用，
+只是它們的清單只能在戰鬥外開啟與選擇。
 `Upgrade borders` 需要 `Upgrade alert` 的 API 以及預設背包按鈕 `ContainerFrame1Item1` 或
 `ContainerFrameCombinedBags`。物品屬性是從提示框讀取的，因此沒有 `Stat search` 時不會判斷任何物品。
 
@@ -534,10 +534,32 @@ Tandem 會在戰鬥外更新巨集（戰鬥中的變更等戰鬥結束才套用�
 出現或隱藏，因此戰鬥中學會的法術或換上的魚竿要等戰鬥結束才會反映。它只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的
 `Class macro button` 這行（拖曳還需要 `Cure macro`）。
 
-另一個圖示在職業巨集按鈕左邊（沒有這個按鈕時是魚竿圖示左邊，兩者都沒有時是背包圖示列左邊），用來靜音：點擊一次關閉所有
+製造按鈕位於職業巨集按鈕左邊（這個按鈕隱藏時是魚竿圖示左邊，兩者都隱藏時是背包圖示列左邊），每個職業都有。左鍵
+製造你選的項目的物品，右鍵使用那個物品，上方的小箭頭則向上展開最多 10 個你能製造的項目：
+
+- 你已學會的製造物品法術，各取已學會的最高等級：造水術、造食術、製造法力寶石、製造治療石、製造靈魂石、製造法術石與
+  製造火焰石。
+- Tandem 看過會製造物品的其他任何法術：你在戰鬥外施放它，3 秒內背包裡恰好只有一種物品數量增加，期間也沒有開著拾取、
+  郵件、交易、商人、任務或銀行視窗。這類法術最多記住 40 個，最久沒製造的最先忘記。
+- 你已學會的專業技能配方，在該專業技能視窗開著時讀取。左鍵施放該專業技能，打開它的視窗；接著在戰鬥外、視窗開著時再按
+  一次左鍵，就製造一個。你遺忘的配方，或你放棄的專業技能的配方，會從清單移除。
+
+清單只列出能使用的物品（有使用效果或屬於消耗品）：選用的項目在最前，接著是最近製造的，再依名稱排序。點擊一列：左鍵製造
+該項目，右鍵使用它的物品，它成為按鈕選用的項目，清單隨即關閉。選擇依角色儲存，因此 `/reload` 後仍會保留；它不在清單上
+時，改用第一個項目。和職業巨集按鈕一樣，[`/tandem check`](#tandem-check) 的 `Class macros` 這行為 `ok` 時，戰鬥中也能
+這樣選；沒有時清單只能在戰鬥外開啟與選擇。滑鼠移到箭頭上：`製造按鈕` 與 `點擊選擇按鈕要製造的物品`，需要等待時則是
+`要等戰鬥結束才能選擇`。
+
+滑鼠移到按鈕或某一列上：顯示項目名稱、`製造 <物品>`，配方還有 `第一次點擊會打開專業技能，再點一次才會製造`，接著是
+`左鍵：製造` 與 `右鍵：使用`。還沒有任何項目時，按鈕顯示預留圖示、沒有箭頭，點擊不做任何事，提示框顯示 `製造按鈕` 與
+`施放一次製造物品的法術或打開一次專業技能，就會填入這個清單`。Tandem 只在你點擊時製造與使用，也絕不自己打開專業技能
+視窗。戰鬥中按鈕與清單無法變更，因此戰鬥中學會的法術或第一次製造的物品要等戰鬥結束才會出現。它只在介面配置開啟時顯示，
+需要 [`/tandem check`](#tandem-check) 的 `Craft button` 這行。
+
+另一個圖示在製造按鈕左邊（製造按鈕隱藏時依序是職業巨集按鈕、魚竿圖示或背包圖示列左邊），用來靜音：點擊一次關閉所有
 聲音，再點一次恢復，戰鬥中也可以。它切換的是用戶端的 `Sound_EnableAllSound` 設定，也就是用戶端聲音設定裡的聲音勾選框，
 因此 `/reload` 或關閉介面配置後仍維持你的選擇。圖示是彩色的號角，聲音關閉時變成灰色；提示框顯示 `聲音開啟` 或 `聲音關閉`，
-以及 `點擊靜音` 或 `點擊取消靜音`。戰鬥中它無法移動，因此戰鬥中出現或消失的職業巨集按鈕或魚竿圖示，要等戰鬥結束它才會
+以及 `點擊靜音` 或 `點擊取消靜音`。戰鬥中它無法移動，因此戰鬥中出現或消失的製造按鈕、職業巨集按鈕或魚竿圖示，要等戰鬥結束它才會
 跟著移位。它只在介面配置開啟時顯示，需要 [`/tandem check`](#tandem-check) 的 `Mute button` 這行。
 
 切換按鈕在靜音圖示左邊（靜音圖示隱藏時，則在最左邊那個圖示的左邊），用來切換這個角色的[版面模式](#移動了什麼)。
@@ -623,6 +645,7 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 | `layout`   | [介面配置](#介面配置) `on`、先前版面 `previous`、原本的目標的目標與小地圖座標 `coords`、`minimap` 位置與隱藏 |
 | `modes`    | 每個角色（`Name`）：[版面模式](#移動了什麼) `heal`；不存在表示輸出                                           |
 | `picks`    | 每個角色（`Name`）：選用的[職業巨集](#背包圖示列)項目，例如 `poison` 或 `stormstrike`                        |
+| `crafts`   | 每個角色（`Name`）：[製造按鈕](#背包圖示列)的法術對物品 `pairs`、配方 `recipes`、製造時間 `made` 與 `pick`   |
 
 - 每次在戰鬥外開啟或更新職業訓練師視窗時，都會以你角色的職業記錄它的法術：列出的每個法術（不論是否已學會）、需求
   等級，以及法術等級文字中的數字（`等級 3` 記為 `3`）。分類標題、專業技能訓練師，以及用戶端沒有提供法術 ID 的法術會
@@ -633,12 +656,14 @@ Tandem 只儲存一個帳號共用的表 `TandemDB`，存檔位置為
 - `Tandem` 編輯模式版面為治療模式建立時，`layout.built` 為 `heal`，輸出模式時不存在；登入時會與角色的 `modes` 項目
   比較，兩者不同就重新建立版面。不是 `heal` 的 `modes` 項目會在載入時捨棄。
 - 不是非空項目 ID 的 `picks` 項目會在載入時捨棄。
+- 不是表的 `crafts` 項目會在載入時捨棄，其中每筆無效的對應、配方或製造時間，以及不是 `spell:<id>` 或 `recipe:<id>` 的
+  `pick` 也會捨棄。
 - `layout.books` 是[圖書館書籍](#書籍開關)的開關：`/tandem books off` 之後為 `false`，`/tandem books on` 之後為
   `true`，兩者都沒用過時不存在（即開啟）。不是 `true` 或 `false` 的值會在載入時捨棄。
 - 每個角色只以名字為鍵，不含伺服器：Forever 的伺服器 API 不回傳任何值，顯示的伺服器也只是化名。因此不同伺服器上同名的
-  角色會共用同一筆 `weights`、`modes`、`picks`、[武器附魔觸發](#武器附魔觸發)與[擊殺者](#擊殺者)。
+  角色會共用同一筆 `weights`、`modes`、`picks`、`crafts`、[武器附魔觸發](#武器附魔觸發)與[擊殺者](#擊殺者)。
 
-`TandemDB.schemaVersion` 為 `8`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers`、`layout`、`modes`、`picks`、`procs` 與 `killers`，
+`TandemDB.schemaVersion` 為 `8`。較舊 schema 的存檔資料會在載入時遷移：保留 `weights`、`trainers`、`layout`、`modes`、`picks`、`crafts`、`procs` 與 `killers`，
 其他所有鍵（例如舊版的物品快取、掉落紀錄與屬性）都會捨棄。聊天視窗接著顯示
 `Tandem：存檔資料已從結構版本 <n> 升級到 8` 與 `Tandem：已捨棄 <n> 筆無效或不再使用的存檔資料`；schema 6 與 7 的資料在
 沒有捨棄任何項目時會靜默升級。較新 schema 的存檔資料會原樣保留，在 addon 更新之前不會儲存任何資料。
@@ -671,10 +696,10 @@ Schema 8 會在第一次載入時，把每個角色的項目從 `Name-Realm` 改
 物品提示框、任務獎勵建議、升級提醒與升級邊框，以及快捷列邊框，都使用尚未在 Forever 上驗證的 API。執行一次
 `/tandem check` 就能知道用戶端有哪些：
 
-1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十四行，分別是 `Item tooltip`、
+1. 在戰鬥外執行 `/tandem check`。聊天視窗顯示 `Tandem API check:` 與二十五行，分別是 `Item tooltip`、
    `Quest reward pick`、`Upgrade alert`、`Item stats`、`Stat search`、`Talent spec`、`Trainer record`、
    `Action bar borders`、`Upgrade borders`、`Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、
-   `Class macro button`、`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
+   `Class macro button`、`Class macros`、`Craft button`、`Cure macro`、`Mute button`、`Role button`、`Map info`、
    `Weapon procs`、`Eat button`、`Book pins` 與 `Book alert`，
    每行後面接著 `ok`
    或 `missing` 以及它的 API。之後是二十行 `Probe:`，各為 `present` 或 `missing`。
@@ -755,7 +780,9 @@ Lua 錯誤。
    都會開啟。拾取一件
    物品：剩餘格數減一。背包中有魚竿時，背包圖示列左邊有一個魚竿圖示：點擊後裝備魚竿；再點一次，武器就換回來。把魚竿圖示拖到快捷列：
    會放上 `Tandem Fishing` 巨集；點擊它裝備魚竿，再點一次施放釣魚。魚竿圖示左邊（沒有魚竿時是背包圖示列左邊；薩滿則在
-   職業巨集按鈕左邊）有一個號角圖示：點擊後所有遊戲聲音關閉，號角變成灰色；再點一次，聲音就恢復。號角左邊有一個劍的
+   職業巨集按鈕左邊）是製造按鈕。還沒學會任何製造物品法術的角色上，它顯示預留圖示：滑鼠移上去顯示 `製造按鈕` 與
+   `施放一次製造物品的法術或打開一次專業技能，就會填入這個清單`。在法師上施放造水術：按鈕換成它的圖示；右鍵點擊它就會
+   喝水。打開一個你會的專業技能再關閉：它已學會的配方會加入箭頭上方的清單。製造按鈕左邊有一個號角圖示：點擊後所有遊戲聲音關閉，號角變成灰色；再點一次，聲音就恢復。號角左邊有一個劍的
    圖示：滑鼠移上去顯示 `版面模式` 與 `輸出`。
 4. 薩滿的圖騰列在主快捷列正上方自成一排，戰鬥中施法後也不會移動。
 5. 在已學會治療中毒的薩滿上，職業巨集按鈕位於魚竿圖示左邊（或背包圖示列左邊），上方有一個小箭頭。點擊箭頭：已學會的
@@ -776,11 +803,11 @@ Lua 錯誤。
    `Tandem: the layout will change after combat`，戰鬥結束時才換成輸出版面，圖示也變回劍。
 10. 開始戰鬥並執行 `/tandem layout off`：聊天視窗顯示 `Tandem: the layout will change after combat`。戰鬥結束時恢復
     你先前的版面，快捷列、背包列、狀態列、目標的目標與小地圖座標設定都和之前一樣。
-11. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、職業巨集按鈕、靜音按鈕、切換按鈕與
+11. 再次開啟介面配置，打開編輯模式並選擇另一個版面：Tandem 的經驗條、背包圖示列、職業巨集按鈕、製造按鈕、靜音按鈕、切換按鈕與
     地圖資訊都會消失。
 
 請回報 `/tandem check` 的 `Layout`、`XP bar`、`Bag button`、`Fishing rod`、`Fishing macro`、`Class macro button`、
-`Class macros`、`Cure macro`、`Mute button`、`Role button`、`Map info` 與 `Probe:` 行、步驟 6 中
+`Class macros`、`Craft button`、`Cure macro`、`Mute button`、`Role button`、`Map info` 與 `Probe:` 行、步驟 6 中
 `TandemDebug` 的 `flyout` 行、任何位置錯誤或與其他框架重疊的框架、`off` 之後沒有還原的東西，以及任何 Lua 錯誤。
 
 ## Interface number

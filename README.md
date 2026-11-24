@@ -9,11 +9,11 @@ in the loot window and among quest rewards from what the client says about it ri
 armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
 border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
 marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
-screen around the action bars, with an XP bar, a bag row, a mute button, an eat and drink button, a map info line and,
-for a Shaman, a weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches on
-the world map and tells you in chat when you pass one. It never acts for the player: it only advises, and it saves
+screen around the action bars, with an XP bar, a bag row, a craft button, a mute button, an eat and drink button, a map
+info line and, for a Shaman, a weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches
+on the world map and tells you in chat when you pass one. It never acts for the player: it only advises, and it saves
 nothing but your own stat weights, what your class trainer teaches, its layout state and mode, your class macro pick,
-your weapon enchant proc counts and whether book hints are on.
+what your craft button can make and its pick, your weapon enchant proc counts and whether book hints are on.
 
 ## Install
 
@@ -108,10 +108,10 @@ One line per feature, `ok` when every API it needs is found, followed by each AP
 either of two APIs will do, both are listed and one found is enough. The features are `Item tooltip`,
 `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
 `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-`Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`,
+`Class macro button`, `Class macros`, `Craft button`, `Cure macro`, `Mute button`, `Role button`, `Map info`,
 `Weapon procs`, `Eat button`, `Book pins` and `Book alert`. A feature whose API is missing stays off instead of
-raising an error. Without `Class macros` the [class macro button](#bag-row) still works, but its list opens and picks
-only out of combat.
+raising an error. Without `Class macros` the [class macro button](#bag-row) and the craft button still work, but their
+lists open and pick only out of combat.
 `Upgrade borders` needs the `Upgrade alert` APIs and the default bag buttons, `ContainerFrame1Item1` or
 `ContainerFrameCombinedBags`. Item stats are read from the tooltip, so without `Stat search` no item is judged.
 
@@ -611,13 +611,42 @@ room for this macro`. Tandem only casts on your click. In combat the button cann
 learned or a rod swapped in a fight shows once it ends. It shows only while the layout is on, and needs the
 `Class macro button` line of [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
 
-One more icon, left of the class macro button (or of the rod icon, or of the bag row, when those are hidden), mutes the game:
-a click turns all sound off, the next click turns it back on, in combat too. It flips the client's
-`Sound_EnableAllSound` setting, the same as the sound checkbox in the client's sound settings, so the choice outlasts
-a `/reload` and turning the layout off. Its icon is a horn, in colour, or greyed out while the sound is off, and its
-tooltip says `Sound on` or `Sound off` with `Click to mute` or `Click to unmute`. In combat it cannot move, so it
-follows a class macro button or rod icon that came or went in the fight once it ends. It shows only while the layout is on,
-and needs the `Mute button` line of [`/tandem check`](#tandem-check).
+Left of the class macro button (or of the rod icon, or of the bag row, when those are hidden) sits the craft button,
+for every class. A left click makes the item of the entry you picked, a right click uses that item, and the small arrow
+above it opens an upward list of up to 10 entries you can make:
+
+- The item-making spells you know, each at its highest known rank: Conjure Water, Conjure Food, Conjure Mana Gem,
+  Create Healthstone, Create Soulstone, Create Spellstone and Create Firestone.
+- Any other spell Tandem has seen make an item: you cast it out of combat, and within 3 seconds exactly one item in
+  your bags grows in count, with no loot, mail, trade, merchant, quest or bank window open meanwhile. Up to 40 such
+  spells are remembered; the least recently made is forgotten first.
+- The profession recipes you have learned, read while that profession's window is open. A left click casts the
+  profession, which opens its window; the next left click, out of combat with that window open, crafts one. A recipe
+  you unlearn, or whose profession you drop, leaves the list.
+
+Only items you can use (with a use effect, or a consumable) are listed: the pick first, then the most recently made,
+then by name. Click a row: a left click makes that entry, a right click uses its item, it becomes the button's pick
+and the list closes. The pick is saved per character, so it outlasts a `/reload`; when it is no longer listed, the
+first entry is used. Like the class macro button, this works in combat too when the `Class macros` line of
+[`/tandem check`](#tandem-check) is `ok`; without it the list opens and picks only out of combat. Hover the arrow:
+`Craft button` and `Click to choose what the button makes`, or `Choosing waits until combat ends` when a pick has to
+wait.
+
+Hover the button or a row: the entry's name, `Makes <item>`, for a recipe `The first click opens the profession; the
+next one makes it`, then `Left click: make` and `Right click: use`. With nothing to list yet the button shows a
+placeholder icon and no arrow, a click does nothing, and its tooltip says `Craft button` and `Cast an item-making
+spell or open a profession once to fill this list`. Tandem only makes and uses on your click, and never opens a
+profession window itself. In combat the button and its list cannot change, so a spell learned or an item first made
+in a fight shows once it ends. It shows only while the layout is on, and needs the `Craft button` line of
+[`/tandem check`](#tandem-check).
+
+One more icon, left of the craft button (or of the class macro button, the rod icon or the bag row, when those are
+hidden), mutes the game: a click turns all sound off, the next click turns it back on, in combat too. It flips the
+client's `Sound_EnableAllSound` setting, the same as the sound checkbox in the client's sound settings, so the choice
+outlasts a `/reload` and turning the layout off. Its icon is a horn, in colour, or greyed out while the sound is off,
+and its tooltip says `Sound on` or `Sound off` with `Click to mute` or `Click to unmute`. In combat it cannot move, so
+it follows a craft button, class macro button or rod icon that came or went in the fight once it ends. It shows only
+while the layout is on, and needs the `Mute button` line of [`/tandem check`](#tandem-check).
 
 The role button, left of the mute icon (or of whatever icon is leftmost when the mute icon is hidden), switches this
 character's [layout mode](#what-moves). It shows a sword in damage mode and a flash heal in healer mode; its tooltip
@@ -718,6 +747,7 @@ Tandem saves one account-wide table, `TandemDB`, as
 | `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target and `coords`, the `minimap` `angle`, `hidden`  |
 | `modes`    | Per character (`Name`): the [layout mode](#what-moves), `heal`; absent = damage                                |
 | `picks`    | Per character (`Name`): the [class macro](#bag-row) entry picked, such as `poison` or `stormstrike`            |
+| `crafts`   | Per character (`Name`): the [craft button](#bag-row)'s spell-to-item `pairs`, `recipes`, `made` times, `pick`  |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
   class: every spell it lists, learned or not, with the level it needs and the number in its rank text (`Rank 3` is
@@ -731,14 +761,16 @@ Tandem saves one account-wide table, `TandemDB`, as
   login it is compared with the character's `modes` entry to rebuild the layout when they differ. A `modes` entry
   other than `heal` is dropped on load.
 - A `picks` entry that is not a non-empty entry id is dropped on load.
+- A `crafts` entry that is not a table is dropped on load, as is each invalid pair, recipe or made time inside it and
+  a `pick` that is not `spell:<id>` or `recipe:<id>`.
 - `layout.books` is the [library books](#the-books-switch) switch: `false` after `/tandem books off`, `true` after
   `/tandem books on`, absent (on) until you use either. A value that is not `true` or `false` is dropped on load.
 - Each character is keyed by its name alone, without the realm: Forever's realm APIs return nothing and the realm it
   shows is only a pseudonym. Two characters with the same name on different realms therefore share one entry of
-  `weights`, `modes`, `picks`, [weapon procs](#weapon-enchant-procs) and [killers](#killers).
+  `weights`, `modes`, `picks`, `crafts`, [weapon procs](#weapon-enchant-procs) and [killers](#killers).
 
 `TandemDB.schemaVersion` is `8`. Saved data from an older schema is migrated on load: `weights`, `trainers`,
-`layout`, `modes`, `picks`, `procs` and `killers` are kept and every other key, such as the item cache, loot log and
+`layout`, `modes`, `picks`, `crafts`, `procs` and `killers` are kept and every other key, such as the item cache, loot log and
 stats of earlier versions, is dropped. Chat then shows `Tandem: saved data upgraded from schema <n> to 8` and
 `Tandem: dropped <n> invalid or unused saved entries`; schema 6 and 7 data is upgraded silently when nothing is dropped.
 Saved data from a newer schema is kept as it is, and nothing is saved until the addon is updated.
@@ -772,10 +804,10 @@ If the line is missing, check that the addon is enabled and that no Lua error wa
 The tooltip, the quest reward pick, the upgrade alert and borders and the action bar borders use APIs that are not
 verified on Forever. One pass of `/tandem check` tells which of them the client has:
 
-1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-four lines, one each for
+1. Out of combat, run `/tandem check`. Chat shows `Tandem API check:` and twenty-five lines, one each for
    `Item tooltip`, `Quest reward pick`, `Upgrade alert`, `Item stats`, `Stat search`, `Talent spec`, `Trainer record`,
    `Action bar borders`, `Upgrade borders`, `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`,
-   `Class macro button`, `Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info`,
+   `Class macro button`, `Class macros`, `Craft button`, `Cure macro`, `Mute button`, `Role button`, `Map info`,
    `Weapon procs`, `Eat button`, `Book pins` and `Book alert`, each followed by `ok` or `missing` and its APIs.
    Twenty `Probe:` lines follow, each `present` or `missing`.
 2. Hand in a quest that offers a choice of rewards and, with the reward window open, run `/tandem check` again. Note
@@ -877,8 +909,12 @@ upgrade without a border, whether the border sits well on the button, and any Lu
    in your bags, a rod icon sits left of the bag row: click it and the rod is equipped; click it again and your
    weapons are back. Drag the rod icon onto an action bar: a `Tandem Fishing` macro lands there; click it to equip the
    rod, click it again to cast Fishing. Left of the rod icon (or of the bag row, with no rod; on a Shaman, left of the
-   class macro button), a horn icon sits: click it and all game sound goes off and the horn turns grey; click it
-   again and the sound is back. Left of the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
+   class macro button), the craft button sits. On a character that knows no item-making spell yet it shows a
+   placeholder: hover it for `Craft button` and `Cast an item-making spell or open a profession once to fill this
+list`. On a Mage, cast Conjure Water: the button takes its icon; right-click it and you drink. Open a profession
+   you know and close it: its learned recipes join the list above the arrow. Left of the craft button, a horn icon
+   sits: click it and all game sound goes off and the horn turns grey; click it again and the sound is back. Left of
+   the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat.
 5. On a Shaman who knows Cure Poison, the class macro button sits left of the rod icon (or of the bag row), with a
    small arrow above it. Click the arrow: a list of your learned entries opens upward. Hover a row: its title, what it
@@ -905,11 +941,11 @@ upgrade without a border, whether the border sits well on the button, and any Lu
 10. Start a fight and run `/tandem layout off`: chat shows `Tandem: the layout will change after combat`. When the
     fight ends your previous layout is back, with its bars, bag bar, status bar, target of target and minimap
     coordinates as before.
-11. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, class macro button, mute
-    button, role button and map info line go.
+11. Turn the layout on again, open Edit Mode and pick another layout: Tandem's XP bar, bag row, class macro button, craft
+    button, mute button, role button and map info line go.
 
 Report back the `Layout`, `XP bar`, `Bag button`, `Fishing rod`, `Fishing macro`, `Class macro button`,
-`Class macros`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Probe:` lines of
+`Class macros`, `Craft button`, `Cure macro`, `Mute button`, `Role button`, `Map info` and `Probe:` lines of
 `/tandem check`, the `flyout` lines of `TandemDebug` from step 6, any frame that landed in the wrong place or overlaps
 another, anything not restored by `off`, and any Lua error.
 
