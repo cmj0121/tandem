@@ -136,6 +136,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
             ns.ItemBorders.Schedule()
         end
         ns.Rod.Schedule()
+        ns.Crafts.OnItemInfo(...)
         ns.Eat.Invalidate()
         ns.Eat.Schedule()
     elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
@@ -169,6 +170,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.BagButton.Update()
         ns.Rod.Update()
         ns.Eat.Rescan()
+        ns.Crafts.OnBagUpdate()
     elseif event == "PLAYER_LOGIN" then
         ns.ActionBorders.Schedule()
         ns.ItemBorders.OnLogin()
@@ -181,6 +183,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.MaelstromProbe.OnLogin(self)
         ns.ManaProbe.OnLogin()
         ns.CraftProbe.OnLogin()
+        ns.Crafts.OnLogin()
         ns.Maelstrom.OnLogin(self)
         ns.RangeText.OnLogin(self)
         ns.Killers.OnLogin(self)
@@ -195,6 +198,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
             scheduleRecall()
         end
         -- Before the rod button too, whose update places it left of the class macro button.
+        ns.CraftFlyout.OnLogin()
+        -- Before the rod button too, whose update places it left of the craft button.
         ns.Mute.OnLogin()
         -- After the mute button, whose place it follows; before the rod button, whose update places both again.
         ns.Role.OnLogin()
@@ -217,10 +222,15 @@ frame:SetScript("OnEvent", function(self, event, ...)
             and event ~= "UPDATE_BONUS_ACTIONBAR" then
             -- A spell learned shows its class macro, which may show the button and move the mute button.
             ns.Flyout.Update()
+            ns.CraftFlyout.Update()
             ns.Mute.Update()
             ns.Role.Update()
             if event == "SPELLS_CHANGED" and ns.Flyout.Made() then
                 scheduleRecall()
+            end
+            if event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB"
+                or event == "LEARNED_SPELL_IN_SKILL_LINE" then
+                ns.Crafts.OnSpellsChanged()
             end
         end
         if event == "PLAYER_ENTERING_WORLD" then
@@ -250,6 +260,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if ns.Flyout.Made() then
             scheduleRecall()
         end
+        ns.CraftFlyout.OnCombatEnd()
         ns.Mute.OnCombatEnd()
         ns.Debug.OnCombatEnd()
         ns.Role.OnCombatEnd()
@@ -267,6 +278,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.ItemBorders.Schedule()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Flyout.OnCombatStart()
+        ns.CraftFlyout.OnCombatStart()
         ns.BookAlert.OnCombatStart()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         scheduleRecall()

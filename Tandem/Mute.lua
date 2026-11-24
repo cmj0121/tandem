@@ -1,10 +1,10 @@
 local _, ns = ...
 
--- The mute button (D1, D2, D4): one plain button left of the class macro button (or the rod button, or the bag row,
--- when those are hidden) while the layout is on. A click flips the Sound_EnableAllSound CVar between 1 and 0; its icon
--- and tooltip show the current state. It is parented and anchored to UIParent only. A click works in combat, but its
--- place and visibility change only out of combat, like its neighbours' (a change asked for in combat waits for
--- Mute.OnCombatEnd). Nothing is saved in TandemDB: the CVar is the state.
+-- The mute button (D1, D2, D4): one plain button left of the craft button (or the class macro button, the rod button
+-- or the bag row, when those are hidden) while the layout is on. A click flips the Sound_EnableAllSound CVar between 1
+-- and 0; its icon and tooltip show the current state. It is parented and anchored to UIParent only. A click works in
+-- combat, but its place and visibility change only out of combat, like its neighbours' (a change asked for in combat
+-- waits for Mute.OnCombatEnd). Nothing is saved in TandemDB: the CVar is the state.
 local Mute = {}
 ns.Mute = Mute
 
@@ -79,7 +79,7 @@ function Mute.Toggle()
 end
 
 -- Refreshes the icon, then the button's place and visibility; in combat only marks the place as pending. Runs after
--- every Rod.Update (after Flyout.Update, whose button it sits beside), at login and on a layout change. While
+-- every Rod.Update (after CraftFlyout.Update, whose button it sits beside), at login and on a layout change. While
 -- debugging, logs the button's state when it differs from the last one logged.
 function Mute.Update()
     if not button then
@@ -92,7 +92,7 @@ function Mute.Update()
     end
     pending = nil
     local value = ns.Store.GetCVar(CVAR)
-    local x = ns.Cure.NextX()
+    local x = ns.CraftFlyout.NextX()
     if on and value ~= nil then
         button:ClearAllPoints()
         button:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", x, ns.BagButton.OFFSET_Y + ns.Layout.MicroRoom())
@@ -108,10 +108,10 @@ function Mute.Update()
     end
 end
 
--- Mute.NextX() -> x: the BOTTOMRIGHT x offset for the right edge of a button left of the mute button, or Cure.NextX()
--- while it is hidden; the y offset is the rod button's.
+-- Mute.NextX() -> x: the BOTTOMRIGHT x offset for the right edge of a button left of the mute button, or
+-- CraftFlyout.NextX() while it is hidden; the y offset is the rod button's.
 function Mute.NextX()
-    local x = ns.Cure.NextX()
+    local x = ns.CraftFlyout.NextX()
     if button and call(button.IsShown, button) == true then
         x = x - SIZE - GAP
     end
@@ -154,8 +154,8 @@ function Mute.OnLogin()
     Mute.Update()
 end
 
--- Listens after the flyout's listener (Mute.lua follows Flyout.lua in the toc), so Cure.NextX() is already current;
--- it places the button itself for a player with no rod button, whose Rod.Update does nothing.
+-- Listens after the craft flyout's listener (Mute.lua follows CraftFlyout.lua in the toc), so CraftFlyout.NextX() is
+-- already current; it places the button itself for a player with no rod button, whose Rod.Update does nothing.
 ns.Layout.OnChange(function(layoutOn)
     on = layoutOn and ns.Check.Ready("Mute button")
     Mute.Update()

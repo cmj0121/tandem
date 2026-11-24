@@ -19,6 +19,7 @@ Data\Books.lua
 Books.lua
 Items.lua
 SpellRanks.lua
+Crafts.lua
 ActionBorders.lua
 Trainer.lua
 View.lua
@@ -32,6 +33,7 @@ Rod.lua
 Cure.lua
 ClassMacros.lua
 Flyout.lua
+CraftFlyout.lua
 Mute.lua
 Role.lua
 Eat.lua

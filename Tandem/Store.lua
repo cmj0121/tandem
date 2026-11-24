@@ -1,8 +1,9 @@
 local _, ns = ...
 
 -- Owns TandemDB: validates and migrates it on load and is its only writer. It keeps each character's stat weights,
--- layout mode, class macro pick, weapon enchant proc counts and the enemy players who killed them, the class trainer
--- spells seen and the UI layout state; every other key an older schema saved is dropped on load.
+-- layout mode, class macro pick, weapon enchant proc counts, the enemy players who killed them and the craft flyout's
+-- learned spell items, recipes, made times and pick, the class trainer spells seen and the UI layout state; every
+-- other key an older schema saved is dropped on load.
 local Store = { readOnly = false }
 ns.Store = Store
 
@@ -23,7 +24,7 @@ local MAX_SPEC = 3
 
 -- The top-level keys a current db holds; migrate drops and counts any other.
 local KEPT = { schemaVersion = true, weights = true, trainers = true, layout = true, modes = true,
-    picks = true, procs = true, killers = true }
+    picks = true, procs = true, killers = true, crafts = true }
 -- The weapon enchant families whose procs are counted.
 local PROC_FAMILIES = { windfury = true, flametongue = true, frostbrand = true }
 local MAX_LAYOUT_NAME = 64
@@ -182,6 +183,67 @@ local function copyKiller(fullName, v)
     end
 end
 
+-- A craft entry id: "spell:<spellID>" or "recipe:<recipeID>".
+local function isCraftId(v)
+    return type(v) == "string" and (v:match("^spell:%d+$") or v:match("^recipe:%d+$")) ~= nil
+end
+
+local function isIcon(v)
+    return isInt(v, 1) or isText(v)
+end
+
+-- Returns a clean copy of a cached recipe { name, icon|nil, item|nil, profession|nil }, or nil.
+local function copyRecipe(v)
+    if type(v) == "table" and isText(v.name) and isOptional(v.icon, isIcon) and isOptional(v.item, isInt, 1)
+        and isOptional(v.profession, isText) then
+        return { name = v.name, icon = v.icon, item = v.item, profession = v.profession }
+    end
+end
+
+-- Returns a clean copy of a character's crafts { pairs = { [spellID] = itemID }, recipes = { [recipeID] = recipe },
+-- made = { [entryId] = time }, pick = entryId|nil }, or nil when v is not a table; drop is called once for each
+-- invalid field or entry inside it.
+local function copyCrafts(v, drop)
+    if type(v) ~= "table" then
+        return nil
+    end
+    local out = { pairs = {}, recipes = {}, made = {} }
+    local function each(t, keep)
+        if type(t) == "table" then
+            for k, x in pairs(t) do
+                if not keep(k, x) then
+                    drop()
+                end
+            end
+        elseif t ~= nil then
+            drop()
+        end
+    end
+    each(v.pairs, function(spell, item)
+        if isInt(spell, 1) and isInt(item, 1) then
+            out.pairs[spell] = item
+            return true
+        end
+    end)
+    each(v.recipes, function(id, r)
+        local clean = isInt(id, 1) and copyRecipe(r)
+        out.recipes[id] = clean or nil
+        return clean
+    end)
+    each(v.made, function(id, when)
+        if isCraftId(id) and isInt(when, 0) then
+            out.made[id] = when
+            return true
+        end
+    end)
+    if isCraftId(v.pick) then
+        out.pick = v.pick
+    elseif v.pick ~= nil then
+        drop()
+    end
+    return out
+end
+
 local function copyLayoutField(field, v)
     if field == "previous" then
         return { name = v.name, type = v.type }
@@ -310,6 +372,16 @@ local function migrate(raw, report)
             end
             db.killers = db.killers or {}
             db.killers[name] = clean
+        else
+            drop()
+        end
+    end
+
+    for name, v in pairs(entries(raw.crafts, true)) do
+        local crafts = isText(name) and copyCrafts(v, drop)
+        if crafts then
+            db.crafts = db.crafts or {}
+            db.crafts[name] = crafts
         else
             drop()
         end
@@ -557,6 +629,67 @@ function Store.ClearKillers(key)
     if type(Store.db.killers) == "table" then
         Store.db.killers[key] = nil
     end
+    return true
+end
+
+-- Returns a copy of the character key's crafts { pairs, recipes, made, pick|nil }; empty when none or the db is newer.
+function Store.Crafts(key)
+    local crafts = not Store.readOnly and Store.db.crafts
+    local mine = type(crafts) == "table" and crafts[key]
+    return copyCrafts(mine, function() end) or { pairs = {}, recipes = {}, made = {} }
+end
+
+-- Returns the character key's crafts table, created when missing; nil when the key is invalid or the db read-only.
+local function crafts(key)
+    if Store.readOnly or not isText(key) then
+        return nil
+    end
+    Store.db.crafts = Store.db.crafts or {}
+    local mine = Store.db.crafts[key] or { pairs = {}, recipes = {}, made = {} }
+    Store.db.crafts[key] = mine
+    return mine
+end
+
+-- Saves that the character key's spellID makes itemID (nil clears it); false when invalid or read-only.
+function Store.SetCraftPair(key, spellID, itemID)
+    local mine = isInt(spellID, 1) and isOptional(itemID, isInt, 1) and crafts(key)
+    if not mine then
+        return false
+    end
+    mine.pairs[spellID] = itemID
+    return true
+end
+
+-- Saves the character key's cached recipe { name, icon|nil, item|nil, profession|nil } (nil clears it); false when
+-- invalid or read-only.
+function Store.SetCraftRecipe(key, recipeID, recipe)
+    local clean = recipe ~= nil and copyRecipe(recipe) or nil
+    local mine = isInt(recipeID, 1) and (recipe == nil or clean) and crafts(key)
+    if not mine then
+        return false
+    end
+    mine.recipes[recipeID] = clean or nil
+    return true
+end
+
+-- Saves when (a time()) the character key last made the craft entry id (nil clears it); false when invalid or
+-- read-only.
+function Store.SetCraftMade(key, id, when)
+    local mine = isCraftId(id) and isOptional(when, isInt, 0) and crafts(key)
+    if not mine then
+        return false
+    end
+    mine.made[id] = when
+    return true
+end
+
+-- Saves the character key's craft pick (an entry id, or nil to clear it); false when invalid or read-only.
+function Store.SetCraftPick(key, id)
+    local mine = (id == nil or isCraftId(id)) and crafts(key)
+    if not mine then
+        return false
+    end
+    mine.pick = id
     return true
 end
 
