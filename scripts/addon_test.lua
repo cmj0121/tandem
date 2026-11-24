@@ -7274,7 +7274,7 @@ do
     cr.first = "Frostbolt"
     ctx.fire("SPELLS_CHANGED")
     local skipped = false
-    for _, line in ipairs(ctx.env.TandemDebug.log) do
+    for _, line in ipairs(ctx.env.TandemDebug.crafts) do
         skipped = skipped or line:find("crafts: profession prune skipped", 1, true) ~= nil
     end
     check("crafts: a failed control lookup by name skips the prune and logs it", recipes(ctx) .. " "
@@ -7334,7 +7334,8 @@ do
         "nil 5000 recipe:2541")
 
     for _, case in ipairs({ { "QUEST_TURNED_IN" }, { "QUEST_COMPLETE", "QUEST_FINISHED" },
-        { "BANKFRAME_OPENED", "BANKFRAME_CLOSED" }, { "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED" } }) do
+        { "BANKFRAME_OPENED", "BANKFRAME_CLOSED" }, { "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED" },
+        { "LOOT_READY" } }) do
         reset()
         ctx = cload()
         craftsEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 7620)
@@ -7363,6 +7364,53 @@ do
     end
     check("crafts: the 41st pair drops the least recently made", n .. " " .. tostring(pairs41[30002]) .. " "
         .. tostring(pairs41[30001]) .. " " .. tostring(pairs41[30041]), "40 nil 2288 2288")
+
+    local function joined(lines)
+        return table.concat(lines or {}, "\n")
+    end
+    local function riseAfter(c, spell)
+        c.t = (c.t or 0) + 10
+        craftsEvent(c, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", spell)
+        cr.bags[1][1] = { 2288, (cr.bags[1][1] and cr.bags[1][1][2] or 0) + 1 }
+        c.addon.Crafts.OnBagUpdate()
+        local got = c.env.TandemDB.crafts and c.env.TandemDB.crafts.Jaina
+        return got and got.pairs[spell]
+    end
+    reset()
+    ctx = cload()
+    ctx.run("debug on")
+    cr.known[10768], cr.known[9] = true, true
+    check("crafts: a skip-listed spell then one usable item rise learns no pair", riseAfter(ctx, 10768), nil)
+    check("crafts: a spell off the skip list learns", riseAfter(ctx, 9), 2288)
+    check("crafts: Fishing is not skip-listed", ctx.addon.Crafts.SKIP_SPELLS[7620], nil)
+    check("crafts: a skipped learn is logged", joined(ctx.env.TandemDebug.crafts):find(
+        "crafts: pair skipped spell=10768 reason=skip", 1, true) ~= nil, true)
+    check("crafts: crafts lines go to TandemDebug.crafts, not TandemDebug.log", tostring(
+        joined(ctx.env.TandemDebug.crafts):match("^%d+%.%d+ combat=false crafts: ") ~= nil) .. " "
+        .. tostring(joined(ctx.env.TandemDebug.log):find("crafts:", 1, true) ~= nil), "true false")
+    local before = #ctx.env.TandemDebug.crafts
+    ctx.run("debug off")
+    ctx.addon.Crafts.Log("crafts: off")
+    check("crafts: nothing logged while debug is off", #ctx.env.TandemDebug.crafts, before)
+    ctx.run("debug on")
+    for i = 1, 400 do
+        ctx.addon.Crafts.Log("line " .. i)
+    end
+    check("crafts: the crafts channel keeps at most 300 lines, 300 a session", #ctx.env.TandemDebug.crafts .. " "
+        .. tostring(joined(ctx.env.TandemDebug.crafts):find("line 400", 1, true) ~= nil), "300 false")
+
+    WIDGET.RegisterEvent = function(frame, ev)
+        if ev == "LOOT_READY" then
+            error(('Attempt to register unknown event "%s"'):format(ev))
+        end
+        return register(frame, ev)
+    end
+    reset()
+    ok, rctx = pcall(cload)
+    WIDGET.RegisterEvent = register
+    cr.known[9] = true
+    check("crafts: a rejected LOOT_READY never raises and pairs are still learned",
+        tostring(ok) .. " " .. tostring(ok and riseAfter(rctx, 9)), "true 2288")
 end
 
 -- Store: the crafts data is validated on load.
@@ -11560,8 +11608,11 @@ do
     check("craft flyout: the secure snippets are wired", tostring(arrow.attrs._onclick
         == ctx.addon.CraftFlyout.SNIPPETS.arrow) .. " " .. tostring(arrow.refs.list == list) .. " "
         .. tostring(list.refs.main == main) .. " " .. #ctx.craftWraps, "true true true 11")
-    check("craft flyout: the update is logged", debugText(ctx.env):match("craft flyout update: on=true "
-        .. "shown=spell:5504 pick=spell:5504 x=%-140") ~= nil, true)
+    local craftsLog = table.concat(ctx.env.TandemDebug.crafts or {}, "\n")
+    check("craft flyout: the login and update go to TandemDebug.crafts", tostring(craftsLog:match(
+        "craft flyout login: made=true secure=true rows=10") ~= nil) .. " " .. tostring(craftsLog:match(
+        "craft flyout update: on=true shown=spell:5504 entries=1 pick=spell:5504 x=%-140") ~= nil) .. " "
+        .. tostring(debugText(ctx.env):find("craft flyout", 1, true) ~= nil), "true true false")
     main.scripts.OnEnter(main)
     check("craft flyout: tooltip of a spell entry", ctx.tip.title .. " / " .. texts(ctx.tip),
         "spell:5504 / Left click: make / Right click: use")
