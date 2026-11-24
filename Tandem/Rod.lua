@@ -420,7 +420,11 @@ function Rod.Update()
     if ns.Flyout then
         ns.Flyout.Update()
     end
-    -- The mute button sits left of the class macro button, so it follows their places and visibility.
+    -- The craft button sits left of the class macro button, so it follows its place and visibility.
+    if ns.CraftFlyout then
+        ns.CraftFlyout.Update()
+    end
+    -- The mute button sits left of the craft button, so it follows their places and visibility.
     if ns.Mute then
         ns.Mute.Update()
     end

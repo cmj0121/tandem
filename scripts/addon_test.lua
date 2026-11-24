@@ -1312,7 +1312,7 @@ do
     local byName, out = runCheck(addon, printed)
     check("check: header", out[1], "Tandem API check:")
     check("check: one line per feature and probe", #out, 1 + #addon.Check.FEATURES + #addon.Check.PROBES)
-    check("check: twenty-four features", #addon.Check.FEATURES, 24)
+    check("check: twenty-five features", #addon.Check.FEATURES, 25)
     check("check: twenty probes", #addon.Check.PROBES, 20)
     check("check: tooltip missing without the API", byName["Item tooltip"],
         "Item tooltip: missing (TooltipDataProcessor.AddTooltipPostCall missing, Enum.TooltipDataType.Item missing)")
@@ -1322,8 +1322,8 @@ do
             .. "QuestRewardItem1 missing)")
     for _, name in ipairs({ "Item tooltip", "Quest reward pick", "Upgrade alert", "Item stats", "Stat search",
         "Talent spec", "Trainer record", "Action bar borders", "Upgrade borders", "Layout", "XP bar", "Bag button",
-        "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Mute button", "Role button", "Map info",
-        "Weapon procs", "Eat button", "Book pins", "Book alert" }) do
+        "Fishing rod", "Fishing macro", "Class macro button", "Class macros", "Craft button", "Mute button",
+        "Role button", "Map info", "Weapon procs", "Eat button", "Book pins", "Book alert" }) do
         check(("check: %s line present"):format(name), byName[name] ~= nil, true)
         check(("check: %s missing under bare stubs"):format(name),
             byName[name] and byName[name]:match("^[^:]*: (%a+)"), "missing")
@@ -1385,7 +1385,7 @@ do
         count = count + 1
         check(("check: Ready(%q) with every API"):format(name), addon.Check.Ready(name), true)
     end
-    check("check: kept code gates on twenty-two features", count, 22)
+    check("check: kept code gates on twenty-three features", count, 23)
     check("check: an unknown feature is never ready", addon.Check.Ready("Map pins"), false)
 end
 
@@ -9909,7 +9909,8 @@ local function loadFlyout(opts)
             frame.refs[label] = ref
         end
         env.SecureHandlerWrapScript = function(frame, script, header, pre)
-            ctx.wraps[#ctx.wraps + 1] = { frame = frame, script = script, header = header, pre = pre }
+            local into = tostring(frame.name):match("^TandemCraft") and ctx.craftWraps or ctx.wraps
+            into[#into + 1] = { frame = frame, script = script, header = header, pre = pre }
         end
     end
     for k, v in pairs(opts.env or {}) do
@@ -9924,7 +9925,7 @@ local function loadFlyout(opts)
         end
         return spellInfo(id)
     end
-    ctx.known, ctx.party, ctx.auras, ctx.auraCalls, ctx.wraps = {}, {}, {}, 0, {}
+    ctx.known, ctx.party, ctx.auras, ctx.auraCalls, ctx.wraps, ctx.craftWraps = {}, {}, {}, 0, {}, {}
     local function named(name)
         for _, w in ipairs(ctx.ui.widgets) do
             if w.name == name then
@@ -9940,9 +9941,11 @@ local function loadFlyout(opts)
         if b.attrs and b.attrs._onclick then
             runSnippet(b.attrs._onclick, b, b)
         end
-        for _, w in ipairs(ctx.wraps) do
-            if w.frame == b and w.script == "OnClick" then
-                runSnippet(w.pre, b, w.header)
+        for _, wraps in ipairs({ ctx.wraps, ctx.craftWraps }) do
+            for _, w in ipairs(wraps) do
+                if w.frame == b and w.script == "OnClick" then
+                    runSnippet(w.pre, b, w.header)
+                end
             end
         end
         if b.scripts.PreClick then
@@ -10607,10 +10610,10 @@ do
     check("mute: hidden while the layout is off", m.shown, false)
     ctx.run("layout on")
     local p = m.points[#m.points]
-    check("mute: anchored to UIParent left of the class macro button", tostring(p[1]) .. " "
+    check("mute: anchored to UIParent left of the craft button", tostring(p[1]) .. " "
         .. tostring(p[2] == ctx.env.UIParent) .. " " .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
-    check("mute: shown with the horn in colour left of the class macro button", muteState(m),
-        "true | " .. HORN_ON .. " | -140 | 8")
+    check("mute: shown with the horn in colour left of the craft button", muteState(m),
+        "true | " .. HORN_ON .. " | -172 | 8")
 
     m.scripts.OnClick(m, "LeftButton")
     check("mute: a click turns all sound off", ctx.cvars.Sound_EnableAllSound .. " " .. ctx.sets, "0 1")
@@ -10640,19 +10643,19 @@ do
 
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: follows the class macro button when the rod button hides", muteState(m),
-        "true | " .. HORN_ON .. " | -108 | 8")
+    check("mute: follows the craft button when the rod button hides", muteState(m),
+        "true | " .. HORN_ON .. " | -140 | 8")
 
     ctx.state.combat = true
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
     m.scripts.OnClick(m, "LeftButton")
     check("mute: a click works in combat", ctx.cvars.Sound_EnableAllSound .. " " .. muteIcon(m), "0 " .. HORN_OFF)
-    check("mute: its place waits in combat", m.points[#m.points][4], -108)
+    check("mute: its place waits in combat", m.points[#m.points][4], -140)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("mute: placed after combat left of the class macro button", muteState(m),
-        "true | " .. HORN_OFF .. " | -140 | 8")
+    check("mute: placed after combat left of the craft button", muteState(m),
+        "true | " .. HORN_OFF .. " | -172 | 8")
 
     ctx.run("layout off")
     check("mute: hidden with the layout off", m.shown, false)
@@ -10664,13 +10667,13 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     local m = ctx.mute()
-    check("mute: no class macros, left of the rod button", muteState(m), "true | " .. HORN_ON .. " | -108 | 8")
+    check("mute: no class macros, left of the craft button", muteState(m), "true | " .. HORN_ON .. " | -140 | 8")
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: no class macros, takes the rod button's place when it hides", m.points[#m.points][4], -76)
+    check("mute: no class macros, moves right when the rod button hides", m.points[#m.points][4], -108)
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("mute: no class macros, moves back when the rod button shows", m.points[#m.points][4], -108)
+    check("mute: no class macros, moves back when the rod button shows", m.points[#m.points][4], -140)
 end
 
 do
@@ -10679,8 +10682,8 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     local m = ctx.mute()
-    check("mute: no rod button, still placed left of the bag row",
-        tostring(ctx.button() == nil) .. " " .. muteState(m), "true true | " .. HORN_ON .. " | -76 | 8")
+    check("mute: no rod button, still placed left of the craft button",
+        tostring(ctx.button() == nil) .. " " .. muteState(m), "true true | " .. HORN_ON .. " | -108 | 8")
 end
 
 do
@@ -10780,7 +10783,7 @@ do
     local p = r.points[#r.points]
     check("role: anchored to UIParent", tostring(p[1]) .. " " .. tostring(p[2] == ctx.env.UIParent) .. " "
         .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
-    check("role: shown with the sword left of the mute button", roleState(r), "true | " .. SWORD .. " | -172 | 8")
+    check("role: shown with the sword left of the mute button", roleState(r), "true | " .. SWORD .. " | -204 | 8")
     r.scripts.OnEnter(r)
     check("role: tooltip in dps", ctx.tip.title .. " / " .. texts(ctx.tip),
         "Layout mode / Damage / Click for the healer layout")
@@ -10790,7 +10793,7 @@ do
     r.scripts.OnClick(r, "LeftButton")
     check("role: a click switches to the healer layout", ctx.last() .. " " .. ctx.addon.Layout.Mode() .. " "
         .. tostring(ctx.addon.Store.Layout().built), "Tandem: healer layout heal heal")
-    check("role: the heal icon in heal", roleState(r), "true | " .. FLASH .. " | -172 | 8")
+    check("role: the heal icon in heal", roleState(r), "true | " .. FLASH .. " | -204 | 8")
     r.scripts.OnEnter(r)
     check("role: tooltip in heal", texts(ctx.tip), "Healer / Click for the damage layout")
     r.scripts.OnClick(r, "LeftButton")
@@ -10816,14 +10819,14 @@ do
 
     ctx.content[0] = {}
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("role: follows the mute button when the rod button hides", r.points[#r.points][4], -140)
+    check("role: follows the mute button when the rod button hides", r.points[#r.points][4], -172)
     ctx.state.combat = true
     ctx.content[0] = { 10 }
     ctx.fire("BAG_UPDATE_DELAYED")
-    check("role: its place waits in combat", r.points[#r.points][4], -140)
+    check("role: its place waits in combat", r.points[#r.points][4], -172)
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
-    check("role: placed after combat left of the mute button", r.points[#r.points][4], -172)
+    check("role: placed after combat left of the mute button", r.points[#r.points][4], -204)
 
     ctx.run("layout off")
     check("role: hidden with the layout off", r.shown, false)
@@ -10837,7 +10840,7 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     check("role: takes the mute button's place when it is hidden", roleState(ctx.role()),
-        "true | " .. SWORD .. " | -140 | 8")
+        "true | " .. SWORD .. " | -172 | 8")
 end
 
 do
@@ -11435,6 +11438,261 @@ do
         (ctx.env.TandemDebug.log[1] or ""):match("food auras unmatched: Arcane Intellect") ~= nil, true)
 end
 
+-- Craft flyout (craft flyout U2, D2, D3, D4): one secure button left of the class macro button while the layout is on,
+-- left click making its picked entry, right click using its item, with an arrow opening up to ten rows. Loads
+-- loadRole(opts); ctx.craft(), ctx.craftArrow(), ctx.craftList() and ctx.craftRow(i) are its frames; ctx.stubCrafts
+-- (list) replaces Crafts.List with list (in order), SetPick with one that records the pick, moves it first and
+-- updates as Crafts' change listener would, and TryCraft with one answering ctx.crafted (calls counted in ctx.tries).
+-- ctx.craftClick(b, button) clicks b as the client would (PreClick, the wrap, the action into ctx.made, PostClick).
+local PLACEHOLDER = "Interface\\Icons\\Trade_Engineering"
+local function loadCraft(opts)
+    local ctx = loadRole(opts)
+    local function named(name)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == name then
+                return w
+            end
+        end
+    end
+    function ctx.craft() return named("TandemCraftButton") end
+    function ctx.craftArrow() return named("TandemCraftArrow") end
+    function ctx.craftList() return named("TandemCraftList") end
+    function ctx.craftRow(i) return named("TandemCraftRow" .. i) end
+    ctx.picks, ctx.tries = {}, 0
+    function ctx.stubCrafts(list)
+        local Crafts = ctx.addon.Crafts
+        Crafts.List = function()
+            local out = {}
+            for i, e in ipairs(list) do
+                out[i] = e
+            end
+            return out
+        end
+        Crafts.SetPick = function(id)
+            ctx.picks[#ctx.picks + 1] = id
+            for i, e in ipairs(list) do
+                if e.id == id then
+                    table.insert(list, 1, table.remove(list, i))
+                end
+            end
+            ctx.addon.CraftFlyout.Update()
+            return true
+        end
+        Crafts.TryCraft = function()
+            ctx.tries = ctx.tries + 1
+            return ctx.crafted == true
+        end
+        ctx.addon.CraftFlyout.Update()
+    end
+    function ctx.craftClick(b, button)
+        button = button or "LeftButton"
+        local n = button == "LeftButton" and "1" or "2"
+        if b.attrs and b.attrs._onclick then
+            runSnippet(b.attrs._onclick, b, b)
+        end
+        if b.scripts.PreClick then
+            b.scripts.PreClick(b, button)
+        end
+        for _, w in ipairs(ctx.craftWraps) do
+            if w.frame == b and w.script == "OnClick" then
+                runSnippet(w.pre, b, w.header)
+            end
+        end
+        if b.scripts.OnClick then
+            b.scripts.OnClick(b, button)
+        end
+        local kind = b.attrs and b.attrs["type" .. n]
+        ctx.made = kind and (kind .. " " .. tostring(b.attrs[(kind == "spell" and "spell" or "item") .. n])) or "none"
+        if b.scripts.PostClick then
+            b.scripts.PostClick(b, button)
+        end
+    end
+    return ctx
+end
+
+local function craftAttrs(b)
+    local a = b.attrs or {}
+    return table.concat({ tostring(a.type1), tostring(a.spell1), tostring(a.type2), tostring(a.item2) }, " ")
+end
+
+local function craftEntries(n)
+    local out = {}
+    for i = 1, n do
+        out[i] = { id = "spell:" .. (100 + i), kind = "spell", name = "Make " .. i, icon = "icon" .. i,
+            spell = 100 + i, item = 200 + i }
+    end
+    return out
+end
+
+local function xOf(b)
+    local p = b.points[#b.points]
+    return tostring(p and p[4])
+end
+
+do
+    local ctx = loadCraft()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.known[526], ctx.known[5504] = true, true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    local main, arrow, list = ctx.craft(), ctx.craftArrow(), ctx.craftList()
+    check("craft flyout: a secure main button on UIParent, an arrow and a list of ten rows", table.concat({
+        main.template, tostring(main.parent == ctx.env.UIParent), main.width .. "x" .. main.height, arrow.template,
+        list.template, tostring(ctx.craftRow(10) ~= nil), tostring(ctx.craftRow(11) == nil),
+        ctx.craftRow(1).template }, " "),
+        "SecureActionButtonTemplate true 28x28 SecureHandlerClickTemplate SecureHandlerBaseTemplate true true "
+            .. "SecureActionButtonTemplate")
+    check("craft flyout: hidden while the layout is off", tostring(main.shown) .. " " .. tostring(list.shown),
+        "false false")
+    ctx.run("layout on")
+    check("craft flyout: the Rod, Flyout, Craft, Mute, Role order", table.concat({ xOf(ctx.button()),
+        xOf(ctx.main()), xOf(main), xOf(ctx.mute()), xOf(ctx.role()) }, " "), "-76 -108 -140 -172 -204")
+    local p = main.points[#main.points]
+    check("craft flyout: anchored to UIParent at the rod button's height", table.concat({ p[1],
+        tostring(p[2] == ctx.env.UIParent), p[3], p[5] }, " "), "BOTTOMRIGHT true BOTTOMRIGHT 8")
+    check("craft flyout: NextX is left of the shown button", ctx.addon.CraftFlyout.NextX(), -172)
+    check("craft flyout: a spell entry makes by spell ID and uses its item", craftAttrs(main) .. " "
+        .. main.attrs.entry, "spell 5504 item item:5350 spell:5504")
+    check("craft flyout: clicks on mouse-up only", table.concat(main.clicks, " ") .. " "
+        .. tostring(main.attrs.useOnKeyDown) .. " " .. tostring(ctx.craftRow(1).attrs.useOnKeyDown),
+        "AnyUp false false")
+    check("craft flyout: the arrow shows with entries", arrow.shown, true)
+    check("craft flyout: the secure snippets are wired", tostring(arrow.attrs._onclick
+        == ctx.addon.CraftFlyout.SNIPPETS.arrow) .. " " .. tostring(arrow.refs.list == list) .. " "
+        .. tostring(list.refs.main == main) .. " " .. #ctx.craftWraps, "true true true 11")
+    check("craft flyout: the update is logged", debugText(ctx.env):match("craft flyout update: on=true "
+        .. "shown=spell:5504 pick=spell:5504 x=%-140") ~= nil, true)
+    main.scripts.OnEnter(main)
+    check("craft flyout: tooltip of a spell entry", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "spell:5504 / Left click: make / Right click: use")
+
+    ctx.content[0] = {}
+    ctx.fire("BAG_UPDATE_DELAYED")
+    check("craft flyout: follows the class macro button when the rod button hides", xOf(main) .. " " .. xOf(ctx.mute()),
+        "-108 -140")
+    ctx.run("layout off")
+    check("craft flyout: hidden with the layout off; NextX falls back to Cure.NextX", tostring(main.shown) .. " "
+        .. tostring(ctx.addon.CraftFlyout.NextX() == ctx.addon.Cure.NextX()), "false true")
+end
+
+do
+    local ctx = loadCraft()
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main = ctx.craft()
+    check("craft flyout: with no entries shown with a placeholder and no actions", table.concat({ tostring(main.shown),
+        tostring(main.icon.texture), craftAttrs(main), tostring(ctx.craftArrow().shown),
+        tostring(ctx.craftRow(1).shown),
+        xOf(main), xOf(ctx.mute()) }, " "), "true " .. PLACEHOLDER .. " nil nil nil nil false false -140 -172")
+    main.scripts.OnEnter(main)
+    check("craft flyout: the empty tooltip says how to fill the list", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "Craft button / Cast an item-making spell or open a profession once to fill this list")
+    ctx.craftClick(main)
+    check("craft flyout: an empty button makes nothing", ctx.made, "none")
+end
+
+do
+    local ctx = loadCraft()
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local list = craftEntries(11)
+    list[2] = { id = "recipe:2538", kind = "recipe", name = "Charred Wolf Meat", icon = "meat", recipe = 2538,
+        profession = "Cooking", item = 2679 }
+    list[3].item = nil
+    ctx.stubCrafts(list)
+    local main = ctx.craft()
+    local ids = {}
+    for i = 1, 10 do
+        ids[i] = ctx.craftRow(i).shown and ctx.craftRow(i).attrs.entry or "-"
+    end
+    check("craft flyout: ten rows in list order, the 11th entry dropped", table.concat(ids, ","),
+        "spell:101,recipe:2538,spell:103,spell:104,spell:105,spell:106,spell:107,spell:108,spell:109,spell:110")
+    check("craft flyout: the main button shows the first entry", craftAttrs(main) .. " " .. main.icon.texture,
+        "spell 101 item item:201 icon1")
+    check("craft flyout: a recipe row casts its profession and uses its item", craftAttrs(ctx.craftRow(2)),
+        "spell Cooking item item:2679")
+    check("craft flyout: a row without an item has no use action", craftAttrs(ctx.craftRow(3)), "spell 103 nil nil")
+
+    local cl = ctx.craftList()
+    ctx.craftClick(ctx.craftArrow())
+    check("craft flyout: the arrow opens the list", cl.shown, true)
+    ctx.craftClick(ctx.craftRow(4), "RightButton")
+    check("craft flyout: a row's right click uses its item", ctx.made, "item item:204")
+    check("craft flyout: and re-points the main button through the snippet, closing the list", craftAttrs(main) .. " "
+        .. main.attrs.entry .. " " .. tostring(cl.shown) .. " " .. table.concat(ctx.picks, ","),
+        "spell 104 item item:204 spell:104 false spell:104")
+    check("craft flyout: the pick leads the rows", ctx.craftRow(1).attrs.entry, "spell:104")
+    check("craft flyout: TryCraft is not asked for a spell or a right click", ctx.tries, 0)
+
+    check("craft flyout: the recipe now in row 3", ctx.craftRow(3).attrs.entry, "recipe:2538")
+    ctx.craftClick(ctx.craftRow(3))
+    check("craft flyout: a recipe row whose window is not ready casts the profession", ctx.made .. " " .. ctx.tries
+        .. " " .. main.attrs.entry, "spell Cooking 1 recipe:2538")
+    main.scripts.OnEnter(main)
+    check("craft flyout: the recipe's tooltip notes the first click", texts(ctx.tip),
+        "The first click opens the profession; the next one makes it / Left click: make / Right click: use")
+    ctx.crafted = true
+    ctx.craftClick(main)
+    check("craft flyout: a crafted recipe click clears type1 for that click only", ctx.made .. " " .. ctx.tries
+        .. " " .. tostring(main.attrs.type1), "none 2 spell")
+    ctx.craftClick(main, "RightButton")
+    check("craft flyout: a recipe's right click uses its item without crafting", ctx.made .. " " .. ctx.tries,
+        "item item:2679 2")
+
+    ctx.state.combat = true
+    ctx.craftClick(main)
+    check("craft flyout: no TryCraft in combat", ctx.made .. " " .. ctx.tries, "spell Cooking 2")
+    local before = #ctx.picks
+    ctx.craftClick(ctx.craftRow(5))
+    check("craft flyout: a row picks in combat through the snippet, saved later", craftAttrs(main) .. " "
+        .. (#ctx.picks - before), "spell 105 item item:205 0")
+    table.insert(list, 1, { id = "spell:999", kind = "spell", name = "New", icon = "new", spell = 999, item = 998 })
+    ctx.addon.CraftFlyout.Update()
+    ctx.run("layout off")
+    check("craft flyout: nothing changes in combat", tostring(ctx.craftRow(1).attrs.entry) .. " "
+        .. tostring(main.shown), "recipe:2538 true")
+    ctx.state.combat = false
+    ctx.fire("PLAYER_REGEN_ENABLED")
+    check("craft flyout: combat's end saves the pick and applies the change", table.concat(ctx.picks, ",", before + 1)
+        .. " " .. ctx.craftRow(1).attrs.entry .. " " .. tostring(main.shown), "spell:105 spell:105 false")
+end
+
+do
+    local ctx = loadCraft({ insecure = true })
+    ctx.known[526] = true
+    ctx.content[0] = { 10 }
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    ctx.stubCrafts(craftEntries(3))
+    local main, cl = ctx.craft(), ctx.craftList()
+    ctx.craftArrow().scripts.OnClick(ctx.craftArrow())
+    check("craft flyout insecure: the arrow opens the list", cl.shown, true)
+    ctx.craftClick(ctx.craftRow(3))
+    check("craft flyout insecure: a row picks out of combat", craftAttrs(main) .. " " .. tostring(cl.shown) .. " "
+        .. table.concat(ctx.picks, ","), "spell 103 item item:203 false spell:103")
+    ctx.state.combat = true
+    ctx.craftClick(ctx.craftRow(2))
+    check("craft flyout insecure: a row does not pick in combat", main.attrs.entry, "spell:103")
+end
+
+do
+    local ctx = loadCraft({ locale = "zhTW" })
+    ctx.known[526] = true
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    local main = ctx.craft()
+    main.scripts.OnEnter(main)
+    check("zhTW craft flyout: the empty tooltip", ctx.tip.title .. " / " .. texts(ctx.tip),
+        "製造按鈕 / 施放一次製造物品的法術或打開一次專業技能，就會填入這個清單")
+    ctx.stubCrafts(craftEntries(1))
+    main.scripts.OnEnter(main)
+    check("zhTW craft flyout: the click hints", texts(ctx.tip), "左鍵：製造 / 右鍵：使用")
+end
+
 -- Eat button (U2, D1, D3, D4): one secure button left of the layout mode button while the layout is on and a food or
 -- drink is in the bags. Loads loadRole(opts) with item 50 bread and 51 water in the locale's text (icons "icon<id>",
 -- names "Item <id>"):
@@ -11527,7 +11785,7 @@ do
     check("eat: anchored to UIParent", tostring(p[1]) .. " " .. tostring(p[2] == ctx.env.UIParent) .. " "
         .. tostring(p[3]), "BOTTOMRIGHT true BOTTOMRIGHT")
     check("eat: shown left of the role button, left eats and right drinks", eatState(b),
-        "true | /use item:50 | /use item:51 | icon50 | -204 | 8")
+        "true | /use item:50 | /use item:51 | icon50 | -236 | 8")
     check("eat: macro buttons per mouse button", b.attrs.type1 .. " " .. b.attrs.type2 .. " " .. tostring(b.attrs.type),
         "macro macro nil")
     b.scripts.OnEnter(b)
@@ -11572,7 +11830,7 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("eat: at combat end the bags are read again", ctx.scans > scans, true)
-    check("eat: only the drink left after combat", eatState(b), "true | nil | /use item:51 | icon51 | -204 | 8")
+    check("eat: only the drink left after combat", eatState(b), "true | nil | /use item:51 | icon51 | -236 | 8")
     ctx.fire("GET_ITEM_INFO_RECEIVED", 51, true)
     check("eat: item info reads the bags again", ctx.scans > scans + 1, true)
 
@@ -11586,7 +11844,7 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("eat: food looted in combat shows at combat end", eatState(b),
-        "true | /use item:50 | nil | icon50 | -204 | 8")
+        "true | /use item:50 | nil | icon50 | -236 | 8")
     ctx.run("layout off")
     check("eat: hidden with the layout off", b.shown, false)
 end
@@ -11626,7 +11884,7 @@ do
     ctx.content[0] = { 10, 50 }
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
-    check("eat: takes the role button's place when there is none", ctx.eat().points[#ctx.eat().points][4], -172)
+    check("eat: takes the role button's place when there is none", ctx.eat().points[#ctx.eat().points][4], -204)
 end
 
 do

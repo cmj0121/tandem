@@ -33,6 +33,7 @@ Rod.lua
 Cure.lua
 ClassMacros.lua
 Flyout.lua
+CraftFlyout.lua
 Mute.lua
 Role.lua
 Eat.lua

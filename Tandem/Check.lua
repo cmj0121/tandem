@@ -77,6 +77,10 @@ Check.FEATURES = {
         { "SecureHandlerWrapScript" }, { "SecureHandlerSetFrameRef" }, { "SecureHandler_OnClick" },
         { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
     } },
+    -- The craft button; its list opens in combat with the "Class macros" secure handlers.
+    { name = "Craft button", needs = {
+        { "InCombatLockdown" }, { "SecureActionButton_OnClick", "SecureActionButtonMixin" },
+    } },
     { name = "Cure macro", needs = {
         { "CreateMacro" }, { "EditMacro" }, { "GetMacroIndexByName" }, { "GetMacroInfo" }, { "PickupMacro" },
         { "GetNumMacros" },

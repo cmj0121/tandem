@@ -198,6 +198,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
             scheduleRecall()
         end
         -- Before the rod button too, whose update places it left of the class macro button.
+        ns.CraftFlyout.OnLogin()
+        -- Before the rod button too, whose update places it left of the craft button.
         ns.Mute.OnLogin()
         -- After the mute button, whose place it follows; before the rod button, whose update places both again.
         ns.Role.OnLogin()
@@ -220,6 +222,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
             and event ~= "UPDATE_BONUS_ACTIONBAR" then
             -- A spell learned shows its class macro, which may show the button and move the mute button.
             ns.Flyout.Update()
+            ns.CraftFlyout.Update()
             ns.Mute.Update()
             ns.Role.Update()
             if event == "SPELLS_CHANGED" and ns.Flyout.Made() then
@@ -257,6 +260,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if ns.Flyout.Made() then
             scheduleRecall()
         end
+        ns.CraftFlyout.OnCombatEnd()
         ns.Mute.OnCombatEnd()
         ns.Debug.OnCombatEnd()
         ns.Role.OnCombatEnd()
@@ -274,6 +278,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ns.ItemBorders.Schedule()
     elseif event == "PLAYER_REGEN_DISABLED" then
         ns.Flyout.OnCombatStart()
+        ns.CraftFlyout.OnCombatStart()
         ns.BookAlert.OnCombatStart()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         scheduleRecall()
