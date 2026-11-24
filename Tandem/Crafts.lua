@@ -9,13 +9,23 @@ local _, ns = ...
 -- or missing from its open profession's list, or whose profession spell the player no longer knows, leaves the cache.
 -- Pairs, recipes, made times and the pick are saved per character through Store (in memory only while the character
 -- is unknown).
--- Reads only: it never opens a profession window; TryCraft crafts only in a window the player opened.
+-- Reads only: it never opens a profession window; TryCraft crafts only in a window the player opened. Its debug lines,
+-- and the craft flyout's, go to their own channel TandemDebug.crafts (the last LOG_LIMIT), which login does not flush,
+-- up to LOG_LIMIT a session.
 local Crafts = {}
 ns.Crafts = Crafts
 
 local WATCH = 3
 local BAGS = 4
+local LOG_LIMIT = 300
 Crafts.MAX_PAIRS = 40
+-- Gathering and opening spells, never learned as pairs: their loot reaches the bags after auto-loot has closed the
+-- loot window, often unseen. Fishing is not on the list.
+Crafts.SKIP_SPELLS = {}
+for _, spell in ipairs({ 3365, 6247, 6477, 6478, 21248, 22810, 1804, 8613, 8617, 8618, 10768, 2575, 2576, 3564,
+    10248, 2366, 2368, 3570, 11993, 13262 }) do
+    Crafts.SKIP_SPELLS[spell] = true
+end
 
 -- Seed families, each its ranks lowest first as { spell = <spellID>, item = <itemID> } (classic IDs).
 local function ranks(list)
@@ -44,7 +54,7 @@ end
 -- The events on this module's own frame; any may be rejected by the client.
 local EVENTS = { "LOOT_OPENED", "LOOT_CLOSED", "MAIL_SHOW", "MAIL_CLOSED", "TRADE_SHOW", "TRADE_CLOSED",
     "MERCHANT_SHOW", "MERCHANT_CLOSED", "QUEST_COMPLETE", "QUEST_FINISHED", "QUEST_TURNED_IN", "BANKFRAME_OPENED",
-    "BANKFRAME_CLOSED", "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED", "TRADE_SKILL_SHOW",
+    "BANKFRAME_CLOSED", "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED", "LOOT_READY", "TRADE_SKILL_SHOW",
     "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED" }
 local WINDOWS = {
     LOOT_OPENED = { "loot", true }, LOOT_CLOSED = { "loot", false }, MAIL_SHOW = { "mail", true },
@@ -55,7 +65,7 @@ local WINDOWS = {
     GUILDBANKFRAME_OPENED = { "guildbank", true }, GUILDBANKFRAME_CLOSED = { "guildbank", false },
 }
 -- Events that spoil the watched cast without a window staying open.
-local SPOILS = { QUEST_TURNED_IN = true }
+local SPOILS = { QUEST_TURNED_IN = true, LOOT_READY = true }
 
 local call, Safe = ns.Store.Call, ns.Store.Safe
 
@@ -72,11 +82,28 @@ local pending = {}
 local watch
 local listeners = {}
 local lastSig
+local logged = 0
+
+-- Crafts.Log(what): while debugging, appends one line (time, combat, what) to TandemDebug.crafts, keeping the last
+-- LOG_LIMIT and at most LOG_LIMIT a session.
+function Crafts.Log(what)
+    if logged >= LOG_LIMIT or not ns.Debug.IsOn() then
+        return
+    end
+    logged = logged + 1
+    if type(TandemDebug.crafts) ~= "table" then
+        TandemDebug.crafts = {}
+    end
+    local out = TandemDebug.crafts
+    out[#out + 1] = ("%.2f combat=%s %s"):format(tonumber((call(_G.GetTime))) or 0,
+        tostring(call(_G.InCombatLockdown) == true), what)
+    while #out > LOG_LIMIT do
+        table.remove(out, 1)
+    end
+end
 
 local function log(what)
-    if ns.Debug.IsOn() then
-        ns.Debug.Log("crafts: " .. what)
-    end
+    Crafts.Log("crafts: " .. what)
 end
 
 local function isText(v)
@@ -333,7 +360,8 @@ local function learn(spell, item)
 end
 
 -- Crafts.OnBagUpdate(): BAG_UPDATE_DELAYED. Within WATCH seconds of a watched cast, the first rise in bag counts ends
--- the watch: exactly one item risen with no window open in the meantime becomes the cast's pair.
+-- the watch: exactly one item risen with no window open in the meantime becomes the cast's pair, unless the spell is
+-- in SKIP_SPELLS.
 function Crafts.OnBagUpdate()
     if not watch then
         return
@@ -354,8 +382,10 @@ function Crafts.OnBagUpdate()
     end
     local w = watch
     watch = nil
-    if #rose ~= 1 or w.spoiled or anyOpen() then
-        log(("no pair for %d: rose=%d window=%s"):format(w.spell, #rose, tostring(w.spoiled or anyOpen())))
+    local reason = Crafts.SKIP_SPELLS[w.spell] and "skip" or #rose ~= 1 and ("rose=" .. #rose)
+        or (w.spoiled or anyOpen()) and "window" or nil
+    if reason then
+        log(("pair skipped spell=%d reason=%s"):format(w.spell, reason))
         return
     end
     learn(w.spell, rose[1])

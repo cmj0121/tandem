@@ -780,8 +780,9 @@ entries share a name (the same name on different realms), the first in alphabeti
 each other one counts as dropped. The step is one way: an older Tandem then finds a newer schema and saves nothing, so
 to go back to one, restore a copy of `Tandem.lua` taken before updating.
 
-The same file also holds `TandemDebug`, the [debug log](#debug-log): `on`, up to 300 `log` lines, 50 `blocked` and 20 `errors`,
-only after you turn it on.
+The same file also holds `TandemDebug`, the [debug log](#debug-log): `on`, up to 300 `log` lines, 50 `blocked` and 20
+`errors`, plus 500 `craft` lines from the craft probe and 300 `crafts` lines from the craft button, neither cleared at
+login, only after you turn it on.
 
 The client writes `Tandem.lua` only on logout or `/reload`.
 

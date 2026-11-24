@@ -58,11 +58,7 @@ local entries, byId = {}, {}
 -- The entry id picked in combat, saved at combat end; whether Update itself is setting the main button's entry.
 local combatPick, applying
 
-local function log(text)
-    if ns.Debug ~= nil and ns.Debug.IsOn() then
-        ns.Debug.Log(text)
-    end
-end
+local log = ns.Crafts.Log
 
 local function inCombat()
     return call(InCombatLockdown) == true
@@ -329,8 +325,8 @@ function CraftFlyout.Update()
     for i, e in ipairs(entries) do
         ids[i] = e.id
     end
-    local line = ("craft flyout update: on=%s shown=%s pick=%s x=%s"):format(tostring(on == true),
-        table.concat(ids, ","), tostring(on and pick and pick.id), tostring(x))
+    local line = ("craft flyout update: on=%s shown=%s entries=%d pick=%s x=%s"):format(tostring(on == true),
+        table.concat(ids, ","), #entries, tostring(on and pick and pick.id), tostring(x))
     if line ~= lastUpdate then
         lastUpdate = line
         log(line)
@@ -365,7 +361,8 @@ end
 function CraftFlyout.OnLogin()
     local ready = ns.Check.Ready("Craft button")
     if main or type(CreateFrame) ~= "function" or not ready then
-        log(("craft flyout login: ready=%s"):format(tostring(ready)))
+        log(("craft flyout login: made=false why=%s"):format(main and "made already"
+            or not ready and "not ready" or "no CreateFrame"))
         return
     end
     secure = ns.Check.Ready("Class macros")
@@ -373,6 +370,7 @@ function CraftFlyout.OnLogin()
     local a = m and make("Button", "TandemCraftArrow", m, secure and "SecureHandlerClickTemplate" or nil)
     local l = a and make("Frame", "TandemCraftList", m, secure and "SecureHandlerBaseTemplate" or nil)
     if not l then
+        log("craft flyout login: made=false why=CreateFrame failed")
         return
     end
     main, arrow, list = m, a, l
@@ -397,7 +395,7 @@ function CraftFlyout.OnLogin()
         rows[i] = row
         decorate(row)
     end
-    log(("craft flyout login: secure=%s rows=%d"):format(tostring(secure), #rows))
+    log(("craft flyout login: made=true secure=%s rows=%d"):format(tostring(secure), #rows))
     -- A /reload in combat leaves the new buttons as made (no attributes, so a click does nothing) until combat ends.
     CraftFlyout.Update()
 end

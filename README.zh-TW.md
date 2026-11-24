@@ -672,8 +672,8 @@ Schema 8 會在第一次載入時，把每個角色的項目從 `Name-Realm` 改
 的同名角色），保留 `Name-Realm` 依字母順序排在最前的一筆，其餘各算一筆捨棄。這一步無法還原：較舊的 Tandem 會把它視為
 較新的 schema 而不儲存任何資料；要退回舊版，請還原更新前備份的 `Tandem.lua`。
 
-同一個檔案也存放 `TandemDebug`，即[除錯紀錄](#除錯紀錄)：`on`、最多 300 行 `log`、50 筆 `blocked` 與 20 筆 `errors`，只在你開啟後
-才有。
+同一個檔案也存放 `TandemDebug`，即[除錯紀錄](#除錯紀錄)：`on`、最多 300 行 `log`、50 筆 `blocked` 與 20 筆 `errors`，
+另有製造 probe 的最多 500 行 `craft` 與製造按鈕的最多 300 行 `crafts`（兩者登入時都不清除），只在你開啟後才有。
 
 用戶端只在登出或 `/reload` 時寫入 `Tandem.lua`。
 
