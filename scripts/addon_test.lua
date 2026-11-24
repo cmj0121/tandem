@@ -13238,6 +13238,192 @@ do
     check("zhTW book alert: feature name", ctx.addon.L["Book alert"], "圖書館書籍提醒")
 end
 
+-- The Auction House probe (auction plan U0): with the recorder on, opening the AH logs the candidate APIs, the
+-- throttle and the browse categories and adds a probe button whose click queries at once and again from a timer;
+-- result events log the first rows. Never bids, never raises, logs and shows nothing while the recorder is off.
+do
+    local ASECRET = setmetatable({}, { __concat = function() error("secret") end })
+    local a = { queries = {}, bids = 0, after = {} }
+    local aenv = {
+        issecretvalue = function(v) return rawequal(v, ASECRET) end,
+        InCombatLockdown = function() return false end,
+        QueryAuctionItems = function(...) a.queries[#a.queries + 1] = { ... } end,
+        CanSendAuctionQuery = function() return true, false end,
+        GetNumAuctionItems = function(kind) return kind == "list" and 2 or 0, 37 end,
+        GetAuctionItemInfo = function(kind, i)
+            if kind ~= "list" then return nil end
+            if i == 1 then return "Sword", "icon", 1, 2, true, 10, nil, 500, 0, 1200, 0, "Seller", nil, nil, nil,
+                0, 1234 end
+            return "Helm", "icon", 1, ASECRET
+        end,
+        GetAuctionItemLink = function(_, i) return i == 1 and "|Hitem:1234|h[Sword]|h" or nil end,
+        C_TooltipInfo = { GetHyperlink = function() return { lines = { {}, {}, {} } } end },
+        PlaceAuctionBid = function() a.bids = a.bids + 1 end,
+        C_Timer = { After = function(delay, fn) a.after[#a.after + 1] = { delay = delay, fn = fn } end },
+        AuctionCategories = { { name = "Weapons", filters = { { classID = 2, subClassID = 0 } }, subCategories = {} },
+            { name = "Armor" } },
+    }
+    local function aload(on, extra)
+        local env = {}
+        for k, v in pairs(aenv) do env[k] = v end
+        for k, v in pairs(extra or {}) do env[k] = v end
+        local ctx = loadShaman({ env = env })
+        ctx.out = {}
+        local log = ctx.addon.Debug.Log
+        ctx.addon.Debug.Log = function(what)
+            local line = what:match("^auction probe: (.*)$")
+            if line then ctx.out[#ctx.out + 1] = line end
+            return log(what)
+        end
+        if on then ctx.run("debug on") end
+        return ctx
+    end
+    local function has(ctx, want)
+        for _, line in ipairs(ctx.out) do
+            if line == want .. " combat=false" then return true end
+        end
+        return false
+    end
+    local function probeButton(ctx)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.kind == "Button" and w.text == "Tandem probe" then return w end
+        end
+        return nil
+    end
+
+    local frameAH = { name = "AuctionFrame" }
+    local ctx = aload(false, { AuctionFrame = frameAH })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    ctx.fire("AUCTION_ITEM_LIST_UPDATE")
+    check("auction probe: the recorder off logs nothing and adds no button",
+        #ctx.out .. " " .. tostring(probeButton(ctx) ~= nil), "0 false")
+
+    ctx = aload(true, { AuctionFrame = frameAH })
+    ctx.fire("PLAYER_LOGIN")
+    check("auction probe: the AH events register at login", has(ctx, "registered:AUCTION_ITEM_LIST_UPDATE=true"), true)
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    check("auction probe: AH open logs the legacy API, a missing C_AuctionHouse, the throttle and the page size",
+        tostring(has(ctx, "has:QueryAuctionItems=function")) .. " " .. tostring(has(ctx, "has:C_AuctionHouse=nil"))
+        .. " " .. tostring(has(ctx, "CanSendAuctionQuery=true|false")) .. " "
+        .. tostring(has(ctx, "has:NUM_AUCTION_ITEMS_PER_PAGE=nil")), "true true true true")
+    check("auction probe: AH open logs the browse categories and their filters",
+        tostring(has(ctx, "category:1=Weapons filters=1 first={classID=2 subClassID=0} subs=0")) .. " "
+        .. tostring(has(ctx, "category:2=Armor filters=nil first=nil subs=nil")), "true true")
+    local b = probeButton(ctx)
+    check("auction probe: the probe button sits on AuctionFrame", b and b.parent == frameAH, true)
+
+    ctx.t = 200
+    local before = #a.after
+    b.scripts.OnClick(b)
+    local timer = a.after[#a.after]
+    check("auction probe: a click queries page 0 at once and schedules a timer query",
+        #a.queries .. " " .. tostring(a.queries[1][4]) .. " " .. (#a.after - before) .. " " .. timer.delay, "1 0 1 3")
+    ctx.t = 203
+    timer.fn()
+    check("auction probe: the timer sends the second query", #a.queries, 2)
+    ctx.t = 203.5
+    ctx.fire("AUCTION_ITEM_LIST_UPDATE")
+    check("auction probe: a list update logs its latency, count and rows (every return, the link, tooltip lines)",
+        tostring(has(ctx, "AUCTION_ITEM_LIST_UPDATE.after:timer=0.50")) .. " "
+        .. tostring(has(ctx, "GetNumAuctionItems=2|37")) .. " "
+        .. tostring(has(ctx, "row:1=Sword|icon|1|2|true|10|nil|500|0|1200|0|Seller|nil|nil|nil|0|1234")) .. " "
+        .. tostring(has(ctx, "row:1.link=|Hitem:1234|h[Sword]|h")) .. " " .. tostring(has(ctx, "row:1.tooltipLines=3"))
+        .. " " .. tostring(has(ctx, "row:2=Helm|icon|1|secret")) .. " " .. tostring(has(ctx, "row:2.link=nil")),
+        "true true true true true true true")
+    check("auction probe: nothing is bid on", a.bids, 0)
+
+    local n = #ctx.out
+    ctx.fire("AUCTION_ITEM_LIST_UPDATE")
+    check("auction probe: unchanged readings log once", #ctx.out, n)
+
+    ctx.fire("AUCTION_HOUSE_CLOSED")
+    check("auction probe: AH close hides the button", b.shown, false)
+    ctx.run("debug off")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    b:Show()
+    ctx.fire("AUCTION_HOUSE_CLOSED")
+    local queries = #a.queries
+    b:Show()
+    b.scripts.OnClick(b)
+    check("auction probe: with the recorder off, close hides the button and a click hides it and sends nothing",
+        tostring(b.shown) .. " " .. tostring(#a.queries == queries), "false true")
+    ctx.run("debug on")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    check("auction probe: AH open again shows the same button",
+        tostring(b.shown) .. " " .. tostring(probeButton(ctx) == b), "true true")
+
+    -- A modern-only client: C_AuctionHouse browse query and results; an unknown event never raises.
+    local browse, started = {}, 0
+    local bar = { StartSearch = function() started = started + 1 end }
+    ctx = aload(true, { QueryAuctionItems = false, AuctionHouseFrame = { name = "AuctionHouseFrame", SearchBar = bar },
+        C_AuctionHouse = {
+            SendBrowseQuery = function(q) browse[#browse + 1] = q end,
+            GetNumBrowseResults = function() return 1 end,
+            GetBrowseResults = function()
+                return { { itemKey = { itemID = 99 }, minPrice = 700, totalQuantity = 2 } }
+            end,
+        } })
+    local register = ctx.frame.RegisterEvent
+    ctx.frame.RegisterEvent = function(self, ev)
+        if ev == "AUCTION_ITEM_LIST_UPDATE" then error("unknown event") end
+        return register(self, ev)
+    end
+    local ok = pcall(ctx.fire, "PLAYER_LOGIN")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    b = probeButton(ctx)
+    b.scripts.OnClick(b)
+    ctx.fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    check("auction probe: an unknown event never raises and logs false", tostring(ok) .. " "
+        .. tostring(has(ctx, "registered:AUCTION_ITEM_LIST_UPDATE=false")), "true true")
+    check("auction probe: a modern client sends C_AuctionHouse's own browse query, never the search bar's",
+        #browse .. " " .. tostring(type(browse[1]) == "table" and started == 0) .. " "
+        .. tostring(has(ctx, "browse:1={itemKey=table{itemID} minPrice=700 totalQuantity=2}")) .. " "
+        .. tostring(has(ctx, "browse:1.itemKey={itemID=99}")) .. " "
+        .. tostring(has(ctx, "button.parent=AuctionHouseFrame")),
+        "1 true true true true")
+
+    -- The legacy browse tab's selector: the query carries its name, levels, page, usable, rarity, exact match and the
+    -- selected sub-subcategory's filters; the button sits left of the search button.
+    local function box(t) return { GetText = function() return t end } end
+    local function tick(on) return { GetChecked = function() return on end } end
+    local leaf = { { classID = 4, subClassID = 2, inventoryType = 5 } }
+    local search = { name = "BrowseSearchButton", GetPoint = function() return "TOPRIGHT" end,
+        GetSize = function() return 80, 22 end }
+    a.queries = {}
+    ctx = aload(true, { AuctionFrame = frameAH, AuctionFrameBrowse = { page = 2, selectedCategoryIndex = 1,
+            selectedSubCategoryIndex = 1, selectedSubSubCategoryIndex = 1 },
+        BrowseName = box("Leather"), BrowseMinLevel = box("20"), BrowseMaxLevel = box(""),
+        IsUsableCheckButton = tick(true), ExactMatchCheckButton = tick(nil), BrowseDropDown = {},
+        UIDropDownMenu_GetSelectedValue = function() return 2 end, BrowseSearchButton = search,
+        AuctionCategories = { { name = "Armor", subCategories = { { name = "Leather",
+            subCategories = { { name = "Chest", filters = leaf } } } } } } })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    b = probeButton(ctx)
+    b.scripts.OnClick(b)
+    local q = a.queries[1]
+    check("auction probe: the query carries the browse selector", ("%s %s %s %s %s %s %s %s %s"):format(q[1],
+        tostring(q[2]), tostring(q[3]), q[4], tostring(q[5]), tostring(q[6]), tostring(q[7]), tostring(q[8]),
+        tostring(q[9] == leaf)), "Leather 20 nil 2 true 2 false false true")
+    check("auction probe: the selector is logged", has(ctx, "selector=name=Leather level=20-nil page=2 usable=true "
+        .. "rarity=2 exact=false category=1/1/1 Chest filters=1 first={classID=4 inventoryType=5 subClassID=2}"), true)
+    check("auction probe: the button sits left of the search button, its anchor is logged",
+        tostring(b.points[1][1]) .. " " .. tostring(b.points[1][2] == search) .. " " .. tostring(b.points[1][3]) .. " "
+        .. tostring(has(ctx, "frame:BrowseSearchButton=point=TOPRIGHT size=80|22")), "RIGHT true LEFT true")
+
+    -- Rarity "all" (-1) sends nil; no category selected sends no filters.
+    a.queries = {}
+    ctx = aload(true, { AuctionFrame = frameAH, UIDropDownMenu_GetSelectedValue = function() return -1 end })
+    ctx.fire("PLAYER_LOGIN")
+    ctx.fire("AUCTION_HOUSE_SHOW")
+    b = probeButton(ctx)
+    b.scripts.OnClick(b)
+    q = a.queries[1]
+    check("auction probe: rarity all and no category send nil rarity and no filters, page 0",
+        ("%s %s %s"):format(tostring(q[6]), tostring(q[9]), q[4]), "nil nil 0")
+end
+
 if failures > 0 then
     os.exit(1)
 end
