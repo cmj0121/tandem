@@ -43,6 +43,7 @@ KillerProbe.lua
 RangeProbe.lua
 MaelstromProbe.lua
 ManaProbe.lua
+CraftProbe.lua
 Maelstrom.lua
 RangeText.lua
 Killers.lua

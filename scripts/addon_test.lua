@@ -3026,7 +3026,7 @@ do
     local ok = pcall(ctx.fire, "PLAYER_LOGIN")
     check("borders: missing API raises nothing", ok, true)
     check("borders: missing API leaves buttons untouched", ctx.border("ActionButton1"), "none")
-    check("borders: missing API makes no frames", #ctx.ui.widgets, 38)
+    check("borders: missing API makes no frames", #ctx.ui.widgets, 39)
 end
 
 do
@@ -6877,6 +6877,137 @@ do
     check("mana probe: missing functions log nil-fn and never raise", tostring(ok) .. " " .. mana(ctx),
         "true 100.00 combat=false login cooldown=frame powerType=nil-fn / "
         .. "100.00 combat=false cast id=403 name=nil-fn cost=nil-fn texture=nil-fn")
+end
+
+-- The craft probe (craft flyout U0): with the recorder on, logs to TandemDebug.craft once at login the profession
+-- globals, on each tradeskill window event the profession's recipes when the list changed, each player cast and
+-- channel, and each bag item whose count rose within 3 s after a cast success or channel stop, marked with the open
+-- loot, mail and trade windows; rejected event names never raise.
+do
+    local c = {
+        bags = { [0] = {}, [1] = {} },
+        recipes = { { "Copper Bar", "optimal", 2840 }, { "Smelting", "header" } },
+    }
+    local cenv = {
+        GetNumTradeSkills = function() return #c.recipes end,
+        GetTradeSkillLine = function() return "Mining", 50, 75 end,
+        GetTradeSkillInfo = function(i) local r = c.recipes[i] return r[1], r[2], 0 end,
+        GetTradeSkillItemLink = function(i)
+            local id = c.recipes[i][3]
+            return id and ("|cffffffff|Hitem:%d::::|h[%s]|h|r"):format(id, c.recipes[i][1]) or nil
+        end,
+        DoTradeSkill = function() end,
+        CastSpellByName = function() end,
+        C_TradeSkillUI = { OpenTradeSkill = function() end, GetRecipeInfo = function() end, Version = 1 },
+        C_Spell = { GetSpellName = function(id) return ({ [2657] = "Smelt Copper", [7620] = "Fishing" })[id] end },
+        C_Item = { GetItemNameByID = function(id) return ({ [2840] = "Copper Bar", [6291] = "Raw Fish" })[id] end },
+        C_Container = {
+            GetContainerNumSlots = function(bag) return c.bags[bag] and 4 or 0 end,
+            GetContainerItemID = function(bag, slot) local s = c.bags[bag][slot] return s and s[1] end,
+            GetContainerItemInfo = function(bag, slot)
+                local s = c.bags[bag][slot]
+                return s and { itemID = s[1], stackCount = s[2] }
+            end,
+        },
+    }
+    local function cload(on)
+        local ctx = loadShaman({ env = cenv })
+        if on then
+            ctx.run("debug on")
+        end
+        return ctx
+    end
+    local function probeEvent(ctx, event, ...)
+        for _, w in ipairs(ctx.ui.widgets) do
+            if w.name == "TandemCraftProbeEvents" then
+                return w.scripts.OnEvent(w, event, ...)
+            end
+        end
+    end
+    local function craft(ctx, from)
+        return table.concat(ctx.env.TandemDebug and ctx.env.TandemDebug.craft or {}, " / ", from or 1)
+    end
+
+    local ctx = cload(false)
+    ctx.fire("PLAYER_LOGIN")
+    probeEvent(ctx, "TRADE_SKILL_SHOW")
+    probeEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 2657)
+    check("craft probe: the recorder off logs nothing", craft(ctx), "")
+
+    ctx = cload(true)
+    ctx.fire("PLAYER_LOGIN")
+    ctx.addon.CraftProbe.OnLogin()
+    check("craft probe: one login line with the globals and C_TradeSkillUI's functions", craft(ctx),
+        "100.00 combat=false login GetNumTradeSkills=function GetTradeSkillInfo=function "
+        .. "GetTradeSkillItemLink=function GetTradeSkillRecipeLink=nil GetTradeSkillLine=function "
+        .. "DoTradeSkill=function GetNumCrafts=nil GetCraftInfo=nil DoCraft=nil CastSpellByName=function "
+        .. "C_TradeSkillUI=table fns=GetRecipeInfo,OpenTradeSkill rejected=none")
+
+    local n = #ctx.env.TandemDebug.craft
+    probeEvent(ctx, "TRADE_SKILL_SHOW")
+    probeEvent(ctx, "TRADE_SKILL_UPDATE")
+    check("craft probe: a tradeskill window logs its profession and recipes once while the list is unchanged",
+        craft(ctx, n + 1), "100.00 combat=false tradeskill Mining recipes=2 / "
+        .. "100.00 combat=false recipe Mining #1 name=Copper Bar type=optimal item=2840 "
+        .. "link=|cffffffff|Hitem:2840::::|h[Copper Bar]|h|r recipe=nil-fn / "
+        .. "100.00 combat=false recipe Mining #2 name=Smelting type=header item=nil link=nil recipe=nil-fn")
+    n = #ctx.env.TandemDebug.craft
+    c.recipes[2] = { "Bronze Bar", "medium", 2841 }
+    probeEvent(ctx, "TRADE_SKILL_UPDATE")
+    check("craft probe: a changed list logs again", #ctx.env.TandemDebug.craft - n, 3)
+
+    c.bags[0][1] = { 2840, 3 }
+    n = #ctx.env.TandemDebug.craft
+    probeEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 2657)
+    probeEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 2657)
+    ctx.t = 101.5
+    c.bags[0][1] = { 2840, 4 }
+    probeEvent(ctx, "BAG_UPDATE", 0)
+    probeEvent(ctx, "BAG_UPDATE_DELAYED")
+    check("craft probe: a cast then a stack count rise of an item already in bags logs one pair line",
+        craft(ctx, n + 1), "100.00 combat=false cast id=2657 name=Smelt Copper loot=0 mail=0 trade=0 / "
+        .. "101.50 combat=false gain spell=2657 Smelt Copper item=2840 Copper Bar delta=+1 after=1.50 "
+        .. "loot=0 mail=0 trade=0")
+
+    n = #ctx.env.TandemDebug.craft
+    ctx.t = 110
+    probeEvent(ctx, "UNIT_SPELLCAST_CHANNEL_START", "player", "guid", 7620)
+    ctx.t = 120
+    probeEvent(ctx, "LOOT_OPENED")
+    probeEvent(ctx, "UNIT_SPELLCAST_CHANNEL_STOP", "player", "guid", 7620)
+    ctx.t = 120.5
+    c.bags[1][2] = { 6291, 1 }
+    probeEvent(ctx, "BAG_UPDATE_DELAYED")
+    probeEvent(ctx, "LOOT_CLOSED")
+    ctx.t = 124
+    c.bags[1][3] = { 6291, 1 }
+    probeEvent(ctx, "BAG_UPDATE_DELAYED")
+    check("craft probe: a fishing channel's catch through a loot window logs marked loot=1; none after 3 s",
+        craft(ctx, n + 1), "110.00 combat=false channel start id=7620 name=Fishing loot=0 mail=0 trade=0 / "
+        .. "120.00 combat=false channel stop id=7620 name=Fishing loot=1 mail=0 trade=0 / "
+        .. "120.50 combat=false gain spell=7620 Fishing item=6291 Raw Fish delta=+1 after=0.50 loot=1 mail=0 trade=0")
+
+    local register = WIDGET.RegisterEvent
+    local registerUnit = WIDGET.RegisterUnitEvent
+    WIDGET.RegisterEvent = function(_, ev)
+        if ev:find("CRAFT") then error(('Attempt to register unknown event "%s"'):format(ev)) end
+    end
+    WIDGET.RegisterUnitEvent = function(_, ev)
+        if ev:find("CHANNEL") then error(('Attempt to register unknown event "%s"'):format(ev)) end
+    end
+    ctx = cload(true)
+    local ok = pcall(ctx.fire, "PLAYER_LOGIN")
+    WIDGET.RegisterEvent, WIDGET.RegisterUnitEvent = register, registerUnit
+    check("craft probe: unknown event names never raise and are logged as rejected",
+        tostring(ok) .. " " .. tostring(craft(ctx):match("rejected=(%S+)")), "true CRAFT_SHOW,CRAFT_UPDATE")
+
+    ok = pcall(function()
+        for i = 1, 600 do
+            probeEvent(ctx, "UNIT_SPELLCAST_SUCCEEDED", "player", "guid", i)
+        end
+    end)
+    check("craft probe: never raises; at most 500 lines a session", tostring(ok) .. " " .. #ctx.env.TandemDebug.craft,
+        "true 500")
 end
 
 -- The instant Lightning Bolt icon (PLAN D4, D5): for a Shaman knowing Lightning Bolt, its icon with a yellow ADD glow
