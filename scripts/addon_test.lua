@@ -3533,7 +3533,8 @@ do
     check("tooltip: an API without AddTooltipPostCall is ignored", type(addon.Tooltip), "table")
 end
 
--- Tooltip recipe lines (U2, D3): learned recipes using the hovered item, with bag counts.
+-- Tooltip recipe lines (U2, U3, D3, D4): the most makeable learned cooking recipes using the hovered item, with bag
+-- counts.
 
 -- Stubs Crafts.RecipesUsing with recipes and the item name/count APIs with names and counts.
 local function withRecipes(ctx, recipes, names, counts)
@@ -3550,7 +3551,7 @@ local function withRecipes(ctx, recipes, names, counts)
 end
 
 local function reagentRecipe(name, ...)
-    local r = { recipe = 1, name = name, reagents = {} }
+    local r = { recipe = 1, name = name, profession = "Cooking", reagents = {} }
     for i = 1, select("#", ...), 2 do
         r.reagents[#r.reagents + 1] = { item = select(i, ...), count = select(i + 1, ...) }
     end
@@ -3563,14 +3564,15 @@ do
         [1] = { reagentRecipe("Odd Thing", 1, 1) },
     }, { [2840] = "Copper Bar", [2880] = "Weak Flux" }, { [2840] = 1, [2880] = 3, [1] = 1 })
     check("tooltip recipes: header and one line per recipe", ctx.text({ id = 2840 }),
-        "Tandem: recipes that use this / Copper Rod: Copper Bar 1/1 / Rough Bolt: Copper Bar 1/2, Weak Flux 3/1")
+        "Tandem: cooking recipes that use this / Copper Rod: Copper Bar 1/1"
+            .. " / Rough Bolt: Copper Bar 1/2, Weak Flux 3/1")
     local lines = ctx.env.GameTooltip.lines
     check("tooltip recipes: the header is gold", colour(lines[1]), "1,0.82,0")
     check("tooltip recipes: enough of every reagent is green", colour(lines[2]), "0.1,1,0.1")
     check("tooltip recipes: short of a reagent is grey", colour(lines[3]), "0.6,0.6,0.6")
     check("tooltip recipes: lines do not wrap", tostring(lines[1].wrap) .. tostring(lines[3].wrap), "falsefalse")
     check("tooltip recipes: the upgrade line still comes first", ctx.text({ id = 1 }),
-        "Tandem: upgrade over what you wear (score 45.0 over 30.0) / Tandem: recipes that use this"
+        "Tandem: upgrade over what you wear (score 45.0 over 30.0) / Tandem: cooking recipes that use this"
             .. " / Odd Thing: Item 1 1/1")
     check("tooltip recipes: no recipe adds nothing", ctx.text({ id = 2880 }), "")
     ctx.combat = true
@@ -3581,22 +3583,24 @@ do
         return secret()
     end
     check("tooltip recipes: a secret count counts as none", ctx.text({ id = 2840 }),
-        "Tandem: recipes that use this / Copper Rod: Copper Bar 0/1 / Rough Bolt: Copper Bar 0/2, Weak Flux 0/1")
+        "Tandem: cooking recipes that use this / Copper Rod: Copper Bar 0/1"
+            .. " / Rough Bolt: Copper Bar 0/2, Weak Flux 0/1")
     check("tooltip recipes: none in the bags is grey", colour(ctx.env.GameTooltip.lines[2]), "0.6,0.6,0.6")
     ctx.env.C_Item.GetItemCount = nil
     ctx.env.GetItemCount = function(id)
         return id == 2840 and 5 or "x"
     end
     check("tooltip recipes: the global count is the fallback", ctx.text({ id = 2840 }),
-        "Tandem: recipes that use this / Copper Rod: Copper Bar 5/1 / Rough Bolt: Copper Bar 5/2, Weak Flux 0/1")
+        "Tandem: cooking recipes that use this / Copper Rod: Copper Bar 5/1"
+            .. " / Rough Bolt: Copper Bar 5/2, Weak Flux 0/1")
     ctx.env.C_Item.GetItemNameByID = function()
         return secret()
     end
     check("tooltip recipes: a missing name falls back to the item info, then the id", ctx.text({ id = 1 }),
-        "Tandem: upgrade over what you wear (score 45.0 over 30.0) / Tandem: recipes that use this"
+        "Tandem: upgrade over what you wear (score 45.0 over 30.0) / Tandem: cooking recipes that use this"
             .. " / Odd Thing: Item 1 0/1")
     check("tooltip recipes: an unknown item shows its id", ctx.text({ id = 2840 }),
-        "Tandem: recipes that use this / Copper Rod: item 2840 5/1 / Rough Bolt: item 2840 5/2, item 2880 0/1")
+        "Tandem: cooking recipes that use this / Copper Rod: item 2840 5/1 / Rough Bolt: item 2840 5/2, item 2880 0/1")
 end
 
 do
@@ -3607,10 +3611,12 @@ do
     local ctx = withRecipes(loadTooltip(), { [2840] = many }, { [2840] = "Copper Bar" }, { [2840] = 1 })
     ctx.text({ id = 2840 })
     local lines = ctx.env.GameTooltip.lines
-    check("tooltip recipes: at most 8 recipe lines and a more line", #lines, 10)
-    check("tooltip recipes: the eighth recipe is shown", lines[9].text, "R8: Copper Bar 1/1")
-    check("tooltip recipes: the more line counts the rest", lines[10].text, "... and 3 more")
-    ctx = withRecipes(loadTooltip(), { [2840] = { reagentRecipe("R", 2840, 1), { name = "Broken" } } }, {}, {})
+    check("tooltip recipes: at most 5 recipe lines and a more line", #lines, 7)
+    check("tooltip recipes: ties go by name", lines[2].text .. " | " .. lines[3].text .. " | " .. lines[6].text,
+        "R1: Copper Bar 1/1 | R10: Copper Bar 1/1 | R3: Copper Bar 1/1")
+    check("tooltip recipes: the more line counts the rest", lines[7].text, "... and 6 more")
+    ctx = withRecipes(loadTooltip(), { [2840] = { reagentRecipe("R", 2840, 1), { name = "Broken",
+        profession = "Cooking" } } }, {}, {})
     check("tooltip recipes: a raising build adds nothing", ctx.text({ id = 2840 }), "")
     ctx.addon.Crafts.RecipesUsing = function()
         error("boom")
@@ -3619,9 +3625,57 @@ do
 end
 
 do
+    local function profession(r, name)
+        r.profession = name
+        return r
+    end
+    local ctx = withRecipes(loadTooltip(), {
+        [2840] = {
+            reagentRecipe("A Half", 2840, 2, 2880, 2),
+            profession(reagentRecipe("Copper Rod", 2840, 1), "Blacksmithing"),
+            reagentRecipe("B Quarter", 2840, 4, 2880, 4),
+            reagentRecipe("C Ready", 2840, 1, 2880, 1),
+            reagentRecipe("D Three Short", 2840, 2, 2880, 2, 2589, 2),
+            reagentRecipe("E One Short", 2840, 2, 2880, 1, 2589, 3),
+            reagentRecipe("F None", 2840, 9, 2589, 9),
+            reagentRecipe("G Cut", 2840, 9, 2589, 9),
+            profession(reagentRecipe("Local", 2840, 1), "Kochkunst"),
+            profession(reagentRecipe("Chinese", 2840, 1), "烹飪"),
+            profession(reagentRecipe("No Trade", 2840, 1), nil),
+        },
+        [2880] = { profession(reagentRecipe("Weak Flux Use", 2880, 1), "Mining") },
+    }, { [2840] = "Meat", [2880] = "Salt", [2589] = "Spice" }, { [2840] = 1, [2880] = 1, [2589] = 0 })
+    local text = ctx.text({ id = 2840 })
+    local lines = ctx.env.GameTooltip.lines
+    check("tooltip recipes: only cooking, all-enough first, then coverage, then fewer short", text,
+        "Tandem: cooking recipes that use this / C Ready: Meat 1/1, Salt 1/1 / Chinese: Meat 1/1"
+            .. " / A Half: Meat 1/2, Salt 1/2 / E One Short: Meat 1/2, Salt 1/1, Spice 0/3"
+            .. " / D Three Short: Meat 1/2, Salt 1/2, Spice 0/2 / ... and 3 more")
+    check("tooltip recipes: a ready recipe ranks above one short", colour(lines[2]) .. " " .. colour(lines[4]),
+        "0.1,1,0.1 0.6,0.6,0.6")
+    check("tooltip recipes: non-cooking recipes add nothing", ctx.text({ id = 2880 }), "")
+    ctx.env.C_Spell = { GetSpellInfo = function(id)
+        return id == 2550 and { name = "Kochkunst" } or nil
+    end }
+    check("tooltip recipes: the client's cooking name counts", ctx.text({ id = 2840 }):match("Local") ~= nil, true)
+    ctx.env.C_Spell = { GetSpellInfo = function()
+        return secret()
+    end }
+    ctx.env.GetSpellInfo = function(id)
+        return id == 2550 and "Kochkunst" or nil
+    end
+    check("tooltip recipes: the global spell name is the fallback", ctx.text({ id = 2840 }):match("Local") ~= nil,
+        true)
+    ctx.env.GetSpellInfo = function()
+        error("boom")
+    end
+    check("tooltip recipes: a raising spell name keeps the fixed names", ctx.text({ id = 2840 }):match("Local"), nil)
+end
+
+do
     local ctx = withRecipes(loadTooltip("zhTW"), { [2840] = { reagentRecipe("Rough Bolt", 2840, 2, 2880, 1) } },
         { [2840] = "銅條" }, { [2840] = 2, [2880] = 1 })
-    check("zhTW tooltip recipe lines", ctx.text({ id = 2840 }), "Tandem：使用此材料的配方 / Rough Bolt：銅條 2/2、物品 2880 1/1")
+    check("zhTW tooltip recipe lines", ctx.text({ id = 2840 }), "Tandem：使用此材料的食譜 / Rough Bolt：銅條 2/2、物品 2880 1/1")
 end
 
 -- Live judge (stage 11, U1): items judged from live client data only, with an empty TandemDB.

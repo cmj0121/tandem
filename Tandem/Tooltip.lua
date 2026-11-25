@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- Adds lines to item tooltips out of combat: one when the item beats what the player wears (from live item data), and
--- the learned recipes that use it as a reagent with the bag counts.
+-- the most makeable learned cooking recipes that use it as a reagent with the bag counts.
 local Tooltip = {}
 ns.Tooltip = Tooltip
 
@@ -12,7 +12,8 @@ local Safe, call = ns.Store.Safe, ns.Store.Call
 local GREEN = { 0.1, 1, 0.1 }
 local GOLD = { 1, 0.82, 0 }
 local GREY = { 0.6, 0.6, 0.6 }
-local MAX_RECIPES = 8
+local MAX_RECIPES = 5
+local COOKING = 2550
 
 local function itemName(id)
     local name = call(type(C_Item) == "table" and C_Item.GetItemNameByID, id)
@@ -33,32 +34,73 @@ local function bagCount(id)
     return type(n) == "number" and n or 0
 end
 
--- The recipe lines: a header, then one line per recipe (at most MAX_RECIPES) listing its reagents as have/need, green
--- when the bags hold enough of every reagent.
+-- The names Cooking goes by: the client's name for the Cooking spell, plus the English and zhTW names.
+local function cookingNames()
+    local names = { Cooking = true, ["烹飪"] = true }
+    local info = call(type(C_Spell) == "table" and C_Spell.GetSpellInfo, COOKING)
+    local name = type(info) == "table" and Safe(info.name) or nil
+    if type(name) ~= "string" then
+        name = call(_G.GetSpellInfo, COOKING)
+    end
+    if type(name) == "string" and name ~= "" then
+        names[name] = true
+    end
+    return names
+end
+
+-- A recipe's reagent parts as have/need text, with how makeable it is: enough of all, the share of the needed
+-- reagents the bags hold, and how many reagent kinds fall short.
+local function rate(r)
+    local parts, held, needed, short = {}, 0, 0, 0
+    for _, reagent in ipairs(r.reagents) do
+        local have = bagCount(reagent.item)
+        if have < reagent.count then
+            short = short + 1
+        end
+        held = held + math.min(have, reagent.count)
+        needed = needed + reagent.count
+        parts[#parts + 1] = L["%s %d/%d"]:format(itemName(reagent.item), have, reagent.count)
+    end
+    return { name = r.name, parts = parts, enough = short == 0, cover = needed > 0 and held / needed or 0,
+        short = short }
+end
+
+local function moreMakeable(a, b)
+    if a.enough ~= b.enough then
+        return a.enough
+    end
+    if a.cover ~= b.cover then
+        return a.cover > b.cover
+    end
+    if a.short ~= b.short then
+        return a.short < b.short
+    end
+    return a.name < b.name
+end
+
+-- The recipe lines: a header, then one line per cooking recipe (the MAX_RECIPES most makeable) listing its reagents
+-- as have/need, green when the bags hold enough of every reagent.
 local function addRecipes(tooltip, id)
-    local recipes = ns.Crafts.RecipesUsing(id)
-    if #recipes == 0 then
+    local cooking = cookingNames()
+    local rated = {}
+    for _, r in ipairs(ns.Crafts.RecipesUsing(id)) do
+        if r.profession ~= nil and cooking[r.profession] then
+            rated[#rated + 1] = rate(r)
+        end
+    end
+    if #rated == 0 then
         return
     end
-    local lines = {}
-    for i = 1, math.min(#recipes, MAX_RECIPES) do
-        local r = recipes[i]
-        local parts, enough = {}, true
-        for _, reagent in ipairs(r.reagents) do
-            local have = bagCount(reagent.item)
-            if have < reagent.count then
-                enough = false
-            end
-            parts[#parts + 1] = L["%s %d/%d"]:format(itemName(reagent.item), have, reagent.count)
-        end
-        lines[#lines + 1] = { L["%s: %s"]:format(r.name, table.concat(parts, L[", "])), enough and GREEN or GREY }
+    table.sort(rated, moreMakeable)
+    tooltip:AddLine(L["Tandem: cooking recipes that use this"], GOLD[1], GOLD[2], GOLD[3], false)
+    for i = 1, math.min(#rated, MAX_RECIPES) do
+        local r = rated[i]
+        local colour = r.enough and GREEN or GREY
+        tooltip:AddLine(L["%s: %s"]:format(r.name, table.concat(r.parts, L[", "])), colour[1], colour[2], colour[3],
+            false)
     end
-    tooltip:AddLine(L["Tandem: recipes that use this"], GOLD[1], GOLD[2], GOLD[3], false)
-    for _, line in ipairs(lines) do
-        tooltip:AddLine(line[1], line[2][1], line[2][2], line[2][3], false)
-    end
-    if #recipes > MAX_RECIPES then
-        tooltip:AddLine(L["... and %d more"]:format(#recipes - MAX_RECIPES), GREY[1], GREY[2], GREY[3], false)
+    if #rated > MAX_RECIPES then
+        tooltip:AddLine(L["... and %d more"]:format(#rated - MAX_RECIPES), GREY[1], GREY[2], GREY[3], false)
     end
 end
 
