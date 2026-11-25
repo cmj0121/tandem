@@ -10145,8 +10145,8 @@ do
     check("flyout: the arrow and the list are secure handlers", arrow.template .. " " .. list.template .. " "
         .. tostring(arrow.parent == main) .. " " .. tostring(list.parent == main),
         "SecureHandlerClickTemplate SecureHandlerBaseTemplate true true")
-    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(6) ~= nil) .. " "
-        .. tostring(ctx.row(7) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
+    check("flyout: one secure row per Shaman entry in the list", tostring(ctx.row(7) ~= nil) .. " "
+        .. tostring(ctx.row(8) == nil) .. " " .. ctx.row(1).template .. " " .. tostring(ctx.row(1).parent == list),
         "true true SecureActionButtonTemplate true")
     check("flyout: aura events registered once it exists",
         tostring(ctx.frame.registered.UNIT_AURA) .. " " .. tostring(ctx.frame.registered.GROUP_ROSTER_UPDATE),
@@ -10193,7 +10193,7 @@ do
     check("flyout: the secure snippets are wired",
         tostring(arrow.attrs._onclick == ctx.addon.Flyout.SNIPPETS.arrow) .. " "
             .. tostring(arrow.refs.list == list) .. " " .. tostring(list.refs.main == main) .. " " .. #ctx.wraps,
-        "true true true 7")
+        "true true true 8")
     local wrapped = {}
     for _, w in ipairs(ctx.wraps) do
         wrapped[#wrapped + 1] = (w.frame == main and "main" or tostring(w.frame.name):match("%d$")) .. ":"
@@ -10202,7 +10202,7 @@ do
     end
     check("flyout: each row and the main button wrapped by the list", table.concat(wrapped, " "),
         "1:OnClick:true:true 2:OnClick:true:true 3:OnClick:true:true 4:OnClick:true:true 5:OnClick:true:true "
-            .. "6:OnClick:true:true main:OnClick:true:true")
+            .. "6:OnClick:true:true 7:OnClick:true:true main:OnClick:true:true")
 
     check("flyout: the list starts closed", list.shown, false)
     ctx.click(arrow)
@@ -10361,7 +10361,7 @@ do
         .. " " .. tostring(list.template) .. " " .. main.template .. " " .. ctx.row(1).template .. " " .. #ctx.wraps,
         "nil nil SecureActionButtonTemplate SecureActionButtonTemplate 0")
     check("flyout insecure: logged at login", debugText(ctx.env):match("flyout login: class=SHAMAN ready=true "
-        .. "secure=false rows=6") ~= nil, true)
+        .. "secure=false rows=7") ~= nil, true)
     ctx.click(arrow)
     check("flyout insecure: the arrow opens the list out of combat", list.shown, true)
     ctx.click(ctx.row(2))
@@ -10682,7 +10682,7 @@ do
     ctx.state.combat = false
     ctx.fire("PLAYER_REGEN_ENABLED")
     check("flyout: set up at combat's end", tostring(main.shown) .. " " .. main.attrs.entry .. " " .. #ctx.wraps,
-        "true poison 7")
+        "true poison 8")
 end
 
 -- Mute button: left of the class macro button (or the rod button, or the bag row) while the layout is on, flipping
@@ -11117,9 +11117,10 @@ end
 -- GetSpellCooldown(556), ctx.hearths for GetItemCount(6948); ctx.list() is ClassMacros.List("SHAMAN").
 local MACRO_NAMES = {
     enUS = { [526] = "Cure Poison", [2870] = "Cure Disease", [17364] = "Stormstrike", [556] = "Astral Recall",
-        [66842] = "Call of the Elements", [66843] = "Call of the Ancestors" },
+        [66842] = "Call of the Elements", [66843] = "Call of the Ancestors", [8004] = "Lesser Healing Wave",
+        [331] = "Healing Wave" },
     zhTW = { [526] = "解毒術", [2870] = "祛病術", [17364] = "風暴打擊", [556] = "星界傳送", [66842] = "元素召喚",
-        [66843] = "先祖召喚" },
+        [66843] = "先祖召喚", [8004] = "次級治療波", [331] = "治療波" },
 }
 local function loadClassMacros(opts)
     opts = opts or {}
@@ -11271,6 +11272,52 @@ do
     local e = ctx.list()[1]
     check("zhTW totems: body and description", e.body .. " | " .. e.description,
         "#showtooltip\n/cast [btn:2] 先祖召喚; 元素召喚 | 左鍵施放元素召喚，右鍵施放先祖召喚")
+end
+
+-- The heal entry (D1-D4): Lesser Healing Wave on a left click or the key, Healing Wave on a right click or with
+-- Shift, on the mouseover friend, else the friendly target, else the player; shown once both are known.
+local HEAL_LEFT = "[nobtn:2,nomod:shift,@mouseover,help,nodead][nobtn:2,nomod:shift,@target,help,nodead]"
+    .. "[nobtn:2,nomod:shift,@player]"
+
+do
+    local ctx = loadClassMacros()
+    ctx.known[66842], ctx.known[66843], ctx.known[17364] = true, true, true
+    ctx.known[8004] = true
+    check("heal: not shown with only Lesser Healing Wave", ctx.ids(), "totems,stormstrike")
+    ctx.known[8004], ctx.known[331] = nil, true
+    check("heal: not shown with only Healing Wave", ctx.ids(), "totems,stormstrike")
+    ctx.known[8004] = true
+    check("heal: after totems once both are known", ctx.ids(), "totems,heal,stormstrike")
+    local e = ctx.list()[2]
+    check("heal: fields, icon of 8004", table.concat({ e.title, e.icon, e.macro, #e.kinds }, " | "),
+        "Lesser Healing Wave / Healing Wave | icon8004 | Tandem Heal | 0")
+    check("heal: body", e.body, "#showtooltip\n/cast " .. HEAL_LEFT .. " Lesser Healing Wave; " .. MACRO_TARGETS
+        .. " Healing Wave")
+    check("heal: body fits the 255-byte macro limit", #e.body <= 255, true)
+    check("heal: description", e.description,
+        "Left-click or your key casts Lesser Healing Wave, right-click or Shift with your key casts Healing Wave")
+end
+
+do
+    local ctx = loadClassMacros()
+    ctx.env.TandemDebug = { on = true, log = {} }
+    ctx.known[331] = true
+    ctx.list()
+    ctx.list()
+    local text = debugText(ctx.env)
+    check("heal debug: each spell logged once per login",
+        tostring(text:match("class macros: heal 8004 known=false") ~= nil) .. " "
+            .. tostring(text:match("class macros: heal 331 known=true") ~= nil) .. " "
+            .. select(2, text:gsub("heal %d+ known", "")), "true true 2")
+end
+
+do
+    local ctx = loadClassMacros({ locale = "zhTW" })
+    ctx.known[8004], ctx.known[331] = true, true
+    local e = ctx.list()[1]
+    check("zhTW heal: body and description", e.body .. " | " .. e.description, "#showtooltip\n/cast " .. HEAL_LEFT
+        .. " 次級治療波; " .. MACRO_TARGETS .. " 治療波 | 左鍵或按鍵施放次級治療波，右鍵或 Shift+按鍵施放治療波")
+    check("zhTW heal: body fits the 255-byte macro limit", #e.body <= 255, true)
 end
 
 do
