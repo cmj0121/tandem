@@ -83,6 +83,10 @@ local watch
 local listeners = {}
 local lastSig
 local logged = 0
+-- The item -> recipes index RecipesUsing reads, nil once the recipe cache changes; live[recipe] holds the reagents
+-- read live for a cached recipe saved without them (false when unread), kept until the next build.
+local index
+local live = {}
 
 -- Crafts.Log(what): while debugging, appends one line (time, combat, what) to TandemDebug.crafts, keeping the last
 -- LOG_LIMIT and at most LOG_LIMIT a session.
@@ -151,6 +155,7 @@ local function state()
             ns.Store.SetCraftPick(key, mem.pick)
         end
         mem = saved
+        index = nil
     end
     return mem, loadedKey
 end
@@ -442,8 +447,7 @@ local function onCast(unit, spell)
 end
 
 -- Returns the item a recipe makes, from its schematic or else its output data; nil when neither tells.
-local function outputItem(ui, recipe)
-    local schematic = call(ui.GetRecipeSchematic, recipe, false)
+local function outputItem(ui, recipe, schematic)
     local item = type(schematic) == "table" and Safe(schematic.outputItemID)
     if isID(item) then
         return item
@@ -453,12 +457,92 @@ local function outputItem(ui, recipe)
     return isID(item) and item or nil
 end
 
+-- Returns a schematic's basic reagents { { item, count, alts|nil }, ... }, each slot's first item the one shown and
+-- its other quality items the alts, and the number of slots read; nil reagents when none is listed. A slot is skipped
+-- as optional or finishing only when both its reagentType and Enum.CraftingReagentType.Basic read and differ.
+local function reagentsOf(schematic)
+    local slots = type(schematic) == "table" and Safe(schematic.reagentSlotSchematics)
+    if type(slots) ~= "table" then
+        return nil, 0
+    end
+    local enum = type(_G.Enum) == "table" and _G.Enum.CraftingReagentType
+    local basic = type(enum) == "table" and Safe(enum.Basic) or nil
+    local out, n = {}, 0
+    for _, slot in ipairs(slots) do
+        n = n + 1
+        local kind = type(slot) == "table" and Safe(slot.reagentType) or nil
+        local count = type(slot) == "table" and Safe(slot.quantityRequired)
+        local list = type(slot) == "table" and Safe(slot.reagents)
+        if (basic == nil or kind == nil or kind == basic) and isID(count) and type(list) == "table" then
+            local ids = {}
+            for _, reagent in ipairs(list) do
+                local id = type(reagent) == "table" and Safe(reagent.itemID)
+                if isID(id) then
+                    ids[#ids + 1] = id
+                end
+            end
+            if #ids > 0 then
+                local alts = {}
+                for i = 2, #ids do
+                    alts[#alts + 1] = ids[i]
+                end
+                out[#out + 1] = { item = ids[1], count = count, alts = #alts > 0 and alts or nil }
+            end
+        end
+    end
+    return #out > 0 and out or nil, n
+end
+
+-- Returns the sorted keys of t joined with ",", or its type when it is not a table.
+local function keysOf(t)
+    if type(t) ~= "table" then
+        return type(t)
+    end
+    local keys = {}
+    for k in pairs(t) do
+        keys[#keys + 1] = tostring(k)
+    end
+    table.sort(keys)
+    return table.concat(keys, ",")
+end
+
+-- The raw shape of a schematic, for the debug log: its keys, slot count and the first slot's fields.
+local function shapeOf(schematic)
+    local slots = type(schematic) == "table" and schematic.reagentSlotSchematics
+    return ("keys=%s slots=%s slot1=%s"):format(keysOf(schematic), type(slots) == "table" and #slots or "-",
+        keysOf(type(slots) == "table" and slots[1] or nil))
+end
+
+local function sameReagents(a, b)
+    if a == nil or b == nil then
+        return a == b
+    end
+    if #a ~= #b then
+        return false
+    end
+    for i, x in ipairs(a) do
+        local y = b[i]
+        local xa, ya = x.alts or {}, y.alts or {}
+        if x.item ~= y.item or x.count ~= y.count or #xa ~= #ya then
+            return false
+        end
+        for j = 1, #xa do
+            if xa[j] ~= ya[j] then
+                return false
+            end
+        end
+    end
+    return true
+end
+
 local function sameRecipe(a, b)
     return a and a.name == b.name and a.icon == b.icon and a.item == b.item and a.profession == b.profession
+        and sameReagents(a.reagents, b.reagents)
 end
 
 local function setRecipe(s, key, recipe, r)
     s.recipes[recipe] = r
+    index = nil
     if key then
         ns.Store.SetCraftRecipe(key, recipe, r)
     end
@@ -516,6 +600,7 @@ function Crafts.ReadRecipes()
     end
     local s, key = state()
     local learned, changed, seen = 0, 0, {}
+    local slots, kept, shaped = 0, 0, false
     for _, recipe in ipairs(ids) do
         local info = isID(recipe) and call(ui.GetRecipeInfo, recipe)
         local flag = type(info) == "table" and Safe(info.learned)
@@ -527,8 +612,24 @@ function Crafts.ReadRecipes()
             local line = Safe((select(2, call(ui.GetTradeSkillLineForRecipe, recipe))))
             -- The recipe's own line first: while a window switches, the base info may still name the old profession.
             local profession = isText(line) and line or prof
+            local schematic = call(ui.GetRecipeSchematic, recipe, false)
+            if not shaped then
+                shaped = true
+                local ok, shape = pcall(shapeOf, schematic)
+                log(("recipes schematic %d: %s"):format(recipe, ok and shape or "unread"))
+            end
+            local ok, reagents, n = pcall(reagentsOf, schematic)
+            reagents = ok and type(reagents) == "table" and reagents or nil
+            if ok then
+                slots, kept = slots + n, kept + (reagents and #reagents or 0)
+            end
+            -- A read that raised or listed no reagent keeps the cached ones (a secret or failed read, not a change).
+            if not reagents and s.recipes[recipe] then
+                reagents = s.recipes[recipe].reagents
+            end
             local r = { name = name, icon = (isID(icon) or isText(icon)) and icon or nil,
-                item = outputItem(ui, recipe), profession = isText(profession) and profession or nil }
+                item = outputItem(ui, recipe, schematic), profession = isText(profession) and profession or nil,
+                reagents = reagents }
             if not sameRecipe(s.recipes[recipe], r) then
                 changed = changed + 1
                 if not s.recipes[recipe] then
@@ -551,10 +652,87 @@ function Crafts.ReadRecipes()
             end
         end
     end
-    log(("recipes %s: %d ids, %d learned, %d changed"):format(tostring(prof), #ids, learned, changed))
+    log(("recipes %s: %d ids, %d learned, %d changed, %d slots, %d reagents"):format(tostring(prof), #ids, learned,
+        changed, slots, kept))
     if changed > 0 then
         notify()
     end
+end
+
+-- Returns the reagents of a cached recipe, read live from its schematic when it was saved without them, at most once
+-- an index build (a failure too); nil when unread.
+local function reagentsFor(recipe, r)
+    if type(r.reagents) == "table" then
+        return r.reagents
+    end
+    if live[recipe] == nil then
+        local ui = type(_G.C_TradeSkillUI) == "table" and _G.C_TradeSkillUI or {}
+        local ok, reagents = pcall(reagentsOf, call(ui.GetRecipeSchematic, recipe, false))
+        live[recipe] = ok and type(reagents) == "table" and reagents or false
+    end
+    return live[recipe] or nil
+end
+
+-- Builds the item -> recipes index from the recipe cache: every reagent's item and alts name the recipe once.
+local function buildIndex()
+    live = {}
+    local out = {}
+    for recipe, r in pairs(state().recipes) do
+        local reagents = reagentsFor(recipe, r)
+        local entry = { recipe = recipe, name = r.name, profession = r.profession, reagents = reagents }
+        local named = {}
+        local function add(id)
+            if not named[id] then
+                named[id] = true
+                out[id] = out[id] or {}
+                out[id][#out[id] + 1] = entry
+            end
+        end
+        for _, x in ipairs(reagents or {}) do
+            add(x.item)
+            for _, alt in ipairs(x.alts or {}) do
+                add(alt)
+            end
+        end
+    end
+    return out
+end
+
+-- Crafts.RecipesUsing(item) -> list of { recipe, name, profession|nil, reagents } for every cached recipe (D2: all
+-- professions) one of whose reagents is item or has it as an alt, by profession then name; {} for a bad item. Never
+-- raises.
+function Crafts.RecipesUsing(item)
+    item = Safe(item)
+    if not isID(item) then
+        return {}
+    end
+    local ok, out = pcall(function()
+        index = index or buildIndex()
+        local list = {}
+        for i, e in ipairs(index[item] or {}) do
+            local reagents = {}
+            for j, x in ipairs(e.reagents) do
+                local alts
+                for k, alt in ipairs(x.alts or {}) do
+                    alts = alts or {}
+                    alts[k] = alt
+                end
+                reagents[j] = { item = x.item, count = x.count, alts = alts }
+            end
+            list[i] = { recipe = e.recipe, name = e.name, profession = e.profession, reagents = reagents }
+        end
+        table.sort(list, function(a, b)
+            if (a.profession or "") ~= (b.profession or "") then
+                return (a.profession or "") < (b.profession or "")
+            end
+            if a.name ~= b.name then
+                return a.name < b.name
+            end
+            return a.recipe < b.recipe
+        end)
+        return list
+    end)
+    return ok and out or {}
 end
 
 -- Crafts.TryCraft(entry) -> crafted: for a recipe entry out of combat, with its profession's window open and ready,

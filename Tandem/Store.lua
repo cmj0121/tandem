@@ -192,11 +192,34 @@ local function isIcon(v)
     return isInt(v, 1) or isText(v)
 end
 
--- Returns a clean copy of a cached recipe { name, icon|nil, item|nil, profession|nil }, or nil.
+-- Returns a clean copy of a recipe's reagents { { item, count, alts|nil }, ... }, invalid entries and alternate items
+-- left out; nil when none is left.
+local function copyReagents(v)
+    if type(v) ~= "table" then
+        return nil
+    end
+    local out = {}
+    for _, x in ipairs(v) do
+        if type(x) == "table" and isInt(x.item, 1) and isInt(x.count, 1) then
+            local alts = {}
+            for _, alt in ipairs(type(x.alts) == "table" and x.alts or {}) do
+                if isInt(alt, 1) then
+                    alts[#alts + 1] = alt
+                end
+            end
+            out[#out + 1] = { item = x.item, count = x.count, alts = #alts > 0 and alts or nil }
+        end
+    end
+    return #out > 0 and out or nil
+end
+
+-- Returns a clean copy of a cached recipe { name, icon|nil, item|nil, profession|nil, reagents|nil }, or nil; invalid
+-- reagents are left out, never the recipe.
 local function copyRecipe(v)
     if type(v) == "table" and isText(v.name) and isOptional(v.icon, isIcon) and isOptional(v.item, isInt, 1)
         and isOptional(v.profession, isText) then
-        return { name = v.name, icon = v.icon, item = v.item, profession = v.profession }
+        return { name = v.name, icon = v.icon, item = v.item, profession = v.profession,
+            reagents = copyReagents(v.reagents) }
     end
 end
 
@@ -660,8 +683,8 @@ function Store.SetCraftPair(key, spellID, itemID)
     return true
 end
 
--- Saves the character key's cached recipe { name, icon|nil, item|nil, profession|nil } (nil clears it); false when
--- invalid or read-only.
+-- Saves the character key's cached recipe { name, icon|nil, item|nil, profession|nil, reagents|nil } (nil clears
+-- it); false when invalid or read-only.
 function Store.SetCraftRecipe(key, recipeID, recipe)
     local clean = recipe ~= nil and copyRecipe(recipe) or nil
     local mine = isInt(recipeID, 1) and (recipe == nil or clean) and crafts(key)

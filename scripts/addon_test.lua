@@ -3533,6 +3533,151 @@ do
     check("tooltip: an API without AddTooltipPostCall is ignored", type(addon.Tooltip), "table")
 end
 
+-- Tooltip recipe lines (U2, U3, D3, D4): the most makeable learned cooking recipes using the hovered item, with bag
+-- counts.
+
+-- Stubs Crafts.RecipesUsing with recipes and the item name/count APIs with names and counts.
+local function withRecipes(ctx, recipes, names, counts)
+    ctx.addon.Crafts.RecipesUsing = function(id)
+        return recipes[id] or {}
+    end
+    ctx.env.C_Item.GetItemNameByID = function(id)
+        return names[id]
+    end
+    ctx.env.C_Item.GetItemCount = function(id)
+        return counts[id]
+    end
+    return ctx
+end
+
+local function reagentRecipe(name, ...)
+    local r = { recipe = 1, name = name, profession = "Cooking", reagents = {} }
+    for i = 1, select("#", ...), 2 do
+        r.reagents[#r.reagents + 1] = { item = select(i, ...), count = select(i + 1, ...) }
+    end
+    return r
+end
+
+do
+    local ctx = withRecipes(loadTooltip(), {
+        [2840] = { reagentRecipe("Copper Rod", 2840, 1), reagentRecipe("Rough Bolt", 2840, 2, 2880, 1) },
+        [1] = { reagentRecipe("Odd Thing", 1, 1) },
+    }, { [2840] = "Copper Bar", [2880] = "Weak Flux" }, { [2840] = 1, [2880] = 3, [1] = 1 })
+    check("tooltip recipes: header and one line per recipe", ctx.text({ id = 2840 }),
+        "Tandem: cooking recipes that use this / Copper Rod: Copper Bar 1/1"
+            .. " / Rough Bolt: Copper Bar 1/2, Weak Flux 3/1")
+    local lines = ctx.env.GameTooltip.lines
+    check("tooltip recipes: the header is gold", colour(lines[1]), "1,0.82,0")
+    check("tooltip recipes: enough of every reagent is green", colour(lines[2]), "0.1,1,0.1")
+    check("tooltip recipes: short of a reagent is grey", colour(lines[3]), "0.6,0.6,0.6")
+    check("tooltip recipes: lines do not wrap", tostring(lines[1].wrap) .. tostring(lines[3].wrap), "falsefalse")
+    check("tooltip recipes: the upgrade line still comes first", ctx.text({ id = 1 }),
+        "Tandem: upgrade over what you wear (score 45.0 over 30.0) / Tandem: cooking recipes that use this"
+            .. " / Odd Thing: Item 1 1/1")
+    check("tooltip recipes: no recipe adds nothing", ctx.text({ id = 2880 }), "")
+    ctx.combat = true
+    check("tooltip recipes: nothing in combat", ctx.text({ id = 2840 }), "")
+    ctx.combat = false
+    check("tooltip recipes: nothing on a shopping tooltip", ctx.text({ id = 2840 }, fakeTooltip()), "")
+    ctx.env.C_Item.GetItemCount = function()
+        return secret()
+    end
+    check("tooltip recipes: a secret count counts as none", ctx.text({ id = 2840 }),
+        "Tandem: cooking recipes that use this / Copper Rod: Copper Bar 0/1"
+            .. " / Rough Bolt: Copper Bar 0/2, Weak Flux 0/1")
+    check("tooltip recipes: none in the bags is grey", colour(ctx.env.GameTooltip.lines[2]), "0.6,0.6,0.6")
+    ctx.env.C_Item.GetItemCount = nil
+    ctx.env.GetItemCount = function(id)
+        return id == 2840 and 5 or "x"
+    end
+    check("tooltip recipes: the global count is the fallback", ctx.text({ id = 2840 }),
+        "Tandem: cooking recipes that use this / Copper Rod: Copper Bar 5/1"
+            .. " / Rough Bolt: Copper Bar 5/2, Weak Flux 0/1")
+    ctx.env.C_Item.GetItemNameByID = function()
+        return secret()
+    end
+    check("tooltip recipes: a missing name falls back to the item info, then the id", ctx.text({ id = 1 }),
+        "Tandem: upgrade over what you wear (score 45.0 over 30.0) / Tandem: cooking recipes that use this"
+            .. " / Odd Thing: Item 1 0/1")
+    check("tooltip recipes: an unknown item shows its id", ctx.text({ id = 2840 }),
+        "Tandem: cooking recipes that use this / Copper Rod: item 2840 5/1 / Rough Bolt: item 2840 5/2, item 2880 0/1")
+end
+
+do
+    local many = {}
+    for i = 1, 11 do
+        many[i] = reagentRecipe("R" .. i, 2840, 1)
+    end
+    local ctx = withRecipes(loadTooltip(), { [2840] = many }, { [2840] = "Copper Bar" }, { [2840] = 1 })
+    ctx.text({ id = 2840 })
+    local lines = ctx.env.GameTooltip.lines
+    check("tooltip recipes: at most 5 recipe lines and a more line", #lines, 7)
+    check("tooltip recipes: ties go by name", lines[2].text .. " | " .. lines[3].text .. " | " .. lines[6].text,
+        "R1: Copper Bar 1/1 | R10: Copper Bar 1/1 | R3: Copper Bar 1/1")
+    check("tooltip recipes: the more line counts the rest", lines[7].text, "... and 6 more")
+    ctx = withRecipes(loadTooltip(), { [2840] = { reagentRecipe("R", 2840, 1), { name = "Broken",
+        profession = "Cooking" } } }, {}, {})
+    check("tooltip recipes: a raising build adds nothing", ctx.text({ id = 2840 }), "")
+    ctx.addon.Crafts.RecipesUsing = function()
+        error("boom")
+    end
+    check("tooltip recipes: a raising RecipesUsing adds nothing", ctx.text({ id = 2840 }), "")
+end
+
+do
+    local function profession(r, name)
+        r.profession = name
+        return r
+    end
+    local ctx = withRecipes(loadTooltip(), {
+        [2840] = {
+            reagentRecipe("A Half", 2840, 2, 2880, 2),
+            profession(reagentRecipe("Copper Rod", 2840, 1), "Blacksmithing"),
+            reagentRecipe("B Quarter", 2840, 4, 2880, 4),
+            reagentRecipe("C Ready", 2840, 1, 2880, 1),
+            reagentRecipe("D Three Short", 2840, 2, 2880, 2, 2589, 2),
+            reagentRecipe("E One Short", 2840, 2, 2880, 1, 2589, 3),
+            reagentRecipe("F None", 2840, 9, 2589, 9),
+            reagentRecipe("G Cut", 2840, 9, 2589, 9),
+            profession(reagentRecipe("Local", 2840, 1), "Kochkunst"),
+            profession(reagentRecipe("Chinese", 2840, 1), "烹飪"),
+            profession(reagentRecipe("No Trade", 2840, 1), nil),
+        },
+        [2880] = { profession(reagentRecipe("Weak Flux Use", 2880, 1), "Mining") },
+    }, { [2840] = "Meat", [2880] = "Salt", [2589] = "Spice" }, { [2840] = 1, [2880] = 1, [2589] = 0 })
+    local text = ctx.text({ id = 2840 })
+    local lines = ctx.env.GameTooltip.lines
+    check("tooltip recipes: only cooking, all-enough first, then coverage, then fewer short", text,
+        "Tandem: cooking recipes that use this / C Ready: Meat 1/1, Salt 1/1 / Chinese: Meat 1/1"
+            .. " / A Half: Meat 1/2, Salt 1/2 / E One Short: Meat 1/2, Salt 1/1, Spice 0/3"
+            .. " / D Three Short: Meat 1/2, Salt 1/2, Spice 0/2 / ... and 3 more")
+    check("tooltip recipes: a ready recipe ranks above one short", colour(lines[2]) .. " " .. colour(lines[4]),
+        "0.1,1,0.1 0.6,0.6,0.6")
+    check("tooltip recipes: non-cooking recipes add nothing", ctx.text({ id = 2880 }), "")
+    ctx.env.C_Spell = { GetSpellInfo = function(id)
+        return id == 2550 and { name = "Kochkunst" } or nil
+    end }
+    check("tooltip recipes: the client's cooking name counts", ctx.text({ id = 2840 }):match("Local") ~= nil, true)
+    ctx.env.C_Spell = { GetSpellInfo = function()
+        return secret()
+    end }
+    ctx.env.GetSpellInfo = function(id)
+        return id == 2550 and "Kochkunst" or nil
+    end
+    check("tooltip recipes: the global spell name is the fallback", ctx.text({ id = 2840 }):match("Local") ~= nil,
+        true)
+    ctx.env.GetSpellInfo = function()
+        error("boom")
+    end
+    check("tooltip recipes: a raising spell name keeps the fixed names", ctx.text({ id = 2840 }):match("Local"), nil)
+end
+
+do
+    local ctx = withRecipes(loadTooltip("zhTW"), { [2840] = { reagentRecipe("Rough Bolt", 2840, 2, 2880, 1) } },
+        { [2840] = "銅條" }, { [2840] = 2, [2880] = 1 })
+    check("zhTW tooltip recipe lines", ctx.text({ id = 2840 }), "Tandem：使用此材料的食譜 / Rough Bolt：銅條 2/2、物品 2880 1/1")
+end
+
 -- Live judge (stage 11, U1): items judged from live client data only, with an empty TandemDB.
 
 do
@@ -7048,7 +7193,11 @@ do
             C_TradeSkillUI = {
                 GetAllRecipeIDs = function() return cr.recipeIDs end,
                 GetRecipeInfo = function(id) return cr.recipes[id] end,
-                GetRecipeSchematic = function(id) return { outputItemID = cr.outputs[id] } end,
+                GetRecipeSchematic = function(id)
+                    cr.schematics = cr.schematics + 1
+                    if cr.schematicError then error(cr.schematicError, 0) end
+                    return { outputItemID = cr.outputs[id], reagentSlotSchematics = cr.slots[id] }
+                end,
                 GetRecipeOutputItemData = function(id) return { itemID = cr.data[id] } end,
                 GetBaseProfessionInfo = function() return { professionName = cr.prof } end,
                 GetTradeSkillLineForRecipe = function()
@@ -7081,6 +7230,7 @@ do
             },
             outputs = { [2538] = 2679, [2540] = 2840 },
             data = { [2541] = 2681 },
+            slots = {}, schematics = 0,
         }
         cr.class[2681] = 0
     end
@@ -7484,6 +7634,124 @@ do
     check("crafts: the crafts channel keeps at most 300 lines, 300 a session", #ctx.env.TandemDebug.crafts .. " "
         .. tostring(joined(ctx.env.TandemDebug.crafts):find("line 400", 1, true) ~= nil), "300 false")
 
+    -- Recipe reagents (recipe tooltip U1, D1, D2): read from the schematic's basic slots, saved, and looked up by item.
+    local function slot(count, ids, kind)
+        local reagents = {}
+        for i, id in ipairs(ids) do
+            reagents[i] = { itemID = id }
+        end
+        return { quantityRequired = count, reagents = reagents, reagentType = kind }
+    end
+    local function using(c, item)
+        local out = {}
+        for _, e in ipairs(c.addon.Crafts.RecipesUsing(item)) do
+            out[#out + 1] = e.recipe .. ":" .. tostring(e.profession)
+        end
+        return table.concat(out, " ")
+    end
+    reset()
+    cr.slots[2538] = { slot(2, { 2672, 9001 }, 1), slot(1, { 4470 }, 0), slot(1, { 2678 }) }
+    cr.slots[2541] = { slot(1, { 2678 }, 1), slot(CRAFT_SECRET, { 3173 }, 1), slot(1, { CRAFT_SECRET, 3174 }, 1) }
+    ctx = cload()
+    ctx.env.Enum = ctx.env.Enum or {}
+    ctx.env.Enum.CraftingReagentType = { Basic = 1 }
+    ctx.run("debug on")
+    craftsEvent(ctx, "TRADE_SKILL_SHOW")
+    local wolf = ctx.addon.Crafts.RecipesUsing(2672)
+    check("crafts reagents: RecipesUsing returns the recipe with its full basic reagent list",
+        #wolf .. " " .. wolf[1].recipe .. " " .. wolf[1].name .. " " .. tostring(wolf[1].profession) .. " "
+        .. dump(wolf[1].reagents),
+        "1 2538 Charred Wolf Meat Cooking " .. dump({ { item = 2672, count = 2, alts = { 9001 } },
+            { item = 2678, count = 1 } }))
+    check("crafts reagents: an alternate quality item matches; an optional slot's item does not",
+        using(ctx, 9001) .. "|" .. using(ctx, 4470), "2538:Cooking|")
+    check("crafts reagents: recipes sharing a reagent come by profession then name; secret counts and ids are skipped",
+        using(ctx, 2678) .. "|" .. using(ctx, 3173) .. "|" .. dump(ctx.addon.Crafts.RecipesUsing(3174)[1].reagents),
+        "2538:Cooking 2541:Cooking||" .. dump({ { item = 2678, count = 1 }, { item = 3174, count = 1 } }))
+    check("crafts reagents: the reagents are saved with the recipe",
+        dump(ctx.env.TandemDB.crafts.Jaina.recipes[2538].reagents), dump(wolf[1].reagents))
+    local crlog = table.concat(ctx.env.TandemDebug.crafts, "\n")
+    check("crafts reagents: the first schematic's shape and the slot and reagent totals are logged",
+        tostring(crlog:find("recipes schematic 2538: keys=outputItemID,reagentSlotSchematics slots=3 "
+            .. "slot1=quantityRequired,reagentType,reagents", 1, true) ~= nil) .. " "
+        .. tostring(crlog:find("3 learned, 3 changed, 6 slots, 4 reagents", 1, true) ~= nil), "true true")
+    cr.schematics = 0
+    for _ = 1, 3 do
+        ctx.addon.Crafts.RecipesUsing(2672)
+    end
+    check("crafts reagents: the index is not rebuilt on every lookup", cr.schematics, 0)
+    cr.slots[2538][1] = slot(3, { 2673 }, 1)
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    check("crafts reagents: changed reagents refresh the cache and the index",
+        using(ctx, 2672) .. "|" .. using(ctx, 2673) .. " "
+        .. ctx.env.TandemDB.crafts.Jaina.recipes[2538].reagents[1].count, "|2538:Cooking 3")
+
+    local held = ctx.addon.Crafts.RecipesUsing(2673)[1]
+    held.reagents[1].count, held.reagents[1].item = 99, 1
+    check("crafts reagents: an entry's reagents are a copy; changing them leaves the cache alone",
+        using(ctx, 2673) .. " " .. ctx.addon.Crafts.RecipesUsing(2673)[1].reagents[1].count .. " "
+        .. ctx.env.TandemDB.crafts.Jaina.recipes[2538].reagents[1].count, "2538:Cooking 3 3")
+    cr.slots[2538] = { slot(CRAFT_SECRET, { 2673 }, 1) }
+    cr.recipes[2538].icon = 133975
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    local kept = ctx.env.TandemDB.crafts.Jaina.recipes[2538]
+    check("crafts reagents: a read listing no reagent keeps the cached ones", kept.icon .. " "
+        .. dump(kept.reagents), "133975 " .. dump({ { item = 2673, count = 3 }, { item = 2678, count = 1 } }))
+    cr.schematicError = "boom"
+    cr.recipes[2538].icon = 133976
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+    cr.schematicError = nil
+    kept = ctx.env.TandemDB.crafts.Jaina.recipes[2538]
+    check("crafts reagents: a raising schematic read keeps the cached reagents", kept.icon .. " "
+        .. #kept.reagents .. " " .. using(ctx, 2673), "133976 2 2538:Cooking")
+    cr.slots[2538] = { slot(3, { 2673 }, 1), slot(1, { 2678 }) }
+    cr.recipes[2538].icon = 133974
+    craftsEvent(ctx, "TRADE_SKILL_LIST_UPDATE")
+
+    reset()
+    cr.slots[2538] = { setmetatable({}, { __index = function() error("secret slot") end }) }
+    cr.slots[2541] = { slot(1, { 2678 }) }
+    local raising = cload()
+    craftsEvent(raising, "TRADE_SKILL_SHOW")
+    check("crafts reagents: a schematic raising for an uncached recipe caches it without reagents; others still match",
+        tostring(raising.env.TandemDB.crafts.Jaina.recipes[2538].reagents) .. " " .. using(raising, 2678),
+        "nil 2541:Cooking")
+
+    local reagentsDB = ctx.env.TandemDB
+    reset()
+    local back = cload(reagentsDB)
+    check("crafts reagents: the reagents survive a reload; only the recipe saved without any is read live",
+        using(back, 2673) .. " " .. cr.schematics .. " " .. #back.printed, "2538:Cooking 1 1")
+
+    reset()
+    local livectx = cload({ schemaVersion = 8, crafts = { Jaina = { recipes = {
+        [2538] = { name = "Charred Wolf Meat", profession = "Cooking" },
+        [2540] = { name = "Smelt Copper", profession = "Mining" },
+        [2541] = { name = "Roasted Boar Meat", profession = "Cooking" },
+        [3370] = { name = "Bandage", profession = "First Aid" },
+    } } } })
+    cr.slots[2538], cr.slots[2540], cr.slots[2541] = { slot(1, { 2678 }) }, { slot(2, { 2678 }) }, { slot(1, { 2678 }) }
+    check("crafts reagents: cached recipes saved without reagents read them live, by profession then name",
+        using(livectx, 2678) .. " " .. cr.schematics,
+        "2538:Cooking 2541:Cooking 2540:Mining 4")
+    check("crafts reagents: the live read is memoised, its failure too, and not saved",
+        using(livectx, 2678) .. " " .. cr.schematics .. " "
+        .. tostring(livectx.env.TandemDB.crafts.Jaina.recipes[2538].reagents),
+        "2538:Cooking 2541:Cooking 2540:Mining 4 nil")
+    reset()
+    cr.schematicError = "boom"
+    livectx = cload({ schemaVersion = 8, crafts = { Jaina = { recipes = {
+        [2538] = { name = "Charred Wolf Meat", profession = "Cooking" } } } } })
+    local ok2, got = pcall(livectx.addon.Crafts.RecipesUsing, 2678)
+    check("crafts reagents: a raising schematic read leaves the recipe out and never raises",
+        tostring(ok2) .. " " .. #got, "true 0")
+    local bad = {}
+    for _, v in ipairs({ "x", 0, 1.5, -2, CRAFT_SECRET, false }) do
+        bad[#bad + 1] = #livectx.addon.Crafts.RecipesUsing(v)
+    end
+    check("crafts reagents: bad input returns an empty list",
+        table.concat(bad, ",") .. " " .. #livectx.addon.Crafts.RecipesUsing(nil), "0,0,0,0,0,0 0")
+
     WIDGET.RegisterEvent = function(frame, ev)
         if ev == "LOOT_READY" then
             error(('Attempt to register unknown event "%s"'):format(ev))
@@ -7506,7 +7774,11 @@ do
             Jaina = {
                 pairs = { [7620] = 19807, [0] = 1, [5] = "x" },
                 recipes = { [2538] = { name = "Meat", icon = 1, item = 2679, profession = "Cooking", extra = 1 },
-                    [2] = { icon = 1 }, [3] = { name = "N", item = 1.5 } },
+                    [2] = { icon = 1 }, [3] = { name = "N", item = 1.5 },
+                    [4] = { name = "R", reagents = { { item = 1, count = 2, alts = { 3, "x", 0 }, extra = 1 },
+                        { item = 0, count = 1 }, { item = 5, count = 1.5 }, "bad",
+                        { item = 6, count = 1, alts = 7 } } },
+                    [5] = { name = "S", reagents = "bad" }, [6] = { name = "T", reagents = { { item = "x" } } } },
                 made = { ["spell:7620"] = 10, ["bad:1"] = 1, ["recipe:2538"] = -1 },
                 pick = "spell:7620",
             },
@@ -7517,7 +7789,9 @@ do
     })
     check("crafts store: valid entries are kept, extra fields stripped", dump(env.TandemDB.crafts.Jaina),
         dump({ pairs = { [7620] = 19807 }, recipes = { [2538] = { name = "Meat", icon = 1, item = 2679,
-            profession = "Cooking" } }, made = { ["spell:7620"] = 10 }, pick = "spell:7620" }))
+            profession = "Cooking" }, [4] = { name = "R", reagents = { { item = 1, count = 2, alts = { 3 } },
+            { item = 6, count = 1 } } }, [5] = { name = "S" }, [6] = { name = "T" } }, made = { ["spell:7620"] = 10 },
+            pick = "spell:7620" }))
     -- pairs 0, 5; recipes 2, 3; made bad, -1; Thrall pick, pairs; "", Uther
     check("crafts store: invalid entries are dropped and counted", printed[2],
         "Tandem: dropped 10 invalid or unused saved entries")
@@ -7528,6 +7802,9 @@ do
         .. tostring(Store.SetCraftRecipe("Jaina", 9, { icon = 1 })) .. " "
         .. tostring(Store.SetCraftMade("Jaina", "x", 1)) .. " " .. tostring(Store.SetCraftPick("Jaina", "y")) .. " "
         .. tostring(Store.SetCraftPair("", 1, 2)), "false false false false false")
+    check("crafts store: SetCraftRecipe keeps a recipe whose reagents are invalid, without them",
+        tostring(Store.SetCraftRecipe("Jaina", 9, { name = "N", reagents = { { item = 1 } } })) .. " "
+        .. dump(env.TandemDB.crafts.Jaina.recipes[9]), "true " .. dump({ name = "N" }))
     check("crafts store: SetCraftRecipe(nil) clears", Store.SetCraftRecipe("Jaina", 2538, nil)
         and env.TandemDB.crafts.Jaina.recipes[2538], nil)
     local newer = loadWithDB({ schemaVersion = 9, crafts = { Jaina = { pairs = { [1] = 2 } } } }).Store
