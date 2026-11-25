@@ -10,11 +10,11 @@ ns.Cure = Cure
 
 local call = ns.Store.Call
 
--- Per class, its cures: the spell, the debuff type it removes and its macro's name.
+-- Per class, its cures: the spell and the debuff type it removes.
 Cure.CURES = {
     SHAMAN = {
-        { spell = 526, kind = "Poison", macro = "Tandem Poison" },
-        { spell = 2870, kind = "Disease", macro = "Tandem Disease" },
+        { spell = 526, kind = "Poison" },
+        { spell = 2870, kind = "Disease" },
     },
 }
 -- The units whose debuffs light the flyout.
@@ -70,11 +70,6 @@ end
 -- Cure.Body(name) -> text: the cast line a button and its macro run for the localized cure name.
 function Cure.Body(name)
     return "/cast " .. TARGETS .. " " .. name
-end
-
--- Cure.MacroBody(name) -> text: the cure macro's body.
-function Cure.MacroBody(name)
-    return "#showtooltip\n" .. Cure.Body(name)
 end
 
 -- Cure.CombinedBody(left, right) -> text: the combined macro's body for the localized cure names, casting left on a

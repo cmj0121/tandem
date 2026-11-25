@@ -152,7 +152,7 @@ local function isMode(v)
     return v == "heal"
 end
 
--- A character's saved class macro pick is an entry id such as "poison".
+-- A character's saved class macro pick is an entry id such as "cure".
 local function isPick(v)
     return type(v) == "string" and v ~= ""
 end

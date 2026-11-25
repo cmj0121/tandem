@@ -1,6 +1,6 @@
 local _, ns = ...
 
--- The class macros: per class, the macros one flyout button offers (first the Shaman's cures and Stormstrike), each
+-- The class macros: per class, the macros one flyout button offers (first the Shaman's cure and Stormstrike), each
 -- shown while the player knows its spells, and the entry each character last picked.
 local ClassMacros = {}
 ns.ClassMacros = ClassMacros
@@ -53,20 +53,6 @@ ClassMacros.COMBAT_LINK = "item:" .. HEARTHSTONE
 -- nil.
 ClassMacros.ENTRIES = {
     SHAMAN = {
-        {
-            id = "poison", spells = { 526 }, macro = "Tandem Poison", kinds = { "Poison" },
-            description = "Cures poison on your mouseover friend, your target or yourself",
-            body = function(names)
-                return Cure.MacroBody(names[1])
-            end,
-        },
-        {
-            id = "disease", spells = { 2870 }, macro = "Tandem Disease", kinds = { "Disease" },
-            description = "Cures disease on your mouseover friend, your target or yourself",
-            body = function(names)
-                return Cure.MacroBody(names[1])
-            end,
-        },
         {
             id = "cure", spells = { 526, 2870 }, macro = "Tandem Cure", kinds = { "Poison", "Disease" },
             description = "Left-click cures poison, right-click cures disease",
