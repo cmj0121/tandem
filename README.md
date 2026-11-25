@@ -5,15 +5,16 @@
 English | [繁體中文](README.zh-TW.md)
 
 Tandem is a World of Warcraft addon that tells you when an item beats what you wear. It judges each item in your bags,
-in the loot window and among quest rewards from what the client says about it right now: its slot, required level,
-armor or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red
-border and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. Tandem also
-marks the best quest reward choice and flags out-of-date spell ranks on your action bars. On request it arranges your
-screen around the action bars, with an XP bar, a bag row, a craft button, a mute button, an eat and drink button, a map
-info line and, for a Shaman, a weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches
-on the world map and tells you in chat when you pass one. It never acts for the player: it only advises, and it saves
-nothing but your own stat weights, what your class trainer teaches, its layout state and mode, your class macro pick,
-what your craft button can make and its pick, your weapon enchant proc counts and whether book hints are on.
+in the loot window and among quest rewards from what the client says about it right now: its slot, required level, armor
+or weapon type, tooltip requirements and stats, weighted for your class and talent tree. An upgrade gets a red border
+and a green up arrow on its bag or loot button, one line in chat and a green line in its tooltip. A reagent's tooltip
+lists the learned cooking recipes that use it, with your bag counts. Tandem also marks the best quest reward choice
+and flags out-of-date spell ranks on your action bars. On request it arranges your screen around the action bars, with
+an XP bar, a bag row, a craft button, a mute button, an eat and drink button, a map info line and, for a Shaman, a
+weapon enchant proc rate. It pins WoW Forever's Library Books your level reaches on the world map and tells you in chat
+when you pass one. It never acts for the player: it only advises, and it saves nothing but your own stat weights, what
+your class trainer teaches, its layout state and mode, your class macro pick, what your craft button can make and its
+pick, your learned recipes and their reagents, your weapon enchant proc counts and whether book hints are on.
 
 ## Install
 
@@ -246,6 +247,25 @@ This works wherever the item's tooltip is the game's main tooltip, such as in yo
 quest reward, and in the tooltip that opens when you click an item link in chat. The comparison tooltips that show
 what you wear are left alone. Any other item gets no line, and in combat no line is added. On a `zhTW` client the line
 is in Chinese.
+
+Hovering a reagent, out of combat in the same tooltips, also lists the learned cooking recipes that use it, each with
+its reagents and how many your bags hold against how many it needs:
+
+```text
+Tandem: cooking recipes that use this
+Charred Wolf Meat: Stringy Wolf Meat 3/1
+Spiced Wolf Meat: Stringy Wolf Meat 3/1, Mild Spices 2/1
+Roasted Boar Meat: Chunk of Boar Meat 0/1
+```
+
+- Only Cooking recipes are listed; recipes of other professions that use the item add nothing.
+- A recipe line is green when your bags hold enough of every reagent, grey when any falls short.
+- The 5 most makeable are listed, then `... and <n> more`: first those you have enough of every reagent for, then by
+  the share of the needed reagents your bags hold, then by fewer reagents short, then by name.
+- Cooking's recipes are known once you have opened its window on this character; Tandem remembers them per
+  character, so they outlast a `/reload`. A recipe you unlearn leaves the list the next time that window opens.
+- A reagent the client has not loaded yet shows as `item <id>` until it has.
+- Any quality of a reagent counts as that reagent, but only the first one listed is counted in your bags.
 
 ### Quest reward pick
 
@@ -767,6 +787,10 @@ Tandem saves one account-wide table, `TandemDB`, as
 - A `picks` entry that is not a non-empty entry id is dropped on load.
 - A `crafts` entry that is not a table is dropped on load, as is each invalid pair, recipe or made time inside it and
   a `pick` that is not `spell:<id>` or `recipe:<id>`.
+- `crafts.recipes` holds every recipe you have learned, from every profession whose window you have opened, with its
+  name, profession, the item it makes and its `reagents` (each an `item`, a `count` and other quality `alts`); the
+  craft button lists only the camp ones, the [item tooltip](#item-tooltip) the cooking ones. An invalid reagent is
+  dropped on load, never the recipe.
 - `layout.books` is the [library books](#the-books-switch) switch: `false` after `/tandem books off`, `true` after
   `/tandem books on`, absent (on) until you use either. A value that is not `true` or `false` is dropped on load.
 - Each character is keyed by its name alone, without the realm: Forever's realm APIs return nothing and the realm it
