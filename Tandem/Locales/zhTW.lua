@@ -77,10 +77,10 @@ L["Drag out of combat to place this macro"] = "離開戰鬥後才能拖曳放置
 L["Character macros full: no room for this macro"] = "角色巨集已滿：沒有空間放這個巨集"
 L["Click to choose the button's macro"] = "點擊選擇按鈕要用的巨集"
 L["Choosing waits until combat ends"] = "要等戰鬥結束才能選擇"
-L["Cures poison on your mouseover friend, your target or yourself"] = "對滑鼠指向的友方、目標或自己解除中毒"
-L["Cures disease on your mouseover friend, your target or yourself"] = "對滑鼠指向的友方、目標或自己解除疾病"
 L["Left-click cures poison, right-click cures disease"] = "左鍵解除中毒，右鍵解除疾病"
 L["Left-click casts Call of the Elements, right-click casts Call of the Ancestors"] = "左鍵施放元素召喚，右鍵施放先祖召喚"
+L["Left-click or your key casts Lesser Healing Wave, right-click or Shift with your key casts Healing Wave"] =
+    "左鍵或按鍵施放次級治療波，右鍵或 Shift+按鍵施放治療波"
 L["Switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet fighting), "
     .. "starts attacking and casts Stormstrike"] =
     "目標不存在、已死亡或為友方時自動切換到最近的敵人（可能是還沒開打的怪），開始攻擊並施放風暴打擊"

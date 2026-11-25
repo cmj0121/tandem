@@ -1,6 +1,6 @@
 local _, ns = ...
 
--- The class macros: per class, the macros one flyout button offers (first the Shaman's cures and Stormstrike), each
+-- The class macros: per class, the macros one flyout button offers (first the Shaman's cure and Stormstrike), each
 -- shown while the player knows its spells, and the entry each character last picked.
 local ClassMacros = {}
 ns.ClassMacros = ClassMacros
@@ -10,6 +10,10 @@ local call = ns.Store.Call
 
 local STORMSTRIKE = "#showtooltip %s\n/targetenemy [noharm][dead]\n/startattack [harm]\n/cast %s"
 local TOTEMS = "#showtooltip\n/cast [btn:2] %s; %s"
+-- The first spell on a left click or a key press without Shift, the second on a right click or with Shift, each on
+-- the Cure.lua targets; the first is the gated clause so the body fits the 255-byte macro limit.
+local HEAL = "#showtooltip\n/cast [nobtn:2,nomod:shift,@mouseover,help,nodead][nobtn:2,nomod:shift,@target,help,nodead]"
+    .. "[nobtn:2,nomod:shift,@player] %s; [@mouseover,help,nodead][@target,help,nodead][@player] %s"
 
 local ASTRAL_RECALL, HEARTHSTONE = 556, 6948
 -- A cooldown this short or shorter is the global cooldown, so the spell counts as ready.
@@ -50,20 +54,6 @@ ClassMacros.COMBAT_LINK = "item:" .. HEARTHSTONE
 ClassMacros.ENTRIES = {
     SHAMAN = {
         {
-            id = "poison", spells = { 526 }, macro = "Tandem Poison", kinds = { "Poison" },
-            description = "Cures poison on your mouseover friend, your target or yourself",
-            body = function(names)
-                return Cure.MacroBody(names[1])
-            end,
-        },
-        {
-            id = "disease", spells = { 2870 }, macro = "Tandem Disease", kinds = { "Disease" },
-            description = "Cures disease on your mouseover friend, your target or yourself",
-            body = function(names)
-                return Cure.MacroBody(names[1])
-            end,
-        },
-        {
             id = "cure", spells = { 526, 2870 }, macro = "Tandem Cure", kinds = { "Poison", "Disease" },
             description = "Left-click cures poison, right-click cures disease",
             body = function(names)
@@ -76,6 +66,14 @@ ClassMacros.ENTRIES = {
                 .. "Ancestors",
             body = function(names)
                 return TOTEMS:format(names[2], names[1])
+            end,
+        },
+        {
+            id = "heal", spells = { 8004, 331 }, macro = "Tandem Heal", kinds = {}, logKnown = true,
+            description = "Left-click or your key casts Lesser Healing Wave, right-click or Shift with your key casts "
+                .. "Healing Wave",
+            body = function(names)
+                return HEAL:format(names[1], names[2])
             end,
         },
         {

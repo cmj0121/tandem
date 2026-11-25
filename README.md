@@ -575,12 +575,14 @@ A Shaman gets one more icon left of the rod icon (or of the bag row, with no rod
 totem bar's flyouts, a click casts the macro you picked, and the small arrow above it opens an upward list of every
 entry you have learned:
 
-- `Cure Poison` and `Cure Disease` cast that cure on the friend under your mouse, else on your friendly target, else on
-  yourself.
 - `Cure Poison / Cure Disease`, once you know both, casts Cure Poison on a left click and Cure Disease on a right click,
-  on the same targets.
+  on the friend under your mouse, else on your friendly target, else on yourself.
 - `Call of the Elements / Call of the Ancestors`, once you know both, casts Call of the Elements on a left click and
   Call of the Ancestors on a right click.
+- `Lesser Healing Wave / Healing Wave`, once you know both (Lesser Healing Wave comes at level 20), casts Lesser
+  Healing Wave on a left click or its key and Healing Wave on a right click or Shift with its key, on the friend under
+  your mouse, else on your friendly target, else on yourself. Shift with the key works only while Shift with that key
+  is not bound to anything else. `/cast` uses the highest rank you know.
 - `Stormstrike` switches to the nearest enemy when your target is missing, dead or friendly (it may be one not yet
   fighting), starts attacking and casts Stormstrike.
 - `Astral Recall` casts Astral Recall on a left click, or uses your Hearthstone while Astral Recall is on cooldown; a
@@ -598,18 +600,18 @@ it outlasts a `/reload`; when its spell is no longer known, the first entry is u
 combat and closes when a fight starts. Hover the arrow: `Class macros` and `Click to choose the button's macro`, or
 `Choosing waits until combat ends` when a pick has to wait.
 
-When you or a party member carries a poison or a disease, each cure row lights up with the number of you who carry
+When you or a party member carries a poison or a disease, the cure row lights up with the number of you who carry
 one, and the button with the count over its whole list. In combat the client keeps debuffs secret from addons, so the
 lights go dark until the fight ends. Hover the button or a row: the entry's title, what it does, for a cure who carries
 which debuff (or `No one in your party has a Poison effect`; in combat `Party debuffs show again after combat`), and
 `Drag to place this macro on your action bar` (`Drag out of combat to place this macro` in combat).
 
-Drag the button or a row to put that entry's character macro, `Tandem Poison`, `Tandem Disease`, `Tandem Cure`,
-`Tandem Totems`, `Tandem Stormstrike` or `Tandem Recall`, on an action bar. Tandem makes it on that first drag and
-keeps it current out of combat; when your character macro slots are full the tooltip says `Character macros full: no
-room for this macro`. Tandem only casts on your click. In combat the button cannot move, appear or hide, so a spell
-learned or a rod swapped in a fight shows once it ends. It shows only while the layout is on, and needs the
-`Class macro button` line of [`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
+Drag the button or a row to put that entry's character macro, `Tandem Cure`, `Tandem Totems`, `Tandem Heal`,
+`Tandem Stormstrike` or `Tandem Recall`, on an action bar. Tandem makes it on that first drag and keeps it current out
+of combat; when your character macro slots are full the tooltip says `Character macros full: no room for this macro`.
+Tandem only casts on your click. In combat the button cannot move, appear or hide, so a spell learned or a rod swapped
+in a fight shows once it ends. It shows only while the layout is on, and needs the `Class macro button` line of
+[`/tandem check`](#tandem-check) (dragging also needs `Cure macro`).
 
 Left of the class macro button (or of the rod icon, or of the bag row, when those are hidden) sits the craft button,
 for every class. A left click makes the item of the entry you picked, a right click uses that item, and the small arrow
@@ -748,7 +750,7 @@ Tandem saves one account-wide table, `TandemDB`, as
 | `trainers` | Per class (`MAGE`): per spell ID a class trainer teaches, its required `level` and its `rank` (absent if none) |
 | `layout`   | [Layout](#layout) `on`, `previous` layout, old target of target and `coords`, the `minimap` `angle`, `hidden`  |
 | `modes`    | Per character (`Name`): the [layout mode](#what-moves), `heal`; absent = damage                                |
-| `picks`    | Per character (`Name`): the [class macro](#bag-row) entry picked, such as `poison` or `stormstrike`            |
+| `picks`    | Per character (`Name`): the [class macro](#bag-row) entry picked, such as `cure` or `stormstrike`              |
 | `crafts`   | Per character (`Name`): the [craft button](#bag-row)'s spell-to-item `pairs`, `recipes`, `made` times, `pick`  |
 
 - A class trainer's spells are recorded each time its window opens or updates outside combat, under your character's
@@ -920,12 +922,12 @@ list`. On a Mage, cast Conjure Water: the button takes its icon; right-click it 
    the sound is back. Left of
    the horn, a sword icon sits: hover it for `Layout mode` and `Damage`.
 4. On a Shaman, the totem bar sits in its own row just above the main bar, also after casting in combat.
-5. On a Shaman who knows Cure Poison, the class macro button sits left of the rod icon (or of the bag row), with a
-   small arrow above it. Click the arrow: a list of your learned entries opens upward. Hover a row: its title, what it
-   does and `Drag to place this macro on your action bar`. Click the `Cure Poison` row: it casts, the list closes and
-   the button shows its icon. Run `/reload`: the button still shows it. Drag the button onto an action bar: a
-   `Tandem Poison` macro lands there. Out of combat, when you or a party member is poisoned, the `Cure Poison` row
-   and the button light up with `1`.
+5. On a Shaman who knows Cure Poison and Cure Disease, the class macro button sits left of the rod icon (or of the
+   bag row), with a small arrow above it. Click the arrow: a list of your learned entries opens upward. Hover a row:
+   its title, what it does and `Drag to place this macro on your action bar`. Click the `Cure Poison / Cure Disease`
+   row: it casts, the list closes and the button shows its icon. Run `/reload`: the button still shows it. Drag the
+   button onto an action bar: a `Tandem Cure` macro lands there. Out of combat, when you or a party member is
+   poisoned, the `Cure Poison / Cure Disease` row and the button light up with `1`.
 6. Run `/tandem debug on`. Start a fight and, in combat, click the arrow and another row, such as `Stormstrike`: it
    casts and the button takes its icon. When the fight ends, run `/reload` and read the `log` of `TandemDebug` in
    [Saved data](#saved-data): it holds `flyout pick: <id> combat=true`, then `flyout pick saved: <id>`. When the
