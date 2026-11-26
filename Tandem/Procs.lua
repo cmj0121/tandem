@@ -10,7 +10,9 @@ local _, ns = ...
 -- - a Flametongue proc is a fire WOUND, a Frostbrand proc a frost WOUND, neither at a cast's instant; fire within
 --   FLAME_SHOCK seconds of a Flame Shock cast is its damage over time and not counted;
 -- - a Windfury proc is a physical swing within WINDFURY seconds of the previous one (its extra attack), counted as a
---   proc and not a hit. Not yet seen in game.
+--   proc and not a hit. Not yet seen in game;
+-- - a miss, dodge, parry or block is a swing's MISS, DODGE, PARRY or BLOCK on the target, whatever its school (not
+--   yet verified in game, so each is logged with its school), not at a cast's instant nor a Windfury extra attack.
 -- Any damage on the target counts, so another player hitting it skews the rate: the numbers are exact solo only.
 -- Display only, no advice (PLAN decision 6).
 local Procs = {}
@@ -46,10 +48,22 @@ local ICON = {
 -- The physical outcomes that are a swing (a Windfury attack's timing counts from any of them).
 local SWING = { WOUND = true, MISS = true, DODGE = true, PARRY = true, BLOCK = true, ABSORB = true, IMMUNE = true,
     EVADE = true, DEFLECT = true, RESIST = true }
+-- The swing outcomes counted apart, each with its count's field.
+local AVOID = { MISS = "misses", DODGE = "dodges", PARRY = "parries", BLOCK = "blocks" }
+-- A count's fields.
+local FIELDS = { "hits", "procs", "misses", "dodges", "parries", "blocks" }
+
+local function zero()
+    local count = {}
+    for _, f in ipairs(FIELDS) do
+        count[f] = 0
+    end
+    return count
+end
 
 local button, layoutOn, family, enchantID, attacking
 local lastCast, lastSwing, flameShockUntil = -math.huge, -math.huge, -math.huge
-local fight = { hits = 0, procs = 0 }
+local fight = zero()
 
 local call, Safe = ns.Store.Call, ns.Store.Safe
 
@@ -74,7 +88,7 @@ end
 -- Returns the family's saved counts, zero when none.
 function Procs.Count(f)
     local k = key()
-    return (k and f and ns.Store.Procs(k, f)) or { hits = 0, procs = 0 }
+    return (k and f and ns.Store.Procs(k, f)) or zero()
 end
 
 -- Returns the rate text for counts: "23%", or "-" before the first hit.
@@ -94,6 +108,8 @@ local function showTooltip(self)
     tip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
     tip:SetText(spellName(SPELL[family]) or family)
     tip:AddLine(L["Procs %d / hits %d (%s)"]:format(count.procs, count.hits, Procs.Rate(count)), 1, 1, 1)
+    tip:AddLine(L["Miss %d / dodge %d / parry %d / block %d"]:format(count.misses, count.dodges, count.parries,
+        count.blocks), 1, 1, 1)
     tip:AddLine(L["Counted from your melee hits on your target; exact when solo"], 0.5, 0.5, 0.5, true)
     tip:AddLine(L["Right-click to start counting again"], 0.5, 0.5, 0.5)
     tip:Show()
@@ -171,16 +187,16 @@ local function readEnchant()
     render()
 end
 
--- Adds to the family's saved counts.
-local function add(hits, procs)
+-- Adds one to the family's saved count field.
+local function add(field)
     local k = key()
     if not (k and family) then
         return
     end
     local count = Procs.Count(family)
-    count.hits, count.procs = count.hits + hits, count.procs + procs
+    count[field] = count[field] + 1
     ns.Store.SetProcs(k, family, count)
-    fight.hits, fight.procs = fight.hits + hits, fight.procs + procs
+    fight[field] = fight[field] + 1
     render()
 end
 
@@ -189,17 +205,23 @@ local function onCombat(action, school)
     if t - lastCast < CAST then
         return
     end
-    if school == PHYSICAL and SWING[action] then
+    local avoid = AVOID[action]
+    if avoid then
+        ns.Debug.Log(("procs: avoid %s school %s"):format(action, tostring(school)))
+    end
+    if avoid or (school == PHYSICAL and SWING[action]) then
         local extra = family == "windfury" and t - lastSwing < WINDFURY
         lastSwing = t
         if extra then
-            add(0, 1)
+            add("procs")
+        elseif avoid then
+            add(avoid)
         elseif action == "WOUND" then
-            add(1, 0)
+            add("hits")
         end
     elseif action == "WOUND" and ((family == "flametongue" and school == FIRE and t >= flameShockUntil)
         or (family == "frostbrand" and school == FROST)) then
-        add(0, 1)
+        add("procs")
     end
 end
 
@@ -211,11 +233,12 @@ function Procs.OnEvent(event, unit, a2, a3, _, a5)
     end
     if event == "PLAYER_ENTER_COMBAT" then
         attacking = true
-        fight.hits, fight.procs = 0, 0
+        fight = zero()
         readEnchant()
     elseif event == "PLAYER_LEAVE_COMBAT" then
         attacking = nil
-        ns.Debug.Log(("procs: fight %s hits %d procs %d"):format(tostring(family), fight.hits, fight.procs))
+        ns.Debug.Log(("procs: fight %s hits %d procs %d misses %d dodges %d parries %d blocks %d"):format(
+            tostring(family), fight.hits, fight.procs, fight.misses, fight.dodges, fight.parries, fight.blocks))
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         if Safe(unit) == "player" then
             lastCast = now()
