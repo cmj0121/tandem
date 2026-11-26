@@ -273,7 +273,7 @@ for _, version in ipairs({ 7, 5, false, 0 / 0, "8" }) do
     check("schema 8: " .. what .. " db rekeys every per-character table to the bare name",
         dump({ db.weights, db.modes, db.picks, db.procs, db.killers }),
         dump({ { ["五行缺"] = { spec = 2, overrides = {} } }, { ["五行缺"] = "heal" }, { ["五行缺"] = "stormstrike" },
-            { ["五行缺"] = { windfury = { hits = 10, procs = 3 } } },
+            { ["五行缺"] = { windfury = { hits = 10, procs = 3, misses = 0, dodges = 0, parries = 0, blocks = 0 } } },
             { ["五行缺"] = { ["Gank-Far"] = { name = "Gank", realm = "Far", count = 2, last = 100 } } } }))
     check("schema 8: " .. what .. " db rekey drops nothing", printed[3] or printed[2] or "", version == 5
         and "Tandem: saved data upgraded from schema 5 to 8" or "")
@@ -8905,8 +8905,9 @@ do
     check("procs: fire after Flame Shock ends counts again", ctx.saved(), "flametongue=2/2")
     icon.scripts.OnEnter(icon)
     check("procs: tooltip names the enchant and its counts", ctx.tip.title .. " / " .. texts(ctx.tip),
-        "Flametongue Weapon / Procs 2 / hits 2 (100%) / Counted from your melee hits on your target; exact when solo"
-        .. " / Right-click to start counting again")
+        "Flametongue Weapon / Procs 2 / hits 2 (100%) / Miss 1 / dodge 0 / parry 0 / block 0"
+        .. " / Counted from your melee hits on your target; exact when solo / Right-click to start counting again")
+    check("procs: the outcome line is white", colour(ctx.tip.lines[2]), "1,1,1")
     icon.scripts.OnLeave(icon)
     ctx.fire("PLAYER_LEAVE_COMBAT")
     ctx.hit()
@@ -8952,7 +8953,71 @@ do
     ctx.fire("PLAYER_LOGIN")
     ctx.run("layout on")
     ctx.icon().scripts.OnEnter(ctx.icon())
-    check("zhTW procs tooltip", texts(ctx.tip), "觸發 0 / 命中 0（-） / 依你對目標的近戰命中計算；單人時才準確 / 右鍵重新計算")
+    check("zhTW procs tooltip", texts(ctx.tip),
+        "觸發 0 / 命中 0（-） / 未命中 0 / 閃躲 0 / 招架 0 / 格擋 0 / 依你對目標的近戰命中計算；單人時才準確 / 右鍵重新計算")
+end
+
+-- Swing outcomes: a miss, dodge, parry or block on the target is counted apart, whatever its school, and logged; a
+-- Windfury extra attack stays a proc whatever its outcome.
+do
+    local ctx = loadProcs()
+    ctx.fire("PLAYER_LOGIN")
+    ctx.run("layout on")
+    ctx.addon.Debug.Set(true)
+    local icon = ctx.icon()
+    ctx.fire("PLAYER_ENTER_COMBAT")
+    ctx.t = 300
+    ctx.hit(nil, "MISS")
+    ctx.t = 303
+    ctx.hit(nil, "DODGE")
+    ctx.t = 306
+    ctx.fire("UNIT_COMBAT", "target", "PARRY", "", 25, nil)
+    ctx.t = 309
+    ctx.hit(nil, "BLOCK", 0)
+    ctx.t = 312
+    ctx.hit()
+    ctx.t = 315
+    ctx.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 17364)
+    ctx.hit(nil, "MISS")
+    icon.scripts.OnEnter(icon)
+    check("procs outcomes: each outcome counted once, hits and rate unchanged", texts(ctx.tip),
+        "Procs 0 / hits 1 (0%) / Miss 1 / dodge 1 / parry 1 / block 1"
+        .. " / Counted from your melee hits on your target; exact when solo / Right-click to start counting again")
+    check("procs outcomes: the rate text is unchanged", icon.rate.text, "0%")
+    ctx.fire("PLAYER_LEAVE_COMBAT")
+    local log = table.concat(ctx.env.TandemDebug.log, "\n")
+    check("procs outcomes: each avoid logged with its raw action and school",
+        tostring(log:find("procs: avoid MISS school 1", 1, true) ~= nil) .. " "
+        .. tostring(log:find("procs: avoid PARRY school nil", 1, true) ~= nil) .. " "
+        .. tostring(log:find("procs: avoid BLOCK school 0", 1, true) ~= nil), "true true true")
+    check("procs outcomes: the fight line prints the four",
+        log:match("procs: fight flametongue [^\n]*"),
+        "procs: fight flametongue hits 1 procs 0 misses 1 dodges 1 parries 1 blocks 1")
+
+    local again = loadShaman({ db = ctx.env.TandemDB, env = { PlayerFrame = {},
+        UnitName = function() return "Thrall" end, GetRealmName = function() return "Realm" end } })
+    local c = again.addon.Procs.Count("flametongue")
+    check("procs outcomes: saved across a reload", c.misses .. c.dodges .. c.parries .. c.blocks, "1111")
+    icon.scripts.OnClick(icon, "RightButton")
+    c = ctx.addon.Procs.Count("flametongue")
+    check("procs outcomes: a right-click resets them", c.misses .. c.dodges .. c.parries .. c.blocks, "0000")
+
+    -- Windfury: a miss right after a swing is its extra attack, a proc and not a miss; a school-less miss still
+    -- times the next extra attack.
+    ctx.weapon = { true, 1800000, 0, 283, false, 0, 0, 0, n = 8 }
+    ctx.fire("UNIT_INVENTORY_CHANGED", "player")
+    ctx.fire("PLAYER_ENTER_COMBAT")
+    ctx.t = 400
+    ctx.hit()
+    ctx.t = 400.1
+    ctx.fire("UNIT_COMBAT", "target", "MISS", "", 0, nil)
+    ctx.t = 403
+    ctx.fire("UNIT_COMBAT", "target", "MISS", "", 0, nil)
+    ctx.t = 403.1
+    ctx.hit()
+    c = ctx.addon.Procs.Count("windfury")
+    check("procs outcomes: windfury extra attacks are procs, not misses; a school-less miss times them",
+        c.hits .. "/" .. c.procs .. "/" .. c.misses, "1/2/1")
 end
 
 -- Store.Procs / SetProcs and the procs table on load: whole counts for the three families only.
@@ -8960,6 +9025,8 @@ do
     local addon = loadWithDB({ schemaVersion = 8, weights = {}, trainers = {}, layout = {}, procs = {
         ["A-R"] = { windfury = { hits = 10, procs = 2 }, rockbiter = { hits = 1, procs = 0 },
             flametongue = { hits = -1, procs = 0 } },
+        ["C-R"] = { windfury = { hits = 1, procs = 0, misses = 1, dodges = 2, parries = 3, blocks = 4 },
+            flametongue = { hits = 1, procs = 0, misses = -1 }, frostbrand = { hits = 1, procs = 0, blocks = 1.5 } },
         [""] = {}, ["B-R"] = "x",
     } })
     check("store procs: valid counts kept", addon.Store.Procs("A-R", "windfury").procs, 2)
@@ -8972,6 +9039,14 @@ do
     local c = addon.Store.Procs("A-R", "windfury")
     c.hits = 99
     check("store procs: Procs returns a copy", addon.Store.Procs("A-R", "windfury").hits, 10)
+    check("store procs: an old count without outcomes loads them as 0", dump(addon.Store.Procs("A-R", "windfury")),
+        dump({ hits = 10, procs = 2, misses = 0, dodges = 0, parries = 0, blocks = 0 }))
+    check("store procs: saved outcomes kept", dump(addon.Store.Procs("C-R", "windfury")),
+        dump({ hits = 1, procs = 0, misses = 1, dodges = 2, parries = 3, blocks = 4 }))
+    check("store procs: a bad outcome drops the entry", tostring(addon.Store.Procs("C-R", "flametongue")) .. " "
+        .. tostring(addon.Store.Procs("C-R", "frostbrand")), "nil nil")
+    check("store procs: SetProcs refuses a bad outcome", addon.Store.SetProcs("C-R", "windfury",
+        { hits = 1, procs = 0, parries = "x" }), false)
 end
 
 -- Store.RegisterUnitEvent: the player only where the client has RegisterUnitEvent, else every unit (U5 review).

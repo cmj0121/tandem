@@ -736,6 +736,11 @@ Stormstrike or a shock, and Flame Shock's damage over time are left out. Another
 also count, so the rate is exact only when you fight alone. It shows only while the layout is on and needs the
 `Weapon procs` line of [`/tandem check`](#tandem-check).
 
+The tooltip also shows how often your physical swings on the target miss, are dodged, are parried or are blocked:
+`Miss 0 / dodge 0 / parry 0 / block 0`. The swings of every weapon count, off hand too, but a Windfury extra attack
+counts only as its proc. Only a fully blocked swing counts as a block; a partly blocked swing is a hit. These counts
+are kept per character and per enchant with the others, and the same right-click starts them again.
+
 Each part, the layout, XP bar, bag row and map info, stays dark when its `/tandem check` line is `missing`,
 and the rest still works.
 

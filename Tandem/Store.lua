@@ -157,11 +157,23 @@ local function isPick(v)
     return type(v) == "string" and v ~= ""
 end
 
--- A weapon enchant family's saved counts: { hits = n, procs = n }, whole numbers from 0.
+-- The swing outcome fields of a proc count.
+local PROC_OUTCOMES = { "misses", "dodges", "parries", "blocks" }
+
+-- A weapon enchant family's saved counts: { hits = n, procs = n, misses = n|nil, dodges = n|nil, parries = n|nil,
+-- blocks = n|nil }, whole numbers from 0, the four outcomes read as 0 when absent. Returns a clean copy, or nil.
 local function copyProcCount(v)
-    if type(v) == "table" and isInt(v.hits, 0) and isInt(v.procs, 0) then
-        return { hits = v.hits, procs = v.procs }
+    if type(v) ~= "table" or not (isInt(v.hits, 0) and isInt(v.procs, 0)) then
+        return nil
     end
+    local out = { hits = v.hits, procs = v.procs }
+    for _, f in ipairs(PROC_OUTCOMES) do
+        if v[f] ~= nil and not isInt(v[f], 0) then
+            return nil
+        end
+        out[f] = v[f] or 0
+    end
+    return out
 end
 
 local function isOptional(v, check, arg)
@@ -543,8 +555,8 @@ function Store.SetPick(key, id)
     return true
 end
 
--- Returns the character key's counts for a weapon enchant family { hits, procs } (a copy), or nil (none, an unknown
--- family, or the db is newer).
+-- Returns the character key's counts for a weapon enchant family { hits, procs, misses, dodges, parries, blocks } (a
+-- copy), or nil (none, an unknown family, or the db is newer).
 function Store.Procs(key, family)
     local procs = not Store.readOnly and Store.db.procs
     local mine = type(procs) == "table" and procs[key]
@@ -552,8 +564,8 @@ function Store.Procs(key, family)
     return count and copyProcCount(count) or nil
 end
 
--- Saves the character key's counts for a weapon enchant family ({ hits, procs }, or nil to clear them); false when
--- invalid or read-only.
+-- Saves the character key's counts for a weapon enchant family ({ hits, procs, misses, dodges, parries, blocks }, or
+-- nil to clear them); false when invalid or read-only.
 function Store.SetProcs(key, family, count)
     if Store.readOnly or type(key) ~= "string" or key == "" or not PROC_FAMILIES[family]
         or (count ~= nil and not copyProcCount(count)) then
